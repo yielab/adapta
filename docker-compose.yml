@@ -1,0 +1,53 @@
+version: '3.8'
+
+services:
+  brain:
+    build: .
+    container_name: brain-server
+    ports:
+      - "8000:8000"
+    volumes:
+      # Mount models directory so you don't need to re-download in container
+      - ./data/models:/app/data/models
+      # Mount agents directory to persist agent configs
+      - ./data/agents:/app/data/agents
+      # Mount cache directory
+      - ./data/cache:/app/data/cache
+      # Mount training data and jobs
+      - ./data/training_data:/app/data/training_data
+      - ./data/training_jobs:/app/data/training_jobs
+    environment:
+      - BRAIN_HOST=0.0.0.0
+      - BRAIN_PORT=8000
+      - BRAIN_N_THREADS=8
+      - BRAIN_N_GPU_LAYERS=0  # Set to > 0 if you have GPU
+      - BRAIN_DATA_DIR=/app/data
+      - BRAIN_MODELS_DIR=/app/data/models
+      - BRAIN_AGENTS_DIR=/app/data/agents
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Optional: GPU support (uncomment if you have NVIDIA GPU)
+  # brain-gpu:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile.gpu
+  #   deploy:
+  #     resources:
+  #       reservations:
+  #         devices:
+  #           - driver: nvidia
+  #             count: 1
+  #             capabilities: [gpu]
+  #   ports:
+  #     - "8000:8000"
+  #   volumes:
+  #     - ./data/models:/app/data/models
+  #     - ./data/agents:/app/data/agents
+  #   environment:
+  #     - BRAIN_N_GPU_LAYERS=35  # Use GPU acceleration

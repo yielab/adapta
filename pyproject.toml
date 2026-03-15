@@ -1,0 +1,66 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "brain-from-cero"
+version = "0.1.0"
+description = "Lightweight local AI brain server with multimodal capabilities"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [
+    {name = "Brain Team"}
+]
+dependencies = [
+    "fastapi>=0.110.0",
+    "uvicorn[standard]>=0.27.0",
+    "pydantic>=2.6.0",
+    "pydantic-settings>=2.1.0",
+    "llama-cpp-python>=0.2.55",
+    "chromadb>=0.4.22",
+    "sentence-transformers>=2.3.1",
+    "sqlalchemy>=2.0.25",
+    "aiosqlite>=0.19.0",
+    "python-multipart>=0.0.9",
+    "pillow>=10.2.0",
+    "pyyaml>=6.0.1",
+    "click>=8.1.7",
+    "rich>=13.7.0",
+    "httpx>=0.26.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.4",
+    "black>=24.1.1",
+    "ruff>=0.2.1",
+    "mypy>=1.8.0",
+]
+training = [
+    "torch>=2.2.0",
+    "transformers>=4.38.0",
+    "peft>=0.8.2",
+    "datasets>=2.16.1",
+    "trl>=0.7.10",
+]
+
+[project.scripts]
+brain = "brain.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["brain*"]
+
+[tool.black]
+line-length = 100
+target-version = ['py310']
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
