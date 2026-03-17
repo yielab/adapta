@@ -43,6 +43,8 @@ class AgentManager:
         model: Optional[str] = None,
         system_prompt: Optional[str] = None,
         capabilities: Optional[List[str]] = None,
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
     ) -> AgentInfo:
         """Create a new agent"""
 
@@ -61,6 +63,8 @@ class AgentManager:
             model=model or template_config.get("model", "qwen2.5-3b-instruct"),
             system_prompt=system_prompt or template_config.get("system_prompt"),
             capabilities=capabilities or template_config.get("capabilities", []),
+            temperature=temperature if temperature is not None else template_config.get("temperature", 0.7),
+            max_tokens=max_tokens if max_tokens is not None else template_config.get("max_tokens", 512),
         )
 
         # Generate agent ID
@@ -83,6 +87,9 @@ class AgentManager:
             capabilities=agent.config.capabilities,
             created=agent.created,
             active=True,
+            temperature=agent.config.temperature,
+            max_tokens=agent.config.max_tokens,
+            system_prompt=agent.config.system_prompt,
         )
 
     def get_agent(self, agent_id: str) -> Optional[Agent]:

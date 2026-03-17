@@ -27,6 +27,10 @@ class AgentConfig:
     temperature: float = 0.7
     max_tokens: int = 512
 
+    # Adapter configuration
+    use_adapter: bool = False  # Whether to use a trained adapter
+    adapter_id: Optional[str] = None  # ID of the adapter to use
+
 
 class Agent:
     """AI Agent with dedicated configuration and knowledge base"""
@@ -56,6 +60,8 @@ class Agent:
             "tools": self.config.tools,
             "temperature": self.config.temperature,
             "max_tokens": self.config.max_tokens,
+            "use_adapter": self.config.use_adapter,
+            "adapter_id": self.config.adapter_id,
             "created": self.created,
         }
 
@@ -86,6 +92,8 @@ class Agent:
                 tools=config_dict.get("tools", []),
                 temperature=config_dict.get("temperature", 0.7),
                 max_tokens=config_dict.get("max_tokens", 512),
+                use_adapter=config_dict.get("use_adapter", False),
+                adapter_id=config_dict.get("adapter_id"),
             )
 
             agent = cls(agent_id, config)
@@ -100,11 +108,63 @@ class Agent:
 
     async def add_knowledge(self, content: str, metadata: Optional[dict] = None):
         """Add knowledge to agent's RAG database"""
-        await self.rag_manager.add_document(content, metadata)
+        return await self.rag_manager.add_document(content, metadata)
 
     async def add_knowledge_file(self, file_path: str, metadata: Optional[dict] = None):
         """Add knowledge from file"""
-        await self.rag_manager.add_file(file_path, metadata)
+        return await self.rag_manager.add_file(file_path, metadata)
+
+    def set_adapter(self, adapter_id: Optional[str] = None):
+        """
+        Set the adapter to use for this agent
+
+        Args:
+            adapter_id: ID of the adapter to use, or None to use base model
+        """
+        from brain.core.adapter_manager import adapter_manager
+
+        if adapter_id:
+            # Verify adapter exists and belongs to this agent
+            adapter = adapter_manager.get_adapter(adapter_id)
+            if not adapter:
+                raise ValueError(f"Adapter not found: {adapter_id}")
+            if adapter.agent_id != self.id:
+                raise ValueError(f"Adapter {adapter_id} does not belong to agent {self.id}")
+
+            self.config.use_adapter = True
+            self.config.adapter_id = adapter_id
+            logger.info(f"Agent {self.id} will use adapter: {adapter_id}")
+        else:
+            self.config.use_adapter = False
+            self.config.adapter_id = None
+            logger.info(f"Agent {self.id} will use base model (no adapter)")
+
+        self.save()
+
+    def get_active_adapter(self):
+        """Get information about the currently active adapter"""
+        from brain.core.adapter_manager import adapter_manager
+
+        if not self.config.use_adapter or not self.config.adapter_id:
+            return None
+
+        return adapter_manager.get_adapter(self.config.adapter_id)
+
+    def get_model_name(self) -> str:
+        """
+        Get the model name to use for inference
+
+        If the agent has a trained adapter that's been merged,
+        use the merged model. Otherwise, use the base model.
+        """
+        adapter = self.get_active_adapter()
+
+        if adapter and adapter.is_merged and adapter.merged_model_path:
+            # Use the merged model
+            return f"{self.id}_merged"
+
+        # Use base model
+        return self.config.model
 
     def delete(self):
         """Delete agent and all its data"""

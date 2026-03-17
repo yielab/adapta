@@ -285,3 +285,76 @@ class TrainingDataset:
             "is_valid": self.is_valid,
             "validation_errors": self.validation_errors,
         }
+
+
+@dataclass
+class EvaluationMetrics:
+    """Evaluation metrics for a trained adapter"""
+
+    # Core metrics
+    loss: float
+    perplexity: float
+
+    # Accuracy metrics
+    accuracy: Optional[float] = None
+    exact_match: Optional[float] = None
+
+    # Token-level metrics
+    token_accuracy: Optional[float] = None
+    bleu_score: Optional[float] = None
+
+    # Quality metrics
+    coherence_score: Optional[float] = None
+    fluency_score: Optional[float] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary"""
+        return asdict(self)
+
+
+@dataclass
+class EvaluationResult:
+    """Complete evaluation result for an adapter"""
+
+    eval_id: str
+    job_id: str
+    agent_id: str
+    adapter_name: str
+    adapter_path: str
+
+    # Dataset info
+    dataset_path: str
+    num_examples: int
+
+    # Metrics
+    metrics: EvaluationMetrics
+
+    # Sample predictions (for debugging/inspection)
+    sample_predictions: List[Dict[str, str]] = field(default_factory=list)
+
+    # Metadata
+    created_at: float = field(default_factory=time.time)
+    duration_seconds: float = 0.0
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary"""
+        return {
+            "eval_id": self.eval_id,
+            "job_id": self.job_id,
+            "agent_id": self.agent_id,
+            "adapter_name": self.adapter_name,
+            "adapter_path": self.adapter_path,
+            "dataset_path": self.dataset_path,
+            "num_examples": self.num_examples,
+            "metrics": self.metrics.to_dict(),
+            "sample_predictions": self.sample_predictions,
+            "created_at": self.created_at,
+            "duration_seconds": self.duration_seconds,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "EvaluationResult":
+        """Create from dictionary"""
+        data = data.copy()
+        data["metrics"] = EvaluationMetrics(**data["metrics"])
+        return cls(**data)

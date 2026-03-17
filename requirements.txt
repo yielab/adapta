@@ -28,6 +28,9 @@ rich>=13.7.0
 httpx>=0.26.0
 aiohttp>=3.9.0
 
+# System monitoring
+psutil>=5.9.0
+
 # Optional: For training
 # torch>=2.2.0
 # transformers>=4.38.0

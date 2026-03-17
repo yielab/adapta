@@ -55,14 +55,65 @@ def create_dashboard_app() -> FastAPI:
     @app.get("/api/stats")
     async def get_stats():
         """Get system statistics"""
+        from brain.core.gpu import get_gpu_config
+
         models = model_manager.list_models()
         agents = agent_manager.list_agents()
 
         loaded_models = [m.name for m in models if m.loaded]
         available_models = [m.name for m in models if m.path.exists()]
 
+        # Get GPU info
+        gpu_config = get_gpu_config()
+        gpu_info = {
+            "available": gpu_config.available,
+            "type": gpu_config.gpu_type,
+            "device_count": gpu_config.device_count,
+            "gpu_layers": gpu_config.gpu_layers,
+        }
+        if gpu_config.gpus:
+            gpu_info["device_name"] = gpu_config.gpus[0].name
+            gpu_info["memory_total_mb"] = gpu_config.gpus[0].memory_total
+            gpu_info["memory_free_mb"] = gpu_config.gpus[0].memory_free
+
+        # Get cache stats
+        from brain.core.cache import get_cache_manager
+        cache_manager = get_cache_manager()
+        cache_stats = cache_manager.get_all_stats()
+
+        cache_info = {
+            "response": {
+                "entries": cache_stats['response'].total_entries,
+                "hit_rate": round(cache_stats['response'].hit_rate, 1),
+                "hits": cache_stats['response'].hits,
+                "misses": cache_stats['response'].misses
+            },
+            "embedding": {
+                "entries": cache_stats['embedding'].total_entries,
+                "hit_rate": round(cache_stats['embedding'].hit_rate, 1),
+            }
+        }
+
+        # Get queue stats
+        from brain.core.queue import get_queue
+        queue = get_queue()
+        queue_stats = queue.get_stats()
+
+        queue_info = {
+            "queued": queue_stats.queued,
+            "processing": queue_stats.processing,
+            "completed": queue_stats.completed,
+            "failed": queue_stats.failed,
+            "avg_wait_time": round(queue_stats.avg_wait_time, 3),
+            "avg_processing_time": round(queue_stats.avg_processing_time, 3),
+            "requests_per_minute": round(queue_stats.requests_per_minute, 1),
+        }
+
         return {
             "version": __version__,
+            "gpu": gpu_info,
+            "cache": cache_info,
+            "queue": queue_info,
             "models": {
                 "total": len(models),
                 "loaded": len(loaded_models),

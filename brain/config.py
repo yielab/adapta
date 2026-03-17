@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     models_dir: Path = Path("./data/models")
     agents_dir: Path = Path("./data/agents")
     cache_dir: Path = Path("./data/cache")
+    training_data_dir: Path = Path("./data/training_data")
 
     # Model settings
     default_model: str = "qwen2.5-3b-instruct"
@@ -45,6 +46,7 @@ class Settings(BaseSettings):
 
     # API settings
     api_key: Optional[str] = None  # Optional for local use
+    require_api_key: bool = False  # Set to True to require authentication
     cors_origins: list[str] = ["*"]
 
     # Performance
@@ -59,6 +61,7 @@ class Settings(BaseSettings):
         self.models_dir.mkdir(parents=True, exist_ok=True)
         self.agents_dir.mkdir(parents=True, exist_ok=True)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
+        self.training_data_dir.mkdir(parents=True, exist_ok=True)
 
 
 # Global settings instance

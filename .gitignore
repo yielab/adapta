@@ -37,6 +37,8 @@ ENV/
 data/models/
 data/agents/
 data/cache/
+data/training_data/
+data/training_jobs/
 *.gguf
 *.safetensors
 

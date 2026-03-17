@@ -346,6 +346,199 @@
             color: #ef4444;
         }
 
+        /* Chat Interface */
+        .chat-container {
+            display: flex;
+            flex-direction: column;
+            height: 600px;
+            background: #0f172a;
+            border: 1px solid #334155;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        .chat-header {
+            background: #1e293b;
+            padding: 15px 20px;
+            border-bottom: 1px solid #334155;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .chat-header-left {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            flex: 1;
+        }
+
+        .chat-header-right {
+            display: flex;
+            gap: 10px;
+        }
+
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .chat-message {
+            display: flex;
+            gap: 10px;
+            max-width: 80%;
+            animation: slideIn 0.3s ease-out;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .chat-message.user {
+            align-self: flex-end;
+            flex-direction: row-reverse;
+        }
+
+        .chat-message.assistant {
+            align-self: flex-start;
+        }
+
+        .chat-message-avatar {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.2em;
+            flex-shrink: 0;
+        }
+
+        .chat-message.user .chat-message-avatar {
+            background: #60a5fa;
+            color: #0f172a;
+        }
+
+        .chat-message.assistant .chat-message-avatar {
+            background: #334155;
+            color: #e2e8f0;
+        }
+
+        .chat-message-content {
+            background: #1e293b;
+            padding: 12px 16px;
+            border-radius: 12px;
+            border: 1px solid #334155;
+        }
+
+        .chat-message.user .chat-message-content {
+            background: #60a5fa;
+            color: #0f172a;
+            border-color: #60a5fa;
+        }
+
+        .chat-message-time {
+            font-size: 0.75em;
+            color: #64748b;
+            margin-top: 5px;
+        }
+
+        .chat-input-container {
+            padding: 15px 20px;
+            background: #1e293b;
+            border-top: 1px solid #334155;
+            display: flex;
+            gap: 10px;
+        }
+
+        .chat-input {
+            flex: 1;
+            background: #0f172a;
+            border: 1px solid #334155;
+            border-radius: 6px;
+            padding: 12px 16px;
+            color: #e2e8f0;
+            font-size: 0.95em;
+            font-family: inherit;
+            resize: none;
+            max-height: 120px;
+        }
+
+        .chat-input:focus {
+            outline: none;
+            border-color: #60a5fa;
+        }
+
+        .chat-input::placeholder {
+            color: #64748b;
+        }
+
+        .chat-send-btn {
+            background: #60a5fa;
+            color: #0f172a;
+            border: none;
+            border-radius: 6px;
+            padding: 12px 24px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s;
+            white-space: nowrap;
+        }
+
+        .chat-send-btn:hover:not(:disabled) {
+            background: #3b82f6;
+        }
+
+        .chat-send-btn:disabled {
+            background: #334155;
+            color: #64748b;
+            cursor: not-allowed;
+        }
+
+        .chat-typing-indicator {
+            display: flex;
+            gap: 4px;
+            padding: 8px 0;
+        }
+
+        .chat-typing-dot {
+            width: 8px;
+            height: 8px;
+            background: #64748b;
+            border-radius: 50%;
+            animation: typing 1.4s infinite;
+        }
+
+        .chat-typing-dot:nth-child(2) {
+            animation-delay: 0.2s;
+        }
+
+        .chat-typing-dot:nth-child(3) {
+            animation-delay: 0.4s;
+        }
+
+        @keyframes typing {
+            0%, 60%, 100% {
+                transform: translateY(0);
+                opacity: 0.5;
+            }
+            30% {
+                transform: translateY(-10px);
+                opacity: 1;
+            }
+        }
+
         /* Status Indicators */
         .status-indicator {
             display: inline-block;
@@ -418,6 +611,146 @@
             margin-bottom: 20px;
         }
 
+        /* Notification System */
+        .notification-container {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 10000;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            max-width: 400px;
+        }
+
+        .notification {
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 8px;
+            padding: 16px 20px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            animation: slideInRight 0.3s ease-out;
+            min-width: 300px;
+        }
+
+        @keyframes slideInRight {
+            from {
+                opacity: 0;
+                transform: translateX(100%);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
+        .notification.notification-success {
+            border-left: 4px solid #10b981;
+        }
+
+        .notification.notification-error {
+            border-left: 4px solid #ef4444;
+        }
+
+        .notification.notification-warning {
+            border-left: 4px solid #f59e0b;
+        }
+
+        .notification.notification-info {
+            border-left: 4px solid #60a5fa;
+        }
+
+        .notification-icon {
+            font-size: 1.5em;
+            flex-shrink: 0;
+        }
+
+        .notification-success .notification-icon {
+            color: #10b981;
+        }
+
+        .notification-error .notification-icon {
+            color: #ef4444;
+        }
+
+        .notification-warning .notification-icon {
+            color: #f59e0b;
+        }
+
+        .notification-info .notification-icon {
+            color: #60a5fa;
+        }
+
+        .notification-content {
+            flex: 1;
+        }
+
+        .notification-title {
+            font-weight: 600;
+            color: #e2e8f0;
+            margin-bottom: 4px;
+            font-size: 0.95em;
+        }
+
+        .notification-message {
+            color: #94a3b8;
+            font-size: 0.85em;
+            line-height: 1.4;
+        }
+
+        .notification-close {
+            background: none;
+            border: none;
+            color: #64748b;
+            cursor: pointer;
+            padding: 0;
+            width: 20px;
+            height: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            font-size: 1.2em;
+            transition: color 0.2s;
+        }
+
+        .notification-close:hover {
+            color: #e2e8f0;
+        }
+
+        .notification-actions {
+            margin-top: 8px;
+            display: flex;
+            gap: 8px;
+        }
+
+        .notification-action {
+            background: #334155;
+            border: none;
+            color: #e2e8f0;
+            padding: 4px 12px;
+            border-radius: 4px;
+            font-size: 0.75em;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .notification-action:hover {
+            background: #475569;
+        }
+
+        .notification-action.primary {
+            background: #60a5fa;
+            color: #0f172a;
+        }
+
+        .notification-action.primary:hover {
+            background: #3b82f6;
+        }
+
         /* Forms */
         .form-group {
             margin-bottom: 20px;
@@ -452,6 +785,47 @@
             min-height: 100px;
             resize: vertical;
             font-family: inherit;
+        }
+
+        .form-range {
+            width: 100%;
+            height: 6px;
+            border-radius: 3px;
+            background: #334155;
+            outline: none;
+            -webkit-appearance: none;
+            appearance: none;
+        }
+
+        .form-range::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: #60a5fa;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .form-range::-moz-range-thumb {
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: #60a5fa;
+            cursor: pointer;
+            border: none;
+            transition: all 0.2s;
+        }
+
+        .form-range::-webkit-slider-thumb:hover {
+            background: #3b82f6;
+            transform: scale(1.1);
+        }
+
+        .form-range::-moz-range-thumb:hover {
+            background: #3b82f6;
+            transform: scale(1.1);
         }
 
         .form-file {
@@ -599,6 +973,9 @@
     </style>
 </head>
 <body>
+    <!-- Notification Container -->
+    <div id="notification-container" class="notification-container"></div>
+
     <div class="container">
         <header>
             <h1>🧠 Brain From Cero Dashboard</h1>
@@ -611,7 +988,10 @@
             <button class="tab-btn" onclick="switchTab('catalog')">📦 Model Catalog</button>
             <button class="tab-btn" onclick="switchTab('models')">🤖 Loaded Models</button>
             <button class="tab-btn" onclick="switchTab('agents')">👥 Agents</button>
+            <button class="tab-btn" onclick="switchTab('chat')">💬 Chat</button>
+            <button class="tab-btn" onclick="switchTab('documents')">📄 Documents</button>
             <button class="tab-btn" onclick="switchTab('training')">🎓 Training</button>
+            <button class="tab-btn" onclick="switchTab('vision')">👁️ Vision</button>
             <button class="tab-btn" onclick="switchTab('logs')">📝 Logs</button>
         </div>
 
@@ -643,10 +1023,40 @@
                 </div>
 
                 <div class="card">
+                    <h2>⚡ GPU/Hardware</h2>
+                    <div id="gpu-summary">
+                        <div class="stat">
+                            <span class="stat-label">Status</span>
+                            <span class="stat-value">-</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
                     <h2>👥 Agents</h2>
                     <div id="agents-summary">
                         <div class="stat">
                             <span class="stat-label">Total Agents</span>
+                            <span class="stat-value">-</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h2>💾 Cache Performance</h2>
+                    <div id="cache-summary">
+                        <div class="stat">
+                            <span class="stat-label">Response Hit Rate</span>
+                            <span class="stat-value">-</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h2>📬 Request Queue</h2>
+                    <div id="queue-summary">
+                        <div class="stat">
+                            <span class="stat-label">Queued</span>
                             <span class="stat-value">-</span>
                         </div>
                     </div>
@@ -888,6 +1298,241 @@
             </div>
         </div>
 
+        <!-- Documents Tab -->
+        <div id="documents-tab" class="tab-content">
+            <!-- Agent Selection -->
+            <div class="card">
+                <h2>📄 Document Management</h2>
+                <p style="color: #94a3b8; margin-bottom: 15px;">Upload documents to enhance your agents with specialized knowledge using RAG (Retrieval-Augmented Generation)</p>
+
+                <div style="margin-bottom: 20px;">
+                    <label style="display: block; margin-bottom: 8px; color: #cbd5e1; font-weight: 500;">Select Agent:</label>
+                    <select id="doc-agent-select" class="form-input" onchange="loadAgentDocuments()" style="width: 100%; padding: 10px; background: #334155; border: 1px solid #475569; border-radius: 6px; color: #e2e8f0;">
+                        <option value="">-- Select an agent --</option>
+                    </select>
+                </div>
+
+                <div id="doc-agent-info" style="display: none;">
+                    <!-- Upload Section -->
+                    <div style="background: #1e293b; padding: 20px; border-radius: 6px; margin-bottom: 20px;">
+                        <h3 style="color: #60a5fa; margin-bottom: 15px;">📤 Upload Document</h3>
+
+                        <div style="margin-bottom: 15px;">
+                            <p style="color: #94a3b8; font-size: 0.9em; margin-bottom: 10px;">Supported formats: .txt, .md, .json, .pdf</p>
+                            <input type="file" id="doc-file-input" accept=".txt,.md,.json,.pdf" style="display: none;" onchange="handleFileSelected()">
+                            <button class="btn btn-primary" onclick="document.getElementById('doc-file-input').click()">
+                                📁 Choose File
+                            </button>
+                            <span id="selected-filename" style="margin-left: 15px; color: #cbd5e1;"></span>
+                        </div>
+
+                        <button id="upload-doc-btn" class="btn btn-success" onclick="uploadDocument()" disabled style="opacity: 0.5;">
+                            ⬆️ Upload Document
+                        </button>
+                        <div id="upload-status" style="margin-top: 10px; padding: 10px; border-radius: 4px; display: none;"></div>
+                    </div>
+
+                    <!-- RAG Stats -->
+                    <div style="background: #1e293b; padding: 20px; border-radius: 6px; margin-bottom: 20px;">
+                        <h3 style="color: #60a5fa; margin-bottom: 15px;">📊 Knowledge Base Stats</h3>
+                        <div id="rag-stats">
+                            <div class="stat">
+                                <span class="stat-label">Total Chunks</span>
+                                <span class="stat-value" id="total-chunks">0</span>
+                            </div>
+                            <div class="stat" style="margin-top: 10px;">
+                                <span class="stat-label">Collection</span>
+                                <span class="stat-value" id="collection-name" style="font-size: 0.9em;">-</span>
+                            </div>
+                        </div>
+                        <button class="btn btn-sm btn-secondary" onclick="refreshRAGStats()" style="margin-top: 15px;">
+                            🔄 Refresh Stats
+                        </button>
+                    </div>
+
+                    <!-- Test Search -->
+                    <div style="background: #1e293b; padding: 20px; border-radius: 6px;">
+                        <h3 style="color: #60a5fa; margin-bottom: 15px;">🔍 Test Document Search</h3>
+                        <p style="color: #94a3b8; font-size: 0.9em; margin-bottom: 10px;">
+                            Test semantic search across uploaded documents
+                        </p>
+                        <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+                            <input type="text" id="search-query" placeholder="Enter search query..." class="form-input" style="flex: 1; padding: 10px; background: #334155; border: 1px solid #475569; border-radius: 6px; color: #e2e8f0;">
+                            <button class="btn btn-primary" onclick="searchDocuments()">🔍 Search</button>
+                        </div>
+                        <div id="search-results" style="margin-top: 15px;"></div>
+                    </div>
+
+                    <!-- Danger Zone -->
+                    <div style="background: #4c1d1d; padding: 20px; border-radius: 6px; border: 1px solid #7f1d1d; margin-top: 20px;">
+                        <h3 style="color: #f87171; margin-bottom: 10px;">⚠️ Danger Zone</h3>
+                        <p style="color: #fca5a5; font-size: 0.9em; margin-bottom: 15px;">
+                            Clear all documents from this agent's knowledge base. This cannot be undone.
+                        </p>
+                        <button class="btn btn-danger" onclick="clearDocuments()">
+                            🗑️ Clear All Documents
+                        </button>
+                    </div>
+                </div>
+
+                <div id="doc-no-agent" style="text-align: center; padding: 40px; color: #94a3b8;">
+                    <div style="font-size: 3em; margin-bottom: 15px;">📄</div>
+                    <p>Select an agent to manage documents</p>
+                </div>
+            </div>
+
+            <!-- Usage Guide -->
+            <div class="card">
+                <h2>💡 How Document Upload Works</h2>
+                <div style="color: #cbd5e1; line-height: 1.8;">
+                    <h3 style="color: #60a5fa; margin-top: 15px; margin-bottom: 10px;">1. Upload Documents</h3>
+                    <p style="color: #94a3b8;">
+                        Upload text files, markdown, PDFs, or JSON files containing knowledge for your agent.
+                        The system will automatically chunk and embed the content.
+                    </p>
+
+                    <h3 style="color: #60a5fa; margin-top: 15px; margin-bottom: 10px;">2. Semantic Search</h3>
+                    <p style="color: #94a3b8;">
+                        Documents are split into chunks and embedded using sentence transformers.
+                        When you query the agent, relevant chunks are retrieved and added to the context.
+                    </p>
+
+                    <h3 style="color: #60a5fa; margin-top: 15px; margin-bottom: 10px;">3. Enhanced Responses</h3>
+                    <p style="color: #94a3b8;">
+                        Your agent will use the uploaded documents to provide more accurate and detailed responses.
+                        Enable RAG when chatting to use document knowledge.
+                    </p>
+
+                    <h3 style="color: #60a5fa; margin-top: 15px; margin-bottom: 10px;">📝 Example Use Cases</h3>
+                    <ul style="margin-left: 20px; color: #94a3b8;">
+                        <li>Product documentation for customer support agents</li>
+                        <li>Company policies and procedures</li>
+                        <li>Technical manuals and guides</li>
+                        <li>Research papers and articles</li>
+                        <li>FAQ documents</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- Vision Tab -->
+        <div id="vision-tab" class="tab-content">
+            <div class="card">
+                <h2>👁️ Vision Model Testing</h2>
+                <p style="color: #94a3b8; margin-bottom: 20px;">
+                    Test vision models like Moondream2 by uploading images and asking questions about them.
+                </p>
+
+                <!-- Vision Model Selector -->
+                <div style="margin-bottom: 20px;">
+                    <label style="display: block; margin-bottom: 8px; color: #60a5fa; font-weight: bold;">Vision Model:</label>
+                    <select id="vision-model-select" style="width: 100%; padding: 12px; background: #334155; color: #e2e8f0; border: 2px solid #475569; border-radius: 6px; font-size: 1em;">
+                        <option value="moondream2">Moondream2 (Vision Model)</option>
+                    </select>
+                </div>
+
+                <!-- Image Upload -->
+                <div style="margin-bottom: 20px;">
+                    <label style="display: block; margin-bottom: 8px; color: #60a5fa; font-weight: bold;">Upload Image:</label>
+                    <input type="file" id="vision-image-input" accept="image/*"
+                           style="width: 100%; padding: 12px; background: #334155; color: #e2e8f0; border: 2px solid #475569; border-radius: 6px; cursor: pointer;">
+                </div>
+
+                <!-- Image Preview -->
+                <div id="vision-image-preview" style="display: none; margin-bottom: 20px; text-align: center;">
+                    <img id="vision-preview-img" src="" alt="Preview" style="max-width: 100%; max-height: 400px; border-radius: 8px; border: 2px solid #475569;">
+                </div>
+
+                <!-- Prompt Input -->
+                <div style="margin-bottom: 20px;">
+                    <label style="display: block; margin-bottom: 8px; color: #60a5fa; font-weight: bold;">Question about the image:</label>
+                    <textarea id="vision-prompt-input" rows="3" placeholder="What do you see in this image?"
+                              style="width: 100%; padding: 12px; background: #334155; color: #e2e8f0; border: 2px solid #475569; border-radius: 6px; font-size: 1em; resize: vertical;"></textarea>
+                </div>
+
+                <!-- Temperature Control -->
+                <div style="margin-bottom: 20px; display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                    <div>
+                        <label style="display: block; margin-bottom: 8px; color: #60a3b8; font-weight: bold;">Temperature: <span id="vision-temp-value">0.7</span></label>
+                        <input type="range" id="vision-temperature" min="0" max="1" step="0.1" value="0.7"
+                               oninput="document.getElementById('vision-temp-value').textContent = this.value"
+                               style="width: 100%;">
+                    </div>
+                    <div>
+                        <label style="display: block; margin-bottom: 8px; color: #94a3b8; font-weight: bold;">Max Tokens: <span id="vision-tokens-value">256</span></label>
+                        <input type="range" id="vision-max-tokens" min="64" max="512" step="64" value="256"
+                               oninput="document.getElementById('vision-tokens-value').textContent = this.value"
+                               style="width: 100%;">
+                    </div>
+                </div>
+
+                <!-- Submit Button -->
+                <button id="vision-submit-btn" onclick="submitVisionQuery()"
+                        class="btn btn-primary" style="width: 100%; font-size: 1.1em; padding: 15px;">
+                    🚀 Analyze Image
+                </button>
+
+                <!-- Response Area -->
+                <div id="vision-response-area" style="display: none; margin-top: 25px; padding: 20px; background: #0f172a; border: 2px solid #475569; border-radius: 8px;">
+                    <h3 style="color: #60a5fa; margin-bottom: 15px;">📊 Response</h3>
+                    <div id="vision-response-content" style="color: #e2e8f0; line-height: 1.8; white-space: pre-wrap;"></div>
+
+                    <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #334155; display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;">
+                        <div style="text-align: center;">
+                            <div style="color: #94a3b8; font-size: 0.85em;">Model</div>
+                            <div id="vision-response-model" style="color: #60a5fa; font-weight: bold;">-</div>
+                        </div>
+                        <div style="text-align: center;">
+                            <div style="color: #94a3b8; font-size: 0.85em;">Image Size</div>
+                            <div id="vision-response-image-size" style="color: #60a5fa; font-weight: bold;">-</div>
+                        </div>
+                        <div style="text-align: center;">
+                            <div style="color: #94a3b8; font-size: 0.85em;">Tokens</div>
+                            <div id="vision-response-tokens" style="color: #60a5fa; font-weight: bold;">-</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Example Prompts -->
+                <div style="margin-top: 25px; padding: 20px; background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); border: 2px solid #475569; border-radius: 8px;">
+                    <h3 style="color: #60a5fa; margin-bottom: 15px;">💡 Example Prompts</h3>
+                    <div style="display: grid; gap: 10px;">
+                        <button onclick="document.getElementById('vision-prompt-input').value = 'Describe what you see in this image in detail.'"
+                                style="padding: 10px; background: #334155; color: #e2e8f0; border: 1px solid #475569; border-radius: 6px; cursor: pointer; text-align: left; transition: background 0.2s;"
+                                onmouseover="this.style.background='#475569'" onmouseout="this.style.background='#334155'">
+                            "Describe what you see in this image in detail."
+                        </button>
+                        <button onclick="document.getElementById('vision-prompt-input').value = 'What colors are present in this image?'"
+                                style="padding: 10px; background: #334155; color: #e2e8f0; border: 1px solid #475569; border-radius: 6px; cursor: pointer; text-align: left; transition: background 0.2s;"
+                                onmouseover="this.style.background='#475569'" onmouseout="this.style.background='#334155'">
+                            "What colors are present in this image?"
+                        </button>
+                        <button onclick="document.getElementById('vision-prompt-input').value = 'Is there any text visible in this image?'"
+                                style="padding: 10px; background: #334155; color: #e2e8f0; border: 1px solid #475569; border-radius: 6px; cursor: pointer; text-align: left; transition: background 0.2s;"
+                                onmouseover="this.style.background='#475569'" onmouseout="this.style.background='#334155'">
+                            "Is there any text visible in this image?"
+                        </button>
+                        <button onclick="document.getElementById('vision-prompt-input').value = 'What is the mood or atmosphere of this image?'"
+                                style="padding: 10px; background: #334155; color: #e2e8f0; border: 1px solid #475569; border-radius: 6px; cursor: pointer; text-align: left; transition: background 0.2s;"
+                                onmouseover="this.style.background='#475569'" onmouseout="this.style.background='#334155'">
+                            "What is the mood or atmosphere of this image?"
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Info Box -->
+                <div style="margin-top: 20px; padding: 15px; background: #1e293b; border-left: 4px solid #60a5fa; border-radius: 6px;">
+                    <div style="color: #60a5fa; font-weight: bold; margin-bottom: 8px;">ℹ️ How it works</div>
+                    <div style="color: #94a3b8; font-size: 0.95em; line-height: 1.6;">
+                        1. Upload an image (PNG, JPG, WebP, etc.)<br>
+                        2. Ask a question about the image<br>
+                        3. The vision model will analyze the image and provide a response<br>
+                        4. Adjust temperature for more creative (higher) or focused (lower) responses
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Logs Tab -->
         <div id="logs-tab" class="tab-content">
             <div class="card">
@@ -906,12 +1551,188 @@
                 </div>
             </div>
         </div>
+
+        <!-- Chat Tab -->
+        <div id="chat-tab" class="tab-content">
+            <div class="card">
+                <h2>💬 Agent Chat Interface</h2>
+                <p style="color: #94a3b8; margin-bottom: 20px;">Test your agents directly in the browser with real-time streaming responses</p>
+
+                <div class="chat-container">
+                    <!-- Chat Header -->
+                    <div class="chat-header">
+                        <div class="chat-header-left">
+                            <label for="chat-agent-select" style="color: #94a3b8;">Agent:</label>
+                            <select id="chat-agent-select" class="form-select" onchange="resetChat()">
+                                <option value="">Loading agents...</option>
+                            </select>
+
+                            <label for="chat-model-select" style="color: #94a3b8;">Model:</label>
+                            <select id="chat-model-select" class="form-select">
+                                <option value="">Auto (use agent default)</option>
+                            </select>
+                        </div>
+
+                        <div class="chat-header-right">
+                            <button class="btn btn-sm btn-secondary" onclick="exportChat()">💾 Export</button>
+                            <button class="btn btn-sm btn-danger" onclick="clearChat()">🗑️ Clear</button>
+                        </div>
+                    </div>
+
+                    <!-- Chat Messages -->
+                    <div class="chat-messages" id="chat-messages">
+                        <div class="empty-state">
+                            <div class="empty-state-icon">💬</div>
+                            <p>Start a conversation with your agent</p>
+                            <p style="font-size: 0.9em; margin-top: 10px;">Select an agent above and type a message below</p>
+                        </div>
+                    </div>
+
+                    <!-- Chat Input -->
+                    <div class="chat-input-container">
+                        <textarea
+                            id="chat-input"
+                            class="chat-input"
+                            placeholder="Type your message... (Shift+Enter for new line, Enter to send)"
+                            rows="1"
+                            onkeydown="handleChatKeydown(event)"
+                        ></textarea>
+                        <button id="chat-send-btn" class="chat-send-btn" onclick="sendChatMessage()">
+                            Send
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Chat Statistics -->
+                <div style="margin-top: 20px; padding: 15px; background: #1e293b; border-radius: 8px;">
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px;">
+                        <div class="stat">
+                            <span class="stat-label">Messages</span>
+                            <span class="stat-value" id="chat-message-count">0</span>
+                        </div>
+                        <div class="stat">
+                            <span class="stat-label">Tokens (est.)</span>
+                            <span class="stat-value" id="chat-token-count">0</span>
+                        </div>
+                        <div class="stat">
+                            <span class="stat-label">Last Response</span>
+                            <span class="stat-value" id="chat-last-response">-</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script>
         let catalogData = null;
         let currentFilter = 'all';
         let currentTypeFilter = 'all';
+
+        // ========== Notification System ==========
+
+        let notificationId = 0;
+
+        function showNotification(message, type = 'info', options = {}) {
+            const {
+                title = getDefaultTitle(type),
+                duration = 5000,
+                actions = [],
+                details = null
+            } = options;
+
+            const container = document.getElementById('notification-container');
+            const id = `notification-${notificationId++}`;
+
+            const notification = document.createElement('div');
+            notification.className = `notification notification-${type}`;
+            notification.id = id;
+
+            const icon = getIcon(type);
+
+            let html = `
+                <div class="notification-icon">${icon}</div>
+                <div class="notification-content">
+                    <div class="notification-title">${title}</div>
+                    <div class="notification-message">${message}</div>
+            `;
+
+            if (details) {
+                html += `<div class="notification-message" style="margin-top: 4px; font-family: monospace;">${details}</div>`;
+            }
+
+            if (actions.length > 0) {
+                html += '<div class="notification-actions">';
+                actions.forEach(action => {
+                    html += `<button class="notification-action ${action.primary ? 'primary' : ''}" onclick="${action.onclick}">${action.label}</button>`;
+                });
+                html += '</div>';
+            }
+
+            html += `
+                </div>
+                <button class="notification-close" onclick="closeNotification('${id}')">&times;</button>
+            `;
+
+            notification.innerHTML = html;
+            container.appendChild(notification);
+
+            if (duration > 0) {
+                setTimeout(() => closeNotification(id), duration);
+            }
+
+            return id;
+        }
+
+        function closeNotification(id) {
+            const notification = document.getElementById(id);
+            if (notification) {
+                notification.style.animation = 'slideInRight 0.3s ease-out reverse';
+                setTimeout(() => notification.remove(), 300);
+            }
+        }
+
+        function getDefaultTitle(type) {
+            const titles = {
+                success: 'Success',
+                error: 'Error',
+                warning: 'Warning',
+                info: 'Information'
+            };
+            return titles[type] || 'Notification';
+        }
+
+        function getIcon(type) {
+            const icons = {
+                success: '✓',
+                error: '✕',
+                warning: '⚠',
+                info: 'ℹ'
+            };
+            return icons[type] || 'ℹ';
+        }
+
+        // Error helper with troubleshooting suggestions
+        function showError(message, error = null, suggestions = []) {
+            let details = null;
+            if (error) {
+                if (error.detail) {
+                    details = typeof error.detail === 'string' ? error.detail : JSON.stringify(error.detail);
+                } else if (error.message) {
+                    details = error.message;
+                }
+            }
+
+            let fullMessage = message;
+            if (suggestions.length > 0) {
+                fullMessage += '\n\nSuggestions:\n' + suggestions.map(s => '• ' + s).join('\n');
+            }
+
+            showNotification(fullMessage, 'error', {
+                duration: 8000,
+                details: details
+            });
+        }
 
         // Tab Switching
         function switchTab(tabName) {
@@ -1042,6 +1863,16 @@
                                 Error: ${job.error_message}
                             </div>
                         ` : ''}
+                        ${['training', 'completed', 'evaluating'].includes(job.state) ? `
+                            <button class="btn btn-sm" onclick="showTrainingMetrics('${job.job_id}', '${job.agent_id}')" style="margin-top: 10px; font-size: 0.85em; margin-right: 5px;">
+                                📊 View Metrics
+                            </button>
+                        ` : ''}
+                        ${job.state === 'completed' ? `
+                            <button class="btn btn-sm" onclick="evaluateAdapter('${job.job_id}', '${job.agent_id}')" style="margin-top: 10px; font-size: 0.85em; background: #10b981; border-color: #10b981;">
+                                🧪 Evaluate
+                            </button>
+                        ` : ''}
                     </div>
                 `).join('');
 
@@ -1121,17 +1952,25 @@
                 });
 
                 if (response.ok) {
-                    alert('Dataset uploaded successfully!');
+                    showNotification('Dataset uploaded and validated successfully!', 'success');
                     closeModal('upload-data-modal');
                     loadDatasets(selectedAgentId);
                     event.target.reset();
                 } else {
                     const error = await response.json();
-                    alert('Failed to upload dataset: ' + (error.detail || 'Unknown error'));
+                    showError('Failed to upload dataset', error, [
+                        'Check that your file is in JSONL format',
+                        'Ensure each line has "messages" field',
+                        'Verify file size is under limits'
+                    ]);
                 }
             } catch (error) {
                 console.error('Failed to upload dataset:', error);
-                alert('Error uploading dataset');
+                showError('Error uploading dataset', error, [
+                    'Check your network connection',
+                    'Ensure the server is running',
+                    'Try uploading a smaller file'
+                ]);
             }
         }
 
@@ -1203,6 +2042,40 @@
                     </div>
                 `;
 
+                // Update GPU summary
+                const gpuHtml = data.gpu.available ? `
+                    <div class="stat">
+                        <span class="stat-label">Type</span>
+                        <span class="stat-value">${data.gpu.type.toUpperCase()}</span>
+                    </div>
+                    ${data.gpu.device_name ? `
+                    <div class="stat">
+                        <span class="stat-label">Device</span>
+                        <span class="stat-value" style="font-size: 0.8em;">${data.gpu.device_name}</span>
+                    </div>
+                    ` : ''}
+                    ${data.gpu.memory_total_mb ? `
+                    <div class="stat">
+                        <span class="stat-label">VRAM</span>
+                        <span class="stat-value">${(data.gpu.memory_free_mb / 1024).toFixed(1)} / ${(data.gpu.memory_total_mb / 1024).toFixed(1)} GB</span>
+                    </div>
+                    ` : ''}
+                    <div class="stat">
+                        <span class="stat-label">GPU Layers</span>
+                        <span class="stat-value">${data.gpu.gpu_layers === -1 ? 'All' : data.gpu.gpu_layers}</span>
+                    </div>
+                ` : `
+                    <div class="stat">
+                        <span class="stat-label">Status</span>
+                        <span class="stat-value">CPU Only</span>
+                    </div>
+                    <div class="stat">
+                        <span class="stat-label">GPU</span>
+                        <span class="stat-value">Not Detected</span>
+                    </div>
+                `;
+                document.querySelector('#gpu-summary').innerHTML = gpuHtml;
+
                 // Update agents summary
                 document.querySelector('#agents-summary').innerHTML = `
                     <div class="stat">
@@ -1210,6 +2083,52 @@
                         <span class="stat-value">${data.agents.total}</span>
                     </div>
                 `;
+
+                // Update cache summary
+                const cacheHtml = `
+                    <div class="stat">
+                        <span class="stat-label">Response Hit Rate</span>
+                        <span class="stat-value">${data.cache.response.hit_rate}%</span>
+                    </div>
+                    <div class="stat">
+                        <span class="stat-label">Cached Responses</span>
+                        <span class="stat-value">${data.cache.response.entries}</span>
+                    </div>
+                    <div class="stat">
+                        <span class="stat-label">Cache Hits/Misses</span>
+                        <span class="stat-value">${data.cache.response.hits}/${data.cache.response.misses}</span>
+                    </div>
+                    <div class="stat">
+                        <span class="stat-label">Cached Embeddings</span>
+                        <span class="stat-value">${data.cache.embedding.entries}</span>
+                    </div>
+                `;
+                document.querySelector('#cache-summary').innerHTML = cacheHtml;
+
+                // Update queue summary
+                const queueHtml = `
+                    <div class="stat">
+                        <span class="stat-label">Queued</span>
+                        <span class="stat-value">${data.queue.queued}</span>
+                    </div>
+                    <div class="stat">
+                        <span class="stat-label">Processing</span>
+                        <span class="stat-value">${data.queue.processing}</span>
+                    </div>
+                    <div class="stat">
+                        <span class="stat-label">Completed</span>
+                        <span class="stat-value">${data.queue.completed}</span>
+                    </div>
+                    <div class="stat">
+                        <span class="stat-label">Avg Wait Time</span>
+                        <span class="stat-value">${data.queue.avg_wait_time}s</span>
+                    </div>
+                    <div class="stat">
+                        <span class="stat-label">Requests/Min</span>
+                        <span class="stat-value">${data.queue.requests_per_minute}</span>
+                    </div>
+                `;
+                document.querySelector('#queue-summary').innerHTML = queueHtml;
             } catch (error) {
                 console.error('Failed to load stats:', error);
             }
@@ -1545,8 +2464,9 @@
 
                         <!-- Actions -->
                         <div class="btn-group">
-                            <button class="btn btn-sm btn-secondary" onclick="viewAgentDetails('${agent.id}')">👁️ View Details</button>
-                            <button class="btn btn-sm btn-secondary" onclick="viewAgentTraining('${agent.id}')">📊 Training History</button>
+                            <button class="btn btn-sm btn-primary" onclick="showEditAgentModal('${agent.id}')">⚙️ Configure</button>
+                            <button class="btn btn-sm btn-secondary" onclick="viewAgentDetails('${agent.id}')">👁️ Details</button>
+                            <button class="btn btn-sm btn-secondary" onclick="viewAgentTraining('${agent.id}')">📊 Training</button>
                             <button class="btn btn-sm btn-danger" onclick="deleteAgent('${agent.id}', '${agent.name}')">🗑️ Delete</button>
                         </div>
                     </div>
@@ -1560,15 +2480,26 @@
         async function loadAgentsDetailed() {
             await loadAgents();
 
-            // Populate agent select for training
+            // Populate agent selects for training and documents
             try {
                 const response = await fetch('/dashboard/api/stats');
                 const data = await response.json();
-                const select = document.getElementById('training-agent-select');
-                select.innerHTML = '<option value="">-- Select an agent --</option>' +
-                    data.agents.list.map(agent => `<option value="${agent.id}">${agent.name}</option>`).join('');
+
+                // Training select
+                const trainingSelect = document.getElementById('training-agent-select');
+                if (trainingSelect) {
+                    trainingSelect.innerHTML = '<option value="">-- Select an agent --</option>' +
+                        data.agents.list.map(agent => `<option value="${agent.id}">${agent.name}</option>`).join('');
+                }
+
+                // Documents select
+                const docSelect = document.getElementById('doc-agent-select');
+                if (docSelect) {
+                    docSelect.innerHTML = '<option value="">-- Select an agent --</option>' +
+                        data.agents.list.map(agent => `<option value="${agent.id}">${agent.name}</option>`).join('');
+                }
             } catch (error) {
-                console.error('Failed to load agents for training select:', error);
+                console.error('Failed to load agents for selects:', error);
             }
         }
 
@@ -1681,17 +2612,130 @@
                 });
 
                 if (response.ok) {
-                    alert('Agent created successfully!');
+                    const data = await response.json();
+                    showNotification(`Agent "${data.name}" created successfully!`, 'success', {
+                        duration: 4000
+                    });
                     closeModal('create-agent-modal');
                     loadAgentsDetailed();
                     event.target.reset();
                 } else {
                     const error = await response.json();
-                    alert('Failed to create agent: ' + (error.detail || 'Unknown error'));
+                    showError('Failed to create agent', error, [
+                        'Check that agent ID is unique',
+                        'Ensure model name is valid',
+                        'Verify all required fields are filled'
+                    ]);
                 }
             } catch (error) {
                 console.error('Failed to create agent:', error);
-                alert('Error creating agent');
+                showError('Error creating agent', error, [
+                    'Check your network connection',
+                    'Ensure the API server is running',
+                    'Try again in a few moments'
+                ]);
+            }
+        }
+
+        // Update slider value display
+        function updateSliderValue(elementId, value) {
+            document.getElementById(elementId).textContent = value;
+        }
+
+        // Show Edit Agent Modal
+        async function showEditAgentModal(agentId) {
+            try {
+                // Fetch agent details
+                const response = await fetch(`/v1/agents/${agentId}`);
+                if (!response.ok) {
+                    showError('Failed to load agent details');
+                    return;
+                }
+
+                const agent = await response.json();
+
+                // Populate form
+                document.getElementById('edit-agent-id').value = agent.id;
+                document.getElementById('edit-agent-name').value = agent.name;
+                document.getElementById('edit-agent-description').value = agent.description || '';
+                document.getElementById('edit-agent-model').value = agent.model;
+                document.getElementById('edit-agent-system-prompt').value = agent.system_prompt || '';
+
+                // Set temperature
+                const temp = agent.temperature || 0.7;
+                document.getElementById('edit-agent-temperature').value = temp;
+                document.getElementById('edit-temp-value').textContent = temp;
+
+                // Set max tokens
+                const maxTokens = agent.max_tokens || 512;
+                document.getElementById('edit-agent-max-tokens').value = maxTokens;
+                document.getElementById('edit-max-tokens-value').textContent = maxTokens;
+
+                // Set capabilities
+                const capabilities = agent.capabilities || [];
+                document.getElementById('edit-cap-chat').checked = capabilities.includes('chat');
+                document.getElementById('edit-cap-qa').checked = capabilities.includes('question_answering');
+                document.getElementById('edit-cap-planning').checked = capabilities.includes('task_planning');
+                document.getElementById('edit-cap-code').checked = capabilities.includes('code_generation');
+
+                // Show modal
+                document.getElementById('edit-agent-modal').classList.add('active');
+            } catch (error) {
+                console.error('Error loading agent:', error);
+                showError('Error loading agent configuration', error);
+            }
+        }
+
+        // Update Agent Configuration
+        async function updateAgentConfig(event) {
+            event.preventDefault();
+
+            const agentId = document.getElementById('edit-agent-id').value;
+
+            // Collect capabilities
+            const capabilities = [];
+            if (document.getElementById('edit-cap-chat').checked) capabilities.push('chat');
+            if (document.getElementById('edit-cap-qa').checked) capabilities.push('question_answering');
+            if (document.getElementById('edit-cap-planning').checked) capabilities.push('task_planning');
+            if (document.getElementById('edit-cap-code').checked) capabilities.push('code_generation');
+
+            const formData = {
+                name: document.getElementById('edit-agent-name').value,
+                description: document.getElementById('edit-agent-description').value,
+                model: document.getElementById('edit-agent-model').value,
+                system_prompt: document.getElementById('edit-agent-system-prompt').value,
+                temperature: parseFloat(document.getElementById('edit-agent-temperature').value),
+                max_tokens: parseInt(document.getElementById('edit-agent-max-tokens').value),
+                capabilities: capabilities
+            };
+
+            try {
+                const response = await fetch(`/v1/agents/${agentId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(formData)
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    showNotification(`Agent "${data.name}" updated successfully!`, 'success');
+                    closeModal('edit-agent-modal');
+                    loadAgentsDetailed();
+                } else {
+                    const error = await response.json();
+                    showError('Failed to update agent', error, [
+                        'Check that all required fields are filled',
+                        'Ensure model name is valid',
+                        'Verify parameter values are within range'
+                    ]);
+                }
+            } catch (error) {
+                console.error('Failed to update agent:', error);
+                showError('Error updating agent', error, [
+                    'Check your network connection',
+                    'Ensure the API server is running',
+                    'Try again in a few moments'
+                ]);
             }
         }
 
@@ -1728,10 +2772,910 @@
             loadAgents();
         }
 
+        // ===================================
+        // Vision Model Functions
+        // ===================================
+
+        // Image preview on file selection
+        document.addEventListener('DOMContentLoaded', function() {
+            const imageInput = document.getElementById('vision-image-input');
+            if (imageInput) {
+                imageInput.addEventListener('change', function(e) {
+                    const file = e.target.files[0];
+                    if (file) {
+                        const reader = new FileReader();
+                        reader.onload = function(event) {
+                            const preview = document.getElementById('vision-image-preview');
+                            const img = document.getElementById('vision-preview-img');
+                            img.src = event.target.result;
+                            preview.style.display = 'block';
+                        };
+                        reader.readAsDataURL(file);
+                    }
+                });
+            }
+        });
+
+        async function submitVisionQuery() {
+            const imageInput = document.getElementById('vision-image-input');
+            const promptInput = document.getElementById('vision-prompt-input');
+            const modelSelect = document.getElementById('vision-model-select');
+            const temperatureInput = document.getElementById('vision-temperature');
+            const maxTokensInput = document.getElementById('vision-max-tokens');
+            const submitBtn = document.getElementById('vision-submit-btn');
+            const responseArea = document.getElementById('vision-response-area');
+            const responseContent = document.getElementById('vision-response-content');
+
+            // Validation
+            if (!imageInput.files || imageInput.files.length === 0) {
+                alert('Please upload an image first');
+                return;
+            }
+
+            if (!promptInput.value.trim()) {
+                alert('Please enter a question about the image');
+                return;
+            }
+
+            // Disable button
+            submitBtn.disabled = true;
+            submitBtn.textContent = '⏳ Analyzing...';
+
+            try {
+                // Prepare form data
+                const formData = new FormData();
+                formData.append('image', imageInput.files[0]);
+                formData.append('model', modelSelect.value);
+                formData.append('prompt', promptInput.value);
+                formData.append('temperature', temperatureInput.value);
+                formData.append('max_tokens', maxTokensInput.value);
+
+                // Submit request
+                const response = await fetch('/vision/chat', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Vision API request failed');
+                }
+
+                const data = await response.json();
+
+                // Display response
+                responseContent.textContent = data.response;
+                document.getElementById('vision-response-model').textContent = data.model;
+                document.getElementById('vision-response-image-size').textContent =
+                    `${data.image_info.width}x${data.image_info.height}`;
+                document.getElementById('vision-response-tokens').textContent =
+                    `${data.total_tokens} (${data.prompt_tokens}+${data.completion_tokens})`;
+
+                responseArea.style.display = 'block';
+
+                // Scroll to response
+                responseArea.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+            } catch (error) {
+                console.error('Vision query error:', error);
+                alert(`Error: ${error.message}`);
+            } finally {
+                // Re-enable button
+                submitBtn.disabled = false;
+                submitBtn.textContent = '🚀 Analyze Image';
+            }
+        }
+
+        // ===================================
+        // Document Management Functions
+        // ===================================
+
+        let currentDocAgent = null;
+        let selectedFile = null;
+
+        async function loadAgentDocuments() {
+            const agentId = document.getElementById('doc-agent-select').value;
+            const infoDiv = document.getElementById('doc-agent-info');
+            const noAgentDiv = document.getElementById('doc-no-agent');
+
+            if (!agentId) {
+                infoDiv.style.display = 'none';
+                noAgentDiv.style.display = 'block';
+                currentDocAgent = null;
+                return;
+            }
+
+            currentDocAgent = agentId;
+            infoDiv.style.display = 'block';
+            noAgentDiv.style.display = 'none';
+
+            // Load RAG stats
+            await refreshRAGStats();
+        }
+
+        function handleFileSelected() {
+            const fileInput = document.getElementById('doc-file-input');
+            const filenameSpan = document.getElementById('selected-filename');
+            const uploadBtn = document.getElementById('upload-doc-btn');
+
+            if (fileInput.files.length > 0) {
+                selectedFile = fileInput.files[0];
+                filenameSpan.textContent = selectedFile.name;
+                uploadBtn.disabled = false;
+                uploadBtn.style.opacity = '1';
+            } else {
+                selectedFile = null;
+                filenameSpan.textContent = '';
+                uploadBtn.disabled = true;
+                uploadBtn.style.opacity = '0.5';
+            }
+        }
+
+        async function uploadDocument() {
+            if (!selectedFile || !currentDocAgent) {
+                showUploadStatus('Please select a file', 'error');
+                return;
+            }
+
+            const uploadBtn = document.getElementById('upload-doc-btn');
+            uploadBtn.disabled = true;
+            uploadBtn.textContent = '⏳ Uploading...';
+
+            try {
+                const formData = new FormData();
+                formData.append('file', selectedFile);
+
+                const response = await fetch(`/agents/${currentDocAgent}/documents`, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    showUploadStatus(`✅ ${data.message} (${data.num_chunks} chunks created)`, 'success');
+
+                    // Reset file input
+                    document.getElementById('doc-file-input').value = '';
+                    document.getElementById('selected-filename').textContent = '';
+                    selectedFile = null;
+
+                    // Refresh stats
+                    await refreshRAGStats();
+                } else {
+                    showUploadStatus(`❌ Error: ${data.detail}`, 'error');
+                }
+            } catch (error) {
+                showUploadStatus(`❌ Upload failed: ${error.message}`, 'error');
+            } finally {
+                uploadBtn.disabled = false;
+                uploadBtn.textContent = '⬆️ Upload Document';
+            }
+        }
+
+        function showUploadStatus(message, type) {
+            const statusDiv = document.getElementById('upload-status');
+            statusDiv.textContent = message;
+            statusDiv.style.display = 'block';
+
+            if (type === 'success') {
+                statusDiv.style.background = '#065f46';
+                statusDiv.style.color = '#d1fae5';
+                statusDiv.style.border = '1px solid #10b981';
+            } else {
+                statusDiv.style.background = '#7f1d1d';
+                statusDiv.style.color = '#fca5a5';
+                statusDiv.style.border = '1px solid #ef4444';
+            }
+
+            // Hide after 5 seconds
+            setTimeout(() => {
+                statusDiv.style.display = 'none';
+            }, 5000);
+        }
+
+        async function refreshRAGStats() {
+            if (!currentDocAgent) return;
+
+            try {
+                const response = await fetch(`/agents/${currentDocAgent}/documents/stats`);
+                const data = await response.json();
+
+                document.getElementById('total-chunks').textContent = data.total_chunks;
+                document.getElementById('collection-name').textContent = data.collection_name;
+            } catch (error) {
+                console.error('Failed to load RAG stats:', error);
+            }
+        }
+
+        async function searchDocuments() {
+            if (!currentDocAgent) {
+                alert('Please select an agent first');
+                return;
+            }
+
+            const query = document.getElementById('search-query').value.trim();
+            if (!query) {
+                alert('Please enter a search query');
+                return;
+            }
+
+            const resultsDiv = document.getElementById('search-results');
+            resultsDiv.innerHTML = '<p style="color: #94a3b8;">Searching...</p>';
+
+            try {
+                const response = await fetch(`/agents/${currentDocAgent}/documents/search?query=${encodeURIComponent(query)}&top_k=3`, {
+                    method: 'POST'
+                });
+
+                const data = await response.json();
+
+                if (data.results && data.results.length > 0) {
+                    let html = `<div style="color: #94a3b8; margin-bottom: 15px;">Found ${data.total_results} results:</div>`;
+
+                    data.results.forEach((result, index) => {
+                        html += `
+                            <div style="background: #334155; padding: 15px; border-radius: 6px; margin-bottom: 10px;">
+                                <div style="color: #60a5fa; font-weight: bold; margin-bottom: 8px;">
+                                    Result ${index + 1}
+                                    ${result.metadata.filename ? ` - ${result.metadata.filename}` : ''}
+                                </div>
+                                <div style="color: #cbd5e1; font-size: 0.9em; margin-bottom: 8px;">
+                                    ${escapeHtml(result.content.substring(0, 300))}${result.content.length > 300 ? '...' : ''}
+                                </div>
+                                <div style="color: #94a3b8; font-size: 0.85em;">
+                                    Distance: ${result.distance.toFixed(4)}
+                                </div>
+                            </div>
+                        `;
+                    });
+
+                    resultsDiv.innerHTML = html;
+                } else {
+                    resultsDiv.innerHTML = '<p style="color: #94a3b8;">No results found</p>';
+                }
+            } catch (error) {
+                resultsDiv.innerHTML = `<p style="color: #f87171;">Search failed: ${error.message}</p>`;
+            }
+        }
+
+        async function clearDocuments() {
+            if (!currentDocAgent) return;
+
+            if (!confirm('Are you sure you want to clear all documents? This cannot be undone!')) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`/agents/${currentDocAgent}/documents`, {
+                    method: 'DELETE'
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    showNotification('All documents cleared successfully', 'success');
+                    await refreshRAGStats();
+                    document.getElementById('search-results').innerHTML = '';
+                } else {
+                    showError('Failed to clear documents', data);
+                }
+            } catch (error) {
+                showError('Failed to clear documents', error, [
+                    'Check your network connection',
+                    'Ensure the agent exists',
+                    'Try refreshing the page'
+                ]);
+            }
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Training Metrics Visualization
+        async function showTrainingMetrics(jobId, agentId) {
+            const modal = document.getElementById('metrics-modal');
+            const content = document.getElementById('metrics-content');
+
+            modal.style.display = 'block';
+            content.innerHTML = '<div style="text-align: center; padding: 40px; color: #94a3b8;">Loading metrics...</div>';
+
+            try {
+                const response = await fetch(`/v1/agents/${agentId}/training/jobs/${jobId}/metrics`);
+                const data = await response.json();
+
+                if (!response.ok) {
+                    content.innerHTML = `<div style="color: #ef4444; padding: 20px;">Error loading metrics: ${data.detail}</div>`;
+                    return;
+                }
+
+                if (data.metrics.length === 0) {
+                    content.innerHTML = '<div style="color: #94a3b8; padding: 20px; text-align: center;">No metrics available yet</div>';
+                    return;
+                }
+
+                // Render metrics
+                renderMetricsChart(data);
+            } catch (error) {
+                content.innerHTML = `<div style="color: #ef4444; padding: 20px;">Failed to load metrics: ${error.message}</div>`;
+            }
+        }
+
+        function renderMetricsChart(data) {
+            const content = document.getElementById('metrics-content');
+            const metrics = data.metrics;
+
+            // Calculate stats
+            const latestMetric = metrics[metrics.length - 1];
+            const firstMetric = metrics[0];
+            const lossImprovement = ((firstMetric.loss - latestMetric.loss) / firstMetric.loss * 100).toFixed(1);
+
+            // Find min/max for scaling
+            const losses = metrics.map(m => m.loss);
+            const minLoss = Math.min(...losses);
+            const maxLoss = Math.max(...losses);
+            const lossRange = maxLoss - minLoss;
+
+            content.innerHTML = `
+                <div style="padding: 20px;">
+                    <!-- Stats Summary -->
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 30px;">
+                        <div class="card" style="padding: 15px;">
+                            <div style="color: #94a3b8; font-size: 0.85em; margin-bottom: 5px;">Current Loss</div>
+                            <div style="font-size: 1.8em; color: #60a5fa; font-weight: bold;">${latestMetric.loss.toFixed(4)}</div>
+                        </div>
+                        <div class="card" style="padding: 15px;">
+                            <div style="color: #94a3b8; font-size: 0.85em; margin-bottom: 5px;">Improvement</div>
+                            <div style="font-size: 1.8em; color: #34d399; font-weight: bold;">${lossImprovement}%</div>
+                        </div>
+                        <div class="card" style="padding: 15px;">
+                            <div style="color: #94a3b8; font-size: 0.85em; margin-bottom: 5px;">Steps</div>
+                            <div style="font-size: 1.8em; color: #f59e0b; font-weight: bold;">${latestMetric.step}</div>
+                        </div>
+                        <div class="card" style="padding: 15px;">
+                            <div style="color: #94a3b8; font-size: 0.85em; margin-bottom: 5px;">Epoch</div>
+                            <div style="font-size: 1.8em; color: #a78bfa; font-weight: bold;">${latestMetric.epoch}</div>
+                        </div>
+                    </div>
+
+                    <!-- Loss Chart -->
+                    <div class="card" style="padding: 20px; margin-bottom: 20px;">
+                        <h3 style="color: #60a5fa; margin-bottom: 20px;">Training Loss Over Time</h3>
+                        <div style="position: relative; height: 300px; background: #1e293b; border-radius: 8px; padding: 20px;">
+                            <svg width="100%" height="100%" viewBox="0 0 800 250" preserveAspectRatio="none">
+                                <!-- Grid lines -->
+                                ${[0, 1, 2, 3, 4].map(i => `
+                                    <line x1="0" y1="${i * 62.5}" x2="800" y2="${i * 62.5}"
+                                          stroke="#334155" stroke-width="1" stroke-dasharray="5,5"/>
+                                `).join('')}
+
+                                <!-- Loss line -->
+                                <polyline
+                                    fill="none"
+                                    stroke="#60a5fa"
+                                    stroke-width="2"
+                                    points="${metrics.map((m, i) => {
+                                        const x = (i / (metrics.length - 1)) * 800;
+                                        const y = 250 - ((m.loss - minLoss) / (lossRange || 1)) * 230;
+                                        return `${x},${y}`;
+                                    }).join(' ')}"
+                                />
+
+                                <!-- Data points -->
+                                ${metrics.filter((_, i) => i % Math.max(1, Math.floor(metrics.length / 20)) === 0).map((m, idx, arr) => {
+                                    const i = metrics.indexOf(m);
+                                    const x = (i / (metrics.length - 1)) * 800;
+                                    const y = 250 - ((m.loss - minLoss) / (lossRange || 1)) * 230;
+                                    return `<circle cx="${x}" cy="${y}" r="4" fill="#60a5fa"/>`;
+                                }).join('')}
+                            </svg>
+
+                            <!-- Y-axis labels -->
+                            <div style="position: absolute; left: 0; top: 10px; color: #94a3b8; font-size: 0.75em;">
+                                ${maxLoss.toFixed(3)}
+                            </div>
+                            <div style="position: absolute; left: 0; bottom: 10px; color: #94a3b8; font-size: 0.75em;">
+                                ${minLoss.toFixed(3)}
+                            </div>
+                        </div>
+                        <div style="text-align: center; color: #94a3b8; font-size: 0.85em; margin-top: 10px;">
+                            Steps
+                        </div>
+                    </div>
+
+                    <!-- Recent Metrics Table -->
+                    <div class="card" style="padding: 20px;">
+                        <h3 style="color: #60a5fa; margin-bottom: 15px;">Recent Metrics</h3>
+                        <div style="overflow-x: auto;">
+                            <table style="width: 100%; border-collapse: collapse;">
+                                <thead>
+                                    <tr style="border-bottom: 2px solid #334155;">
+                                        <th style="padding: 10px; text-align: left; color: #94a3b8;">Step</th>
+                                        <th style="padding: 10px; text-align: left; color: #94a3b8;">Epoch</th>
+                                        <th style="padding: 10px; text-align: left; color: #94a3b8;">Loss</th>
+                                        <th style="padding: 10px; text-align: left; color: #94a3b8;">Learning Rate</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${metrics.slice(-10).reverse().map(m => `
+                                        <tr style="border-bottom: 1px solid #334155;">
+                                            <td style="padding: 10px; color: #e2e8f0;">${m.step}</td>
+                                            <td style="padding: 10px; color: #e2e8f0;">${m.epoch}</td>
+                                            <td style="padding: 10px; color: #60a5fa; font-weight: bold;">${m.loss.toFixed(4)}</td>
+                                            <td style="padding: 10px; color: #94a3b8;">${m.learning_rate.toExponential(2)}</td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Model Evaluation
+        async function evaluateAdapter(jobId, agentId) {
+            const modal = document.getElementById('evaluation-modal');
+            const content = document.getElementById('evaluation-content');
+
+            modal.style.display = 'block';
+            content.innerHTML = `
+                <div style="text-align: center; padding: 40px;">
+                    <div style="font-size: 48px; margin-bottom: 20px;">⏳</div>
+                    <div style="color: #94a3b8; font-size: 18px; margin-bottom: 10px;">Running Evaluation...</div>
+                    <div style="color: #64748b; font-size: 14px;">This may take a few minutes depending on dataset size</div>
+                </div>
+            `;
+
+            try {
+                const response = await fetch(`/v1/agents/${agentId}/training/jobs/${jobId}/evaluate`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        num_samples: 5,
+                        max_examples: 100  // Limit to 100 examples for faster evaluation
+                    })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    content.innerHTML = `<div style="color: #ef4444; padding: 20px;">Error running evaluation: ${data.detail}</div>`;
+                    return;
+                }
+
+                renderEvaluationResults(data);
+            } catch (error) {
+                content.innerHTML = `<div style="color: #ef4444; padding: 20px;">Failed to run evaluation: ${error.message}</div>`;
+            }
+        }
+
+        function renderEvaluationResults(data) {
+            const content = document.getElementById('evaluation-content');
+            const metrics = data.metrics;
+
+            content.innerHTML = `
+                <div style="padding: 20px;">
+                    <!-- Summary Stats -->
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 30px;">
+                        <div style="background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); padding: 20px; border-radius: 8px; color: white;">
+                            <div style="font-size: 14px; opacity: 0.9; margin-bottom: 5px;">Loss</div>
+                            <div style="font-size: 28px; font-weight: bold;">${metrics.loss.toFixed(4)}</div>
+                        </div>
+                        <div style="background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); padding: 20px; border-radius: 8px; color: white;">
+                            <div style="font-size: 14px; opacity: 0.9; margin-bottom: 5px;">Perplexity</div>
+                            <div style="font-size: 28px; font-weight: bold;">${metrics.perplexity < 1000 ? metrics.perplexity.toFixed(2) : '∞'}</div>
+                        </div>
+                        <div style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); padding: 20px; border-radius: 8px; color: white;">
+                            <div style="font-size: 14px; opacity: 0.9; margin-bottom: 5px;">Examples Evaluated</div>
+                            <div style="font-size: 28px; font-weight: bold;">${data.num_examples}</div>
+                        </div>
+                        <div style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); padding: 20px; border-radius: 8px; color: white;">
+                            <div style="font-size: 14px; opacity: 0.9; margin-bottom: 5px;">Duration</div>
+                            <div style="font-size: 28px; font-weight: bold;">${data.duration_seconds.toFixed(1)}s</div>
+                        </div>
+                    </div>
+
+                    <!-- Dataset Info -->
+                    <div style="background: #1e293b; padding: 15px; border-radius: 8px; margin-bottom: 25px;">
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; font-size: 14px;">
+                            <div>
+                                <span style="color: #94a3b8;">Adapter:</span>
+                                <span style="color: #e2e8f0; margin-left: 8px; font-family: monospace;">${escapeHtml(data.adapter_name)}</span>
+                            </div>
+                            <div>
+                                <span style="color: #94a3b8;">Evaluation ID:</span>
+                                <span style="color: #e2e8f0; margin-left: 8px; font-family: monospace;">${data.eval_id.substring(0, 8)}</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Sample Predictions -->
+                    ${data.sample_predictions.length > 0 ? `
+                        <div style="margin-bottom: 20px;">
+                            <h3 style="color: #e2e8f0; font-size: 18px; margin-bottom: 15px;">📝 Sample Predictions</h3>
+                            <div style="display: flex; flex-direction: column; gap: 15px;">
+                                ${data.sample_predictions.slice(0, 3).map((pred, idx) => `
+                                    <div style="background: #1e293b; border-radius: 8px; padding: 15px; border-left: 4px solid #3b82f6;">
+                                        <div style="font-size: 12px; color: #94a3b8; margin-bottom: 8px;">SAMPLE ${idx + 1}</div>
+
+                                        <div style="margin-bottom: 12px;">
+                                            <div style="font-size: 11px; color: #64748b; margin-bottom: 4px; text-transform: uppercase; font-weight: 600;">Input</div>
+                                            <div style="background: #0f172a; padding: 10px; border-radius: 4px; font-size: 13px; color: #cbd5e1; font-family: monospace; white-space: pre-wrap; max-height: 100px; overflow-y: auto;">${escapeHtml(pred.input.slice(-200))}</div>
+                                        </div>
+
+                                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                                            <div>
+                                                <div style="font-size: 11px; color: #10b981; margin-bottom: 4px; text-transform: uppercase; font-weight: 600;">Expected</div>
+                                                <div style="background: #0f172a; padding: 10px; border-radius: 4px; font-size: 13px; color: #cbd5e1; font-family: monospace; white-space: pre-wrap; max-height: 80px; overflow-y: auto;">${escapeHtml(pred.expected)}</div>
+                                            </div>
+                                            <div>
+                                                <div style="font-size: 11px; color: #3b82f6; margin-bottom: 4px; text-transform: uppercase; font-weight: 600;">Predicted</div>
+                                                <div style="background: #0f172a; padding: 10px; border-radius: 4px; font-size: 13px; color: #cbd5e1; font-family: monospace; white-space: pre-wrap; max-height: 80px; overflow-y: auto;">${escapeHtml(pred.predicted)}</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    ` : ''}
+
+                    <!-- Metrics Explanation -->
+                    <div style="background: #1e293b; padding: 15px; border-radius: 8px; border-left: 4px solid #8b5cf6;">
+                        <div style="font-size: 14px; color: #e2e8f0; margin-bottom: 8px; font-weight: 600;">📊 Metrics Explained</div>
+                        <div style="font-size: 13px; color: #94a3b8; line-height: 1.6;">
+                            <strong style="color: #e2e8f0;">Loss:</strong> Lower is better. Measures prediction error.<br>
+                            <strong style="color: #e2e8f0;">Perplexity:</strong> Lower is better. Measures how well the model predicts text. Values closer to 1 are ideal.
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
         // Initialize
         loadStats();
         setInterval(checkDownloads, 5000);
         setInterval(loadStats, 10000);
+
+        // ========== Chat Interface Functions ==========
+
+        let chatMessages = [];
+        let chatAbortController = null;
+
+        // Load agents into chat select
+        async function loadChatAgents() {
+            try {
+                const response = await fetch('/v1/agents');
+                const data = await response.json();
+                const select = document.getElementById('chat-agent-select');
+
+                if (data.agents && data.agents.length > 0) {
+                    select.innerHTML = '<option value="">-- Select an agent --</option>' +
+                        data.agents.map(agent =>
+                            `<option value="${agent.id}">${agent.name || agent.id}</option>`
+                        ).join('');
+                } else {
+                    select.innerHTML = '<option value="">No agents available</option>';
+                }
+            } catch (error) {
+                console.error('Error loading agents:', error);
+                document.getElementById('chat-agent-select').innerHTML =
+                    '<option value="">Error loading agents</option>';
+            }
+        }
+
+        // Load models into model select
+        async function loadChatModels() {
+            try {
+                const response = await fetch('/v1/models');
+                const data = await response.json();
+                const select = document.getElementById('chat-model-select');
+
+                const options = ['<option value="">Auto (use agent default)</option>'];
+                if (data.data && data.data.length > 0) {
+                    data.data.forEach(model => {
+                        options.push(`<option value="${model.id}">${model.id}</option>`);
+                    });
+                }
+                select.innerHTML = options.join('');
+            } catch (error) {
+                console.error('Error loading models:', error);
+            }
+        }
+
+        // Handle keyboard shortcuts in chat input
+        function handleChatKeydown(event) {
+            if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                sendChatMessage();
+            }
+        }
+
+        // Add message to chat UI
+        function addChatMessage(role, content, isTyping = false) {
+            const messagesContainer = document.getElementById('chat-messages');
+
+            // Remove empty state on first message
+            const emptyState = messagesContainer.querySelector('.empty-state');
+            if (emptyState) {
+                emptyState.remove();
+            }
+
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `chat-message ${role}`;
+
+            const avatar = role === 'user' ? '👤' : '🤖';
+            const time = new Date().toLocaleTimeString();
+
+            if (isTyping) {
+                messageDiv.innerHTML = `
+                    <div class="chat-message-avatar">${avatar}</div>
+                    <div class="chat-message-content">
+                        <div class="chat-typing-indicator">
+                            <div class="chat-typing-dot"></div>
+                            <div class="chat-typing-dot"></div>
+                            <div class="chat-typing-dot"></div>
+                        </div>
+                    </div>
+                `;
+                messageDiv.id = 'typing-indicator';
+            } else {
+                messageDiv.innerHTML = `
+                    <div class="chat-message-avatar">${avatar}</div>
+                    <div class="chat-message-content">
+                        <div>${escapeHtml(content)}</div>
+                        <div class="chat-message-time">${time}</div>
+                    </div>
+                `;
+            }
+
+            messagesContainer.appendChild(messageDiv);
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+
+            return messageDiv;
+        }
+
+        // Update typing indicator to actual message
+        function updateTypingToMessage(content) {
+            const typingIndicator = document.getElementById('typing-indicator');
+            if (typingIndicator) {
+                const time = new Date().toLocaleTimeString();
+                typingIndicator.id = '';
+                typingIndicator.innerHTML = `
+                    <div class="chat-message-avatar">🤖</div>
+                    <div class="chat-message-content">
+                        <div>${escapeHtml(content)}</div>
+                        <div class="chat-message-time">${time}</div>
+                    </div>
+                `;
+            }
+        }
+
+        // Send chat message
+        async function sendChatMessage() {
+            const input = document.getElementById('chat-input');
+            const agentSelect = document.getElementById('chat-agent-select');
+            const modelSelect = document.getElementById('chat-model-select');
+            const sendBtn = document.getElementById('chat-send-btn');
+
+            const message = input.value.trim();
+            const agentId = agentSelect.value;
+
+            if (!message) return;
+            if (!agentId) {
+                alert('Please select an agent first');
+                return;
+            }
+
+            // Disable input
+            input.disabled = true;
+            sendBtn.disabled = true;
+            sendBtn.textContent = 'Sending...';
+
+            // Add user message to UI
+            addChatMessage('user', message);
+            chatMessages.push({ role: 'user', content: message });
+
+            // Clear input
+            input.value = '';
+
+            // Show typing indicator
+            addChatMessage('assistant', '', true);
+
+            try {
+                // Prepare request
+                const model = modelSelect.value || undefined;
+                const requestBody = {
+                    messages: chatMessages,
+                    stream: true
+                };
+                if (model) {
+                    requestBody.model = model;
+                }
+
+                // Create abort controller for cancellation
+                chatAbortController = new AbortController();
+
+                const startTime = Date.now();
+                const response = await fetch(`/v1/agents/${agentId}/chat`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(requestBody),
+                    signal: chatAbortController.signal
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                // Handle streaming response
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let assistantMessage = '';
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    const chunk = decoder.decode(value, { stream: true });
+                    const lines = chunk.split('\n');
+
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            const data = line.slice(6);
+                            if (data === '[DONE]') continue;
+
+                            try {
+                                const parsed = JSON.parse(data);
+                                const content = parsed.choices?.[0]?.delta?.content;
+
+                                if (content) {
+                                    assistantMessage += content;
+                                    // Update the typing indicator with accumulated message
+                                    const typingDiv = document.getElementById('typing-indicator');
+                                    if (typingDiv) {
+                                        const time = new Date().toLocaleTimeString();
+                                        typingDiv.innerHTML = `
+                                            <div class="chat-message-avatar">🤖</div>
+                                            <div class="chat-message-content">
+                                                <div>${escapeHtml(assistantMessage)}</div>
+                                                <div class="chat-message-time">${time}</div>
+                                            </div>
+                                        `;
+                                    }
+                                }
+                            } catch (e) {
+                                // Ignore parse errors for incomplete chunks
+                            }
+                        }
+                    }
+                }
+
+                // Finalize message
+                const typingIndicator = document.getElementById('typing-indicator');
+                if (typingIndicator) {
+                    typingIndicator.id = '';
+                }
+
+                chatMessages.push({ role: 'assistant', content: assistantMessage });
+
+                // Update stats
+                const duration = ((Date.now() - startTime) / 1000).toFixed(1);
+                document.getElementById('chat-message-count').textContent = chatMessages.length;
+                document.getElementById('chat-token-count').textContent =
+                    estimateTokens(chatMessages);
+                document.getElementById('chat-last-response').textContent = `${duration}s`;
+
+            } catch (error) {
+                console.error('Chat error:', error);
+
+                // Remove typing indicator
+                const typingIndicator = document.getElementById('typing-indicator');
+                if (typingIndicator) {
+                    typingIndicator.remove();
+                }
+
+                // Show error message
+                if (error.name !== 'AbortError') {
+                    addChatMessage('assistant', `Error: ${error.message}`);
+                }
+            } finally {
+                // Re-enable input
+                input.disabled = false;
+                sendBtn.disabled = false;
+                sendBtn.textContent = 'Send';
+                input.focus();
+                chatAbortController = null;
+            }
+        }
+
+        // Clear chat
+        function clearChat() {
+            if (!confirm('Clear all messages?')) return;
+
+            chatMessages = [];
+            const messagesContainer = document.getElementById('chat-messages');
+            messagesContainer.innerHTML = `
+                <div class="empty-state">
+                    <div class="empty-state-icon">💬</div>
+                    <p>Start a conversation with your agent</p>
+                    <p style="font-size: 0.9em; margin-top: 10px;">Select an agent above and type a message below</p>
+                </div>
+            `;
+
+            // Reset stats
+            document.getElementById('chat-message-count').textContent = '0';
+            document.getElementById('chat-token-count').textContent = '0';
+            document.getElementById('chat-last-response').textContent = '-';
+        }
+
+        // Reset chat when changing agents
+        function resetChat() {
+            clearChat();
+        }
+
+        // Export chat
+        function exportChat() {
+            if (chatMessages.length === 0) {
+                alert('No messages to export');
+                return;
+            }
+
+            const agentId = document.getElementById('chat-agent-select').value;
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+            const filename = `chat-${agentId}-${timestamp}.json`;
+
+            const exportData = {
+                agent: agentId,
+                timestamp: new Date().toISOString(),
+                messages: chatMessages,
+                stats: {
+                    messageCount: chatMessages.length,
+                    estimatedTokens: estimateTokens(chatMessages)
+                }
+            };
+
+            const blob = new Blob([JSON.stringify(exportData, null, 2)],
+                { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+
+            showNotification('Chat exported successfully', 'success');
+        }
+
+        // Estimate tokens (rough approximation)
+        function estimateTokens(messages) {
+            const text = messages.map(m => m.content).join(' ');
+            return Math.ceil(text.length / 4);
+        }
+
+        // HTML escape for security
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML.replace(/\n/g, '<br>');
+        }
+
+        // Load chat data when switching to chat tab
+        const originalSwitchTab = switchTab;
+        switchTab = function(tabName) {
+            originalSwitchTab(tabName);
+            if (tabName === 'chat') {
+                loadChatAgents();
+                loadChatModels();
+            }
+        };
     </script>
 
     <!-- Modals -->
@@ -1775,6 +3719,90 @@
                 <div class="btn-group">
                     <button type="submit" class="btn btn-primary">Create Agent</button>
                     <button type="button" class="btn btn-secondary" onclick="closeModal('create-agent-modal')">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Edit Agent Configuration Modal -->
+    <div id="edit-agent-modal" class="modal">
+        <div class="modal-content" style="max-width: 700px;">
+            <div class="modal-header">
+                <h2 class="modal-title">Configure Agent</h2>
+                <button class="modal-close" onclick="closeModal('edit-agent-modal')">&times;</button>
+            </div>
+            <form onsubmit="updateAgentConfig(event)">
+                <input type="hidden" id="edit-agent-id">
+
+                <div class="form-group">
+                    <label class="form-label">Agent Name *</label>
+                    <input type="text" id="edit-agent-name" class="form-input" required placeholder="My Custom Agent">
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Description</label>
+                    <textarea id="edit-agent-description" class="form-textarea" rows="2" placeholder="Describe what this agent does..."></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Base Model *</label>
+                    <select id="edit-agent-model" class="form-select" required>
+                        <option value="qwen2.5-3b-instruct">Qwen 2.5 3B Instruct</option>
+                        <option value="qwen2.5-coder-3b">Qwen 2.5 Coder 3B</option>
+                        <option value="moondream2">Moondream2 (Vision)</option>
+                        <option value="qwen2.5-7b-instruct">Qwen 2.5 7B Instruct</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">System Prompt</label>
+                    <textarea id="edit-agent-system-prompt" class="form-textarea" rows="6" placeholder="You are a helpful assistant..."></textarea>
+                    <small style="color: #94a3b8; display: block; margin-top: 8px;">
+                        This prompt sets the behavior and personality of your agent
+                    </small>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Temperature: <span id="edit-temp-value">0.7</span></label>
+                    <input type="range" id="edit-agent-temperature" class="form-range" min="0" max="2" step="0.1" value="0.7" oninput="updateSliderValue('edit-temp-value', this.value)">
+                    <small style="color: #94a3b8; display: block; margin-top: 4px;">
+                        Lower = more focused, Higher = more creative
+                    </small>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Max Tokens: <span id="edit-max-tokens-value">512</span></label>
+                    <input type="range" id="edit-agent-max-tokens" class="form-range" min="128" max="4096" step="128" value="512" oninput="updateSliderValue('edit-max-tokens-value', this.value)">
+                    <small style="color: #94a3b8; display: block; margin-top: 4px;">
+                        Maximum length of response
+                    </small>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Capabilities</label>
+                    <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-top: 8px;">
+                        <label style="display: flex; align-items: center; gap: 6px; color: #e2e8f0;">
+                            <input type="checkbox" id="edit-cap-chat" value="chat" checked>
+                            <span>Chat</span>
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 6px; color: #e2e8f0;">
+                            <input type="checkbox" id="edit-cap-qa" value="question_answering" checked>
+                            <span>Q&A</span>
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 6px; color: #e2e8f0;">
+                            <input type="checkbox" id="edit-cap-planning" value="task_planning" checked>
+                            <span>Planning</span>
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 6px; color: #e2e8f0;">
+                            <input type="checkbox" id="edit-cap-code" value="code_generation">
+                            <span>Code</span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="btn-group">
+                    <button type="submit" class="btn btn-primary">Save Changes</button>
+                    <button type="button" class="btn btn-secondary" onclick="closeModal('edit-agent-modal')">Cancel</button>
                 </div>
             </form>
         </div>
@@ -1847,6 +3875,36 @@
                     <button type="button" class="btn btn-secondary" onclick="closeModal('start-training-modal')">Cancel</button>
                 </div>
             </form>
+        </div>
+    </div>
+
+    <!-- Training Metrics Modal -->
+    <div id="metrics-modal" class="modal">
+        <div class="modal-content" style="max-width: 900px;">
+            <div class="modal-header">
+                <h2 class="modal-title">📊 Training Metrics</h2>
+                <button class="modal-close" onclick="closeModal('metrics-modal')">&times;</button>
+            </div>
+            <div id="metrics-content">
+                <div style="text-align: center; padding: 40px; color: #94a3b8;">
+                    Loading metrics...
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Evaluation Modal -->
+    <div id="evaluation-modal" class="modal">
+        <div class="modal-content" style="max-width: 1000px;">
+            <div class="modal-header">
+                <h2 class="modal-title">🧪 Model Evaluation</h2>
+                <button class="modal-close" onclick="closeModal('evaluation-modal')">&times;</button>
+            </div>
+            <div id="evaluation-content">
+                <div style="text-align: center; padding: 40px; color: #94a3b8;">
+                    Loading evaluation...
+                </div>
+            </div>
         </div>
     </div>
 

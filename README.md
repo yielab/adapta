@@ -4,14 +4,23 @@
 
 ## Features
 
+### Core Features
 - 🚀 **Multi-Model Support**: Text, Code, and Vision models
-- 🤖 **Agent System**: Create and manage specialized AI agents in-app
-- 📚 **RAG Integration**: Per-agent knowledge bases with easy document ingestion
+- 🤖 **Agent System**: Create and manage specialized AI agents
+- 📚 **RAG Integration**: Per-agent knowledge bases with document ingestion
 - 🔌 **OpenAI-Compatible API**: Works with Open WebUI, Continue.dev, and custom apps
-- 📊 **Web Dashboard**: Manage models, agents, and view system logs
+- 📊 **Web Dashboard**: Full-featured UI with 9 tabs for complete management
 - 💾 **Local-First**: All processing happens on your machine
-- ⚡ **Performance**: Optimized for consumer hardware (6-12GB RAM)
-- 🎯 **Easy Training**: Simple LoRA fine-tuning for personalization
+- 🎯 **Easy Training**: Complete LoRA fine-tuning pipeline with adapter management
+
+### Advanced Features (NEW - March 2026)
+- 🛠️ **Function Calling**: 6 built-in tools (calculator, web search, file ops, time, weather)
+- 🤝 **Agent-to-Agent Communication**: Multi-agent workflows with message passing
+- ⚡ **Performance Optimization**: Smart caching, batch processing, GPU auto-detection
+- 📊 **Production Monitoring**: Prometheus metrics, deep health checks, real-time stats
+- 🔐 **Security**: API key authentication with permissions system
+- 🎨 **Vision Support**: Image analysis with moondream2 integration
+- 📈 **Training Tools**: Model evaluation, metrics visualization, adapter merging
 
 ## Quick Start
 
@@ -342,6 +351,94 @@ All models should be in GGUF Q4_K_M format for optimal performance.
 
 ## Advanced Features
 
+### Function Calling / Tool Support
+
+Enable agents to use tools during conversations:
+
+```python
+# Use calculator tool
+response = client.chat.completions.create(
+    model="qwen2.5-3b-instruct",
+    messages=[{"role": "user", "content": "What's 15 * 37 + 128?"}],
+    tools=[{
+        "type": "function",
+        "function": {
+            "name": "calculator",
+            "description": "Evaluate mathematical expressions",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "expression": {"type": "string"}
+                }
+            }
+        }
+    }],
+    tool_choice="auto"
+)
+# Agent automatically uses calculator and returns: 683
+```
+
+**Built-in Tools:**
+- `calculator` - Mathematical expressions
+- `websearch` - DuckDuckGo search
+- `readfile`/`writefile` - File operations (sandboxed)
+- `gettime` - Current date/time
+- `getweather` - Weather information
+
+See [FUNCTION_CALLING_SUMMARY.md](FUNCTION_CALLING_SUMMARY.md) for complete guide.
+
+### Agent-to-Agent Communication
+
+Create multi-agent workflows:
+
+```python
+from brain.agents.communication import get_communication_hub
+
+hub = get_communication_hub()
+
+# Agent A sends task to Agent B
+response = await hub.send_message(
+    from_agent="researcher",
+    to_agent="summarizer",
+    content="Research quantum computing",
+    requires_response=True,
+    timeout=60.0
+)
+```
+
+Or use YAML-based workflows for complex scenarios. See examples in `examples/workflows/`.
+
+### Performance Features
+
+**Smart Caching:**
+- Automatic response caching for deterministic requests (temp ≤ 0.3)
+- Embedding cache with disk persistence
+- Cache hit rate tracking
+
+**Batch Processing:**
+- Priority queue system (LOW, NORMAL, HIGH, CRITICAL)
+- 4 concurrent workers
+- Process up to 100 requests in batch
+
+**GPU Auto-Detection:**
+- Automatic VRAM detection and layer optimization
+- Metal/CUDA support
+- Smart GPU layer recommendations
+
+### Monitoring & Observability
+
+**Prometheus Metrics:**
+```bash
+curl http://localhost:8000/v1/metrics
+```
+Exports request latency, error rates, model usage, queue depth, cache stats, system resources.
+
+**Deep Health Checks:**
+```bash
+curl http://localhost:8000/v1/health/deep
+```
+Returns status of 6 components: disk, memory, GPU, models, queue, cache.
+
 ### Adding Documents to Agent RAG
 
 ```bash
@@ -353,7 +450,7 @@ curl -X POST http://localhost:8000/v1/agents/{agent_id}/documents \
 
 ### Training LoRA Adapters
 
-See [MLOPS_PLAN.md](MLOPS_PLAN.md) for detailed training instructions.
+See [docs/guides/AGENT_TRAINING_GUIDE.md](docs/guides/AGENT_TRAINING_GUIDE.md) for detailed training instructions.
 
 ### Multi-Agent Workflows
 
@@ -425,22 +522,35 @@ mypy brain/
 
 ## Documentation
 
-📚 **[Full Documentation Index](docs/README.md)** - Start here!
+📚 **[Complete Documentation Index](docs/README.md)** - Start here!
 
-### Core Guides
-- [MLOps Plan](MLOPS_PLAN.md) - Complete MLOps strategy and architecture
-- [Model Downloads](ESSENTIAL_MODELS.md) - Clickable download links for all models
+### Quick Start
+- **[Quick Start Guide](docs/guides/QUICKSTART.md)** - Get running in 5 minutes
+- **[Download Models](docs/guides/DOWNLOAD_MODELS_HERE.md)** - Model download guide
+- **[Essential Models](docs/guides/ESSENTIAL_MODELS.md)** - Recommended models
 
-### Training & Fine-Tuning 🔥 NEW
-- [LoRA Training Architecture](docs/LORA_TRAINING_ARCHITECTURE.md) - Complete training pipeline design
-- [Training & OpenClaw Summary](docs/TRAINING_AND_OPENCLAW_SUMMARY.md) - High-level workflow overview
+### User Guides
+- **[Agent Training Guide](docs/guides/AGENT_TRAINING_GUIDE.md)** - Complete training workflow
+- **[Quick Training Reference](docs/guides/QUICK_START_AGENT_TRAINING.md)** - Fast reference
+- **[Model Management](docs/guides/MODELS_DOWNLOAD_GUIDE.md)** - Detailed model guide
 
-### Integration & Deployment 🔥 NEW
-- [OpenClaw Integration Guide](docs/OPENCLAW_INTEGRATION.md) - Deploy agents to Telegram, Discord, Slack
-- [API Reference](http://localhost:8000/docs) - Interactive OpenAPI docs (when server running)
+### Architecture
+- **[MLOps Architecture](docs/architecture/MLOPS_PLAN.md)** - Complete system design
+- **[LoRA Training](docs/architecture/LORA_TRAINING_ARCHITECTURE.md)** - Fine-tuning pipeline
+- **[Adapter System](docs/architecture/ADAPTER_LOADING_IMPLEMENTATION.md)** - Adapter management
+
+### Deployment
+- **[Docker Guide](docs/deployment/DOCKER.md)** - Docker setup
+- **[Deployment Options](docs/deployment/DEPLOYMENT_OPTIONS.md)** - All deployment strategies
+
+### Features
+- **[OpenClaw Integration](docs/features/OPENCLAW_INTEGRATION.md)** - Cursor/Windsurf integration
+- **[Model Catalog](docs/features/MODEL_CATALOG_FEATURE.md)** - Model download system
+- **[Dashboard Updates](docs/features/DASHBOARD_AND_DOCKER_UPDATES.md)** - UI improvements
 
 ### Roadmap
-- [TODO.md](TODO.md) - Planned features and implementation status
+- **[TODO.md](TODO.md)** - Future enhancements
+- **[CHANGELOG.md](CHANGELOG.md)** - Version history
 
 ## Contributing
 

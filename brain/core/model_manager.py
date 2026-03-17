@@ -118,15 +118,31 @@ class ModelManager:
             logger.info(f"Loading model {model_name} from {config.path}")
 
             try:
+                # Get GPU configuration
+                from brain.core.gpu import get_model_kwargs
+                gpu_kwargs = get_model_kwargs()
+
+                # Merge GPU settings with model config
+                # Model config n_gpu_layers takes precedence if explicitly set
+                if config.n_gpu_layers > 0:
+                    gpu_kwargs['n_gpu_layers'] = config.n_gpu_layers
+
+                # Use larger context if GPU is available
+                n_ctx = gpu_kwargs.get('n_ctx', config.context_length)
+
+                logger.info(f"GPU layers: {gpu_kwargs.get('n_gpu_layers', 0)}, Context: {n_ctx}")
+
                 # Load model in thread pool to avoid blocking
                 loop = asyncio.get_event_loop()
                 model = await loop.run_in_executor(
                     None,
                     lambda: Llama(
                         model_path=str(config.path),
-                        n_ctx=config.context_length,
+                        n_ctx=n_ctx,
                         n_threads=config.n_threads,
-                        n_gpu_layers=config.n_gpu_layers,
+                        n_gpu_layers=gpu_kwargs.get('n_gpu_layers', config.n_gpu_layers),
+                        n_batch=gpu_kwargs.get('n_batch', 512),
+                        f16_kv=gpu_kwargs.get('f16_kv', False),
                         use_mmap=settings.use_mmap,
                         use_mlock=settings.use_mlock,
                         verbose=False,

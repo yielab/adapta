@@ -9,8 +9,10 @@ from pydantic import BaseModel, Field
 
 from brain.training.data_manager import data_manager
 from brain.training.job_manager import job_manager
-from brain.training.models import TrainingConfig, JobState, TrainingMetrics
+from brain.training.models import TrainingConfig, JobState, TrainingMetrics, EvaluationMetrics, EvaluationResult
 from brain.training.trainer import trainer
+from brain.training.evaluator import evaluator
+from brain.core.adapter_manager import adapter_manager
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +68,28 @@ async def run_training_job(job_id: str):
         )
 
         if success:
+            # Register the trained adapter
+            job = await job_manager.get_job(job_id)
+            if job:
+                try:
+                    # Get final loss from metrics
+                    final_loss = job.metrics[-1].loss if job.metrics else None
+
+                    # Register adapter with adapter manager
+                    adapter_manager.register_adapter(
+                        agent_id=job.agent_id,
+                        adapter_name=job.adapter_name,
+                        base_model=job.base_model,
+                        adapter_path=job.adapter_path,
+                        training_job_id=job_id,
+                        num_epochs=job.config.num_epochs,
+                        final_loss=final_loss,
+                    )
+                    logger.info(f"Registered adapter for agent {job.agent_id}: {job.adapter_name}")
+                except Exception as e:
+                    logger.error(f"Failed to register adapter: {e}")
+                    # Continue anyway - training succeeded
+
             # Update state to completed
             await job_manager.update_job_state(job_id, JobState.COMPLETED)
             logger.info(f"Training job {job_id} completed successfully")
@@ -150,6 +174,31 @@ class TrainingStatusResponse(BaseModel):
     error_message: Optional[str] = None
 
 
+class MetricsDataPoint(BaseModel):
+    """Single metrics data point"""
+
+    step: int
+    epoch: int
+    loss: float
+    learning_rate: float
+    grad_norm: Optional[float] = None
+    timestamp: float
+    eval_loss: Optional[float] = None
+    perplexity: Optional[float] = None
+
+
+class TrainingMetricsResponse(BaseModel):
+    """Training metrics history response"""
+
+    job_id: str
+    agent_id: str
+    adapter_name: str
+    state: str
+    metrics: List[MetricsDataPoint]
+    total_steps: int
+    total_epochs: int
+
+
 class DatasetResponse(BaseModel):
     """Dataset information response"""
 
@@ -172,6 +221,65 @@ class QueueStatusResponse(BaseModel):
     completed: int
     failed: int
     cancelled: int
+
+
+class AdapterResponse(BaseModel):
+    """Adapter information response"""
+
+    adapter_id: str
+    agent_id: str
+    adapter_name: str
+    base_model: str
+    training_job_id: str
+    created_at: float
+    num_epochs: int
+    final_loss: Optional[float] = None
+    is_merged: bool = False
+
+
+class EvaluationMetricsResponse(BaseModel):
+    """Evaluation metrics response"""
+
+    loss: float
+    perplexity: float
+    accuracy: Optional[float] = None
+    exact_match: Optional[float] = None
+    token_accuracy: Optional[float] = None
+    bleu_score: Optional[float] = None
+    coherence_score: Optional[float] = None
+    fluency_score: Optional[float] = None
+
+
+class SamplePrediction(BaseModel):
+    """Sample prediction from evaluation"""
+
+    input: str
+    expected: str
+    predicted: str
+
+
+class EvaluationResponse(BaseModel):
+    """Evaluation result response"""
+
+    eval_id: str
+    job_id: str
+    agent_id: str
+    adapter_name: str
+    adapter_path: str
+    dataset_path: str
+    num_examples: int
+    metrics: EvaluationMetricsResponse
+    sample_predictions: List[SamplePrediction]
+    created_at: float
+    duration_seconds: float
+
+
+class EvaluationRequest(BaseModel):
+    """Request to evaluate an adapter"""
+
+    dataset_name: Optional[str] = Field(None, description="Name of validation dataset to use (default: use training dataset)")
+    num_samples: int = Field(5, description="Number of sample predictions to generate", ge=1, le=20)
+    max_examples: Optional[int] = Field(None, description="Maximum examples to evaluate (None = all)", ge=1)
 
 
 # Endpoints
@@ -406,6 +514,54 @@ async def get_training_status(agent_id: str, job_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/agents/{agent_id}/training/jobs/{job_id}/metrics", response_model=TrainingMetricsResponse)
+async def get_training_metrics(agent_id: str, job_id: str):
+    """Get full metrics history for a training job"""
+    try:
+        job = await job_manager.get_job(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+
+        # Verify job belongs to agent
+        if job.agent_id != agent_id:
+            raise HTTPException(status_code=404, detail="Job not found")
+
+        # Convert metrics to response format
+        metrics_data = [
+            MetricsDataPoint(
+                step=m.step,
+                epoch=m.epoch,
+                loss=m.loss,
+                learning_rate=m.learning_rate,
+                grad_norm=m.grad_norm,
+                timestamp=m.timestamp,
+                eval_loss=m.eval_loss,
+                perplexity=m.perplexity,
+            )
+            for m in job.metrics
+        ]
+
+        # Calculate total steps (if job has status)
+        status = await job_manager.get_job_status(job_id)
+        total_steps = status.total_steps if status else 0
+        total_epochs = status.total_epochs if status else job.config.num_epochs
+
+        return TrainingMetricsResponse(
+            job_id=job.job_id,
+            agent_id=job.agent_id,
+            adapter_name=job.adapter_name,
+            state=job.state.value,
+            metrics=metrics_data,
+            total_steps=total_steps,
+            total_epochs=total_epochs,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting training metrics: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.delete("/agents/{agent_id}/training/jobs/{job_id}")
 async def cancel_training_job(agent_id: str, job_id: str):
     """Cancel a training job"""
@@ -464,4 +620,317 @@ async def create_example_dataset(agent_id: str):
         )
     except Exception as e:
         logger.error(f"Error creating example dataset: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# Adapter Management Endpoints
+
+
+@router.get("/agents/{agent_id}/adapters", response_model=List[AdapterResponse])
+async def list_adapters(agent_id: str):
+    """
+    List all trained adapters for an agent
+
+    Returns all LoRA adapters that have been trained for this agent.
+    """
+    try:
+        adapters = adapter_manager.list_adapters(agent_id=agent_id)
+
+        return [
+            AdapterResponse(
+                adapter_id=adapter.adapter_id,
+                agent_id=adapter.agent_id,
+                adapter_name=adapter.adapter_name,
+                base_model=adapter.base_model,
+                training_job_id=adapter.training_job_id,
+                created_at=adapter.created_at,
+                num_epochs=adapter.num_epochs,
+                final_loss=adapter.final_loss,
+                is_merged=adapter.is_merged,
+            )
+            for adapter in adapters
+        ]
+    except Exception as e:
+        logger.error(f"Error listing adapters: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/agents/{agent_id}/adapters/latest", response_model=AdapterResponse)
+async def get_latest_adapter(agent_id: str):
+    """
+    Get the latest trained adapter for an agent
+
+    Returns the most recently created adapter for this agent.
+    """
+    try:
+        adapter = adapter_manager.get_latest_adapter(agent_id)
+
+        if not adapter:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No adapters found for agent {agent_id}"
+            )
+
+        return AdapterResponse(
+            adapter_id=adapter.adapter_id,
+            agent_id=adapter.agent_id,
+            adapter_name=adapter.adapter_name,
+            base_model=adapter.base_model,
+            training_job_id=adapter.training_job_id,
+            created_at=adapter.created_at,
+            num_epochs=adapter.num_epochs,
+            final_loss=adapter.final_loss,
+            is_merged=adapter.is_merged,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting latest adapter: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/agents/{agent_id}/adapters/{adapter_id}/merge")
+async def merge_adapter(
+    agent_id: str,
+    adapter_id: str,
+    background_tasks: BackgroundTasks,
+    output_name: Optional[str] = None,
+    quantization: str = "q4_k_m",
+):
+    """
+    Merge a LoRA adapter with its base model to create a standalone GGUF model
+
+    This is necessary because llama-cpp-python doesn't support LoRA adapters directly.
+    The merged model can then be used for inference.
+
+    Note: This requires training dependencies and may take several minutes.
+    """
+    try:
+        # Verify adapter exists and belongs to agent
+        adapter = adapter_manager.get_adapter(adapter_id)
+        if not adapter:
+            raise HTTPException(status_code=404, detail="Adapter not found")
+
+        if adapter.agent_id != agent_id:
+            raise HTTPException(status_code=404, detail="Adapter not found")
+
+        # Start merge in background
+        async def do_merge():
+            try:
+                merged_path = await adapter_manager.merge_adapter_with_base(
+                    adapter_id=adapter_id,
+                    output_name=output_name,
+                    quantization=quantization,
+                )
+                logger.info(f"Adapter merge completed: {merged_path}")
+            except Exception as e:
+                logger.error(f"Adapter merge failed: {e}")
+
+        background_tasks.add_task(do_merge)
+
+        return {
+            "message": "Adapter merge started",
+            "adapter_id": adapter_id,
+            "output_name": output_name or f"{agent_id}_{adapter.adapter_name}_merged",
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error starting adapter merge: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/agents/{agent_id}/adapters/{adapter_id}")
+async def delete_adapter(agent_id: str, adapter_id: str):
+    """
+    Delete a trained adapter
+
+    This will remove the adapter files and metadata.
+    """
+    try:
+        # Verify adapter exists and belongs to agent
+        adapter = adapter_manager.get_adapter(adapter_id)
+        if not adapter:
+            raise HTTPException(status_code=404, detail="Adapter not found")
+
+        if adapter.agent_id != agent_id:
+            raise HTTPException(status_code=404, detail="Adapter not found")
+
+        success = adapter_manager.delete_adapter(adapter_id)
+        if not success:
+            raise HTTPException(status_code=500, detail="Failed to delete adapter")
+
+        return {"message": "Adapter deleted successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting adapter: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# Evaluation Endpoints
+
+
+@router.post("/agents/{agent_id}/training/jobs/{job_id}/evaluate", response_model=EvaluationResponse)
+async def evaluate_trained_adapter(
+    agent_id: str,
+    job_id: str,
+    request: EvaluationRequest = EvaluationRequest(),
+    background_tasks: BackgroundTasks = None,
+):
+    """
+    Evaluate a trained adapter on a validation dataset.
+
+    This endpoint runs evaluation to compute quality metrics like loss and perplexity.
+    It also generates sample predictions for inspection.
+
+    The evaluation runs synchronously and returns results when complete.
+    For large datasets, use the max_examples parameter to limit evaluation time.
+    """
+    try:
+        # Get training job
+        job = await job_manager.get_job(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="Training job not found")
+
+        # Verify job belongs to agent
+        if job.agent_id != agent_id:
+            raise HTTPException(status_code=404, detail="Training job not found")
+
+        # Check job is completed
+        if job.state != JobState.COMPLETED:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Job must be completed to evaluate (current state: {job.state.value})",
+            )
+
+        # Get adapter path
+        if not job.adapter_path:
+            raise HTTPException(status_code=400, detail="Adapter path not found")
+
+        adapter_path = Path(job.adapter_path)
+        if not adapter_path.exists():
+            raise HTTPException(status_code=404, detail="Adapter files not found")
+
+        # Determine dataset to use
+        dataset_path = job.dataset_path
+        if request.dataset_name:
+            # Look for named validation dataset
+            datasets = data_manager.list_datasets(agent_id)
+            dataset = next((d for d in datasets if d.name == request.dataset_name), None)
+            if not dataset:
+                raise HTTPException(status_code=404, detail=f"Dataset '{request.dataset_name}' not found")
+            dataset_path = dataset.file_path
+
+        # Run evaluation
+        logger.info(f"Starting evaluation for job {job_id}")
+        result = await evaluator.evaluate_adapter(
+            job_id=job_id,
+            agent_id=agent_id,
+            adapter_name=job.adapter_name,
+            adapter_path=adapter_path,
+            base_model=job.base_model,
+            dataset_path=dataset_path,
+            num_samples=request.num_samples,
+            max_examples=request.max_examples,
+        )
+
+        # Convert to response format
+        return EvaluationResponse(
+            eval_id=result.eval_id,
+            job_id=result.job_id,
+            agent_id=result.agent_id,
+            adapter_name=result.adapter_name,
+            adapter_path=result.adapter_path,
+            dataset_path=result.dataset_path,
+            num_examples=result.num_examples,
+            metrics=EvaluationMetricsResponse(**result.metrics.to_dict()),
+            sample_predictions=[
+                SamplePrediction(**pred) for pred in result.sample_predictions
+            ],
+            created_at=result.created_at,
+            duration_seconds=result.duration_seconds,
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error evaluating adapter: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/agents/{agent_id}/adapters/{adapter_id}/evaluate", response_model=EvaluationResponse)
+async def evaluate_adapter_by_id(
+    agent_id: str,
+    adapter_id: str,
+    request: EvaluationRequest = EvaluationRequest(),
+):
+    """
+    Evaluate an adapter by its adapter ID.
+
+    This is a convenience endpoint that looks up the adapter and evaluates it.
+    """
+    try:
+        # Get adapter
+        adapter = adapter_manager.get_adapter(adapter_id)
+        if not adapter:
+            raise HTTPException(status_code=404, detail="Adapter not found")
+
+        # Verify adapter belongs to agent
+        if adapter.agent_id != agent_id:
+            raise HTTPException(status_code=404, detail="Adapter not found")
+
+        # Get training job to find dataset
+        job = await job_manager.get_job(adapter.training_job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="Training job not found")
+
+        # Determine dataset
+        dataset_path = job.dataset_path
+        if request.dataset_name:
+            datasets = data_manager.list_datasets(agent_id)
+            dataset = next((d for d in datasets if d.name == request.dataset_name), None)
+            if not dataset:
+                raise HTTPException(status_code=404, detail=f"Dataset '{request.dataset_name}' not found")
+            dataset_path = dataset.file_path
+
+        # Get adapter path
+        adapter_path = Path(adapter.adapter_path)
+        if not adapter_path.exists():
+            raise HTTPException(status_code=404, detail="Adapter files not found")
+
+        # Run evaluation
+        logger.info(f"Starting evaluation for adapter {adapter_id}")
+        result = await evaluator.evaluate_adapter(
+            job_id=adapter.training_job_id,
+            agent_id=agent_id,
+            adapter_name=adapter.adapter_name,
+            adapter_path=adapter_path,
+            base_model=adapter.base_model,
+            dataset_path=dataset_path,
+            num_samples=request.num_samples,
+            max_examples=request.max_examples,
+        )
+
+        # Convert to response format
+        return EvaluationResponse(
+            eval_id=result.eval_id,
+            job_id=result.job_id,
+            agent_id=result.agent_id,
+            adapter_name=result.adapter_name,
+            adapter_path=result.adapter_path,
+            dataset_path=result.dataset_path,
+            num_examples=result.num_examples,
+            metrics=EvaluationMetricsResponse(**result.metrics.to_dict()),
+            sample_predictions=[
+                SamplePrediction(**pred) for pred in result.sample_predictions
+            ],
+            created_at=result.created_at,
+            duration_seconds=result.duration_seconds,
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error evaluating adapter: {e}")
         raise HTTPException(status_code=500, detail=str(e))

@@ -1,16 +1,39 @@
 """Main server with both API and Dashboard"""
 
 import logging
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.responses import RedirectResponse
 
 from brain import __version__
-from brain.api.app import create_app as create_api_app
+from brain.api.app import create_app as create_api_app, _queue_processor
 from brain.dashboard.app import create_dashboard_app
 from brain.dashboard.logging_handler import setup_logging
 from brain.config import settings
 
 logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Main server lifespan events"""
+    # Startup
+    logger.info("Starting Brain server...")
+
+    # Start request queue
+    from brain.core.queue import start_queue
+    await start_queue(processor=_queue_processor)
+    logger.info("Request queue started")
+
+    yield
+
+    # Shutdown
+    logger.info("Shutting down Brain server...")
+
+    # Stop request queue
+    from brain.core.queue import stop_queue
+    await stop_queue()
+    logger.info("Request queue stopped")
 
 
 def create_server() -> FastAPI:
@@ -19,11 +42,12 @@ def create_server() -> FastAPI:
     # Setup logging first
     setup_logging()
 
-    # Create main app
+    # Create main app with lifespan
     main_app = FastAPI(
         title="Brain From Cero Server",
         description="Local AI Brain with API and Dashboard",
         version=__version__,
+        lifespan=lifespan,
     )
 
     # Create sub-applications
