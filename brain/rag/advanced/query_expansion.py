@@ -19,6 +19,7 @@ class ExpansionStrategy(Enum):
     SEMANTIC = "semantic"
     REFORMULATION = "reformulation"
     HYBRID = "hybrid"
+    ADAPTIVE = "adaptive"  # Automatically choose best strategy
 
 
 @dataclass

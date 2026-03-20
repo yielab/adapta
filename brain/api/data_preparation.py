@@ -4,6 +4,7 @@ Data preparation API endpoints for training
 
 import logging
 import asyncio
+import time
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 from fastapi import APIRouter, HTTPException, BackgroundTasks
@@ -105,7 +106,7 @@ class DataPrepJob:
         self.stats = {}
         self.errors = []
         self.output_file = None
-        self.created_at = Path.ctime(Path())
+        self.created_at = time.time()
         self.completed_at = None
 
 
@@ -180,11 +181,16 @@ async def prepare_training_data(
 
                 pipeline = DataPreparationPipeline(config)
 
+                # Extract component types from config
+                collector_type = config.pop('collector_type', 'web')
+                preprocessor_type = config.pop('preprocessor_type', 'markdown')
+                formatter_type = config.pop('formatter_type', 'jsonl')
+
                 # Configure components
                 pipeline.configure(
-                    collector_type=config.get('collector_type', 'web'),
-                    preprocessor_type=config.get('preprocessor_type', 'markdown'),
-                    formatter_type=config.get('formatter_type', 'jsonl'),
+                    collector_type=collector_type,
+                    preprocessor_type=preprocessor_type,
+                    formatter_type=formatter_type,
                     **config
                 )
 
@@ -203,7 +209,7 @@ async def prepare_training_data(
                 job.progress = 1.0
                 job.output_file = str(result_file)
                 job.stats = pipeline.stats
-                job.completed_at = Path.ctime(Path())
+                job.completed_at = time.time()
 
                 logger.info(f"Data preparation completed for job {job_id}")
 
@@ -276,7 +282,7 @@ async def prepare_drupal_training_data(
                 job.progress = 1.0
                 job.output_file = str(result_file)
                 job.stats = pipeline.stats
-                job.completed_at = Path.ctime(Path())
+                job.completed_at = time.time()
 
                 logger.info(f"Drupal data preparation completed for job {job_id}")
 
@@ -366,7 +372,7 @@ async def prepare_batch_training_data(
                     else:
                         job.status = "failed"
                         job.errors.append("Batch processing error")
-                    job.completed_at = Path.ctime(Path())
+                    job.completed_at = time.time()
 
                 logger.info(f"Batch preparation completed: {len(results)} successful")
 
@@ -426,6 +432,30 @@ async def get_preparation_status(job_id: str):
     except Exception as e:
         logger.error(f"Error getting preparation status: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/training/prepare/jobs")
+async def list_preparation_jobs():
+    """
+    List all data preparation jobs.
+
+    Returns a list of all jobs with their current status.
+    """
+    jobs_list = []
+    for job_id, job in prep_jobs.items():
+        jobs_list.append({
+            "job_id": job.job_id,
+            "status": job.status,
+            "progress": job.progress,
+            "created_at": job.created_at,
+            "completed_at": job.completed_at,
+            "errors": len(job.errors) if job.errors else 0
+        })
+
+    return {
+        "total": len(jobs_list),
+        "jobs": jobs_list
+    }
 
 
 @router.get("/training/prepare/examples")

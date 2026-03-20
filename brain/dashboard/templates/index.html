@@ -1116,6 +1116,7 @@
             <button class="tab-btn" onclick="switchTab('agents')">👥 Agents</button>
             <button class="tab-btn" onclick="switchTab('chat')">💬 Chat</button>
             <button class="tab-btn" onclick="switchTab('documents')">📄 Documents</button>
+            <button class="tab-btn" onclick="switchTab('dataprep')">🔄 Data Prep</button>
             <button class="tab-btn" onclick="switchTab('training')">🎓 Training</button>
             <button class="tab-btn" onclick="switchTab('vision')">👁️ Vision</button>
             <button class="tab-btn" onclick="switchTab('logs')">📝 Logs</button>
@@ -1540,6 +1541,201 @@
             </div>
         </div>
 
+        <!-- Data Preparation Tab -->
+        <div id="dataprep-tab" class="tab-content">
+            <div class="card">
+                <h2>🔄 Data Preparation - Automated Training Data Collection</h2>
+
+                <!-- Overview Section -->
+                <div style="background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); border: 2px solid #60a5fa; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+                    <div style="color: #60a5fa; font-weight: bold; font-size: 1.1em; margin-bottom: 15px;">
+                        🎯 Automated Data Collection for Training
+                    </div>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px;">
+                        <div style="background: #0f172a; padding: 12px; border-radius: 6px;">
+                            <div style="color: #10b981; font-weight: bold; margin-bottom: 5px;">🌐 Web Scraping</div>
+                            <div style="color: #94a3b8; font-size: 0.85em;">Scrape websites, documentation, and online resources</div>
+                        </div>
+                        <div style="background: #0f172a; padding: 12px; border-radius: 6px;">
+                            <div style="color: #f59e0b; font-weight: bold; margin-bottom: 5px;">📚 Documentation</div>
+                            <div style="color: #94a3b8; font-size: 0.85em;">Process technical docs, API references, and guides</div>
+                        </div>
+                        <div style="background: #0f172a; padding: 12px; border-radius: 6px;">
+                            <div style="color: #8b5cf6; font-weight: bold; margin-bottom: 5px;">🔧 API Docs</div>
+                            <div style="color: #94a3b8; font-size: 0.85em;">Extract API documentation and examples</div>
+                        </div>
+                        <div style="background: #0f172a; padding: 12px; border-radius: 6px;">
+                            <div style="color: #ec4899; font-weight: bold; margin-bottom: 5px;">📝 Change Records</div>
+                            <div style="color: #94a3b8; font-size: 0.85em;">Track version changes and updates</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Quick Start Section -->
+                <div class="card" style="margin-bottom: 20px; background: #1e293b;">
+                    <h3 style="color: #10b981; margin-bottom: 15px;">⚡ Quick Start - Prepare Data in 3 Steps</h3>
+
+                    <!-- Step 1: Select Agent -->
+                    <div class="form-group">
+                        <label class="form-label">1️⃣ Select Target Agent</label>
+                        <select id="dataprep-agent-select" class="form-select" onchange="updateDataPrepForm()">
+                            <option value="">-- Select an agent to train --</option>
+                        </select>
+                    </div>
+
+                    <!-- Step 2: Choose Data Source Type -->
+                    <div class="form-group">
+                        <label class="form-label">2️⃣ Choose Data Source Type</label>
+                        <div class="btn-group" style="display: flex; gap: 10px; flex-wrap: wrap;">
+                            <button class="btn btn-sm" onclick="selectDataSource('web')" id="source-web">
+                                🌐 Website/URL
+                            </button>
+                            <button class="btn btn-sm" onclick="selectDataSource('documentation')" id="source-documentation">
+                                📚 Documentation
+                            </button>
+                            <button class="btn btn-sm" onclick="selectDataSource('api')" id="source-api">
+                                🔧 API Docs
+                            </button>
+                            <button class="btn btn-sm" onclick="selectDataSource('drupal')" id="source-drupal">
+                                💧 Drupal
+                            </button>
+                            <button class="btn btn-sm" onclick="selectDataSource('codebase')" id="source-codebase">
+                                💻 Codebase
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Step 3: Configure Source -->
+                    <div id="dataprep-config" style="display: none;">
+                        <div class="form-group">
+                            <label class="form-label">3️⃣ Configure Data Source</label>
+
+                            <!-- Web Scraping Config -->
+                            <div id="config-web" class="source-config" style="display: none;">
+                                <input type="text" id="web-url" class="form-input" placeholder="https://example.com/docs" style="margin-bottom: 10px;">
+                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                                    <input type="number" id="web-depth" class="form-input" placeholder="Max depth (3)" value="3">
+                                    <input type="number" id="web-max-pages" class="form-input" placeholder="Max pages (100)" value="100">
+                                </div>
+                                <label style="margin-top: 10px;">
+                                    <input type="checkbox" id="web-follow-links" checked> Follow internal links
+                                </label>
+                            </div>
+
+                            <!-- Documentation Config -->
+                            <div id="config-documentation" class="source-config" style="display: none;">
+                                <input type="text" id="doc-url" class="form-input" placeholder="https://docs.example.com" style="margin-bottom: 10px;">
+                                <input type="text" id="doc-version" class="form-input" placeholder="Version (optional)" style="margin-bottom: 10px;">
+                                <select id="doc-format" class="form-select">
+                                    <option value="auto">Auto-detect format</option>
+                                    <option value="markdown">Markdown</option>
+                                    <option value="rst">reStructuredText</option>
+                                    <option value="html">HTML</option>
+                                </select>
+                            </div>
+
+                            <!-- API Docs Config -->
+                            <div id="config-api" class="source-config" style="display: none;">
+                                <input type="text" id="api-url" class="form-input" placeholder="https://api.example.com/docs" style="margin-bottom: 10px;">
+                                <select id="api-format" class="form-select" style="margin-bottom: 10px;">
+                                    <option value="openapi">OpenAPI/Swagger</option>
+                                    <option value="graphql">GraphQL</option>
+                                    <option value="rest">REST Documentation</option>
+                                </select>
+                                <label>
+                                    <input type="checkbox" id="api-include-examples" checked> Include code examples
+                                </label>
+                            </div>
+
+                            <!-- Drupal Config -->
+                            <div id="config-drupal" class="source-config" style="display: none;">
+                                <select id="drupal-version" class="form-select" style="margin-bottom: 10px;">
+                                    <option value="11">Drupal 11</option>
+                                    <option value="10">Drupal 10</option>
+                                    <option value="9">Drupal 9</option>
+                                </select>
+                                <div style="margin: 10px 0;">
+                                    <label><input type="checkbox" id="drupal-user-guide" checked> User Guide</label><br>
+                                    <label><input type="checkbox" id="drupal-api" checked> API Documentation</label><br>
+                                    <label><input type="checkbox" id="drupal-changes" checked> Change Records</label><br>
+                                    <label><input type="checkbox" id="drupal-modules"> Module Documentation</label>
+                                </div>
+                                <div style="background: #0f172a; padding: 10px; border-radius: 4px; margin-top: 10px;">
+                                    <div style="color: #60a5fa; font-size: 0.85em;">
+                                        💡 This will use Delta Training Strategy - emphasizing changes between versions
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Codebase Config -->
+                            <div id="config-codebase" class="source-config" style="display: none;">
+                                <input type="text" id="code-path" class="form-input" placeholder="Repository URL or local path" style="margin-bottom: 10px;">
+                                <select id="code-language" class="form-select" style="margin-bottom: 10px;">
+                                    <option value="auto">Auto-detect</option>
+                                    <option value="python">Python</option>
+                                    <option value="javascript">JavaScript/TypeScript</option>
+                                    <option value="java">Java</option>
+                                    <option value="go">Go</option>
+                                    <option value="rust">Rust</option>
+                                </select>
+                                <input type="text" id="code-framework" class="form-input" placeholder="Framework (e.g., Django, React, FastAPI)">
+                            </div>
+                        </div>
+
+                        <!-- Advanced Options -->
+                        <details style="margin-top: 15px;">
+                            <summary style="color: #60a5fa; cursor: pointer; font-weight: bold;">⚙️ Advanced Options</summary>
+                            <div style="background: #0f172a; padding: 15px; border-radius: 6px; margin-top: 10px;">
+                                <div class="form-group">
+                                    <label class="form-label">Output Format</label>
+                                    <select id="dataprep-format" class="form-select">
+                                        <option value="jsonl">JSONL (Standard)</option>
+                                        <option value="instruction">Instruction-Following</option>
+                                        <option value="conversation">Conversational</option>
+                                        <option value="delta">Delta/Version-Aware</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Processing Options</label>
+                                    <input type="number" id="dataprep-rate-limit" class="form-input" placeholder="Rate limit (seconds)" value="1.0" style="margin-bottom: 10px;">
+                                    <input type="number" id="dataprep-cache-hours" class="form-input" placeholder="Cache duration (hours)" value="24">
+                                </div>
+                            </div>
+                        </details>
+
+                        <!-- Start Button -->
+                        <button class="btn btn-primary" onclick="startDataPreparation()" style="margin-top: 20px; width: 100%;">
+                            🚀 Start Data Preparation
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Active Jobs Section -->
+                <div class="card" style="margin-bottom: 20px;">
+                    <h3 style="color: #60a5fa; margin-bottom: 15px;">📊 Data Preparation Jobs</h3>
+                    <div id="dataprep-jobs-list">
+                        <div class="empty-state">
+                            <div class="empty-state-icon">🔄</div>
+                            <p>No active data preparation jobs</p>
+                            <small style="color: #64748b;">Start a new job above to begin collecting training data</small>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Prepared Datasets Section -->
+                <div class="card">
+                    <h3 style="color: #60a5fa; margin-bottom: 15px;">💾 Prepared Datasets</h3>
+                    <div id="dataprep-datasets-list">
+                        <div class="empty-state">
+                            <div class="empty-state-icon">📚</div>
+                            <p>No prepared datasets</p>
+                            <small style="color: #64748b;">Completed data preparation jobs will appear here</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Vision Tab -->
         <div id="vision-tab" class="tab-content">
             <div class="card">
@@ -1921,6 +2117,8 @@
                 loadCatalog();
             } else if (tabName === 'agents') {
                 loadAgentsDetailed();
+            } else if (tabName === 'dataprep') {
+                loadDataPrepTab();
             } else if (tabName === 'training') {
                 loadTrainingTab();
             } else if (tabName === 'logs') {
@@ -1944,6 +2142,339 @@
         window.addEventListener('popstate', function() {
             loadTabFromHash();
         });
+
+        // Data Preparation Tab Functions
+        let selectedDataSource = null;
+        let dataPrepAgentId = null;
+        let dataPrepJobsInterval = null;
+
+        async function loadDataPrepTab() {
+            // Load agents for data prep select
+            try {
+                const response = await fetch('/dashboard/api/stats');
+                const data = await response.json();
+                const select = document.getElementById('dataprep-agent-select');
+                if (select) {
+                    select.innerHTML = '<option value="">-- Select an agent to train --</option>' +
+                        data.agents.list.map(agent => `<option value="${agent.id}">${agent.name}</option>`).join('');
+                }
+            } catch (error) {
+                console.error('Failed to load agents for data prep:', error);
+            }
+
+            // Load active data prep jobs
+            loadDataPrepJobs();
+
+            // Clear any existing interval
+            if (dataPrepJobsInterval) {
+                clearInterval(dataPrepJobsInterval);
+            }
+
+            // Set up periodic refresh (every 5 seconds)
+            dataPrepJobsInterval = setInterval(() => {
+                // Only refresh if we're still on the dataprep tab
+                const dataPrepTab = document.getElementById('dataprep-tab');
+                if (dataPrepTab && dataPrepTab.classList.contains('active')) {
+                    loadDataPrepJobs();
+                } else {
+                    // Stop refreshing if we're not on the tab
+                    clearInterval(dataPrepJobsInterval);
+                    dataPrepJobsInterval = null;
+                }
+            }, 5000);
+        }
+
+        function updateDataPrepForm() {
+            const agentId = document.getElementById('dataprep-agent-select').value;
+            if (agentId) {
+                dataPrepAgentId = agentId;
+            }
+        }
+
+        function selectDataSource(source) {
+            selectedDataSource = source;
+
+            // Update button styles
+            document.querySelectorAll('[id^="source-"]').forEach(btn => {
+                btn.classList.remove('btn-primary');
+                btn.classList.add('btn-secondary');
+            });
+            document.getElementById(`source-${source}`).classList.remove('btn-secondary');
+            document.getElementById(`source-${source}`).classList.add('btn-primary');
+
+            // Hide all configs
+            document.querySelectorAll('.source-config').forEach(config => {
+                config.style.display = 'none';
+            });
+
+            // Show selected config
+            document.getElementById(`config-${source}`).style.display = 'block';
+            document.getElementById('dataprep-config').style.display = 'block';
+        }
+
+        async function startDataPreparation() {
+            if (!dataPrepAgentId) {
+                alert('Please select an agent first');
+                return;
+            }
+
+            if (!selectedDataSource) {
+                alert('Please select a data source type');
+                return;
+            }
+
+            let sources = [];
+            let config = {
+                formatter_type: document.getElementById('dataprep-format').value,
+                rate_limit: parseFloat(document.getElementById('dataprep-rate-limit').value),
+                cache_hours: parseInt(document.getElementById('dataprep-cache-hours').value)
+            };
+
+            // Build source configuration based on selected type
+            switch(selectedDataSource) {
+                case 'web':
+                    sources.push({
+                        type: 'url',
+                        location: document.getElementById('web-url').value,
+                        metadata: {
+                            max_depth: parseInt(document.getElementById('web-depth').value),
+                            max_pages: parseInt(document.getElementById('web-max-pages').value),
+                            follow_links: document.getElementById('web-follow-links').checked
+                        }
+                    });
+                    config.collector_type = 'web';
+                    config.preprocessor_type = 'markdown';
+                    break;
+
+                case 'documentation':
+                    sources.push({
+                        type: 'documentation',
+                        location: document.getElementById('doc-url').value,
+                        version: document.getElementById('doc-version').value || null,
+                        metadata: {
+                            format: document.getElementById('doc-format').value
+                        }
+                    });
+                    config.collector_type = 'documentation';
+                    config.preprocessor_type = 'markdown';
+                    break;
+
+                case 'api':
+                    sources.push({
+                        type: 'api_doc',
+                        location: document.getElementById('api-url').value,
+                        metadata: {
+                            format: document.getElementById('api-format').value,
+                            include_examples: document.getElementById('api-include-examples').checked
+                        }
+                    });
+                    config.collector_type = 'api';
+                    config.preprocessor_type = 'code';
+                    break;
+
+                case 'drupal':
+                    const drupalVersion = document.getElementById('drupal-version').value;
+                    // Add selected Drupal sources
+                    if (document.getElementById('drupal-user-guide').checked) {
+                        sources.push({
+                            type: 'documentation',
+                            location: 'https://www.drupal.org/docs/user_guide',
+                            version: drupalVersion,
+                            metadata: { category: 'user_guide' }
+                        });
+                    }
+                    if (document.getElementById('drupal-api').checked) {
+                        sources.push({
+                            type: 'api_doc',
+                            location: `https://api.drupal.org/api/drupal/${drupalVersion}`,
+                            version: drupalVersion,
+                            metadata: { category: 'api_reference' }
+                        });
+                    }
+                    if (document.getElementById('drupal-changes').checked) {
+                        sources.push({
+                            type: 'changes',
+                            location: 'https://www.drupal.org/list-changes/drupal',
+                            version: drupalVersion,
+                            metadata: { category: 'change_records' }
+                        });
+                    }
+                    config.collector_type = 'documentation';
+                    config.preprocessor_type = 'drupal';
+                    config.formatter_type = 'delta';
+                    config.target_version = drupalVersion;
+                    config.enable_versioning = true;
+                    break;
+
+                case 'codebase':
+                    sources.push({
+                        type: 'codebase',
+                        location: document.getElementById('code-path').value,
+                        metadata: {
+                            language: document.getElementById('code-language').value,
+                            framework: document.getElementById('code-framework').value
+                        }
+                    });
+                    config.collector_type = 'web';
+                    config.preprocessor_type = 'code';
+                    config.language = document.getElementById('code-language').value;
+                    config.framework = document.getElementById('code-framework').value;
+                    break;
+            }
+
+            const requestData = {
+                sources: sources,
+                config: config
+            };
+
+            try {
+                const response = await fetch(`/agents/${dataPrepAgentId}/training/prepare`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(requestData)
+                });
+
+                if (response.ok) {
+                    const result = await response.json();
+                    alert(`Data preparation started! Job ID: ${result.job_id}`);
+                    loadDataPrepJobs();
+                } else {
+                    const error = await response.json();
+                    alert('Failed to start data preparation: ' + (error.detail || 'Unknown error'));
+                }
+            } catch (error) {
+                console.error('Failed to start data preparation:', error);
+                alert('Error starting data preparation');
+            }
+        }
+
+        async function loadDataPrepJobs() {
+            const container = document.getElementById('dataprep-jobs-list');
+
+            try {
+                // Fetch jobs from the API
+                const response = await fetch('/training/prepare/jobs');
+                const data = await response.json();
+
+                if (!data.jobs || data.jobs.length === 0) {
+                    container.innerHTML = `
+                        <div class="empty-state">
+                            <div class="empty-state-icon">🔄</div>
+                            <p>No active data preparation jobs</p>
+                            <small style="color: #64748b;">Start a new job above to begin collecting training data</small>
+                        </div>
+                    `;
+                    return;
+                }
+
+                // Display the jobs
+                container.innerHTML = data.jobs.map(job => `
+                    <div class="model-item" style="margin-bottom: 10px;">
+                        <div class="model-item-info">
+                            <strong>Job ID: ${job.job_id.substring(0, 8)}...</strong>
+                            <div style="color: #94a3b8; font-size: 0.85em;">
+                                Status: <span style="color: ${getStatusColor(job.status)}">${job.status.toUpperCase()}</span>
+                                <br>Progress: ${Math.round(job.progress * 100)}%
+                                ${job.errors > 0 ? `<br>Errors: ${job.errors}` : ''}
+                            </div>
+                        </div>
+                        <div class="model-item-actions">
+                            <button class="btn btn-sm btn-secondary" onclick="viewJobDetails('${job.job_id}')">
+                                View Details
+                            </button>
+                        </div>
+                    </div>
+                `).join('');
+
+            } catch (error) {
+                console.error('Failed to load data prep jobs:', error);
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">⚠️</div>
+                        <p>Failed to load jobs</p>
+                        <small style="color: #ef4444;">${error.message}</small>
+                    </div>
+                `;
+            }
+        }
+
+        function getStatusColor(status) {
+            switch(status) {
+                case 'completed': return '#10b981';
+                case 'failed': return '#ef4444';
+                case 'collecting':
+                case 'preprocessing':
+                case 'formatting':
+                case 'in_progress': return '#3b82f6';
+                case 'pending': return '#f59e0b';
+                default: return '#94a3b8';
+            }
+        }
+
+        async function viewJobDetails(jobId) {
+            try {
+                const response = await fetch(`/training/prepare/${jobId}`);
+                const job = await response.json();
+
+                alert(`Job Details:
+ID: ${job.job_id}
+Status: ${job.status}
+Progress: ${Math.round(job.progress * 100)}%
+Sources Processed: ${job.sources_processed}
+Items Collected: ${job.items_collected}
+Items Preprocessed: ${job.items_preprocessed}
+Items Formatted: ${job.items_formatted}
+${job.output_file ? `Output: ${job.output_file}` : ''}
+${job.errors && job.errors.length > 0 ? `\nErrors:\n${job.errors.join('\n')}` : ''}`);
+
+            } catch (error) {
+                console.error('Failed to get job details:', error);
+                alert('Failed to load job details');
+            }
+        }
+
+        async function loadPreparedDatasets() {
+            if (!dataPrepAgentId) return;
+
+            try {
+                const response = await fetch(`/v1/agents/${dataPrepAgentId}/training/data`);
+                const datasets = await response.json();
+
+                const container = document.getElementById('dataprep-datasets-list');
+                if (datasets.length === 0) {
+                    container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📚</div><p>No prepared datasets</p></div>';
+                    return;
+                }
+
+                container.innerHTML = datasets.map(dataset => `
+                    <div class="model-item">
+                        <div class="model-item-info">
+                            <strong>${dataset.name}</strong>
+                            <div style="color: #94a3b8; font-size: 0.85em;">
+                                Size: ${dataset.size} | Records: ${dataset.record_count}
+                            </div>
+                        </div>
+                        <div class="model-item-actions">
+                            <button class="btn btn-sm btn-primary" onclick="useDatasetForTraining('${dataset.name}')">
+                                Use for Training
+                            </button>
+                        </div>
+                    </div>
+                `).join('');
+            } catch (error) {
+                console.error('Failed to load datasets:', error);
+            }
+        }
+
+        function useDatasetForTraining(datasetName) {
+            // Switch to training tab with this dataset selected
+            switchTab('training');
+            // Pre-select the dataset in training tab
+            const trainingDatasetSelect = document.getElementById('training-dataset');
+            if (trainingDatasetSelect) {
+                trainingDatasetSelect.value = datasetName;
+            }
+        }
 
         // Training Tab Functions
         let selectedAgentId = null;
@@ -2430,7 +2961,6 @@
 
         // Download Model
         async function downloadModel(modelId) {
-            console.log('Download button clicked for model:', modelId);
             try {
                 // Use getElementById for the container (doesn't need escaping)
                 const progressContainer = document.getElementById(`progress-${modelId}`);
@@ -2461,7 +2991,6 @@
                 }
 
                 const result = await response.json();
-                console.log('Download response:', result);
 
                 if (result.status === 'download_started') {
                     progressText.textContent = `Downloading ${result.size_gb} GB model from server...`;

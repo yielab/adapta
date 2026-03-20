@@ -17,7 +17,7 @@ from brain.core.router import SmartRouter
 from brain.memory.memory_manager import MemoryManager
 from brain.agents.adaptive.feedback_collector import FeedbackCollector
 from brain.agents.adaptive.evolution_manager import EvolutionManager
-from brain.agents.adaptive.ab_testing import ABTestingManager
+from brain.agents.adaptive.ab_testing import ABTestManager
 from brain.agents.workspace import WorkspaceManager
 from brain.rag.advanced.hybrid_search import HybridSearchEngine, SearchStrategy
 from brain.rag.advanced.reranking import HybridReranker
@@ -175,7 +175,7 @@ class UnifiedRouter:
             self.evolution_manager = None
 
         if self.config.enable_ab_testing:
-            self.ab_testing = ABTestingManager()
+            self.ab_testing = ABTestManager()
         else:
             self.ab_testing = None
 

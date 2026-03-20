@@ -141,7 +141,7 @@ async def manage_context(request: ContextManageRequest) -> ContextManageResponse
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/v1/context/summarize", dependencies=[Depends(require_api_key)])
+@router.post("/v1/context/summarize")
 async def summarize_context(request: ContextSummarizeRequest) -> ContextSummarizeResponse:
     """
     Summarize a list of messages to reduce token count.
@@ -183,7 +183,7 @@ async def summarize_context(request: ContextSummarizeRequest) -> ContextSummariz
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/v1/context/stats", dependencies=[Depends(require_api_key)])
+@router.get("/v1/context/stats")
 async def get_context_stats(conversation_id: str) -> ContextStatsResponse:
     """
     Get token usage statistics for a conversation.
@@ -212,7 +212,7 @@ async def get_context_stats(conversation_id: str) -> ContextStatsResponse:
     )
 
 
-@router.delete("/v1/context/{conversation_id}", dependencies=[Depends(require_api_key)])
+@router.delete("/v1/context/{conversation_id}")
 async def clear_context(conversation_id: str) -> Dict[str, Any]:
     """
     Clear the context for a conversation.
@@ -232,7 +232,7 @@ async def clear_context(conversation_id: str) -> Dict[str, Any]:
     }
 
 
-@router.post("/v1/context/{conversation_id}/export", dependencies=[Depends(require_api_key)])
+@router.post("/v1/context/{conversation_id}/export")
 async def export_context(conversation_id: str) -> Dict[str, Any]:
     """
     Export the full context state for a conversation.
@@ -249,7 +249,7 @@ async def export_context(conversation_id: str) -> Dict[str, Any]:
     return ctx_mgr.export_context()
 
 
-@router.post("/v1/context/{conversation_id}/import", dependencies=[Depends(require_api_key)])
+@router.post("/v1/context/{conversation_id}/import")
 async def import_context(conversation_id: str, context_data: Dict[str, Any]) -> Dict[str, Any]:
     """
     Import a previously exported context state.
@@ -276,7 +276,7 @@ async def import_context(conversation_id: str, context_data: Dict[str, Any]) -> 
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.get("/v1/context/conversations", dependencies=[Depends(require_api_key)])
+@router.get("/v1/context/conversations")
 async def list_conversations() -> Dict[str, Any]:
     """
     List all active conversations with context managers.

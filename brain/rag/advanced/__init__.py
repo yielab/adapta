@@ -14,10 +14,10 @@ from brain.rag.advanced.hybrid_search import (
     SearchResult
 )
 
-from brain.rag.advanced.reranker import (
+from brain.rag.advanced.reranking import (
+    HybridReranker,
     CrossEncoderReranker,
-    RerankerModel,
-    RerankResult
+    RerankingConfig
 )
 
 from brain.rag.advanced.query_expansion import (
@@ -26,32 +26,36 @@ from brain.rag.advanced.query_expansion import (
     ExpandedQuery
 )
 
-from brain.rag.advanced.citation_tracker import (
+from brain.rag.advanced.citations import (
     CitationTracker,
+    AutoCitationInjector,
     Citation,
-    CitedDocument
+    CitedResponse
 )
 
 from brain.rag.advanced.advanced_rag import (
     AdvancedRAG,
     RAGConfig,
-    RAGResult
+    RAGResult,
+    RAGMode
 )
 
 __all__ = [
     "HybridSearchEngine",
     "SearchStrategy",
     "SearchResult",
+    "HybridReranker",
     "CrossEncoderReranker",
-    "RerankerModel",
-    "RerankResult",
+    "RerankingConfig",
     "QueryExpander",
     "ExpansionStrategy",
     "ExpandedQuery",
     "CitationTracker",
+    "AutoCitationInjector",
     "Citation",
-    "CitedDocument",
+    "CitedResponse",
     "AdvancedRAG",
     "RAGConfig",
     "RAGResult",
+    "RAGMode",
 ]

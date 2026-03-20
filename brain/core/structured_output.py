@@ -12,7 +12,7 @@ This module provides:
 import json
 import logging
 import re
-from typing import Any, Dict, List, Optional, Type, Union, Callable
+from typing import Any, Dict, List, Optional, Type, Union, Callable, Tuple
 from dataclasses import dataclass
 from enum import Enum
 import time

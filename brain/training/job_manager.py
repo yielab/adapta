@@ -180,8 +180,19 @@ class JobManager:
 
         await self.update_job_state(job_id, JobState.CANCELLED)
 
-        # TODO: Implement actual training process interruption
-        # For now, just mark as cancelled - trainer will check this flag
+        # Set cancellation flag that trainer will check
+        job.metadata["cancel_requested"] = True
+
+        # If a process is running, attempt to terminate it gracefully
+        if "process_pid" in job.metadata:
+            try:
+                import os
+                import signal
+                pid = job.metadata["process_pid"]
+                os.kill(pid, signal.SIGTERM)
+                logger.info(f"Sent termination signal to process {pid}")
+            except (ProcessLookupError, PermissionError) as e:
+                logger.warning(f"Could not terminate process: {e}")
 
         logger.info(f"Cancelled job {job_id}")
         return True

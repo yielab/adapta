@@ -295,3 +295,52 @@ async def verify_api_key(
         )
 
     return api_key_obj
+
+
+# Simplified dependency function for routes that require API key
+async def require_api_key(
+    credentials: Optional[HTTPAuthorizationCredentials] = Security(security),
+) -> APIKey:
+    """
+    FastAPI dependency for routes that require API key authentication.
+
+    This is a wrapper around verify_api_key that always requires authentication,
+    even if settings.require_api_key is False.
+
+    Usage:
+        @app.get("/protected", dependencies=[Depends(require_api_key)])
+        async def protected_route():
+            # Route code here
+
+    Raises:
+        HTTPException: If key is invalid or missing
+    """
+    # For now, if authentication is disabled globally, return a dummy key
+    if not settings.require_api_key:
+        return APIKey(
+            key_id="dummy",
+            key_hash="",
+            name="No Authentication",
+            created_at=time.time(),
+            permissions=["read", "write"]
+        )
+
+    # Otherwise require valid credentials
+    if not credentials:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="API key required. Include it in the Authorization header as 'Bearer <key>'",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    # Validate the key
+    api_key_obj = api_key_manager.validate_key(credentials.credentials)
+
+    if not api_key_obj:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or inactive API key",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    return api_key_obj

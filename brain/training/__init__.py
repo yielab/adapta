@@ -8,6 +8,10 @@ from brain.training.models import (
     JobState,
 )
 from brain.training.trainer import trainer, LoRATrainer
+from brain.training.job_manager import job_manager
+
+# Alias for compatibility
+training_manager = job_manager
 
 __all__ = [
     "TrainingConfig",
@@ -17,4 +21,6 @@ __all__ = [
     "JobState",
     "trainer",
     "LoRATrainer",
+    "job_manager",
+    "training_manager",
 ]
