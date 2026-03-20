@@ -11,6 +11,12 @@ from typing import List, Dict, Any, Optional, Tuple
 
 from brain.tools import get_tool_executor, get_tool_registry
 from brain.tools.base import ToolResult
+from brain.core.structured_output import (
+    StructuredOutputHandler,
+    ToolCallValidator,
+    OutputFormatter,
+    ExtractionStrategy
+)
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +32,9 @@ class FunctionCallingHandler:
         """Initialize function calling handler"""
         self.executor = get_tool_executor()
         self.registry = get_tool_registry()
+        self.structured_handler = StructuredOutputHandler(max_retries=3, strict_mode=False)
+        self.tool_validator = ToolCallValidator()
+        self.formatter = OutputFormatter()
 
     def should_use_tools(
         self,
@@ -157,7 +166,79 @@ If you don't need to use any tools, respond normally with text."""
 
     def extract_tool_calls(self, response_text: str) -> Tuple[Optional[List[Dict]], Optional[str]]:
         """
-        Extract tool calls from LLM response.
+        Extract tool calls from LLM response using enhanced strategies.
+
+        Args:
+            response_text: LLM response text
+
+        Returns:
+            (tool_calls, remaining_text) tuple
+        """
+        # Use structured handler for robust extraction
+        extraction_result = self.structured_handler.extract_json(
+            response_text,
+            validate=False  # We'll validate tool calls separately
+        )
+
+        if extraction_result.success and extraction_result.data:
+            data = extraction_result.data
+            tool_calls = None
+
+            # Check for various tool call formats
+            if "tool_calls" in data:
+                tool_calls = data["tool_calls"]
+            elif "function_calls" in data:
+                tool_calls = data["function_calls"]
+            elif "tools" in data:
+                tool_calls = data["tools"]
+            elif "functions" in data:
+                tool_calls = data["functions"]
+            elif "name" in data and ("arguments" in data or "parameters" in data):
+                # Single tool call
+                tool_calls = [data]
+
+            if tool_calls and isinstance(tool_calls, list):
+                formatted_calls = []
+
+                for i, call in enumerate(tool_calls):
+                    # Validate and fix the tool call
+                    is_valid, fixed_call, error = self.tool_validator.validate_tool_call(call)
+
+                    if is_valid and fixed_call:
+                        # Format for OpenAI compatibility
+                        formatted_call = {
+                            "id": call.get("id", f"call_{i}"),
+                            "type": "function",
+                            "function": {
+                                "name": fixed_call["function"],
+                                "arguments": json.dumps(fixed_call["arguments"]) if isinstance(fixed_call["arguments"], dict) else fixed_call["arguments"]
+                            }
+                        }
+                        formatted_calls.append(formatted_call)
+                    else:
+                        logger.warning(f"Invalid tool call skipped: {error}")
+
+                if formatted_calls:
+                    # Remove JSON from response text to get remaining content
+                    remaining_text = response_text
+                    if extraction_result.raw_output:
+                        # Try to remove the JSON part
+                        for strategy in [ExtractionStrategy.JSON_BLOCK, ExtractionStrategy.JSON_DETECT]:
+                            if extraction_result.strategy_used == strategy:
+                                # Remove the extracted JSON from the text
+                                json_str = json.dumps(extraction_result.data)
+                                if json_str in response_text:
+                                    remaining_text = response_text.replace(json_str, "").strip()
+                                break
+
+                    return formatted_calls, remaining_text
+
+        # Fallback to original regex method if structured extraction fails
+        return self._extract_tool_calls_fallback(response_text)
+
+    def _extract_tool_calls_fallback(self, response_text: str) -> Tuple[Optional[List[Dict]], Optional[str]]:
+        """
+        Fallback extraction using simple regex patterns.
 
         Args:
             response_text: LLM response text
@@ -166,43 +247,62 @@ If you don't need to use any tools, respond normally with text."""
             (tool_calls, remaining_text) tuple
         """
         # Try to find JSON in the response
-        # Look for {"tool_calls": [...]} pattern
-        json_pattern = r'\{[^{}]*"tool_calls"[^{}]*\[[^\]]*\][^{}]*\}'
+        json_pattern = r'\{[^{}]*"(?:tool_calls?|function_calls?|tools?|functions?)"[^{}]*\[[^\]]*\][^{}]*\}'
 
-        match = re.search(json_pattern, response_text, re.DOTALL)
+        match = re.search(json_pattern, response_text, re.DOTALL | re.IGNORECASE)
         if not match:
-            # No tool calls found
-            return None, response_text
-
-        try:
-            # Parse JSON
-            json_str = match.group(0)
-            data = json.loads(json_str)
-
-            tool_calls = data.get("tool_calls", [])
-            if not tool_calls:
+            # Try single tool call pattern
+            single_pattern = r'\{[^{}]*"(?:name|function)"[^{}]*"(?:arguments?|parameters?)"[^{}]*\}'
+            match = re.search(single_pattern, response_text, re.DOTALL | re.IGNORECASE)
+            if not match:
                 return None, response_text
 
+        try:
+            # Parse JSON (with error correction)
+            json_str = match.group(0)
+            json_str_fixed = self.tool_validator._fix_json_errors(json_str)
+            data = json.loads(json_str_fixed)
+
+            # Extract tool calls
+            if "tool_calls" in data:
+                tool_calls = data["tool_calls"]
+            elif "function_calls" in data:
+                tool_calls = data["function_calls"]
+            elif "tools" in data:
+                tool_calls = data["tools"]
+            elif "functions" in data:
+                tool_calls = data["functions"]
+            elif "name" in data:
+                tool_calls = [data]
+            else:
+                return None, response_text
+
+            if not isinstance(tool_calls, list):
+                tool_calls = [tool_calls]
+
             # Remove JSON from response text
-            remaining_text = response_text.replace(json_str, "").strip()
+            remaining_text = response_text.replace(match.group(0), "").strip()
 
             # Convert to OpenAI format
             formatted_calls = []
             for i, call in enumerate(tool_calls):
-                formatted_call = {
-                    "id": f"call_{i}",
-                    "type": "function",
-                    "function": {
-                        "name": call["name"],
-                        "arguments": json.dumps(call.get("arguments", {}))
+                is_valid, fixed_call, error = self.tool_validator.validate_tool_call(call)
+
+                if is_valid and fixed_call:
+                    formatted_call = {
+                        "id": f"call_{i}",
+                        "type": "function",
+                        "function": {
+                            "name": fixed_call["function"],
+                            "arguments": json.dumps(fixed_call["arguments"]) if isinstance(fixed_call["arguments"], dict) else fixed_call["arguments"]
+                        }
                     }
-                }
-                formatted_calls.append(formatted_call)
+                    formatted_calls.append(formatted_call)
 
-            return formatted_calls, remaining_text
+            return (formatted_calls if formatted_calls else None), remaining_text
 
-        except json.JSONDecodeError:
-            logger.warning(f"Failed to parse tool call JSON: {json_str}")
+        except (json.JSONDecodeError, Exception) as e:
+            logger.warning(f"Fallback extraction failed: {e}")
             return None, response_text
 
     async def execute_tool_calls(

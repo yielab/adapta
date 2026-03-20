@@ -37,9 +37,15 @@ from brain.api.models import (
     VisionChatResponse,
 )
 from brain.api import training as training_router
+from brain.api import data_preparation as data_prep_router
 from brain.api import documents as documents_router
 from brain.api import api_keys as api_keys_router
 from brain.api import tools as tools_router
+from brain.api import context as context_router
+from brain.api import tracing as tracing_router
+from brain.api import memory as memory_router
+from brain.api import unified as unified_router
+from brain.api import features as features_router
 
 logger = logging.getLogger(__name__)
 
@@ -52,13 +58,47 @@ model_downloader = ModelDownloader(settings.models_dir)
 async def lifespan(app: FastAPI):
     """Application lifespan events"""
     # Startup
-    logger.info("Starting API app...")
-    await model_manager.preload_default_models()
-    await agent_manager.load_agents()
-    logger.info("API app ready!")
+    logger.info("=" * 50)
+    logger.info("LIFESPAN: Starting API app...")
+    logger.info("=" * 50)
+
+    try:
+        await model_manager.preload_default_models()
+        logger.info("LIFESPAN: Models preloaded")
+    except Exception as e:
+        logger.error(f"LIFESPAN: Model preload failed: {e}")
+
+    try:
+        await agent_manager.load_agents()
+        agent_count = len(agent_manager.list_agents())
+        logger.info(f"LIFESPAN: Loaded {agent_count} agents from disk")
+    except Exception as e:
+        logger.error(f"LIFESPAN: Agent load failed: {e}")
+
+    try:
+        # Initialize memory system
+        from brain.api.memory import initialize_memory_system
+        await initialize_memory_system()
+        logger.info("LIFESPAN: Memory system initialized")
+    except Exception as e:
+        logger.error(f"LIFESPAN: Memory initialization failed: {e}")
+
+    logger.info("=" * 50)
+    logger.info("LIFESPAN: API app ready!")
+    logger.info("=" * 50)
+
     yield
+
     # Shutdown
-    logger.info("Shutting down API app...")
+    logger.info("LIFESPAN: Shutting down API app...")
+
+    try:
+        # Shutdown memory system
+        from brain.api.memory import shutdown_memory_system
+        await shutdown_memory_system()
+        logger.info("LIFESPAN: Memory system shutdown complete")
+    except Exception as e:
+        logger.error(f"LIFESPAN: Memory shutdown failed: {e}")
 
 
 async def _queue_processor(model: str, payload: dict):
@@ -134,9 +174,15 @@ def create_app() -> FastAPI:
 
     # Include routers
     app.include_router(training_router.router, prefix="", tags=["training"])
+    app.include_router(data_prep_router.router, prefix="", tags=["data-preparation"])
     app.include_router(documents_router.router, prefix="", tags=["documents"])
     app.include_router(api_keys_router.router, prefix="", tags=["api-keys"])
     app.include_router(tools_router.router, prefix="", tags=["tools"])
+    app.include_router(context_router.router, prefix="", tags=["context"])
+    app.include_router(tracing_router.router, prefix="", tags=["tracing"])
+    app.include_router(memory_router.router, prefix="", tags=["memory"])
+    app.include_router(unified_router.router, prefix="", tags=["unified"])
+    app.include_router(features_router.router, prefix="", tags=["features"])
 
     # Routes
     @app.get("/")
@@ -759,7 +805,9 @@ def create_app() -> FastAPI:
     async def list_agents():
         """List all agents"""
         agents = agent_manager.list_agents()
-        return AgentListResponse(data=agents)
+        # Convert AgentInfo objects to dicts for Pydantic V2 compatibility
+        agents_data = [agent.model_dump() if hasattr(agent, 'model_dump') else agent for agent in agents]
+        return AgentListResponse(data=agents_data)
 
     @app.post("/agents", response_model=AgentInfo)
     async def create_agent(request: AgentCreateRequest):

@@ -172,8 +172,22 @@ class ModelCatalog:
         """Get all available models with installation status."""
         result = []
         for model in MODEL_CATALOG:
-            model_path = self.models_dir / model.local_dir / model.filename
-            is_installed = model_path.exists()
+            # Search for the model file in multiple locations
+            model_path = None
+            is_installed = False
+
+            # Method 1: Check expected location
+            expected_path = self.models_dir / model.local_dir / model.filename
+            if expected_path.exists():
+                model_path = expected_path
+                is_installed = True
+            else:
+                # Method 2: Search all subdirectories for the filename
+                for found_file in self.models_dir.rglob(model.filename):
+                    if found_file.is_file():
+                        model_path = found_file
+                        is_installed = True
+                        break
 
             result.append({
                 "id": model.id,

@@ -1,0 +1,47 @@
+# Caddyfile for Brain From Cero
+# Provides local domain access: brain.test
+
+# Main domain
+brain.test {
+    # Reverse proxy to Docker container
+    reverse_proxy localhost:8000
+
+    # Enable logging
+    log {
+        output file /var/log/caddy/brain.log
+        format json
+    }
+
+    # CORS headers
+    header {
+        Access-Control-Allow-Origin *
+        Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
+        Access-Control-Allow-Headers "Content-Type, Authorization"
+    }
+}
+
+# API subdomain
+api.brain.test {
+    reverse_proxy localhost:8000
+
+    # API-specific headers
+    header {
+        Access-Control-Allow-Origin *
+        Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
+        Access-Control-Allow-Headers "Content-Type, Authorization"
+    }
+}
+
+# Dashboard subdomain
+dashboard.brain.test {
+    reverse_proxy localhost:8000/dashboard
+
+    header {
+        Access-Control-Allow-Origin *
+    }
+}
+
+# Alternative: www subdomain
+www.brain.test {
+    redir https://brain.test{uri} permanent
+}

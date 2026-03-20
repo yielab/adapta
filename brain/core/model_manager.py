@@ -46,6 +46,28 @@ class ModelManager:
         self._load_lock = asyncio.Lock()
         self._init_default_configs()
 
+    def _find_model_file(self, model_dir: Path, preferred_filename: str) -> Optional[Path]:
+        """
+        Find a model file in a directory.
+        First tries the preferred filename, then searches for any .gguf file.
+        """
+        # Try preferred file first
+        preferred_path = model_dir / preferred_filename
+        if preferred_path.exists():
+            return preferred_path
+
+        # Search for any .gguf file in the directory
+        if model_dir.exists():
+            gguf_files = list(model_dir.glob("*.gguf"))
+            if gguf_files:
+                # Prefer Q4_K_M, then Q5_K_M, then any other
+                for pattern in ["*q4_k_m.gguf", "*q5_k_m.gguf", "*.gguf"]:
+                    matches = list(model_dir.glob(pattern))
+                    if matches:
+                        return matches[0]
+
+        return None
+
     def _init_default_configs(self):
         """Initialize default model configurations"""
         models_dir = settings.models_dir
@@ -108,14 +130,25 @@ class ModelManager:
 
             config = self._configs[model_name]
 
-            # Check if model file exists
-            if not config.path.exists():
-                raise FileNotFoundError(
-                    f"Model file not found: {config.path}\n"
-                    f"Please download the model first using: brain download {model_name}"
-                )
+            # Check if model file exists, try to find alternative if not
+            model_path = config.path
+            if not model_path.exists():
+                # Try to find any .gguf file in the model directory
+                model_dir = model_path.parent
+                preferred_filename = model_path.name
+                found_path = self._find_model_file(model_dir, preferred_filename)
 
-            logger.info(f"Loading model {model_name} from {config.path}")
+                if found_path:
+                    logger.info(f"Preferred file {model_path.name} not found, using {found_path.name} instead")
+                    model_path = found_path
+                    config.path = found_path  # Update config with actual path
+                else:
+                    raise FileNotFoundError(
+                        f"Model file not found: {config.path}\n"
+                        f"Please download the model first using: brain download {model_name}"
+                    )
+
+            logger.info(f"Loading model {model_name} from {model_path}")
 
             try:
                 # Get GPU configuration
@@ -137,7 +170,7 @@ class ModelManager:
                 model = await loop.run_in_executor(
                     None,
                     lambda: Llama(
-                        model_path=str(config.path),
+                        model_path=str(model_path),
                         n_ctx=n_ctx,
                         n_threads=config.n_threads,
                         n_gpu_layers=gpu_kwargs.get('n_gpu_layers', config.n_gpu_layers),
@@ -170,8 +203,31 @@ class ModelManager:
         return self._models.get(model_name)
 
     def list_models(self) -> list[ModelConfig]:
-        """List all available models"""
-        return list(self._configs.values())
+        """List all available models with updated paths and existence status"""
+        models = []
+        for config in self._configs.values():
+            # Create a copy to avoid modifying the original
+            model_copy = ModelConfig(
+                name=config.name,
+                model_type=config.model_type,
+                path=config.path,
+                context_length=config.context_length,
+                n_threads=config.n_threads,
+                n_gpu_layers=config.n_gpu_layers,
+                description=config.description,
+                loaded=config.loaded,
+            )
+
+            # Check if configured path exists, otherwise search for alternatives
+            if not model_copy.path.exists():
+                model_dir = model_copy.path.parent
+                preferred_filename = model_copy.path.name
+                found_path = self._find_model_file(model_dir, preferred_filename)
+                if found_path:
+                    model_copy.path = found_path
+
+            models.append(model_copy)
+        return models
 
     def get_model_config(self, model_name: str) -> Optional[ModelConfig]:
         """Get model configuration"""
@@ -180,8 +236,14 @@ class ModelManager:
     def get_model_by_type(self, model_type: ModelType) -> Optional[str]:
         """Get the first available model of a given type"""
         for name, config in self._configs.items():
-            if config.model_type == model_type and config.path.exists():
-                return name
+            if config.model_type == model_type:
+                # Check if file exists, or try to find an alternative
+                if config.path.exists():
+                    return name
+                else:
+                    found_path = self._find_model_file(config.path.parent, config.path.name)
+                    if found_path:
+                        return name
         return None
 
     async def ensure_model_loaded(self, model_name: str) -> Llama:

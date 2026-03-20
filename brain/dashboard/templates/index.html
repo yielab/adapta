@@ -970,7 +970,134 @@
         .modal-close:hover {
             color: #e2e8f0;
         }
+
+        /* ========== Chat Message Formatting ========== */
+        .chat-message-content .formatted-content {
+            line-height: 1.6;
+        }
+
+        .chat-message-content .formatted-content h1,
+        .chat-message-content .formatted-content h2,
+        .chat-message-content .formatted-content h3 {
+            color: #60a5fa;
+            margin-top: 1em;
+            margin-bottom: 0.5em;
+            font-weight: 600;
+        }
+
+        .chat-message-content .formatted-content h1 { font-size: 1.5em; }
+        .chat-message-content .formatted-content h2 { font-size: 1.3em; }
+        .chat-message-content .formatted-content h3 { font-size: 1.1em; }
+
+        .chat-message-content .formatted-content p {
+            margin-bottom: 0.8em;
+        }
+
+        .chat-message-content .formatted-content a {
+            color: #60a5fa;
+            text-decoration: none;
+            border-bottom: 1px solid #60a5fa;
+        }
+
+        .chat-message-content .formatted-content a:hover {
+            color: #93c5fd;
+            border-bottom-color: #93c5fd;
+        }
+
+        .chat-message-content .formatted-content ul,
+        .chat-message-content .formatted-content ol {
+            margin-left: 1.5em;
+            margin-bottom: 0.8em;
+        }
+
+        .chat-message-content .formatted-content li {
+            margin-bottom: 0.3em;
+        }
+
+        .chat-message-content .formatted-content blockquote {
+            border-left: 3px solid #60a5fa;
+            padding-left: 1em;
+            margin: 1em 0;
+            color: #94a3b8;
+            font-style: italic;
+        }
+
+        .chat-message-content .formatted-content code {
+            background: #1e293b;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+            color: #10b981;
+        }
+
+        .chat-message-content .formatted-content pre {
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 6px;
+            padding: 1em;
+            margin: 1em 0;
+            overflow-x: auto;
+        }
+
+        .chat-message-content .formatted-content pre code {
+            background: none;
+            padding: 0;
+            color: #e2e8f0;
+            font-size: 0.85em;
+            line-height: 1.5;
+        }
+
+        .chat-message-content .formatted-content table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 1em 0;
+        }
+
+        .chat-message-content .formatted-content th,
+        .chat-message-content .formatted-content td {
+            border: 1px solid #334155;
+            padding: 8px 12px;
+            text-align: left;
+        }
+
+        .chat-message-content .formatted-content th {
+            background: #1e293b;
+            color: #60a5fa;
+            font-weight: 600;
+        }
+
+        .chat-message-content .formatted-content hr {
+            border: none;
+            border-top: 1px solid #334155;
+            margin: 1.5em 0;
+        }
+
+        /* Syntax highlighting for code blocks */
+        .hljs {
+            background: #1e293b !important;
+            color: #e2e8f0 !important;
+        }
+
+        .hljs-keyword { color: #c678dd; }
+        .hljs-string { color: #98c379; }
+        .hljs-number { color: #d19a66; }
+        .hljs-comment { color: #5c6370; font-style: italic; }
+        .hljs-function { color: #61afef; }
+        .hljs-class { color: #e5c07b; }
+        .hljs-title { color: #61afef; }
+        .hljs-params { color: #abb2bf; }
+        .hljs-built_in { color: #e06c75; }
+        .hljs-meta { color: #61afef; }
+        .hljs-attr { color: #d19a66; }
+        .hljs-variable { color: #e06c75; }
     </style>
+
+    <!-- Marked.js for Markdown rendering -->
+    <script src="https://cdn.jsdelivr.net/npm/marked@11.1.1/marked.min.js"></script>
+    <!-- Highlight.js for syntax highlighting -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/atom-one-dark.min.css">
+    <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js"></script>
 </head>
 <body>
     <!-- Notification Container -->
@@ -985,8 +1112,7 @@
         <!-- Tab Navigation -->
         <div class="tabs">
             <button class="tab-btn active" onclick="switchTab('overview')">📊 Overview</button>
-            <button class="tab-btn" onclick="switchTab('catalog')">📦 Model Catalog</button>
-            <button class="tab-btn" onclick="switchTab('models')">🤖 Loaded Models</button>
+            <button class="tab-btn" onclick="switchTab('models')">🤖 Models</button>
             <button class="tab-btn" onclick="switchTab('agents')">👥 Agents</button>
             <button class="tab-btn" onclick="switchTab('chat')">💬 Chat</button>
             <button class="tab-btn" onclick="switchTab('documents')">📄 Documents</button>
@@ -1066,19 +1192,34 @@
             <div class="card">
                 <h2>🚀 Quick Actions</h2>
                 <div class="btn-group">
-                    <button class="btn btn-primary" onclick="switchTab('catalog')">📦 Browse Model Catalog</button>
+                    <button class="btn btn-primary" onclick="switchTab('models')">🤖 Manage Models</button>
                     <button class="btn btn-secondary" onclick="refreshData()">🔄 Refresh Data</button>
                     <a href="/v1/models" class="btn btn-secondary" target="_blank">📖 API Docs</a>
                 </div>
             </div>
         </div>
 
-        <!-- Model Catalog Tab -->
-        <div id="catalog-tab" class="tab-content">
+        <!-- Unified Models Tab -->
+        <div id="models-tab" class="tab-content">
+            <!-- Loaded Models Section -->
             <div class="card">
+                <h2>🤖 Currently Loaded Models</h2>
+                <p style="color: #94a3b8; margin-bottom: 15px;">
+                    Models loaded in memory and ready to use
+                </p>
+                <ul id="loaded-models-list" class="model-list">
+                    <li class="empty-state">
+                        <div class="empty-state-icon">⏳</div>
+                        <p>Loading...</p>
+                    </li>
+                </ul>
+            </div>
+
+            <!-- Model Catalog Section -->
+            <div class="card" style="margin-top: 20px;">
                 <h2>📦 Model Catalog</h2>
                 <p style="color: #94a3b8; margin-bottom: 15px;">
-                    Browse and download AI models from Hugging Face. Models are downloaded directly to the server.
+                    Browse and download AI models from Hugging Face
                 </p>
 
                 <!-- Info Box -->
@@ -1126,22 +1267,6 @@
             <div id="downloads-section" class="card" style="display: none; margin-top: 20px;">
                 <h2>⏬ Active Downloads</h2>
                 <div id="downloads-list"></div>
-            </div>
-        </div>
-
-        <!-- Loaded Models Tab -->
-        <div id="models-tab" class="tab-content">
-            <div class="card">
-                <h2>🤖 Loaded Models</h2>
-                <p style="color: #94a3b8; margin-bottom: 20px;">
-                    Models currently loaded in memory
-                </p>
-                <ul id="loaded-models-list" class="model-list">
-                    <li class="empty-state">
-                        <div class="empty-state-icon">⏳</div>
-                        <p>Loading...</p>
-                    </li>
-                </ul>
             </div>
         </div>
 
@@ -1554,30 +1679,53 @@
 
         <!-- Chat Tab -->
         <div id="chat-tab" class="tab-content">
-            <div class="card">
-                <h2>💬 Agent Chat Interface</h2>
-                <p style="color: #94a3b8; margin-bottom: 20px;">Test your agents directly in the browser with real-time streaming responses</p>
-
-                <div class="chat-container">
-                    <!-- Chat Header -->
-                    <div class="chat-header">
-                        <div class="chat-header-left">
-                            <label for="chat-agent-select" style="color: #94a3b8;">Agent:</label>
-                            <select id="chat-agent-select" class="form-select" onchange="resetChat()">
-                                <option value="">Loading agents...</option>
-                            </select>
-
-                            <label for="chat-model-select" style="color: #94a3b8;">Model:</label>
-                            <select id="chat-model-select" class="form-select">
-                                <option value="">Auto (use agent default)</option>
-                            </select>
-                        </div>
-
-                        <div class="chat-header-right">
-                            <button class="btn btn-sm btn-secondary" onclick="exportChat()">💾 Export</button>
-                            <button class="btn btn-sm btn-danger" onclick="clearChat()">🗑️ Clear</button>
-                        </div>
+            <div style="display: grid; grid-template-columns: 250px 1fr; gap: 20px;">
+                <!-- Conversation Sidebar -->
+                <div class="card" style="height: fit-content;">
+                    <h3 style="margin-bottom: 15px;">💾 Conversations</h3>
+                    <button class="btn btn-primary" onclick="newConversation()" style="width: 100%; margin-bottom: 15px;">
+                        ➕ New Chat
+                    </button>
+                    <div id="conversations-list" style="max-height: 600px; overflow-y: auto;">
+                        <!-- Conversations will be loaded here -->
                     </div>
+                </div>
+
+                <!-- Main Chat Area -->
+                <div class="card">
+                    <h2>💬 Agent Chat Interface</h2>
+                    <p style="color: #94a3b8; margin-bottom: 20px;">Test your agents directly in the browser with real-time streaming responses</p>
+
+                    <div class="chat-container">
+                        <!-- Chat Header -->
+                        <div class="chat-header">
+                            <div class="chat-header-left">
+                                <label for="chat-agent-select" style="color: #94a3b8;">Agent:</label>
+                                <select id="chat-agent-select" class="form-select" onchange="onAgentChange()">
+                                    <option value="">Loading agents...</option>
+                                </select>
+
+                                <label for="chat-model-select" style="color: #94a3b8;">Model:</label>
+                                <select id="chat-model-select" class="form-select" onchange="updateModelInfo()">
+                                    <option value="">Auto (use agent default)</option>
+                                </select>
+                            </div>
+
+                            <div class="chat-header-right">
+                                <button class="btn btn-sm btn-primary" onclick="saveConversation()">💾 Save</button>
+                                <button class="btn btn-sm btn-secondary" onclick="exportChat()">📤 Export</button>
+                                <button class="btn btn-sm btn-danger" onclick="clearChat()">🗑️ Clear</button>
+                            </div>
+                        </div>
+
+                        <!-- Model Info Bar -->
+                        <div id="model-info-bar" style="padding: 10px; background: #1e293b; border-radius: 6px; margin-bottom: 15px; display: none;">
+                            <div style="display: flex; align-items: center; gap: 10px;">
+                                <span style="color: #60a5fa;">🤖 Using Model:</span>
+                                <span id="current-model-name" style="color: #10b981; font-weight: 500;">-</span>
+                                <span style="color: #94a3b8; margin-left: auto; font-size: 0.9em;" id="model-info-details">-</span>
+                            </div>
+                        </div>
 
                     <!-- Chat Messages -->
                     <div class="chat-messages" id="chat-messages">
@@ -1603,20 +1751,21 @@
                     </div>
                 </div>
 
-                <!-- Chat Statistics -->
-                <div style="margin-top: 20px; padding: 15px; background: #1e293b; border-radius: 8px;">
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px;">
-                        <div class="stat">
-                            <span class="stat-label">Messages</span>
-                            <span class="stat-value" id="chat-message-count">0</span>
-                        </div>
-                        <div class="stat">
-                            <span class="stat-label">Tokens (est.)</span>
-                            <span class="stat-value" id="chat-token-count">0</span>
-                        </div>
-                        <div class="stat">
-                            <span class="stat-label">Last Response</span>
-                            <span class="stat-value" id="chat-last-response">-</span>
+                    <!-- Chat Statistics -->
+                    <div style="margin-top: 20px; padding: 15px; background: #1e293b; border-radius: 8px;">
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px;">
+                            <div class="stat">
+                                <span class="stat-label">Messages</span>
+                                <span class="stat-value" id="chat-message-count">0</span>
+                            </div>
+                            <div class="stat">
+                                <span class="stat-label">Tokens (est.)</span>
+                                <span class="stat-value" id="chat-token-count">0</span>
+                            </div>
+                            <div class="stat">
+                                <span class="stat-label">Last Response</span>
+                                <span class="stat-value" id="chat-last-response">-</span>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1734,8 +1883,8 @@
             });
         }
 
-        // Tab Switching
-        function switchTab(tabName) {
+        // Tab Switching with Deep Linking
+        function switchTab(tabName, updateHash = true) {
             // Hide all tabs
             document.querySelectorAll('.tab-content').forEach(tab => {
                 tab.classList.remove('active');
@@ -1747,24 +1896,54 @@
             });
 
             // Show selected tab
-            document.getElementById(tabName + '-tab').classList.add('active');
+            const tabElement = document.getElementById(tabName + '-tab');
+            if (tabElement) {
+                tabElement.classList.add('active');
+            }
 
-            // Activate button
-            event.target.classList.add('active');
+            // Activate correct button based on tab name
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                if (btn.textContent.toLowerCase().includes(tabName) ||
+                    btn.onclick?.toString().includes(`'${tabName}'`)) {
+                    btn.classList.add('active');
+                }
+            });
+
+            // Update URL hash for deep linking
+            if (updateHash && history.pushState) {
+                history.pushState(null, null, '#' + tabName);
+            }
 
             // Load data for specific tabs
-            if (tabName === 'catalog') {
-                loadCatalog();
-            } else if (tabName === 'models') {
+            if (tabName === 'models') {
+                // Unified models tab loads both catalog and loaded models
                 loadModels();
+                loadCatalog();
             } else if (tabName === 'agents') {
                 loadAgentsDetailed();
             } else if (tabName === 'training') {
                 loadTrainingTab();
             } else if (tabName === 'logs') {
                 loadLogs();
+            } else if (tabName === 'chat') {
+                loadChatAgents();
+                loadChatModels();
+                loadConversationsList();
             }
         }
+
+        // Load tab from URL hash on page load
+        function loadTabFromHash() {
+            const hash = window.location.hash.slice(1); // Remove #
+            if (hash && document.getElementById(hash + '-tab')) {
+                switchTab(hash, false);
+            }
+        }
+
+        // Handle browser back/forward buttons
+        window.addEventListener('popstate', function() {
+            loadTabFromHash();
+        });
 
         // Training Tab Functions
         let selectedAgentId = null;
@@ -2251,40 +2430,72 @@
 
         // Download Model
         async function downloadModel(modelId) {
+            console.log('Download button clicked for model:', modelId);
             try {
+                // Use getElementById for the container (doesn't need escaping)
                 const progressContainer = document.getElementById(`progress-${modelId}`);
-                const progressText = document.querySelector(`#progress-${modelId} .progress-text`);
-                const progressBar = document.querySelector(`#progress-${modelId} .progress-fill`);
+
+                if (!progressContainer) {
+                    console.error('Progress container not found for model:', modelId);
+                    showNotification('Error: Progress container not found', 'error');
+                    return;
+                }
+
+                // Get child elements directly from the container (no selectors needed)
+                const progressText = progressContainer.querySelector('.progress-text');
+                const progressBar = progressContainer.querySelector('.progress-fill');
 
                 progressContainer.style.display = 'block';
                 progressText.textContent = 'Starting download from Hugging Face...';
                 progressBar.style.width = '0%';
 
+                showNotification(`Starting download for ${modelId}...`, 'info');
+
                 const response = await fetch(`/v1/models/download/${modelId}`, {
                     method: 'POST'
                 });
+
+                if (!response.ok) {
+                    const error = await response.text();
+                    throw new Error(`HTTP ${response.status}: ${error}`);
+                }
+
                 const result = await response.json();
+                console.log('Download response:', result);
 
                 if (result.status === 'download_started') {
                     progressText.textContent = `Downloading ${result.size_gb} GB model from server...`;
+                    showNotification(`Download started: ${result.message}`, 'success');
                     pollDownloadProgress(modelId);
                 } else if (result.status === 'already_installed') {
                     progressBar.style.width = '100%';
                     progressBar.style.background = '#10b981';
                     progressText.textContent = '✓ Model already installed! Refreshing...';
+                    showNotification('Model already installed', 'success');
                     setTimeout(() => {
                         loadCatalog();
+                        loadModels();
                     }, 2000);
                 } else {
                     progressText.textContent = result.message || 'Download failed';
                     progressBar.style.background = '#ef4444';
+                    showNotification(result.message || 'Download failed', 'error');
                 }
             } catch (error) {
                 console.error('Download error:', error);
-                const progressText = document.querySelector(`#progress-${modelId} .progress-text`);
-                const progressBar = document.querySelector(`#progress-${modelId} .progress-fill`);
-                progressText.textContent = 'Error: ' + error.message;
-                progressBar.style.background = '#ef4444';
+                showNotification(`Download failed: ${error.message}`, 'error');
+                // Try to find progress elements if they exist
+                const progressContainer = document.getElementById(`progress-${modelId}`);
+                if (progressContainer) {
+                    const progressText = progressContainer.querySelector('.progress-text');
+                    const progressBar = progressContainer.querySelector('.progress-fill');
+                    if (progressText) {
+                        progressText.textContent = 'Error: ' + error.message;
+                    }
+                    if (progressBar) {
+                        progressBar.style.background = '#ef4444';
+                    }
+                }
             }
         }
 
@@ -2295,8 +2506,14 @@
                     const response = await fetch(`/v1/models/download/${modelId}/status`);
                     const status = await response.json();
 
-                    const progressBar = document.querySelector(`#progress-${modelId} .progress-fill`);
-                    const progressText = document.querySelector(`#progress-${modelId} .progress-text`);
+                    // Get container first, then query within it (avoids CSS selector issues with dots)
+                    const progressContainer = document.getElementById(`progress-${modelId}`);
+                    if (!progressContainer) {
+                        clearInterval(interval);
+                        return;
+                    }
+                    const progressBar = progressContainer.querySelector('.progress-fill');
+                    const progressText = progressContainer.querySelector('.progress-text');
 
                     if (status.status === 'downloading') {
                         const progress = status.progress || 0;
@@ -2315,9 +2532,11 @@
                         progressBar.style.width = '100%';
                         progressBar.style.background = '#10b981';
                         progressText.textContent = '✓ Download complete! Model installed. Refreshing...';
+                        showNotification('Download completed successfully!', 'success');
                         clearInterval(interval);
                         setTimeout(() => {
                             loadCatalog();
+                            loadModels();
                         }, 2000);
                     } else if (status.status === 'installed') {
                         progressBar.style.width = '100%';
@@ -2326,6 +2545,7 @@
                         clearInterval(interval);
                         setTimeout(() => {
                             loadCatalog();
+                            loadModels();
                         }, 2000);
                     } else if (status.status === 'failed') {
                         progressText.textContent = `❌ Failed: ${status.error || 'Unknown error'}`;
@@ -2336,8 +2556,13 @@
                     }
                 } catch (error) {
                     console.error('Progress poll error:', error);
-                    const progressText = document.querySelector(`#progress-${modelId} .progress-text`);
-                    progressText.textContent = '❌ Error checking progress';
+                    const progressContainer = document.getElementById(`progress-${modelId}`);
+                    if (progressContainer) {
+                        const progressText = progressContainer.querySelector('.progress-text');
+                        if (progressText) {
+                            progressText.textContent = '❌ Error checking progress';
+                        }
+                    }
                     clearInterval(interval);
                 }
             }, 2000);
@@ -2372,19 +2597,28 @@
             }
         }
 
-        // Load Models
+        // Load Models - only show models that actually exist on disk
         async function loadModels() {
             try {
                 const response = await fetch('/dashboard/api/models');
                 const data = await response.json();
 
                 const list = document.getElementById('loaded-models-list');
-                if (data.models.length === 0) {
-                    list.innerHTML = '<li class="empty-state"><div class="empty-state-icon">📦</div><p>No models loaded</p></li>';
+
+                // Filter to only show models that exist on disk
+                const existingModels = data.models.filter(m => m.exists);
+
+                if (existingModels.length === 0) {
+                    list.innerHTML = `
+                        <li class="empty-state">
+                            <div class="empty-state-icon">📦</div>
+                            <p>No models downloaded yet</p>
+                            <small style="color: #94a3b8;">Download models from the catalog below</small>
+                        </li>`;
                     return;
                 }
 
-                list.innerHTML = data.models.map(model => `
+                list.innerHTML = existingModels.map(model => `
                     <li class="model-item">
                         <div class="model-item-info">
                             <span class="status-indicator status-${model.loaded ? 'loaded' : 'unloaded'}"></span>
@@ -2392,10 +2626,15 @@
                             <br><small style="color: #94a3b8;">${model.description}</small>
                         </div>
                         <div class="model-item-actions">
-                            ${model.loaded ?
-                                `<button class="btn btn-sm btn-danger" onclick="unloadModel('${model.name}')">Unload</button>` :
-                                `<button class="btn btn-sm btn-primary" onclick="loadModel('${model.name}')">Load</button>`
-                            }
+                            <div class="btn-group">
+                                ${model.loaded ?
+                                    `<button class="btn btn-sm btn-warning" onclick="unloadModel('${model.name}')">⏏️ Unload</button>` :
+                                    `<button class="btn btn-sm btn-primary" onclick="loadModel('${model.name}')">▶️ Load</button>`
+                                }
+                                <button class="btn btn-sm btn-danger" onclick="deleteModel('${model.name}', '${model.path}')" title="Delete from disk">
+                                    🗑️ Delete
+                                </button>
+                            </div>
                         </div>
                     </li>
                 `).join('');
@@ -2415,10 +2654,42 @@
 
         async function unloadModel(modelName) {
             try {
-                await fetch(`/dashboard/api/models/${modelName}/unload`, { method: 'POST' });
-                loadModels();
+                showNotification(`Unloading ${modelName}...`, 'info');
+                const response = await fetch(`/dashboard/api/models/${modelName}/unload`, { method: 'POST' });
+                if (response.ok) {
+                    showNotification(`✓ ${modelName} unloaded successfully`, 'success');
+                    loadModels();
+                } else {
+                    showNotification(`Failed to unload ${modelName}`, 'error');
+                }
             } catch (error) {
                 console.error('Failed to unload model:', error);
+                showNotification(`Error unloading ${modelName}`, 'error');
+            }
+        }
+
+        async function deleteModel(modelName, modelPath) {
+            if (!confirm(`Are you sure you want to DELETE ${modelName} from disk?\n\nThis will permanently remove the model files and cannot be undone.\n\nPath: ${modelPath}`)) {
+                return;
+            }
+
+            try {
+                showNotification(`Deleting ${modelName}...`, 'info');
+                const response = await fetch(`/dashboard/api/models/${modelName}/delete`, {
+                    method: 'DELETE'
+                });
+
+                if (response.ok) {
+                    showNotification(`✓ ${modelName} deleted successfully`, 'success');
+                    loadModels();
+                    loadCatalog(); // Refresh catalog to update install status
+                } else {
+                    const error = await response.json();
+                    showNotification(`Failed to delete ${modelName}: ${error.message || 'Unknown error'}`, 'error');
+                }
+            } catch (error) {
+                console.error('Failed to delete model:', error);
+                showNotification(`Error deleting ${modelName}`, 'error');
             }
         }
 
@@ -3339,6 +3610,7 @@
 
         // Initialize
         loadStats();
+        loadTabFromHash(); // Load tab from URL hash if present
         setInterval(checkDownloads, 5000);
         setInterval(loadStats, 10000);
 
@@ -3346,6 +3618,9 @@
 
         let chatMessages = [];
         let chatAbortController = null;
+        let currentConversationId = null;
+        let conversations = {};
+        let currentAgentInfo = null;
 
         // Load agents into chat select
         async function loadChatAgents() {
@@ -3354,9 +3629,9 @@
                 const data = await response.json();
                 const select = document.getElementById('chat-agent-select');
 
-                if (data.agents && data.agents.length > 0) {
+                if (data.data && data.data.length > 0) {
                     select.innerHTML = '<option value="">-- Select an agent --</option>' +
-                        data.agents.map(agent =>
+                        data.data.map(agent =>
                             `<option value="${agent.id}">${agent.name || agent.id}</option>`
                         ).join('');
                 } else {
@@ -3397,6 +3672,47 @@
         }
 
         // Add message to chat UI
+        // Format message content with markdown
+        function formatMessageContent(content) {
+            try {
+                // Check if marked is available
+                if (typeof marked === 'undefined') {
+                    console.warn('Marked.js not loaded yet, using plain text');
+                    return `<div class="formatted-content">${escapeHtml(content).replace(/\n/g, '<br>')}</div>`;
+                }
+
+                // Configure marked to be safe and support code highlighting
+                marked.setOptions({
+                    breaks: true, // Convert \n to <br>
+                    gfm: true, // GitHub Flavored Markdown
+                    headerIds: false,
+                    mangle: false,
+                    sanitize: false, // We trust the content
+                });
+
+                // Convert markdown to HTML
+                let html = marked.parse(content);
+
+                // Wrap in formatted-content div
+                const wrapper = document.createElement('div');
+                wrapper.className = 'formatted-content';
+                wrapper.innerHTML = html;
+
+                // Apply syntax highlighting to code blocks if hljs is available
+                if (typeof hljs !== 'undefined') {
+                    wrapper.querySelectorAll('pre code').forEach((block) => {
+                        hljs.highlightElement(block);
+                    });
+                }
+
+                return wrapper.outerHTML;
+            } catch (error) {
+                console.error('Markdown formatting error:', error);
+                // Fallback to escaped HTML with line breaks
+                return `<div class="formatted-content">${escapeHtml(content).replace(/\n/g, '<br>')}</div>`;
+            }
+        }
+
         function addChatMessage(role, content, isTyping = false) {
             const messagesContainer = document.getElementById('chat-messages');
 
@@ -3425,10 +3741,15 @@
                 `;
                 messageDiv.id = 'typing-indicator';
             } else {
+                // Format content with markdown for assistant messages
+                const formattedContent = role === 'assistant'
+                    ? formatMessageContent(content)
+                    : `<div class="formatted-content">${escapeHtml(content)}</div>`;
+
                 messageDiv.innerHTML = `
                     <div class="chat-message-avatar">${avatar}</div>
                     <div class="chat-message-content">
-                        <div>${escapeHtml(content)}</div>
+                        ${formattedContent}
                         <div class="chat-message-time">${time}</div>
                     </div>
                 `;
@@ -3540,10 +3861,11 @@
                                     const typingDiv = document.getElementById('typing-indicator');
                                     if (typingDiv) {
                                         const time = new Date().toLocaleTimeString();
+                                        const formattedContent = formatMessageContent(assistantMessage);
                                         typingDiv.innerHTML = `
                                             <div class="chat-message-avatar">🤖</div>
                                             <div class="chat-message-content">
-                                                <div>${escapeHtml(assistantMessage)}</div>
+                                                ${formattedContent}
                                                 <div class="chat-message-time">${time}</div>
                                             </div>
                                         `;
@@ -3619,6 +3941,198 @@
             clearChat();
         }
 
+        // Agent change handler - fetch agent info and update model display
+        async function onAgentChange() {
+            const agentSelect = document.getElementById('chat-agent-select');
+            const agentId = agentSelect.value;
+
+            if (!agentId) {
+                currentAgentInfo = null;
+                document.getElementById('model-info-bar').style.display = 'none';
+                return;
+            }
+
+            try {
+                // Fetch agent details
+                const response = await fetch(`/v1/agents/${agentId}`);
+                const agent = await response.json();
+                currentAgentInfo = agent;
+
+                // Update model info display
+                updateModelInfo();
+
+                // Clear chat when changing agents
+                clearChat();
+            } catch (error) {
+                console.error('Failed to fetch agent info:', error);
+            }
+        }
+
+        // Update model info display
+        async function updateModelInfo() {
+            if (!currentAgentInfo) {
+                document.getElementById('model-info-bar').style.display = 'none';
+                return;
+            }
+
+            const modelSelect = document.getElementById('chat-model-select');
+            const selectedModel = modelSelect.value;
+            const modelToUse = selectedModel || currentAgentInfo.model;
+
+            // Show model info bar
+            document.getElementById('model-info-bar').style.display = 'block';
+            document.getElementById('current-model-name').textContent = modelToUse;
+
+            // Try to get more details about the model
+            try {
+                const response = await fetch('/dashboard/api/models');
+                const data = await response.json();
+                const modelInfo = data.models.find(m => m.name === modelToUse);
+
+                if (modelInfo) {
+                    const status = modelInfo.loaded ? '✓ Loaded in memory' : 'Will load on demand';
+                    const type = modelInfo.type.toUpperCase();
+                    document.getElementById('model-info-details').textContent = `${type} | ${status}`;
+                } else {
+                    document.getElementById('model-info-details').textContent = 'Model configured';
+                }
+            } catch (error) {
+                console.error('Failed to fetch model details:', error);
+                document.getElementById('model-info-details').textContent = 'Model configured';
+            }
+        }
+
+        // Conversation management functions
+        function newConversation() {
+            currentConversationId = null;
+            clearChat();
+            showNotification('Started new conversation', 'info');
+        }
+
+        async function saveConversation() {
+            if (chatMessages.length === 0) {
+                showNotification('No messages to save', 'warning');
+                return;
+            }
+
+            const agentId = document.getElementById('chat-agent-select').value;
+            if (!agentId) {
+                showNotification('Please select an agent first', 'warning');
+                return;
+            }
+
+            const title = prompt('Enter a title for this conversation:',
+                `Chat with ${currentAgentInfo?.name || agentId} - ${new Date().toLocaleString()}`);
+
+            if (!title) return;
+
+            const conversationId = currentConversationId || Date.now().toString();
+            conversations[conversationId] = {
+                id: conversationId,
+                title: title,
+                agentId: agentId,
+                agentName: currentAgentInfo?.name || agentId,
+                messages: [...chatMessages],
+                timestamp: new Date().toISOString(),
+                messageCount: chatMessages.length
+            };
+
+            currentConversationId = conversationId;
+
+            // Save to localStorage
+            localStorage.setItem('brain_conversations', JSON.stringify(conversations));
+
+            showNotification('Conversation saved successfully', 'success');
+            loadConversationsList();
+        }
+
+        function loadConversationsList() {
+            // Load from localStorage
+            const saved = localStorage.getItem('brain_conversations');
+            if (saved) {
+                conversations = JSON.parse(saved);
+            }
+
+            const list = document.getElementById('conversations-list');
+            const convArray = Object.values(conversations).sort((a, b) =>
+                new Date(b.timestamp) - new Date(a.timestamp)
+            );
+
+            if (convArray.length === 0) {
+                list.innerHTML = '<div class="empty-state" style="padding: 20px; text-align: center; color: #94a3b8;">No saved conversations</div>';
+                return;
+            }
+
+            list.innerHTML = convArray.map(conv => `
+                <div class="conversation-item ${conv.id === currentConversationId ? 'active' : ''}"
+                     onclick="loadConversation('${conv.id}')"
+                     style="padding: 10px; margin-bottom: 8px; background: ${conv.id === currentConversationId ? '#1e40af' : '#1e293b'}; border-radius: 6px; cursor: pointer; position: relative;">
+                    <div style="font-weight: 500; margin-bottom: 5px; color: ${conv.id === currentConversationId ? '#fff' : '#e2e8f0'}; font-size: 0.9em;">
+                        ${escapeHtml(conv.title.length > 30 ? conv.title.substring(0, 30) + '...' : conv.title)}
+                    </div>
+                    <div style="font-size: 0.8em; color: ${conv.id === currentConversationId ? '#93c5fd' : '#94a3b8'};">
+                        ${conv.agentName} • ${conv.messageCount} msgs
+                    </div>
+                    <div style="font-size: 0.75em; color: ${conv.id === currentConversationId ? '#93c5fd' : '#64748b'}; margin-top: 3px;">
+                        ${new Date(conv.timestamp).toLocaleDateString()}
+                    </div>
+                    <button onclick="event.stopPropagation(); deleteConversation('${conv.id}')"
+                            style="position: absolute; top: 8px; right: 8px; background: #ef4444; border: none; color: white; border-radius: 4px; padding: 3px 8px; cursor: pointer; font-size: 0.8em;">
+                        🗑️
+                    </button>
+                </div>
+            `).join('');
+        }
+
+        function loadConversation(conversationId) {
+            const conv = conversations[conversationId];
+            if (!conv) return;
+
+            // Set the agent
+            const agentSelect = document.getElementById('chat-agent-select');
+            agentSelect.value = conv.agentId;
+
+            // Load messages
+            chatMessages = [...conv.messages];
+            currentConversationId = conversationId;
+
+            // Render messages
+            const messagesDiv = document.getElementById('chat-messages');
+            messagesDiv.innerHTML = '';
+
+            chatMessages.forEach(msg => {
+                addChatMessage(msg.role, msg.content, false);
+            });
+
+            // Update stats
+            updateChatStats();
+
+            // Reload agent info
+            onAgentChange();
+
+            // Update conversation list highlighting
+            loadConversationsList();
+
+            showNotification('Conversation loaded', 'success');
+        }
+
+        function deleteConversation(conversationId) {
+            if (!confirm('Are you sure you want to delete this conversation?')) {
+                return;
+            }
+
+            delete conversations[conversationId];
+            localStorage.setItem('brain_conversations', JSON.stringify(conversations));
+
+            if (currentConversationId === conversationId) {
+                currentConversationId = null;
+                clearChat();
+            }
+
+            loadConversationsList();
+            showNotification('Conversation deleted', 'success');
+        }
+
         // Export chat
         function exportChat() {
             if (chatMessages.length === 0) {
@@ -3667,15 +4181,7 @@
             return div.innerHTML.replace(/\n/g, '<br>');
         }
 
-        // Load chat data when switching to chat tab
-        const originalSwitchTab = switchTab;
-        switchTab = function(tabName) {
-            originalSwitchTab(tabName);
-            if (tabName === 'chat') {
-                loadChatAgents();
-                loadChatModels();
-            }
-        };
+        // Chat loading is now handled in the main switchTab function
     </script>
 
     <!-- Modals -->

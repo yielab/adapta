@@ -1,6 +1,7 @@
 version: '3.8'
 
 services:
+  # Main Brain API Server
   brain:
     build: .
     container_name: brain-server
@@ -16,6 +17,10 @@ services:
       # Mount training data and jobs
       - ./data/training_data:/app/data/training_data
       - ./data/training_jobs:/app/data/training_jobs
+      # NEW: Workspace persistence for structured notes (Anthropic pattern)
+      - brain-workspaces:/app/.brain/workspaces
+      # NEW: Memory system persistence
+      - brain-memory:/app/.brain/memory
     environment:
       - BRAIN_HOST=0.0.0.0
       - BRAIN_PORT=8000
@@ -24,6 +29,14 @@ services:
       - BRAIN_DATA_DIR=/app/data
       - BRAIN_MODELS_DIR=/app/data/models
       - BRAIN_AGENTS_DIR=/app/data/agents
+      # NEW: Feature flags for gradual rollout
+      - BRAIN_FEATURE_UNIFIED_ROUTER=stable
+      - BRAIN_FEATURE_WORKSPACE_ENABLED=stable
+      - BRAIN_FEATURE_ADVANCED_RAG=stable
+      # NEW: Redis cache for performance
+      - REDIS_URL=redis://redis:6379/0
+      # NEW: PostgreSQL for persistent storage
+      - DATABASE_URL=postgresql://brain:brain@postgres:5432/brain
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
@@ -31,6 +44,13 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - brain-network
 
   # Optional: GPU support (uncomment if you have NVIDIA GPU)
   # brain-gpu:
@@ -51,3 +71,118 @@ services:
   #     - ./data/agents:/app/data/agents
   #   environment:
   #     - BRAIN_N_GPU_LAYERS=35  # Use GPU acceleration
+
+  # PostgreSQL Database for persistent storage
+  postgres:
+    image: postgres:15-alpine
+    container_name: brain-postgres
+    environment:
+      POSTGRES_USER: brain
+      POSTGRES_PASSWORD: brain
+      POSTGRES_DB: brain
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - brain-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U brain"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # Redis for caching and queuing
+  redis:
+    image: redis:7-alpine
+    container_name: brain-redis
+    command: redis-server --appendonly yes
+    volumes:
+      - redis-data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - brain-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ChromaDB for vector storage (RAG)
+  chroma:
+    image: chromadb/chroma:latest
+    container_name: brain-chroma
+    environment:
+      IS_PERSISTENT: "TRUE"
+      PERSIST_DIRECTORY: /chroma/data
+      ANONYMIZED_TELEMETRY: "FALSE"
+    volumes:
+      - chroma-data:/chroma/data
+    ports:
+      - "8001:8000"
+    networks:
+      - brain-network
+    restart: unless-stopped
+
+  # Prometheus for metrics
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: brain-prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    ports:
+      - "9090:9090"
+    networks:
+      - brain-network
+    restart: unless-stopped
+
+  # Grafana for visualization
+  grafana:
+    image: grafana/grafana:latest
+    container_name: brain-grafana
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_INSTALL_PLUGINS: redis-datasource
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./monitoring/grafana:/etc/grafana/provisioning
+    ports:
+      - "3001:3000"
+    depends_on:
+      - prometheus
+    networks:
+      - brain-network
+    restart: unless-stopped
+
+  # Jaeger for distributed tracing
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: brain-jaeger
+    environment:
+      COLLECTOR_ZIPKIN_HOST_PORT: ":9411"
+    ports:
+      - "16686:16686"  # Jaeger UI
+      - "14268:14268"  # Jaeger collector
+    networks:
+      - brain-network
+    restart: unless-stopped
+
+networks:
+  brain-network:
+    driver: bridge
+
+volumes:
+  postgres-data:
+  redis-data:
+  chroma-data:
+  prometheus-data:
+  grafana-data:
+  brain-workspaces:
+  brain-memory:

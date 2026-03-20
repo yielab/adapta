@@ -1,3 +1,25 @@
-brain.local {
+# Managed by global /home/ox/Sites/Caddyfile — do NOT add a global {} block here
+brain.test {
     reverse_proxy localhost:8000
+
+    log {
+        output file /var/log/caddy/brain.log
+        format console
+        level INFO
+    }
+
+    header {
+        Access-Control-Allow-Origin *
+        Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
+        Access-Control-Allow-Headers "Content-Type, Authorization"
+        X-Powered-By "Brain From Cero"
+    }
+}
+
+api.brain.test {
+    reverse_proxy localhost:8000
+}
+
+www.brain.test {
+    redir https://brain.test{uri} permanent
 }

@@ -176,6 +176,60 @@ def create_dashboard_app() -> FastAPI:
                 status_code=500, content={"status": "error", "message": str(e)}
             )
 
+    @app.delete("/api/models/{model_name}/delete")
+    async def delete_model(model_name: str):
+        """Delete a model from disk"""
+        try:
+            import shutil
+            from pathlib import Path
+
+            # Get model info
+            models = model_manager.list_models()
+            model = next((m for m in models if m.name == model_name), None)
+
+            if not model:
+                return JSONResponse(
+                    status_code=404,
+                    content={"status": "error", "message": f"Model {model_name} not found"},
+                )
+
+            if not model.path.exists():
+                return JSONResponse(
+                    status_code=404,
+                    content={
+                        "status": "error",
+                        "message": f"Model files not found at {model.path}",
+                    },
+                )
+
+            # Unload model if it's loaded
+            if model.loaded:
+                await model_manager.unload_model(model_name)
+
+            # Delete model directory
+            model_dir = model.path.parent
+            if model_dir.exists() and model_dir.is_dir():
+                shutil.rmtree(model_dir)
+                logger.info(f"Deleted model directory: {model_dir}")
+                return {
+                    "status": "success",
+                    "message": f"Model {model_name} deleted successfully",
+                }
+            else:
+                return JSONResponse(
+                    status_code=500,
+                    content={
+                        "status": "error",
+                        "message": f"Model directory not found: {model_dir}",
+                    },
+                )
+
+        except Exception as e:
+            logger.error(f"Failed to delete model: {e}")
+            return JSONResponse(
+                status_code=500, content={"status": "error", "message": str(e)}
+            )
+
     @app.get("/api/logs")
     async def get_logs(level: str = "INFO", limit: int = 100):
         """Get recent logs"""

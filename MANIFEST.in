@@ -1,0 +1,13 @@
+include README.md
+include LICENSE
+include CHANGELOG.md
+include requirements.txt
+recursive-include brain/templates *
+recursive-include brain/static *
+recursive-include brain *.yaml *.yml *.json
+recursive-exclude tests *
+recursive-exclude docs *
+recursive-exclude examples *
+recursive-exclude * __pycache__
+recursive-exclude * *.py[co]
+recursive-exclude * .DS_Store

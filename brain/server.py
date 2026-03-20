@@ -18,12 +18,37 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     """Main server lifespan events"""
     # Startup
+    logger.info("=" * 60)
     logger.info("Starting Brain server...")
+    logger.info("=" * 60)
+
+    # Import managers
+    from brain.core.model_manager import model_manager
+    from brain.agents import agent_manager
+
+    # Preload default models
+    try:
+        await model_manager.preload_default_models()
+        logger.info("✓ Default models preloaded")
+    except Exception as e:
+        logger.error(f"✗ Model preload failed: {e}")
+
+    # Load all agents from disk
+    try:
+        await agent_manager.load_agents()
+        agent_count = len(agent_manager.list_agents())
+        logger.info(f"✓ Loaded {agent_count} agents from disk")
+    except Exception as e:
+        logger.error(f"✗ Agent load failed: {e}")
 
     # Start request queue
     from brain.core.queue import start_queue
     await start_queue(processor=_queue_processor)
-    logger.info("Request queue started")
+    logger.info("✓ Request queue started")
+
+    logger.info("=" * 60)
+    logger.info("✓ Brain server ready!")
+    logger.info("=" * 60)
 
     yield
 
