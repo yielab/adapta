@@ -282,7 +282,127 @@ class EvaluationRequest(BaseModel):
     max_examples: Optional[int] = Field(None, description="Maximum examples to evaluate (None = all)", ge=1)
 
 
+class BaseModelInfo(BaseModel):
+    """Information about an available base model"""
+
+    model_id: str
+    display_name: str
+    size: str
+    ram_required: str
+    installed: bool
+    recommended: bool = False
+
+
 # Endpoints
+
+@router.get("/agents/{agent_id}/training/base-models", response_model=List[BaseModelInfo])
+async def get_available_base_models(agent_id: str):
+    """Get list of available base models for an agent, prioritizing the agent's current model"""
+    try:
+        from pathlib import Path
+        import os
+        from brain.agents import agent_manager
+
+        result = []
+
+        # First, check the agent's current model and determine if it's trainable
+        agent_has_trainable_model = False
+        try:
+            agent = await agent_manager.get_agent(agent_id)
+            if agent and agent.model:
+                agent_model_id = agent.model
+
+                # Check if it's a trainable HuggingFace model (not GGUF/quantized)
+                is_hf_format = "/" in agent_model_id
+                is_quantized = any(x in agent_model_id.lower() for x in ['.gguf', 'ggml', 'q4', 'q5', 'q8', 'llama-cpp'])
+
+                if is_hf_format and not is_quantized:
+                    # Check if actually installed
+                    cache_dir = os.getenv("HF_HOME", str(Path.home() / ".cache" / "huggingface"))
+                    model_path = Path(cache_dir) / "hub" / f"models--{agent_model_id.replace('/', '--')}"
+
+                    if model_path.exists():
+                        # This is a trainable model that's already installed!
+                        result.append(BaseModelInfo(
+                            model_id=agent_model_id,
+                            display_name=f"{agent_model_id.split('/')[-1]} (Agent's Model)",
+                            size="Varies",
+                            ram_required="Already installed",
+                            installed=True,
+                            recommended=True
+                        ))
+                        agent_has_trainable_model = True
+                    else:
+                        # HF format but not downloaded - add but mark as not installed
+                        result.append(BaseModelInfo(
+                            model_id=agent_model_id,
+                            display_name=f"{agent_model_id.split('/')[-1]} (Agent's Model - needs download)",
+                            size="Varies",
+                            ram_required="Not downloaded",
+                            installed=False,
+                            recommended=True
+                        ))
+                else:
+                    # Local/GGUF/quantized model - cannot train with LoRA
+                    logger.info(f"Agent uses {agent_model_id} which is not trainable with LoRA (inference-only format)")
+        except Exception as e:
+            logger.warning(f"Could not get agent model: {e}")
+
+        # Then add common HuggingFace models
+        common_models = [
+            {
+                "model_id": "meta-llama/Llama-2-7b-hf",
+                "display_name": "Llama 2 7B",
+                "size": "7B",
+                "ram_required": "14GB"
+            },
+            {
+                "model_id": "meta-llama/Llama-2-13b-hf",
+                "display_name": "Llama 2 13B",
+                "size": "13B",
+                "ram_required": "26GB"
+            },
+            {
+                "model_id": "mistralai/Mistral-7B-v0.1",
+                "display_name": "Mistral 7B",
+                "size": "7B",
+                "ram_required": "14GB"
+            },
+            {
+                "model_id": "microsoft/phi-2",
+                "display_name": "Phi-2",
+                "size": "2.7B",
+                "ram_required": "5GB"
+            }
+        ]
+
+        # Check which models are installed (skip if already added as agent's model)
+        cache_dir = os.getenv("HF_HOME", str(Path.home() / ".cache" / "huggingface"))
+        agent_model_ids = [m.model_id for m in result]
+
+        for model in common_models:
+            # Skip if this is already the agent's model
+            if model["model_id"] in agent_model_ids:
+                continue
+
+            # Check if model exists in cache
+            model_path = Path(cache_dir) / "hub" / f"models--{model['model_id'].replace('/', '--')}"
+            installed = model_path.exists()
+
+            result.append(BaseModelInfo(
+                model_id=model["model_id"],
+                display_name=model["display_name"],
+                size=model["size"],
+                ram_required=model["ram_required"],
+                installed=installed,
+                recommended=False
+            ))
+
+        return result
+
+    except Exception as e:
+        logger.error(f"Error getting base models: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/agents/{agent_id}/training/data", response_model=DatasetResponse)
 async def upload_training_data(
@@ -363,6 +483,36 @@ async def list_training_datasets(agent_id: str):
         ]
     except Exception as e:
         logger.error(f"Error listing datasets: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/agents/{agent_id}/training/data/{dataset_name}")
+async def get_training_dataset_content(agent_id: str, dataset_name: str):
+    """Get the raw JSONL content of a training dataset for preview"""
+    try:
+        from pathlib import Path
+        from starlette.responses import FileResponse
+
+        # Get the dataset metadata to find the file path
+        dataset = data_manager.get_dataset(agent_id, dataset_name)
+        if not dataset:
+            raise HTTPException(status_code=404, detail="Dataset not found")
+
+        # Check if file exists
+        file_path = Path(dataset.file_path)
+        if not file_path.exists():
+            raise HTTPException(status_code=404, detail="Dataset file not found")
+
+        # Return the JSONL file as plain text for preview
+        return FileResponse(
+            path=str(file_path),
+            media_type="text/plain",
+            filename=f"{dataset_name}.jsonl"
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting dataset content: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

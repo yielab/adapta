@@ -8,6 +8,9 @@ from typing import Dict, List, Any, Optional, Type
 import logging
 import json
 from datetime import datetime
+from asyncio import Semaphore
+from collections import defaultdict
+import time
 
 from .base import DataCollector, DataFormatter, DataPreprocessor, DataSource, ProcessedData
 from .collectors import WebScraper, DocumentationCrawler, APIDocScraper, ChangeRecordCollector
@@ -63,7 +66,8 @@ class DataPreparationPipeline:
             'items_formatted': 0,
             'errors': [],
             'start_time': None,
-            'end_time': None
+            'end_time': None,
+            'collection_metrics': None  # Professional collector metrics
         }
 
     def configure(
@@ -162,17 +166,111 @@ class DataPreparationPipeline:
             self.stats['end_time'] = datetime.now()
 
     async def _collect_phase(self, sources: List[DataSource]) -> List[Dict[str, Any]]:
-        """Collection phase of the pipeline"""
+        """
+        Enhanced collection phase with:
+        - Intelligent collector selection
+        - Concurrent processing with rate limiting
+        - Domain-based throttling
+        - Retry logic with exponential backoff
+        """
         all_data = []
 
+        # Map source types to appropriate collectors
+        source_to_collector = {
+            'url': 'web',
+            'sitemap': 'web',
+            'documentation': 'documentation',
+            'api_doc': 'api',
+            'changes': 'changes'
+        }
+
+        # Group sources by domain for rate limiting
+        sources_by_domain = defaultdict(list)
         for source in sources:
-            try:
-                data = await self.collector.collect(source)
-                all_data.extend(data)
-                logger.info(f"Collected {len(data)} items from {source.location}")
-            except Exception as e:
-                logger.error(f"Collection error for {source.location}: {e}")
-                self.stats['errors'].append(f"Collection: {source.location}: {e}")
+            from urllib.parse import urlparse
+            domain = urlparse(source.location).netloc if source.location.startswith('http') else 'local'
+            sources_by_domain[domain].append(source)
+
+        # Concurrent processing settings
+        max_concurrent = self.config.get('max_concurrent', 5)
+        semaphore = Semaphore(max_concurrent)
+
+        # Domain rate limiting tracking
+        domain_last_access = {}
+        rate_limit = self.config.get('rate_limit', 1.0)  # seconds between requests per domain
+
+        async def collect_with_rate_limit(source: DataSource, domain: str) -> List[Dict[str, Any]]:
+            """Collect from source with rate limiting and retry logic"""
+            async with semaphore:
+                # Apply domain-based rate limiting
+                if domain in domain_last_access:
+                    time_since_last = time.time() - domain_last_access[domain]
+                    if time_since_last < rate_limit:
+                        await asyncio.sleep(rate_limit - time_since_last)
+
+                # Select appropriate collector
+                collector_type = source_to_collector.get(source.type, 'web')
+                collector_class = self.COLLECTORS.get(collector_type, WebScraper)
+                collector = collector_class(self.config)
+
+                # Retry logic with exponential backoff
+                max_retries = self.config.get('max_retries', 3)
+                retry_delay = self.config.get('retry_delay', 2)
+
+                for attempt in range(max_retries):
+                    try:
+                        logger.info(f"Using {collector_type} collector for {source.location}")
+                        data = await collector.collect(source)
+
+                        # Update domain access time
+                        domain_last_access[domain] = time.time()
+
+                        # Capture collection metrics if available
+                        if hasattr(collector, 'get_collection_metrics'):
+                            metrics = collector.get_collection_metrics()
+                            if metrics:
+                                self.stats['collection_metrics'] = metrics
+
+                        logger.info(f"✓ Collected {len(data)} items from {source.location}")
+                        self.stats['sources_processed'] += 1
+                        self.stats['items_collected'] += len(data)
+
+                        return data
+
+                    except Exception as e:
+                        if attempt < max_retries - 1:
+                            delay = retry_delay * (2 ** attempt)  # Exponential backoff
+                            logger.warning(
+                                f"Attempt {attempt + 1}/{max_retries} failed for {source.location}: {e}. "
+                                f"Retrying in {delay}s..."
+                            )
+                            await asyncio.sleep(delay)
+                        else:
+                            logger.error(f"All attempts failed for {source.location}: {e}")
+                            self.stats['errors'].append(f"Collection failed: {source.location}: {str(e)}")
+                            return []
+
+        # Process all sources concurrently
+        tasks = []
+        for domain, domain_sources in sources_by_domain.items():
+            for source in domain_sources:
+                tasks.append(collect_with_rate_limit(source, domain))
+
+        # Execute all tasks and collect results
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # Process results
+        for result in results:
+            if isinstance(result, Exception):
+                logger.error(f"Collection task failed: {result}")
+                self.stats['errors'].append(f"Collection task error: {str(result)}")
+            elif result:
+                all_data.extend(result)
+
+        logger.info(
+            f"Collection phase complete: {len(all_data)} total items from "
+            f"{self.stats['sources_processed']} sources"
+        )
 
         return all_data
 
@@ -233,7 +331,8 @@ class DataPreparationPipeline:
         include_change_records: bool = True
     ) -> Path:
         """
-        Specialized method for preparing Drupal training data.
+        Enhanced Drupal training data preparation using ProfessionalWebCollector.
+        Tracks quality metrics and provides better error handling.
 
         Args:
             target_version: Target Drupal version to train for
@@ -242,53 +341,123 @@ class DataPreparationPipeline:
         Returns:
             Path to prepared training data
         """
-        # Configure for Drupal
-        self.configure(
-            collector_type='documentation',
-            preprocessor_type='drupal',
-            formatter_type='delta',
-            target_version=target_version,
-            enable_versioning=True
-        )
+        logger.info(f"Starting Drupal {target_version} data preparation with Professional Collector")
 
-        # Define Drupal data sources
-        sources = [
-            # Main documentation
-            DataSource(
-                type='documentation',
-                location='https://www.drupal.org/docs/user_guide/en',
-                metadata={'category': 'user_guide'}
-            ),
-            # API documentation
-            DataSource(
-                type='api_doc',
-                location=f'https://api.drupal.org/api/drupal/{target_version}',
-                metadata={'category': 'api_reference'}
-            ),
-        ]
+        # Try professional collector first, fallback to simple if needed
+        try:
+            # Use ProfessionalWebCollector for better quality and metrics
+            from .professional_collector import ProfessionalWebCollector
+            from .domain_configs import DRUPAL_CONFIG
 
-        # Add change records if requested
-        if include_change_records:
-            sources.append(
-                DataSource(
-                    type='changes',
-                    location='https://www.drupal.org/list-changes/drupal',
-                    metadata={'category': 'change_records', 'priority': 'high'}
-                )
-            )
+            # Update config with Drupal-specific URLs
+            drupal_urls = [
+                f"https://api.drupal.org/api/drupal/{target_version}.x",
+                f"https://api.drupal.org/api/drupal/{target_version}.x/functions",
+                f"https://api.drupal.org/api/drupal/{target_version}.x/classes",
+                f"https://www.drupal.org/docs/drupal-apis",
+                f"https://www.drupal.org/docs/{target_version}",
+            ]
 
-        # Check for llms.txt if available
-        sources.append(
-            DataSource(
-                type='url',
-                location='https://www.drupal.org/llms.txt',
-                metadata={'category': 'llms_curated'}
-            )
-        )
+            if include_change_records:
+                drupal_urls.append(f"https://www.drupal.org/list-changes/drupal")
 
-        # Run pipeline
-        output_file = self.output_dir / f"drupal_{target_version}_training.jsonl"
-        return await self.prepare_data(sources, output_file)
+            # Create professional collector with Drupal config
+            collector_config = DRUPAL_CONFIG.copy()
+            collector_config['domain'] = 'drupal'
+
+            professional_collector = ProfessionalWebCollector(collector_config)
+            collected_data = []
+            metrics = None
+
+            # Collect with professional collector
+            for url in drupal_urls:
+                try:
+                    page = await professional_collector.collect_page(url)
+                    if page:
+                        collected_data.append({
+                            'url': page.url,
+                            'title': page.title or f"Drupal {target_version} Documentation",
+                            'content': page.content,
+                            'metadata': page.metadata
+                        })
+                except Exception as e:
+                    logger.warning(f"Failed to collect {url}: {e}")
+
+            # Get collection metrics
+            metrics = professional_collector.get_metrics()
+
+            # Store metrics in job if available
+            if hasattr(self, 'job') and metrics:
+                self.job['collection_metrics'] = metrics
+
+            logger.info(f"Professional collector gathered {len(collected_data)} pages with avg quality: {metrics.get('avg_quality_score', 0):.2f}")
+
+        except Exception as e:
+            logger.warning(f"Professional collector failed, falling back to simple: {e}")
+            # Fallback to simple collector
+            from .simple_drupal_collector import SimpleDrupalCollector
+
+            async with SimpleDrupalCollector() as collector:
+                collected_data = await collector.collect_drupal_data(target_version)
+
+            logger.info(f"Simple collector gathered {len(collected_data)} items from Drupal sources")
+
+            # Now process through the pipeline phases
+            # 2. Preprocessing phase (clean and structure)
+            preprocessed = []
+            if self.preprocessor:
+                for item in collected_data:
+                    processed = await self.preprocessor.process(item)
+                    if processed:
+                        preprocessed.append(processed)
+            else:
+                preprocessed = collected_data
+
+            logger.info(f"Preprocessed {len(preprocessed)} items")
+
+            # 3. Formatting phase (convert to training format)
+            formatted = []
+            if self.formatter:
+                for item in preprocessed:
+                    formatted_item = await self.formatter.format(item)
+                    if formatted_item:
+                        formatted.append(formatted_item)
+            else:
+                # Basic formatting if no formatter configured
+                for item in preprocessed:
+                    formatted.append({
+                        "messages": [
+                            {"role": "user", "content": f"Tell me about {item.get('title', 'Drupal')}"},
+                            {"role": "assistant", "content": item.get('content', '')}
+                        ]
+                    })
+
+            logger.info(f"Formatted {len(formatted)} training examples")
+
+            # 4. Save to file
+            output_file = self.output_dir / f"drupal_{target_version}_training.jsonl"
+            output_file.parent.mkdir(parents=True, exist_ok=True)
+
+            with open(output_file, 'w') as f:
+                for item in formatted:
+                    f.write(json.dumps(item) + '\n')
+
+            logger.info(f"Saved {len(formatted)} examples to {output_file}")
+
+            # Update job metadata
+            if hasattr(self, 'job'):
+                self.job['items_collected'] = len(collected_data)
+                self.job['items_formatted'] = len(formatted)
+                self.job['output_file'] = str(output_file)
+                self.job['status'] = 'completed'
+
+            return output_file
+
+        except Exception as e:
+            logger.error(f"Failed to prepare Drupal training data: {e}")
+            import traceback
+            traceback.print_exc()
+            raise
 
     async def prepare_custom_domain_data(
         self,

@@ -44,13 +44,24 @@ def create_dashboard_app() -> FastAPI:
     @app.get("/", response_class=HTMLResponse)
     async def dashboard_home(request: Request):
         """Main dashboard page"""
-        return templates.TemplateResponse(
-            "index.html",
-            {
-                "request": request,
+        import time
+        # Cache-busting timestamp
+        cache_bust = str(int(time.time()))
+
+        response = templates.TemplateResponse(
+            request=request,
+            name="index.html",
+            context={
                 "version": __version__,
+                "cache_bust": cache_bust,
             },
         )
+        # Add cache-busting headers to prevent browser caching
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        return response
 
     @app.get("/api/stats")
     async def get_stats():
@@ -282,5 +293,62 @@ def create_dashboard_app() -> FastAPI:
         return {
             "downloads": model_downloader.get_all_downloads(),
         }
+
+    @app.post("/api/training-models/download")
+    async def download_training_model(request: Request):
+        """Download a training model from HuggingFace"""
+        import subprocess
+        import os
+        from pydantic import BaseModel
+
+        class DownloadRequest(BaseModel):
+            model_id: str
+
+        try:
+            body = await request.json()
+            model_id = body.get("model_id")
+
+            if not model_id:
+                return JSONResponse(
+                    status_code=400,
+                    content={"status": "error", "detail": "model_id is required"}
+                )
+
+            logger.info(f"Starting download of training model: {model_id}")
+
+            # Use huggingface-cli to download the model
+            # This will cache it in the HF cache directory
+            cache_dir = os.getenv("HF_HOME", os.path.expanduser("~/.cache/huggingface"))
+
+            # Run download in background using subprocess
+            # We use snapshot_download from huggingface_hub
+            cmd = [
+                "python3", "-c",
+                f"from huggingface_hub import snapshot_download; "
+                f"snapshot_download('{model_id}', cache_dir='{cache_dir}')"
+            ]
+
+            # Start the download process in the background
+            process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True
+            )
+
+            # Don't wait for it to complete, just return success
+            return {
+                "status": "success",
+                "message": f"Download started for {model_id}",
+                "model_id": model_id,
+                "cache_dir": cache_dir
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to start model download: {e}")
+            return JSONResponse(
+                status_code=500,
+                content={"status": "error", "detail": str(e)}
+            )
 
     return app

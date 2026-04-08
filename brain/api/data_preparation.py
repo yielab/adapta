@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 
 from brain.training.data_preparation.pipeline import DataPreparationPipeline, BatchProcessor
 from brain.training.data_preparation.base import DataSource
+from brain.training.data_preparation.domain_configs import create_collector_config, validate_data_for_domain
 
 logger = logging.getLogger(__name__)
 
@@ -94,6 +95,7 @@ class DataPrepStatusResponse(BaseModel):
     output_file: Optional[str] = None
     created_at: float
     completed_at: Optional[float] = None
+    collection_metrics: Optional[Dict[str, Any]] = None  # Professional collector metrics
 
 
 # Job tracking
@@ -108,6 +110,9 @@ class DataPrepJob:
         self.output_file = None
         self.created_at = time.time()
         self.completed_at = None
+        self.collection_metrics = None  # Professional collector metrics
+        self.items_collected = 0
+        self.items_formatted = 0
 
 
 # Global job tracker (in production, use database)
@@ -204,14 +209,73 @@ async def prepare_training_data(
                 # Run preparation
                 result_file = await pipeline.prepare_data(sources, output_file)
 
-                # Update job
+                # Validate minimum data requirements
+                import json
+                if not result_file.exists():
+                    raise ValueError("No output file generated")
+
+                # Count examples and validate
+                with open(result_file, 'r') as f:
+                    examples = [json.loads(line) for line in f if line.strip()]
+
+                if len(examples) < 1:
+                    job.status = "failed"
+                    job.errors.append(f"No data collected. Check your source URLs and try again.")
+                    logger.warning(f"Data preparation generated no examples")
+                    return
+
+                # Calculate tokens
+                total_tokens = sum(len(json.dumps(ex).split()) for ex in examples)
+
+                # Copy to training_data directory for the training API to find
+                # DataManager expects files in /app/data/training_data/{agent_id}/
+                training_data_dir = Path(f"/app/data/training_data/{agent_id}")
+                training_data_dir.mkdir(parents=True, exist_ok=True)
+
+                import shutil
+                final_file = training_data_dir / result_file.name
+                shutil.copy2(result_file, final_file)
+
+                # Create metadata file for DataManager.list_datasets()
+                dataset_name = result_file.stem  # filename without extension
+                metadata_file = training_data_dir / f"{dataset_name}.json"
+
+                avg_tokens = total_tokens // len(examples) if examples else 0
+                metadata = {
+                    'name': dataset_name,
+                    'agent_id': agent_id,
+                    'file_path': str(final_file),
+                    'created_at': time.time(),
+                    'num_examples': len(examples),
+                    'num_tokens': total_tokens,
+                    'avg_tokens_per_example': avg_tokens,
+                    'is_valid': True,
+                    'validation_errors': [],
+                    'metadata': {
+                        'sources': [s.dict() for s in sources],
+                        'config': config
+                    }
+                }
+
+                with open(metadata_file, 'w') as f:
+                    json.dump(metadata, f, indent=2)
+
+                logger.info(f"Created metadata file: {metadata_file}")
+
+                # Update job with proper stats
                 job.status = "completed"
                 job.progress = 1.0
-                job.output_file = str(result_file)
-                job.stats = pipeline.stats
+                job.output_file = str(final_file)
+                job.items_collected = len(examples)
+                job.items_formatted = len(examples)
+                job.stats = {
+                    'examples': len(examples),
+                    'total_tokens': total_tokens,
+                    'avg_tokens_per_example': avg_tokens
+                }
                 job.completed_at = time.time()
 
-                logger.info(f"Data preparation completed for job {job_id}")
+                logger.info(f"Data preparation completed: {len(examples)} examples, {total_tokens} tokens")
 
             except Exception as e:
                 logger.error(f"Data preparation failed for job {job_id}: {e}")
@@ -265,26 +329,108 @@ async def prepare_drupal_training_data(
         async def run_drupal_preparation():
             try:
                 job.status = "collecting"
+                job.progress = 0.1
 
-                pipeline = DataPreparationPipeline({
-                    'output_dir': str(output_dir),
-                    'max_pages': request.max_pages
-                })
+                # Create domain-specific configuration
+                domain_config = create_collector_config(
+                    'drupal',
+                    max_pages=request.max_pages,
+                    output_dir=str(output_dir)
+                )
 
+                # Add domain_config as nested dict for professional collector
+                domain_config['domain_config'] = create_collector_config('drupal')
+
+                pipeline = DataPreparationPipeline(domain_config)
+
+                job.progress = 0.3
                 # Run Drupal-specific preparation
                 result_file = await pipeline.prepare_drupal_training_data(
                     target_version=request.target_version,
                     include_change_records=request.include_change_records
                 )
 
-                # Update job
+                job.progress = 0.8
+
+                # Validate minimum data requirements
+                import json
+                if not result_file.exists():
+                    raise ValueError("No output file generated")
+
+                # Count examples and validate
+                with open(result_file, 'r') as f:
+                    examples = [json.loads(line) for line in f if line.strip()]
+
+                # Calculate tokens
+                total_tokens = sum(len(json.dumps(ex).split()) for ex in examples)
+
+                # Use domain-specific validation
+                is_valid, error_msg = validate_data_for_domain('drupal', len(examples), total_tokens)
+                if not is_valid:
+                    job.status = "failed"
+                    job.errors.append(error_msg)
+                    logger.warning(f"Drupal preparation validation failed: {error_msg}")
+                    return
+
+                # Copy to training_data directory for the training API to find
+                # DataManager expects files in /app/data/training_data/{agent_id}/
+                training_data_dir = Path(f"/app/data/training_data/{agent_id}")
+                training_data_dir.mkdir(parents=True, exist_ok=True)
+
+                import shutil
+                final_file = training_data_dir / result_file.name
+                shutil.copy2(result_file, final_file)
+
+                # Capture collection metrics from pipeline
+                collection_metrics = None
+                if hasattr(pipeline, 'stats') and 'collection_metrics' in pipeline.stats:
+                    collection_metrics = pipeline.stats['collection_metrics']
+
+                # Create metadata file for DataManager.list_datasets()
+                # This is required for the review section to show the dataset
+                dataset_name = result_file.stem  # filename without extension
+                metadata_file = training_data_dir / f"{dataset_name}.json"
+
+                avg_tokens = total_tokens // len(examples) if examples else 0
+                metadata = {
+                    'name': dataset_name,
+                    'agent_id': agent_id,
+                    'file_path': str(final_file),
+                    'created_at': time.time(),
+                    'num_examples': len(examples),
+                    'num_tokens': total_tokens,
+                    'avg_tokens_per_example': avg_tokens,
+                    'is_valid': True,
+                    'validation_errors': [],
+                    'metadata': {
+                        'drupal_version': request.target_version,
+                        'include_change_records': request.include_change_records,
+                        'collection_metrics': collection_metrics
+                    }
+                }
+
+                with open(metadata_file, 'w') as f:
+                    json.dump(metadata, f, indent=2)
+
+                logger.info(f"Created metadata file: {metadata_file}")
+
+                # Update job with stats including collection metrics
                 job.status = "completed"
                 job.progress = 1.0
-                job.output_file = str(result_file)
-                job.stats = pipeline.stats
+                job.output_file = str(final_file)
+                job.items_collected = len(examples)
+                job.items_formatted = len(examples)
+                job.collection_metrics = collection_metrics
+                job.stats = {
+                    'examples': len(examples),
+                    'total_tokens': total_tokens,
+                    'avg_tokens_per_example': avg_tokens,
+                    'drupal_version': request.target_version,
+                    'collection_metrics': collection_metrics
+                }
                 job.completed_at = time.time()
 
-                logger.info(f"Drupal data preparation completed for job {job_id}")
+                logger.info(f"Drupal {request.target_version} data preparation completed: {len(examples)} examples, {total_tokens} tokens")
 
             except Exception as e:
                 logger.error(f"Drupal data preparation failed: {e}")
@@ -400,40 +546,6 @@ async def prepare_batch_training_data(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/training/prepare/{job_id}", response_model=DataPrepStatusResponse)
-async def get_preparation_status(job_id: str):
-    """
-    Get status of a data preparation job.
-
-    Returns detailed information about the preparation progress,
-    including statistics and any errors encountered.
-    """
-    try:
-        job = prep_jobs.get(job_id)
-        if not job:
-            raise HTTPException(status_code=404, detail="Job not found")
-
-        return DataPrepStatusResponse(
-            job_id=job.job_id,
-            status=job.status,
-            progress=job.progress,
-            sources_processed=job.stats.get('sources_processed', 0),
-            items_collected=job.stats.get('items_collected', 0),
-            items_preprocessed=job.stats.get('items_preprocessed', 0),
-            items_formatted=job.stats.get('items_formatted', 0),
-            errors=job.errors + job.stats.get('errors', []),
-            output_file=job.output_file,
-            created_at=job.created_at,
-            completed_at=job.completed_at
-        )
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error getting preparation status: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
 @router.get("/training/prepare/jobs")
 async def list_preparation_jobs():
     """
@@ -536,6 +648,41 @@ async def get_preparation_examples():
     }
 
     return examples
+
+
+@router.get("/training/prepare/{job_id}", response_model=DataPrepStatusResponse)
+async def get_preparation_status(job_id: str):
+    """
+    Get status of a data preparation job.
+
+    Returns detailed information about the preparation progress,
+    including statistics and any errors encountered.
+    """
+    try:
+        job = prep_jobs.get(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+
+        return DataPrepStatusResponse(
+            job_id=job.job_id,
+            status=job.status,
+            progress=job.progress,
+            sources_processed=job.stats.get('sources_processed', 0),
+            items_collected=job.items_collected or job.stats.get('items_collected', 0),
+            items_preprocessed=job.stats.get('items_preprocessed', 0),
+            items_formatted=job.items_formatted or job.stats.get('items_formatted', 0),
+            errors=job.errors + job.stats.get('errors', []),
+            output_file=job.output_file,
+            created_at=job.created_at,
+            completed_at=job.completed_at,
+            collection_metrics=job.collection_metrics
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting preparation status: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.delete("/training/prepare/{job_id}")

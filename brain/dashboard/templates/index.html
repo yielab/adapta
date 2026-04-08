@@ -1091,6 +1091,112 @@
         .hljs-meta { color: #61afef; }
         .hljs-attr { color: #d19a66; }
         .hljs-variable { color: #e06c75; }
+
+        /* Animations & Loading States */
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        @keyframes progressShimmer {
+            0% { background-position: -200% 0; }
+            100% { background-position: 200% 0; }
+        }
+
+        .loading-spinner {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid #334155;
+            border-top-color: #60a5fa;
+            border-radius: 50%;
+            animation: spin 0.6s linear infinite;
+        }
+
+        .pulse-animation {
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        .slide-in {
+            animation: slideIn 0.3s ease-out forwards;
+        }
+
+        .fade-in {
+            animation: fadeIn 0.5s ease-out forwards;
+        }
+
+        .progress-shimmer {
+            background: linear-gradient(
+                90deg,
+                #60a5fa 0%,
+                #3b82f6 50%,
+                #60a5fa 100%
+            );
+            background-size: 200% 100%;
+            animation: progressShimmer 2s ease-in-out infinite;
+        }
+
+        /* Metric badges */
+        .metric-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.75em;
+            font-weight: 600;
+            transition: all 0.2s;
+        }
+
+        .metric-badge:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+        }
+
+        .metric-badge.success {
+            background: #0f1f13;
+            color: #10b981;
+            border: 1px solid #10b981;
+        }
+
+        .metric-badge.warning {
+            background: #1f1a0f;
+            color: #fbbf24;
+            border: 1px solid #fbbf24;
+        }
+
+        .metric-badge.info {
+            background: #0f1628;
+            color: #60a5fa;
+            border: 1px solid #60a5fa;
+        }
+
+        .metric-badge.danger {
+            background: #1f0f0f;
+            color: #ef4444;
+            border: 1px solid #ef4444;
+        }
     </style>
 
     <!-- Marked.js for Markdown rendering -->
@@ -1116,7 +1222,6 @@
             <button class="tab-btn" onclick="switchTab('agents')">👥 Agents</button>
             <button class="tab-btn" onclick="switchTab('chat')">💬 Chat</button>
             <button class="tab-btn" onclick="switchTab('documents')">📄 Documents</button>
-            <button class="tab-btn" onclick="switchTab('dataprep')">🔄 Data Prep</button>
             <button class="tab-btn" onclick="switchTab('training')">🎓 Training</button>
             <button class="tab-btn" onclick="switchTab('vision')">👁️ Vision</button>
             <button class="tab-btn" onclick="switchTab('logs')">📝 Logs</button>
@@ -1269,6 +1374,49 @@
                 <h2>⏬ Active Downloads</h2>
                 <div id="downloads-list"></div>
             </div>
+
+            <!-- Models for Training Section -->
+            <div class="card" style="margin-top: 20px;">
+                <h2>🎓 Models for Training (LoRA Fine-Tuning)</h2>
+                <p style="color: #94a3b8; margin-bottom: 15px;">
+                    Download base models for training custom adapters with your data
+                </p>
+
+                <!-- Training Info Box -->
+                <div style="background: #1e293b; border-left: 4px solid #10b981; padding: 15px; margin-bottom: 20px; border-radius: 4px;">
+                    <div style="font-weight: bold; color: #10b981; margin-bottom: 8px;">💡 How to Download Training Models</div>
+                    <div style="color: #94a3b8; font-size: 0.9em; line-height: 1.6;">
+                        <strong>Click "⬇️ Download Model"</strong> → Model downloads automatically from HuggingFace to the server<br>
+                        <strong>Watch progress</strong> → Real-time progress bar shows download status<br>
+                        <strong>Automatic install</strong> → Model is cached in HuggingFace directory<br>
+                        <strong>Ready to train</strong> → Use in Training tab to create custom adapters<br>
+                        <br>
+                        <strong>What are Training Models?</strong><br>
+                        These are <strong>unquantized HuggingFace models</strong> required for LoRA fine-tuning. They're different from inference models (GGUF/llama-cpp).<br>
+                        <br>
+                        <strong>⚠️ Important:</strong> These models are large (7B = ~14GB, 13B = ~26GB). Download happens on the server, so make sure you have enough disk space!
+                    </div>
+                </div>
+
+                <!-- Filters -->
+                <div class="filter-section">
+                    <h3>Filters</h3>
+                    <div class="btn-group">
+                        <button class="btn btn-sm btn-secondary active" onclick="filterTrainingModels('all')" id="training-filter-all">All Models</button>
+                        <button class="btn btn-sm btn-secondary" onclick="filterTrainingModels('installed')" id="training-filter-installed">✓ Installed</button>
+                        <button class="btn btn-sm btn-secondary" onclick="filterTrainingModels('available')" id="training-filter-available">⏬ Available</button>
+                        <button class="btn btn-sm btn-primary" onclick="filterTrainingModels('recommended')" id="training-filter-recommended">⭐ Recommended</button>
+                    </div>
+                </div>
+
+                <!-- Training Model Grid -->
+                <div id="training-model-grid" class="model-grid">
+                    <div class="empty-state">
+                        <div class="empty-state-icon">⏳</div>
+                        <p>Loading training models...</p>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <!-- Agents Tab -->
@@ -1327,98 +1475,332 @@
         <!-- Training Tab -->
         <div id="training-tab" class="tab-content">
             <div class="card">
-                <h2>🎓 LoRA Fine-Tuning - Personalize Your Agents</h2>
-                <p style="color: #94a3b8; margin-bottom: 15px;">
-                    Train your agents with custom data to specialize their knowledge and behavior
-                </p>
+                <h2>🎓 Train Your Agent</h2>
+                <p style="color: #cbd5e1; margin-bottom: 15px;">Teach your agent with conversation examples</p>
 
-                <!-- Workflow Info -->
-                <div style="background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); border: 2px solid #10b981; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
-                    <div style="color: #10b981; font-weight: bold; font-size: 1.1em; margin-bottom: 15px;">
-                        🎯 Training Workflow
-                    </div>
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-bottom: 15px;">
-                        <div style="background: #1e293b; padding: 10px; border-radius: 6px; border-left: 3px solid #60a5fa;">
-                            <div style="color: #60a5fa; font-weight: bold; font-size: 0.9em; margin-bottom: 4px;">1. Select Agent</div>
-                            <div style="color: #94a3b8; font-size: 0.8em;">Choose agent to personalize</div>
-                        </div>
-                        <div style="background: #1e293b; padding: 10px; border-radius: 6px; border-left: 3px solid #10b981;">
-                            <div style="color: #10b981; font-weight: bold; font-size: 0.9em; margin-bottom: 4px;">2. Upload Data</div>
-                            <div style="color: #94a3b8; font-size: 0.8em;">Provide conversation examples</div>
-                        </div>
-                        <div style="background: #1e293b; padding: 10px; border-radius: 6px; border-left: 3px solid #f59e0b;">
-                            <div style="color: #f59e0b; font-weight: bold; font-size: 0.9em; margin-bottom: 4px;">3. Train</div>
-                            <div style="color: #94a3b8; font-size: 0.8em;">Monitor progress</div>
-                        </div>
-                        <div style="background: #1e293b; padding: 10px; border-radius: 6px; border-left: 3px solid #8b5cf6;">
-                            <div style="color: #8b5cf6; font-weight: bold; font-size: 0.9em; margin-bottom: 4px;">4. Use</div>
-                            <div style="color: #94a3b8; font-size: 0.8em;">Access via API/OpenClaw</div>
-                        </div>
-                    </div>
-
-                    <!-- Data Format Example -->
-                    <details style="background: #0f172a; padding: 12px; border-radius: 6px;">
-                        <summary style="color: #60a5fa; cursor: pointer; font-weight: bold;">📄 Example Training Data Format (Click to expand)</summary>
-                        <div style="margin-top: 10px;">
-                            <div style="color: #94a3b8; font-size: 0.85em; margin-bottom: 8px;">Each line = one JSON object with "messages" array:</div>
-                            <pre style="background: #000; color: #10b981; padding: 10px; border-radius: 4px; overflow-x: auto; font-size: 0.75em;"><code>{"messages": [{"role": "user", "content": "What is Python?"}, {"role": "assistant", "content": "Python is a programming language."}]}
-{"messages": [{"role": "user", "content": "Explain lists"}, {"role": "assistant", "content": "Lists store multiple items."}]}</code></pre>
-                            <div style="color: #94a3b8; font-size: 0.8em; margin-top: 8px;">
-                                💡 Save as <code style="background: #1e293b; padding: 2px 4px; border-radius: 3px;">.jsonl</code> file
-                            </div>
-                        </div>
-                    </details>
-                </div>
-
-                <!-- Requirements Box -->
-                <div style="background: #1e293b; border-left: 4px solid #f59e0b; padding: 12px; margin-bottom: 20px; border-radius: 4px;">
-                    <div style="font-weight: bold; color: #f59e0b; margin-bottom: 6px; font-size: 0.95em;">⚙️ Requirements</div>
-                    <div style="color: #94a3b8; font-size: 0.85em; line-height: 1.5;">
-                        <strong>Deps:</strong> <code style="background: #0f172a; padding: 2px 4px; border-radius: 3px; font-size: 0.85em;">pip install -r requirements-training.txt</code><br>
-                        <strong>Hardware:</strong> GPU recommended (CPU works but slower)<br>
-                        <strong>Time:</strong> 5-30 min depending on data size
-                    </div>
-                </div>
-
-                <div id="training-select-agent" class="form-group">
-                    <label class="form-label">Select Agent</label>
+                <!-- Agent Selection -->
+                <div style="background: #1e293b; padding: 15px; border-radius: 6px; margin-bottom: 15px;">
+                    <label style="display: block; color: #e2e8f0; font-weight: 500; margin-bottom: 8px;">Select Agent:</label>
                     <select id="training-agent-select" class="form-select" onchange="loadAgentTrainingData()">
-                        <option value="">-- Select an agent --</option>
+                        <option value="">-- Choose an agent --</option>
                     </select>
                 </div>
 
-                <div id="training-content" style="display: none;">
-                    <!-- Training Data Section -->
-                    <div class="card" style="margin-bottom: 20px;">
-                        <h3 style="color: #60a5fa; margin-bottom: 15px;">📚 Training Data</h3>
+                <!-- Step 1: Get Data -->
+                <div style="background: #1e293b; padding: 15px; border-radius: 6px; margin-bottom: 15px; border-left: 3px solid #60a5fa;">
+                    <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px;">
+                        <div style="background: #60a5fa; color: #0f172a; width: 24px; height: 24px; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 0.9em;">1</div>
+                        <h3 style="color: #e2e8f0; margin: 0;">Get Training Data</h3>
+                    </div>
 
-                        <div class="btn-group" style="margin-bottom: 15px;">
-                            <button class="btn btn-primary btn-sm" onclick="showUploadDataModal()">+ Upload Dataset</button>
-                            <button class="btn btn-secondary btn-sm" onclick="createExampleDataset()">📄 Create Example</button>
+                    <!-- Grid Layout for Options -->
+                    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;">
+                        <!-- Option A: Collect Web -->
+                        <div style="background: #0f172a; padding: 12px; border-radius: 4px;">
+                            <div style="color: #e2e8f0; font-weight: 500; margin-bottom: 8px; font-size: 0.95em;">🌐 Collect Web</div>
+
+                            <select id="prep-source-type" class="form-select" style="width: 100%; margin-bottom: 8px; font-size: 0.9em;">
+                                <option value="url">Single page</option>
+                                <option value="sitemap">Entire site</option>
+                                <option value="documentation">Documentation</option>
+                                <option value="api_doc">API docs</option>
+                            </select>
+
+                            <input type="text" id="prep-url-input" class="form-input" placeholder="https://example.com" style="width: 100%; margin-bottom: 8px; font-size: 0.9em;">
+
+                            <button class="btn btn-primary btn-sm" onclick="addWebSource()" style="width: 100%;">
+                                Add Source
+                            </button>
+
+                            <!-- Sources & Start -->
+                            <div id="prep-sources-list" style="margin-top: 10px;"></div>
+                            <div id="prep-ready" style="display: none; margin-top: 10px;">
+                                <button class="btn btn-success btn-sm" onclick="startDataPreparation()" id="start-prep-btn" style="width: 100%;">
+                                    ▶️ Start Collecting
+                                </button>
+                            </div>
+                            <div id="prep-jobs-container" style="display: none; margin-top: 10px; padding: 10px; background: #1e293b; border-radius: 4px; font-size: 0.85em;">
+                                <div style="color: #cbd5e1; margin-bottom: 6px;">⏳ Collecting...</div>
+                                <div id="prep-jobs-list"></div>
+                            </div>
                         </div>
 
+                        <!-- Option B: Drupal -->
+                        <div style="background: #0f172a; padding: 12px; border-radius: 4px;">
+                            <div style="color: #e2e8f0; font-weight: 500; margin-bottom: 8px; font-size: 0.95em;">🔷 Drupal Data</div>
+                            <p style="color: #94a3b8; font-size: 0.85em; margin-bottom: 8px; line-height: 1.4;">
+                                Get docs, changelogs, modules & code for Drupal version
+                            </p>
+
+                            <label style="display: block; color: #cbd5e1; font-size: 0.85em; margin-bottom: 4px;">Drupal Version:</label>
+                            <select id="drupal-version" class="form-select" style="width: 100%; margin-bottom: 8px; font-size: 0.9em;">
+                                <option value="11">Drupal 11</option>
+                                <option value="10">Drupal 10</option>
+                                <option value="9">Drupal 9</option>
+                                <option value="8">Drupal 8</option>
+                                <option value="7">Drupal 7</option>
+                            </select>
+
+                            <label style="display: flex; align-items: center; gap: 6px; margin-bottom: 8px; color: #cbd5e1; font-size: 0.85em;">
+                                <input type="checkbox" id="drupal-contrib" checked style="width: 14px; height: 14px;">
+                                Include popular contrib modules
+                            </label>
+
+                            <button class="btn btn-primary btn-sm" onclick="startDrupalPrep()" style="width: 100%;">
+                                Collect Drupal Data
+                            </button>
+
+                            <!-- Drupal Progress Container -->
+                            <div id="drupal-jobs-container" style="display: none; margin-top: 12px;">
+                                <div id="drupal-jobs-list"></div>
+                            </div>
+                        </div>
+
+                        <!-- Option C: Upload -->
+                        <div style="background: #0f172a; padding: 12px; border-radius: 4px;">
+                            <div style="color: #e2e8f0; font-weight: 500; margin-bottom: 8px; font-size: 0.95em;">📁 Upload File</div>
+                            <p style="color: #94a3b8; font-size: 0.85em; margin-bottom: 10px; line-height: 1.4;">
+                                Have your own JSONL file?
+                            </p>
+                            <button class="btn btn-secondary btn-sm" onclick="showUploadDataModal()" style="width: 100%;">
+                                Upload JSONL File
+                            </button>
+                            <details style="margin-top: 10px;">
+                                <summary style="color: #60a5fa; cursor: pointer; font-size: 0.8em;">Format example</summary>
+                                <div style="margin-top: 6px; padding: 8px; background: #000; border-radius: 3px;">
+                                    <pre style="color: #10b981; font-size: 0.7em; margin: 0; line-height: 1.3;"><code>{"messages":[{"role":"user","content":"Hi"},{"role":"assistant","content":"Hello!"}]}</code></pre>
+                                </div>
+                            </details>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Training Data & Jobs - Shown after agent selection -->
+                <div id="training-content" style="display: none;">
+                    <!-- Step 2: Review Data -->
+                    <div style="background: #1e293b; padding: 15px; border-radius: 6px; margin-bottom: 15px; border-left: 3px solid #10b981;">
+                        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+                            <div style="display: flex; align-items: center; gap: 10px;">
+                                <div style="background: #10b981; color: #0f172a; width: 24px; height: 24px; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 0.9em;">2</div>
+                                <h3 style="color: #e2e8f0; margin: 0;">Review Data</h3>
+                            </div>
+                            <button class="btn btn-sm btn-secondary" onclick="refreshDatasets()" title="Refresh dataset list">
+                                🔄 Refresh
+                            </button>
+                        </div>
+                        <p style="color: #94a3b8; font-size: 0.85em; margin-bottom: 12px;">
+                            Preview, validate, and download your prepared data
+                        </p>
                         <div id="datasets-list">
-                            <div class="empty-state">
-                                <div class="empty-state-icon">📚</div>
-                                <p>No datasets uploaded</p>
+                            <div style="color: #64748b; padding: 15px; text-align: center; background: #0f172a; border-radius: 4px; font-size: 0.9em;">
+                                No data yet. Prepare data in Step 1.
                             </div>
                         </div>
                     </div>
 
-                    <!-- Training Jobs Section -->
-                    <div class="card">
-                        <h3 style="color: #60a5fa; margin-bottom: 15px;">🔧 Training Jobs</h3>
+                    <!-- Step 3: Train -->
+                    <div style="background: #1e293b; padding: 15px; border-radius: 6px; margin-bottom: 15px; border-left: 3px solid #10b981;">
+                        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px;">
+                            <div style="background: #10b981; color: #0f172a; width: 24px; height: 24px; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 0.9em;">3</div>
+                            <h3 style="color: #e2e8f0; margin: 0;">Start Training</h3>
+                        </div>
 
-                        <button class="btn btn-success btn-sm" onclick="showStartTrainingModal()" style="margin-bottom: 15px;">
-                            ▶️ Start New Training Job
-                        </button>
+                        <!-- Agent & Training Info -->
+                        <div id="agent-training-info" style="background: #0f172a; padding: 15px; border-radius: 6px; margin-bottom: 15px; border-left: 3px solid #60a5fa;">
+                            <div style="display: flex; align-items: start; gap: 12px; margin-bottom: 15px;">
+                                <div style="color: #60a5fa; font-size: 1.5em;">ℹ️</div>
+                                <div style="flex: 1;">
+                                    <div style="color: #e2e8f0; font-weight: 600; margin-bottom: 8px;">What is Training?</div>
+                                    <div style="color: #cbd5e1; font-size: 0.85em; line-height: 1.6; margin-bottom: 12px;">
+                                        Training creates a <strong>specialized adapter</strong> (LoRA) on top of a base model using your data.
+                                        This adapter can then be loaded by any agent to gain domain-specific knowledge—without replacing their core model.
+                                    </div>
 
-                        <div id="training-jobs-list">
-                            <div class="empty-state">
-                                <div class="empty-state-icon">🔧</div>
-                                <p>No training jobs</p>
+                                    <!-- Visual Flow Diagram -->
+                                    <div style="background: #1e293b; padding: 12px; border-radius: 4px; margin-bottom: 12px;">
+                                        <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 0.8em;">
+                                            <div style="background: #3b82f6; color: white; padding: 6px 10px; border-radius: 4px; font-weight: 600;">
+                                                Base Model
+                                            </div>
+                                            <div style="color: #64748b;">+</div>
+                                            <div style="background: #10b981; color: white; padding: 6px 10px; border-radius: 4px; font-weight: 600;">
+                                                Your Data
+                                            </div>
+                                            <div style="color: #64748b;">→</div>
+                                            <div style="background: #f59e0b; color: white; padding: 6px 10px; border-radius: 4px; font-weight: 600;">
+                                                Training
+                                            </div>
+                                            <div style="color: #64748b;">→</div>
+                                            <div style="background: #8b5cf6; color: white; padding: 6px 10px; border-radius: 4px; font-weight: 600;">
+                                                LoRA Adapter
+                                            </div>
+                                        </div>
+                                        <div style="color: #94a3b8; font-size: 0.75em; margin-top: 8px; padding-left: 4px;">
+                                            💡 The adapter is small (~100MB) and can be loaded into any agent
+                                        </div>
+                                    </div>
+
+                                    <!-- Current Agent Info -->
+                                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                                        <div id="current-agent-model" style="color: #94a3b8; font-size: 0.8em; padding: 8px; background: #1e293b; border-radius: 4px;">
+                                            <strong style="color: #cbd5e1;">Agent's Current Model:</strong><br>
+                                            <span id="agent-model-name" style="font-size: 0.9em;">Loading...</span>
+                                        </div>
+                                        <div style="color: #94a3b8; font-size: 0.8em; padding: 8px; background: #1e293b; border-radius: 4px;">
+                                            <strong style="color: #cbd5e1;">After Training:</strong><br>
+                                            <span style="color: #10b981; font-size: 0.9em;">Agent + New Adapter</span>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
+
+                        <!-- Training Configuration Form -->
+                        <form id="inline-training-form" onsubmit="startTraining(event)" style="background: #0f172a; padding: 15px; border-radius: 6px; margin-bottom: 15px;">
+                            <!-- Step 3a: Select Dataset -->
+                            <div style="margin-bottom: 15px;">
+                                <label class="form-label" style="color: #10b981; font-weight: 600; margin-bottom: 8px; display: block;">
+                                    Dataset *
+                                </label>
+                                <select id="training-dataset" class="form-select" required onchange="updateDatasetInfo()" style="margin-bottom: 8px;">
+                                    <option value="">-- Select a prepared dataset --</option>
+                                </select>
+                                <div id="dataset-info" style="color: #94a3b8; font-size: 0.85em; padding: 8px; background: #1e293b; border-radius: 4px; display: none;"></div>
+                            </div>
+
+                            <!-- Step 3b: Model Configuration -->
+                            <div style="margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px solid #334155;">
+                                <label class="form-label" style="color: #60a5fa; font-weight: 600; margin-bottom: 8px; display: block;">
+                                    Base Model to Fine-Tune *
+                                </label>
+
+                                <!-- Technical Explanation -->
+                                <div style="background: #1e293b; padding: 10px; border-radius: 4px; margin-bottom: 10px; border-left: 3px solid #60a5fa;">
+                                    <div style="color: #60a5fa; font-weight: 600; font-size: 0.8em; margin-bottom: 4px;">📚 Technical Note</div>
+                                    <div style="color: #cbd5e1; font-size: 0.75em; line-height: 1.5;">
+                                        <strong>LoRA training requires unquantized HuggingFace models.</strong> If your agent uses a GGUF/llama-cpp model (for fast inference), you'll need to select a HuggingFace version below. The LoRA adapter created can later be used with any compatible model.
+                                    </div>
+                                </div>
+
+                                <p style="color: #94a3b8; font-size: 0.8em; margin-bottom: 8px; line-height: 1.4;">
+                                    <strong>💡 Best Practice:</strong> If your agent's model appears at the top, use it—it's already installed. Otherwise, choose Llama-2-7b or Mistral-7B (most compatible with Drupal/code training).
+                                </p>
+
+                                <select id="training-base-model" class="form-select" required>
+                                    <option value="">Loading available models...</option>
+                                </select>
+
+                                <div id="base-model-status" style="margin-top: 8px; padding: 8px; background: #1e293b; border-radius: 4px; font-size: 0.8em; display: none;">
+                                    <div style="color: #f59e0b; margin-bottom: 4px;">⚠️ No trainable models available</div>
+                                    <div style="color: #cbd5e1;">
+                                        Your agent uses a local/GGUF model (inference-only). Download a HuggingFace model like <code style="background: #0f172a; padding: 2px 4px;">meta-llama/Llama-2-7b-hf</code> to enable training.
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Step 3c: Training Parameters -->
+                            <div style="margin-bottom: 15px;">
+                                <label class="form-label" style="color: #f59e0b; font-weight: 600; margin-bottom: 8px; display: block;">
+                                    Training Parameters
+                                </label>
+                                <p style="color: #94a3b8; font-size: 0.8em; margin-bottom: 12px; line-height: 1.4;">
+                                    These control how the model learns from your data. The defaults are optimized for most use cases.
+                                </p>
+
+                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                                    <div>
+                                        <label style="color: #cbd5e1; font-size: 0.85em; display: flex; align-items: center; gap: 4px; margin-bottom: 4px;">
+                                            Epochs <span style="color: #64748b;">(1-10)</span>
+                                            <span style="color: #64748b; cursor: help;" title="How many times to train on the full dataset">ⓘ</span>
+                                        </label>
+                                        <input type="number" id="training-epochs" class="form-input" value="3" min="1" max="10" required>
+                                        <div style="color: #64748b; font-size: 0.75em; margin-top: 2px;">More = better learning, but slower</div>
+                                    </div>
+
+                                    <div>
+                                        <label style="color: #cbd5e1; font-size: 0.85em; display: flex; align-items: center; gap: 4px; margin-bottom: 4px;">
+                                            Batch Size <span style="color: #64748b;">(1-16)</span>
+                                            <span style="color: #64748b; cursor: help;" title="How many examples to process at once">ⓘ</span>
+                                        </label>
+                                        <input type="number" id="training-batch-size" class="form-input" value="4" min="1" max="16" required>
+                                        <div style="color: #64748b; font-size: 0.75em; margin-top: 2px;">Higher = more GPU memory needed</div>
+                                    </div>
+
+                                    <div>
+                                        <label style="color: #cbd5e1; font-size: 0.85em; display: flex; align-items: center; gap: 4px; margin-bottom: 4px;">
+                                            Learning Rate
+                                            <span style="color: #64748b; cursor: help;" title="How fast the model adapts">ⓘ</span>
+                                        </label>
+                                        <input type="text" id="training-learning-rate" class="form-input" value="2e-4" required>
+                                        <div style="color: #64748b; font-size: 0.75em; margin-top: 2px;">Typical: 1e-4 to 5e-4</div>
+                                    </div>
+
+                                    <div>
+                                        <label style="color: #cbd5e1; font-size: 0.85em; display: flex; align-items: center; gap: 4px; margin-bottom: 4px;">
+                                            LoRA Rank <span style="color: #64748b;">(4-128)</span>
+                                            <span style="color: #64748b; cursor: help;" title="Adapter complexity - higher = more powerful but larger">ⓘ</span>
+                                        </label>
+                                        <input type="number" id="training-lora-rank" class="form-input" value="16" min="4" max="128" required>
+                                        <div style="color: #64748b; font-size: 0.75em; margin-top: 2px;">16-32 recommended</div>
+                                    </div>
+                                </div>
+
+                                <div style="background: #1e293b; padding: 10px; border-radius: 4px; margin-top: 12px; border-left: 3px solid #10b981;">
+                                    <div style="color: #10b981; font-weight: 600; font-size: 0.8em; margin-bottom: 4px;">💡 Quick Tips:</div>
+                                    <ul style="color: #94a3b8; font-size: 0.75em; margin: 0; padding-left: 20px; line-height: 1.6;">
+                                        <li><strong>Small dataset (< 50 examples):</strong> Use 3-5 epochs</li>
+                                        <li><strong>Medium dataset (50-200 examples):</strong> Use 2-3 epochs (default)</li>
+                                        <li><strong>Large dataset (> 200 examples):</strong> Use 1-2 epochs</li>
+                                        <li><strong>Low on GPU memory?</strong> Reduce batch size to 1 or 2</li>
+                                    </ul>
+                                </div>
+                            </div>
+
+                            <!-- Estimated Training Time -->
+                            <div id="training-estimate" style="background: #1e293b; padding: 10px; border-radius: 4px; margin-bottom: 15px; display: none;">
+                                <div style="color: #94a3b8; font-size: 0.85em;">
+                                    ⏱️ Estimated training time: <span id="estimate-time" style="color: #10b981; font-weight: 600;">-</span>
+                                </div>
+                            </div>
+
+                            <!-- Submit Button -->
+                            <button type="submit" class="btn btn-success" style="width: 100%;">
+                                🚀 Start Training Job
+                            </button>
+                        </form>
+
+                        <!-- What Happens After Training -->
+                        <div style="background: #0f172a; padding: 15px; border-radius: 6px; margin-bottom: 15px; border-left: 3px solid #8b5cf6; display: none;" id="post-training-info">
+                            <div style="display: flex; align-items: start; gap: 12px;">
+                                <div style="color: #8b5cf6; font-size: 1.3em;">✨</div>
+                                <div style="flex: 1;">
+                                    <div style="color: #e2e8f0; font-weight: 600; margin-bottom: 6px;">After Training Completes</div>
+                                    <div style="color: #cbd5e1; font-size: 0.85em; line-height: 1.5; margin-bottom: 10px;">
+                                        Your new LoRA adapter will be saved and can be used in two ways:
+                                    </div>
+                                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
+                                        <div style="background: #1e293b; padding: 10px; border-radius: 4px;">
+                                            <div style="color: #10b981; font-weight: 600; font-size: 0.8em; margin-bottom: 4px;">Option 1: Load into Agent</div>
+                                            <div style="color: #94a3b8; font-size: 0.75em; line-height: 1.4;">
+                                                Go to Agents tab → Select agent → Load the adapter. The agent will now have specialized knowledge.
+                                            </div>
+                                        </div>
+                                        <div style="background: #1e293b; padding: 10px; border-radius: 4px;">
+                                            <div style="color: #60a5fa; font-weight: 600; font-size: 0.8em; margin-bottom: 4px;">Option 2: Use via API</div>
+                                            <div style="color: #94a3b8; font-size: 0.75em; line-height: 1.4;">
+                                                Call the API with the adapter path. Perfect for production deployments and automated workflows.
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div style="color: #64748b; font-size: 0.75em; padding: 8px; background: #1e293b; border-radius: 4px;">
+                                        💾 Adapters are stored in: <code style="background: #0f172a; padding: 2px 6px; border-radius: 3px; color: #10b981;">/app/data/training_jobs/{job_id}/adapter/</code>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Active Training Jobs -->
+                        <div id="training-jobs-list"></div>
                     </div>
                 </div>
             </div>
@@ -1542,200 +1924,6 @@
         </div>
 
         <!-- Data Preparation Tab -->
-        <div id="dataprep-tab" class="tab-content">
-            <div class="card">
-                <h2>🔄 Data Preparation - Automated Training Data Collection</h2>
-
-                <!-- Overview Section -->
-                <div style="background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); border: 2px solid #60a5fa; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
-                    <div style="color: #60a5fa; font-weight: bold; font-size: 1.1em; margin-bottom: 15px;">
-                        🎯 Automated Data Collection for Training
-                    </div>
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px;">
-                        <div style="background: #0f172a; padding: 12px; border-radius: 6px;">
-                            <div style="color: #10b981; font-weight: bold; margin-bottom: 5px;">🌐 Web Scraping</div>
-                            <div style="color: #94a3b8; font-size: 0.85em;">Scrape websites, documentation, and online resources</div>
-                        </div>
-                        <div style="background: #0f172a; padding: 12px; border-radius: 6px;">
-                            <div style="color: #f59e0b; font-weight: bold; margin-bottom: 5px;">📚 Documentation</div>
-                            <div style="color: #94a3b8; font-size: 0.85em;">Process technical docs, API references, and guides</div>
-                        </div>
-                        <div style="background: #0f172a; padding: 12px; border-radius: 6px;">
-                            <div style="color: #8b5cf6; font-weight: bold; margin-bottom: 5px;">🔧 API Docs</div>
-                            <div style="color: #94a3b8; font-size: 0.85em;">Extract API documentation and examples</div>
-                        </div>
-                        <div style="background: #0f172a; padding: 12px; border-radius: 6px;">
-                            <div style="color: #ec4899; font-weight: bold; margin-bottom: 5px;">📝 Change Records</div>
-                            <div style="color: #94a3b8; font-size: 0.85em;">Track version changes and updates</div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Quick Start Section -->
-                <div class="card" style="margin-bottom: 20px; background: #1e293b;">
-                    <h3 style="color: #10b981; margin-bottom: 15px;">⚡ Quick Start - Prepare Data in 3 Steps</h3>
-
-                    <!-- Step 1: Select Agent -->
-                    <div class="form-group">
-                        <label class="form-label">1️⃣ Select Target Agent</label>
-                        <select id="dataprep-agent-select" class="form-select" onchange="updateDataPrepForm()">
-                            <option value="">-- Select an agent to train --</option>
-                        </select>
-                    </div>
-
-                    <!-- Step 2: Choose Data Source Type -->
-                    <div class="form-group">
-                        <label class="form-label">2️⃣ Choose Data Source Type</label>
-                        <div class="btn-group" style="display: flex; gap: 10px; flex-wrap: wrap;">
-                            <button class="btn btn-sm" onclick="selectDataSource('web')" id="source-web">
-                                🌐 Website/URL
-                            </button>
-                            <button class="btn btn-sm" onclick="selectDataSource('documentation')" id="source-documentation">
-                                📚 Documentation
-                            </button>
-                            <button class="btn btn-sm" onclick="selectDataSource('api')" id="source-api">
-                                🔧 API Docs
-                            </button>
-                            <button class="btn btn-sm" onclick="selectDataSource('drupal')" id="source-drupal">
-                                💧 Drupal
-                            </button>
-                            <button class="btn btn-sm" onclick="selectDataSource('codebase')" id="source-codebase">
-                                💻 Codebase
-                            </button>
-                        </div>
-                    </div>
-
-                    <!-- Step 3: Configure Source -->
-                    <div id="dataprep-config" style="display: none;">
-                        <div class="form-group">
-                            <label class="form-label">3️⃣ Configure Data Source</label>
-
-                            <!-- Web Scraping Config -->
-                            <div id="config-web" class="source-config" style="display: none;">
-                                <input type="text" id="web-url" class="form-input" placeholder="https://example.com/docs" style="margin-bottom: 10px;">
-                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
-                                    <input type="number" id="web-depth" class="form-input" placeholder="Max depth (3)" value="3">
-                                    <input type="number" id="web-max-pages" class="form-input" placeholder="Max pages (100)" value="100">
-                                </div>
-                                <label style="margin-top: 10px;">
-                                    <input type="checkbox" id="web-follow-links" checked> Follow internal links
-                                </label>
-                            </div>
-
-                            <!-- Documentation Config -->
-                            <div id="config-documentation" class="source-config" style="display: none;">
-                                <input type="text" id="doc-url" class="form-input" placeholder="https://docs.example.com" style="margin-bottom: 10px;">
-                                <input type="text" id="doc-version" class="form-input" placeholder="Version (optional)" style="margin-bottom: 10px;">
-                                <select id="doc-format" class="form-select">
-                                    <option value="auto">Auto-detect format</option>
-                                    <option value="markdown">Markdown</option>
-                                    <option value="rst">reStructuredText</option>
-                                    <option value="html">HTML</option>
-                                </select>
-                            </div>
-
-                            <!-- API Docs Config -->
-                            <div id="config-api" class="source-config" style="display: none;">
-                                <input type="text" id="api-url" class="form-input" placeholder="https://api.example.com/docs" style="margin-bottom: 10px;">
-                                <select id="api-format" class="form-select" style="margin-bottom: 10px;">
-                                    <option value="openapi">OpenAPI/Swagger</option>
-                                    <option value="graphql">GraphQL</option>
-                                    <option value="rest">REST Documentation</option>
-                                </select>
-                                <label>
-                                    <input type="checkbox" id="api-include-examples" checked> Include code examples
-                                </label>
-                            </div>
-
-                            <!-- Drupal Config -->
-                            <div id="config-drupal" class="source-config" style="display: none;">
-                                <select id="drupal-version" class="form-select" style="margin-bottom: 10px;">
-                                    <option value="11">Drupal 11</option>
-                                    <option value="10">Drupal 10</option>
-                                    <option value="9">Drupal 9</option>
-                                </select>
-                                <div style="margin: 10px 0;">
-                                    <label><input type="checkbox" id="drupal-user-guide" checked> User Guide</label><br>
-                                    <label><input type="checkbox" id="drupal-api" checked> API Documentation</label><br>
-                                    <label><input type="checkbox" id="drupal-changes" checked> Change Records</label><br>
-                                    <label><input type="checkbox" id="drupal-modules"> Module Documentation</label>
-                                </div>
-                                <div style="background: #0f172a; padding: 10px; border-radius: 4px; margin-top: 10px;">
-                                    <div style="color: #60a5fa; font-size: 0.85em;">
-                                        💡 This will use Delta Training Strategy - emphasizing changes between versions
-                                    </div>
-                                </div>
-                            </div>
-
-                            <!-- Codebase Config -->
-                            <div id="config-codebase" class="source-config" style="display: none;">
-                                <input type="text" id="code-path" class="form-input" placeholder="Repository URL or local path" style="margin-bottom: 10px;">
-                                <select id="code-language" class="form-select" style="margin-bottom: 10px;">
-                                    <option value="auto">Auto-detect</option>
-                                    <option value="python">Python</option>
-                                    <option value="javascript">JavaScript/TypeScript</option>
-                                    <option value="java">Java</option>
-                                    <option value="go">Go</option>
-                                    <option value="rust">Rust</option>
-                                </select>
-                                <input type="text" id="code-framework" class="form-input" placeholder="Framework (e.g., Django, React, FastAPI)">
-                            </div>
-                        </div>
-
-                        <!-- Advanced Options -->
-                        <details style="margin-top: 15px;">
-                            <summary style="color: #60a5fa; cursor: pointer; font-weight: bold;">⚙️ Advanced Options</summary>
-                            <div style="background: #0f172a; padding: 15px; border-radius: 6px; margin-top: 10px;">
-                                <div class="form-group">
-                                    <label class="form-label">Output Format</label>
-                                    <select id="dataprep-format" class="form-select">
-                                        <option value="jsonl">JSONL (Standard)</option>
-                                        <option value="instruction">Instruction-Following</option>
-                                        <option value="conversation">Conversational</option>
-                                        <option value="delta">Delta/Version-Aware</option>
-                                    </select>
-                                </div>
-                                <div class="form-group">
-                                    <label class="form-label">Processing Options</label>
-                                    <input type="number" id="dataprep-rate-limit" class="form-input" placeholder="Rate limit (seconds)" value="1.0" style="margin-bottom: 10px;">
-                                    <input type="number" id="dataprep-cache-hours" class="form-input" placeholder="Cache duration (hours)" value="24">
-                                </div>
-                            </div>
-                        </details>
-
-                        <!-- Start Button -->
-                        <button class="btn btn-primary" onclick="startDataPreparation()" style="margin-top: 20px; width: 100%;">
-                            🚀 Start Data Preparation
-                        </button>
-                    </div>
-                </div>
-
-                <!-- Active Jobs Section -->
-                <div class="card" style="margin-bottom: 20px;">
-                    <h3 style="color: #60a5fa; margin-bottom: 15px;">📊 Data Preparation Jobs</h3>
-                    <div id="dataprep-jobs-list">
-                        <div class="empty-state">
-                            <div class="empty-state-icon">🔄</div>
-                            <p>No active data preparation jobs</p>
-                            <small style="color: #64748b;">Start a new job above to begin collecting training data</small>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Prepared Datasets Section -->
-                <div class="card">
-                    <h3 style="color: #60a5fa; margin-bottom: 15px;">💾 Prepared Datasets</h3>
-                    <div id="dataprep-datasets-list">
-                        <div class="empty-state">
-                            <div class="empty-state-icon">📚</div>
-                            <p>No prepared datasets</p>
-                            <small style="color: #64748b;">Completed data preparation jobs will appear here</small>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
         <!-- Vision Tab -->
         <div id="vision-tab" class="tab-content">
             <div class="card">
@@ -2328,7 +2516,7 @@
             };
 
             try {
-                const response = await fetch(`/agents/${dataPrepAgentId}/training/prepare`, {
+                const response = await fetch(`/v1/agents/${dataPrepAgentId}/training/prepare`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(requestData)
@@ -2353,7 +2541,7 @@
 
             try {
                 // Fetch jobs from the API
-                const response = await fetch('/training/prepare/jobs');
+                const response = await fetch('/v1/training/prepare/jobs');
                 const data = await response.json();
 
                 if (!data.jobs || data.jobs.length === 0) {
@@ -2413,7 +2601,7 @@
 
         async function viewJobDetails(jobId) {
             try {
-                const response = await fetch(`/training/prepare/${jobId}`);
+                const response = await fetch(`/v1/training/prepare/${jobId}`);
                 const job = await response.json();
 
                 alert(`Job Details:
@@ -2502,6 +2690,12 @@ ${job.errors && job.errors.length > 0 ? `\nErrors:\n${job.errors.join('\n')}` : 
             selectedAgentId = agentId;
             document.getElementById('training-content').style.display = 'block';
 
+            // Load agent info to show current model
+            await loadAgentInfo(agentId);
+
+            // Load base models availability
+            await loadBaseModels();
+
             // Load datasets
             await loadDatasets(agentId);
 
@@ -2509,33 +2703,164 @@ ${job.errors && job.errors.length > 0 ? `\nErrors:\n${job.errors.join('\n')}` : 
             await loadTrainingJobs(agentId);
         }
 
+        async function loadAgentInfo(agentId) {
+            try {
+                const response = await fetch(`/v1/agents/${agentId}`);
+                const agent = await response.json();
+
+                const modelNameSpan = document.getElementById('agent-model-name');
+                if (modelNameSpan) {
+                    modelNameSpan.textContent = agent.model || 'No model assigned';
+                    modelNameSpan.style.color = agent.model ? '#10b981' : '#ef4444';
+                }
+            } catch (error) {
+                console.error('Failed to load agent info:', error);
+            }
+        }
+
+        async function loadBaseModels() {
+            if (!selectedAgentId) {
+                console.warn('No agent selected for base models');
+                return;
+            }
+
+            try {
+                const response = await fetch(`/v1/agents/${selectedAgentId}/training/base-models`);
+                const models = await response.json();
+
+                const select = document.getElementById('training-base-model');
+                const statusDiv = document.getElementById('base-model-status');
+
+                if (select) {
+                    select.innerHTML = '';
+
+                    const installedModels = models.filter(m => m.installed);
+                    const notInstalledModels = models.filter(m => !m.installed);
+
+                    // Add installed models first
+                    if (installedModels.length > 0) {
+                        const installedGroup = document.createElement('optgroup');
+                        installedGroup.label = '✅ Installed & Ready';
+                        installedModels.forEach(model => {
+                            const option = document.createElement('option');
+                            option.value = model.model_id;
+                            let label = `${model.display_name} (${model.ram_required})`;
+                            if (model.recommended) {
+                                label += ' ⭐';
+                            }
+                            option.textContent = label;
+                            if (model.recommended) {
+                                option.selected = true;
+                            }
+                            installedGroup.appendChild(option);
+                        });
+                        select.appendChild(installedGroup);
+                    }
+
+                    // Add not installed models (disabled)
+                    if (notInstalledModels.length > 0) {
+                        const notInstalledGroup = document.createElement('optgroup');
+                        notInstalledGroup.label = '❌ Not Installed';
+                        notInstalledModels.forEach(model => {
+                            const option = document.createElement('option');
+                            option.value = model.model_id;
+                            option.textContent = `${model.display_name} (${model.ram_required}) - Download first`;
+                            option.disabled = true;
+                            notInstalledGroup.appendChild(option);
+                        });
+                        select.appendChild(notInstalledGroup);
+                    }
+
+                    // Show/hide status message
+                    if (statusDiv) {
+                        if (installedModels.length === 0) {
+                            statusDiv.style.display = 'block';
+                        } else {
+                            statusDiv.style.display = 'none';
+                        }
+                    }
+
+                    // If no models at all
+                    if (models.length === 0) {
+                        select.innerHTML = '<option value="" disabled>No models configured</option>';
+                    }
+                }
+            } catch (error) {
+                console.error('Failed to load base models:', error);
+                const select = document.getElementById('training-base-model');
+                if (select) {
+                    select.innerHTML = '<option value="" disabled>Error loading models</option>';
+                }
+            }
+        }
+
         async function loadDatasets(agentId) {
             try {
                 const response = await fetch(`/v1/agents/${agentId}/training/data`);
                 const datasets = await response.json();
 
+                // Update Step 2: Review Data list
                 const container = document.getElementById('datasets-list');
                 if (datasets.length === 0) {
-                    container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📚</div><p>No datasets uploaded</p></div>';
-                    return;
+                    container.innerHTML = '<div style="color: #64748b; padding: 15px; text-align: center; background: #0f172a; border-radius: 4px; font-size: 0.9em;">No data yet. Prepare data in Step 1.</div>';
+                } else {
+                    container.innerHTML = datasets.map(ds => `
+                        <div style="background: #0f172a; padding: 12px; border-radius: 4px; margin-bottom: 10px;">
+                            <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 8px;">
+                                <div style="flex: 1;">
+                                    <div style="color: #e2e8f0; font-weight: 500; margin-bottom: 4px;">${ds.name}</div>
+                                    <div style="color: #94a3b8; font-size: 0.85em;">
+                                        ${ds.num_examples} examples • ${ds.num_tokens.toLocaleString()} tokens • ${ds.is_valid ? '<span style="color: #10b981;">✓ Valid</span>' : '<span style="color: #ef4444;">✗ Invalid</span>'}
+                                    </div>
+                                </div>
+                            </div>
+                            <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                                <button class="btn btn-sm btn-primary" onclick="previewDataset('${agentId}', '${ds.name}')" title="Preview examples">
+                                    👁️ Preview
+                                </button>
+                                <button class="btn btn-sm btn-secondary" onclick="validateDataset('${agentId}', '${ds.name}')" title="Check quality">
+                                    ✓ Validate
+                                </button>
+                                <button class="btn btn-sm btn-secondary" onclick="downloadDataset('${agentId}', '${ds.name}')" title="Download file">
+                                    ⬇️ Download
+                                </button>
+                                <button class="btn btn-sm btn-danger" onclick="deleteDataset('${agentId}', '${ds.name}')" title="Delete dataset">
+                                    🗑️ Delete
+                                </button>
+                            </div>
+                        </div>
+                    `).join('');
                 }
 
-                container.innerHTML = datasets.map(ds => `
-                    <div class="model-item">
-                        <div class="model-item-info">
-                            <strong>${ds.name}</strong>
-                            <br><small style="color: #94a3b8;">
-                                Examples: ${ds.num_examples} | Tokens: ${ds.num_tokens} |
-                                Valid: ${ds.is_valid ? '✅' : '❌'}
-                            </small>
-                        </div>
-                        <div class="model-item-actions">
-                            <button class="btn btn-sm btn-danger" onclick="deleteDataset('${agentId}', '${ds.name}')">🗑️ Delete</button>
-                        </div>
-                    </div>
-                `).join('');
+                // Update Step 3: Training dataset dropdown
+                const select = document.getElementById('training-dataset');
+                if (select) {
+                    select.innerHTML = '<option value="">-- Select a prepared dataset --</option>';
+
+                    if (datasets.length === 0) {
+                        select.innerHTML += '<option value="" disabled>No datasets available - prepare data in Step 1</option>';
+                    } else {
+                        datasets.forEach(ds => {
+                            const option = document.createElement('option');
+                            option.value = ds.name;
+                            option.textContent = `${ds.name} (${ds.num_examples} examples, ${(ds.num_tokens / 1000).toFixed(1)}K tokens)`;
+                            option.dataset.examples = ds.num_examples;
+                            option.dataset.tokens = ds.num_tokens;
+                            option.dataset.avgTokens = ds.avg_tokens_per_example;
+                            select.appendChild(option);
+                        });
+                    }
+                }
             } catch (error) {
                 console.error('Failed to load datasets:', error);
+                showNotification('Error loading datasets', 'error');
+            }
+        }
+
+        function refreshDatasets() {
+            if (selectedAgentId) {
+                loadDatasets(selectedAgentId);
+                showNotification('Refreshing datasets...', 'info');
             }
         }
 
@@ -2625,13 +2950,796 @@ ${job.errors && job.errors.length > 0 ? `\nErrors:\n${job.errors.join('\n')}` : 
                 });
 
                 if (response.ok) {
-                    alert('Dataset deleted');
+                    showNotification('Dataset deleted successfully', 'success');
                     loadDatasets(agentId);
                 } else {
-                    alert('Failed to delete dataset');
+                    showNotification('Failed to delete dataset', 'error');
                 }
             } catch (error) {
                 console.error('Failed to delete dataset:', error);
+                showNotification('Error deleting dataset', 'error');
+            }
+        }
+
+        // ========== Data Preparation Functions ==========
+
+        let prepSources = [];
+
+        function addWebSource() {
+            const typeEl = document.getElementById('prep-source-type');
+            const urlEl = document.getElementById('prep-url-input');
+
+            if (!urlEl || !urlEl.value.trim()) {
+                showNotification('Please enter a website URL', 'error');
+                return;
+            }
+
+            const url = urlEl.value.trim();
+            const type = typeEl ? typeEl.value : 'url';
+
+            const source = {
+                id: Date.now(),
+                type: type,
+                location: url,
+                description: ''
+            };
+
+            prepSources.push(source);
+            updatePrepSourcesList();
+            urlEl.value = '';
+            showNotification(`Added: ${url}`, 'success');
+
+            // Show start button
+            const prepReady = document.getElementById('prep-ready');
+            if (prepReady) prepReady.style.display = 'block';
+        }
+
+        function showAddSourceModal() {
+            showNotification('Add data source', 'info', {
+                title: 'Add Data Source',
+                duration: 0,
+                details: `
+                    <div style="margin-top: 15px;">
+                        <label style="display: block; color: #cbd5e1; margin-bottom: 5px; font-size: 0.9em;">Source Type</label>
+                        <select id="source-type" class="form-select" style="width: 100%; margin-bottom: 12px;" onchange="updateSourceTypeFields()">
+                            <option value="url">Web URL</option>
+                            <option value="sitemap">Sitemap</option>
+                            <option value="documentation">Documentation Site</option>
+                            <option value="api_doc">API Documentation</option>
+                            <option value="local_file">Local File</option>
+                            <option value="local_dir">Local Directory</option>
+                        </select>
+
+                        <div id="url-input-group">
+                            <label style="display: block; color: #cbd5e1; margin-bottom: 5px; font-size: 0.9em;">URL/Path</label>
+                            <input type="text" id="source-location" class="form-input" placeholder="https://example.com or /path/to/file" style="width: 100%; margin-bottom: 12px;">
+                        </div>
+
+                        <div id="file-input-group" style="display: none;">
+                            <label style="display: block; color: #cbd5e1; margin-bottom: 5px; font-size: 0.9em;">Choose File</label>
+                            <input type="file" id="source-file-input" class="form-input" style="width: 100%; margin-bottom: 12px;" accept=".txt,.md,.json,.jsonl,.csv">
+                        </div>
+
+                        <label style="display: block; color: #cbd5e1; margin-bottom: 5px; font-size: 0.9em;">Description (optional)</label>
+                        <input type="text" id="source-description" class="form-input" placeholder="Brief description of this source" style="width: 100%; margin-bottom: 15px;">
+
+                        <div style="display: flex; gap: 10px;">
+                            <button class="btn btn-primary" onclick="addPrepSource()">Add Source</button>
+                            <button class="btn btn-secondary" onclick="closeAllNotifications()">Cancel</button>
+                        </div>
+                    </div>
+                `
+            });
+        }
+
+        function updateSourceTypeFields() {
+            const sourceType = document.getElementById('source-type')?.value;
+            const urlGroup = document.getElementById('url-input-group');
+            const fileGroup = document.getElementById('file-input-group');
+
+            if (sourceType === 'local_file') {
+                if (urlGroup) urlGroup.style.display = 'none';
+                if (fileGroup) fileGroup.style.display = 'block';
+            } else {
+                if (urlGroup) urlGroup.style.display = 'block';
+                if (fileGroup) fileGroup.style.display = 'none';
+            }
+        }
+
+        function addPrepSource() {
+            const typeEl = document.getElementById('source-type');
+            const locationEl = document.getElementById('source-location');
+            const fileEl = document.getElementById('source-file-input');
+            const descEl = document.getElementById('source-description');
+
+            if (!typeEl) return;
+
+            const type = typeEl.value;
+            let location = '';
+            let fileData = null;
+
+            if (type === 'local_file' && fileEl && fileEl.files.length > 0) {
+                const file = fileEl.files[0];
+                location = file.name;
+                fileData = file;
+            } else if (locationEl && locationEl.value.trim()) {
+                location = locationEl.value.trim();
+            } else {
+                showNotification('Please provide a URL/path or select a file', 'error');
+                return;
+            }
+
+            const source = {
+                id: Date.now(),
+                type: type,
+                location: location,
+                description: descEl ? descEl.value.trim() : '',
+                fileData: fileData
+            };
+
+            prepSources.push(source);
+            updatePrepSourcesList();
+            closeAllNotifications();
+            showNotification(`Source added: ${location}`, 'success');
+
+            // Enable start button if sources exist
+            const startBtn = document.getElementById('start-prep-btn');
+            if (startBtn && prepSources.length > 0) {
+                startBtn.disabled = false;
+                startBtn.style.opacity = '1';
+            }
+        }
+
+        function updatePrepSourcesList() {
+            const container = document.getElementById('prep-sources-list');
+            if (!container) return;
+
+            if (prepSources.length === 0) {
+                container.innerHTML = '';
+                const prepReady = document.getElementById('prep-ready');
+                if (prepReady) prepReady.style.display = 'none';
+                return;
+            }
+
+            container.innerHTML = `
+                <div style="padding: 12px; background: #1e293b; border-radius: 4px;">
+                    <div style="color: #cbd5e1; font-size: 0.9em; margin-bottom: 10px; font-weight: 500;">
+                        Websites to collect (${prepSources.length}):
+                    </div>
+                    ${prepSources.map(source => `
+                        <div style="display: flex; align-items: center; gap: 10px; padding: 8px; background: #0f172a; border-radius: 4px; margin-bottom: 6px;">
+                            <span style="font-size: 1.1em;">${getSourceTypeIcon(source.type)}</span>
+                            <div style="flex: 1; color: #e2e8f0; font-size: 0.9em; overflow: hidden; text-overflow: ellipsis;">${source.location}</div>
+                            <button class="btn btn-sm btn-danger" onclick="removePrepSource(${source.id})" style="padding: 4px 8px;">Remove</button>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        }
+
+        function getSourceTypeIcon(type) {
+            const icons = {
+                'url': '🌐',
+                'sitemap': '🗺️',
+                'documentation': '📚',
+                'api_doc': '🔌',
+                'local_file': '📄',
+                'local_dir': '📁'
+            };
+            return icons[type] || '📄';
+        }
+
+        function removePrepSource(sourceId) {
+            prepSources = prepSources.filter(s => s.id !== sourceId);
+            updatePrepSourcesList();
+
+            const startBtn = document.getElementById('start-prep-btn');
+            if (startBtn && prepSources.length === 0) {
+                startBtn.disabled = true;
+                startBtn.style.opacity = '0.5';
+            }
+        }
+
+        async function startDataPreparation() {
+            if (!selectedAgentId || prepSources.length === 0) return;
+
+            const collectorType = document.getElementById('prep-collector-type')?.value || 'web';
+            const formatterType = document.getElementById('prep-formatter-type')?.value || 'jsonl';
+
+            // Show preparation in progress
+            const jobsContainer = document.getElementById('prep-jobs-container');
+            if (jobsContainer) jobsContainer.style.display = 'block';
+
+            showNotification('Starting data preparation...', 'info');
+
+            try {
+                // Handle local files first
+                const formData = new FormData();
+                const sourcesWithoutFiles = [];
+
+                for (const source of prepSources) {
+                    if (source.fileData) {
+                        formData.append('files', source.fileData);
+                    }
+                    sourcesWithoutFiles.push({
+                        type: source.type,
+                        location: source.location,
+                        metadata: { description: source.description }
+                    });
+                }
+
+                const config = {
+                    collector_type: collectorType,
+                    formatter_type: formatterType,
+                    rate_limit: 1.0,
+                    max_pages: 50,
+                    cache_hours: 24
+                };
+
+                const requestBody = {
+                    sources: sourcesWithoutFiles,
+                    config: config,
+                    output_name: `prep_${Date.now()}`
+                };
+
+                formData.append('request', JSON.stringify(requestBody));
+
+                const response = await fetch(`/v1/agents/${selectedAgentId}/training/prepare`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(requestBody)
+                });
+
+                if (response.ok) {
+                    const result = await response.json();
+                    showNotification(`Data preparation started! Job ID: ${result.job_id}`, 'success');
+
+                    // Start polling for status
+                    pollPrepJob(result.job_id);
+
+                    // Clear sources
+                    prepSources = [];
+                    updatePrepSourcesList();
+                    const startBtn = document.getElementById('start-prep-btn');
+                    if (startBtn) {
+                        startBtn.disabled = true;
+                        startBtn.style.opacity = '0.5';
+                    }
+                } else {
+                    const error = await response.json();
+                    showNotification(`Failed to start preparation: ${error.detail || 'Unknown error'}`, 'error');
+                }
+            } catch (error) {
+                console.error('Failed to start data preparation:', error);
+                showNotification('Error starting data preparation', 'error');
+            }
+        }
+
+        async function startDrupalPrep() {
+            if (!selectedAgentId) {
+                showNotification('Please select an agent first', 'error');
+                return;
+            }
+
+            const version = document.getElementById('drupal-version')?.value || '11';
+            const includeContrib = document.getElementById('drupal-contrib')?.checked || false;
+
+            showNotification(`Starting Drupal ${version} data collection...`, 'info');
+
+            try {
+                const response = await fetch(`/v1/agents/${selectedAgentId}/training/prepare/drupal`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        target_version: version,
+                        include_change_records: true,
+                        include_contrib: includeContrib,
+                        max_pages: 300  // Increased to collect more
+                    })
+                });
+
+                if (response.ok) {
+                    const result = await response.json();
+                    showNotification(`Drupal ${version} collection started!`, 'success');
+
+                    // Show Drupal jobs container (not the web one)
+                    const jobsContainer = document.getElementById('drupal-jobs-container');
+                    if (jobsContainer) jobsContainer.style.display = 'block';
+
+                    // Start polling with Drupal-specific context
+                    pollPrepJob(result.job_id, 'drupal', {
+                        version: version,
+                        includeContrib: includeContrib,
+                        sources: [
+                            'User Guide', 'Getting Started', 'Development',
+                            'Theming', 'Custom Modules', 'Security',
+                            'API Documentation', 'Change Records'
+                        ]
+                    });
+                } else {
+                    const error = await response.json();
+                    showNotification(`Failed to start Drupal collection: ${error.detail || 'Unknown error'}`, 'error');
+                }
+            } catch (error) {
+                console.error('Failed to start Drupal preparation:', error);
+                showNotification('Error starting Drupal data collection', 'error');
+            }
+        }
+
+        async function pollPrepJob(jobId, jobType = 'web', context = {}) {
+            let pollCount = 0;
+            const maxPolls = 300; // Max 15 minutes at 3s intervals for large collections
+
+            const updateJob = async () => {
+                try {
+                    const response = await fetch(`/v1/training/prepare/${jobId}`);
+                    if (!response.ok) {
+                        console.error('Failed to fetch job status');
+                        return;
+                    }
+
+                    const job = await response.json();
+
+                    // Add context to the job for display
+                    job.jobType = jobType;
+                    job.context = context;
+
+                    updatePrepJobDisplay(job);
+
+                    pollCount++;
+
+                    if (job.status === 'completed') {
+                        showNotification('✅ Data preparation completed successfully!', 'success');
+                        // Reload datasets to show the new one
+                        if (selectedAgentId) {
+                            setTimeout(() => {
+                                loadDatasets(selectedAgentId);
+                                // Show review data section
+                                const trainingContent = document.getElementById('training-content');
+                                if (trainingContent) trainingContent.style.display = 'block';
+                            }, 1000);
+                        }
+                    } else if (job.status === 'failed') {
+                        const errorMsg = job.errors && job.errors.length > 0 ? job.errors.join(', ') : 'Unknown error';
+                        showNotification(`❌ Preparation failed: ${errorMsg}`, 'error');
+                    } else if (pollCount < maxPolls) {
+                        // Continue polling - use shorter interval for active jobs
+                        const interval = job.status === 'collecting' ? 1500 : 3000;
+                        setTimeout(updateJob, interval);
+                    } else {
+                        showNotification('⏰ Job monitoring timeout - check status manually', 'warning');
+                    }
+                } catch (error) {
+                    console.error('Failed to poll job status:', error);
+                    showNotification('Error checking job status', 'error');
+                }
+            };
+            updateJob();
+        }
+
+        function updatePrepJobDisplay(job) {
+            // Determine which container to use based on job type
+            let containerId = 'prep-jobs-list'; // default for web
+            if (job.jobType === 'drupal') {
+                containerId = 'drupal-jobs-list';
+            }
+
+            const container = document.getElementById(containerId);
+            if (!container) {
+                console.error(`Container not found: ${containerId}`);
+                return;
+            }
+
+            // Determine current phase and activity
+            let currentPhase = job.status;
+            let phaseIcon = '⏳';
+            let phaseDescription = '';
+            let statusColor = getStatusColor(job.status);
+
+            const phaseInfo = {
+                'pending': { icon: '⏳', desc: 'Initializing pipeline...', color: '#94a3b8' },
+                'collecting': { icon: '🌐', desc: 'Downloading documentation pages', color: '#60a5fa' },
+                'preprocessing': { icon: '⚙️', desc: 'Processing and cleaning content', color: '#10b981' },
+                'formatting': { icon: '📝', desc: 'Formatting training examples', color: '#f59e0b' },
+                'validating': { icon: '✓', desc: 'Validating output quality', color: '#8b5cf6' },
+                'completed': { icon: '✅', desc: `Complete - ${job.items_formatted || 0} examples ready`, color: '#10b981' },
+                'failed': { icon: '❌', desc: 'Processing failed', color: '#ef4444' }
+            };
+
+            const phase = phaseInfo[job.status] || phaseInfo['pending'];
+            phaseIcon = phase.icon;
+            phaseDescription = phase.desc;
+            statusColor = phase.color;
+
+            // Build collection metrics display if available
+            let metricsHtml = '';
+            if (job.collection_metrics && Object.keys(job.collection_metrics).length > 0) {
+                const m = job.collection_metrics;
+                const successRate = m.total_requested > 0 ? ((m.successful / m.total_requested) * 100).toFixed(0) : 0;
+                const avgQuality = m.avg_quality_score ? m.avg_quality_score.toFixed(2) : '0.00';
+                const avgTime = m.avg_collection_time_ms ? m.avg_collection_time_ms.toFixed(0) : '0';
+
+                // Determine quality color
+                let qualityColor = '#94a3b8';
+                if (parseFloat(avgQuality) >= 0.8) qualityColor = '#10b981';
+                else if (parseFloat(avgQuality) >= 0.6) qualityColor = '#fbbf24';
+                else qualityColor = '#ef4444';
+
+                metricsHtml = `
+                    <div style="background: #1e293b; padding: 10px; border-radius: 4px; margin-top: 8px; border: 1px solid #334155;">
+                        <div style="color: #60a5fa; font-size: 0.75em; font-weight: 600; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px;">
+                            📊 Collection Metrics
+                        </div>
+                        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 6px;">
+                            <div style="background: #0f172a; padding: 6px; border-radius: 3px; text-align: center;">
+                                <div style="color: #94a3b8; font-size: 0.7em; margin-bottom: 2px;">Quality</div>
+                                <div style="color: ${qualityColor}; font-weight: 700; font-size: 1em;">${avgQuality}</div>
+                            </div>
+                            <div style="background: #0f172a; padding: 6px; border-radius: 3px; text-align: center;">
+                                <div style="color: #94a3b8; font-size: 0.7em; margin-bottom: 2px;">Success</div>
+                                <div style="color: #60a5fa; font-weight: 700; font-size: 1em;">${successRate}%</div>
+                            </div>
+                            <div style="background: #0f172a; padding: 6px; border-radius: 3px; text-align: center;">
+                                <div style="color: #94a3b8; font-size: 0.7em; margin-bottom: 2px;">Tokens</div>
+                                <div style="color: #fbbf24; font-weight: 700; font-size: 1em;">${formatNumber(m.total_tokens || 0)}</div>
+                            </div>
+                        </div>
+                        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; font-size: 0.7em; color: #cbd5e1;">
+                            <div style="display: flex; justify-content: space-between; background: #0f172a; padding: 4px 6px; border-radius: 3px;">
+                                <span style="color: #94a3b8;">Pages:</span>
+                                <span style="font-weight: 600;">${m.successful || 0}/${m.total_requested || 0}</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; background: #0f172a; padding: 4px 6px; border-radius: 3px;">
+                                <span style="color: #94a3b8;">Avg Time:</span>
+                                <span style="font-weight: 600;">${avgTime}ms</span>
+                            </div>
+                        </div>
+                        ${m.deduplicated > 0 ? `
+                            <div style="margin-top: 6px; font-size: 0.7em; color: #94a3b8; text-align: center; font-style: italic;">
+                                🔄 ${m.deduplicated} duplicates removed
+                            </div>
+                        ` : ''}
+                    </div>
+                `;
+            }
+
+            // Build phase timeline
+            const phases = ['pending', 'collecting', 'preprocessing', 'formatting', 'completed'];
+            const currentPhaseIndex = phases.indexOf(job.status);
+            const isComplete = job.status === 'completed';
+            const isFailed = job.status === 'failed';
+
+            let phaseTimelineHtml = '<div style="display: flex; gap: 4px; margin: 8px 0;">';
+            phases.slice(0, -1).forEach((phaseName, idx) => {
+                const isActive = idx === currentPhaseIndex;
+                const isDone = idx < currentPhaseIndex || isComplete;
+                const bgColor = isDone ? '#10b981' : isActive ? statusColor : '#334155';
+                const opacity = isDone || isActive ? '1' : '0.4';
+
+                phaseTimelineHtml += `
+                    <div style="flex: 1; height: 4px; background: ${bgColor}; border-radius: 2px; opacity: ${opacity}; transition: all 0.3s;"></div>
+                `;
+            });
+            phaseTimelineHtml += '</div>';
+
+            // Build detailed progress section with source information
+            let progressDetailsHtml = '';
+            if (!isComplete && !isFailed) {
+                // Build sources list if available
+                let sourcesListHtml = '';
+                if (job.context && job.context.sources && job.status === 'collecting') {
+                    sourcesListHtml = `
+                        <div style="background: #0a1118; padding: 8px; border-radius: 3px; margin-top: 8px;">
+                            <div style="color: #60a5fa; font-size: 0.7em; font-weight: 600; margin-bottom: 6px;">
+                                📚 Documentation Sources:
+                            </div>
+                            <div style="display: flex; flex-wrap: wrap; gap: 4px;">
+                                ${job.context.sources.map((source, idx) => `
+                                    <span style="
+                                        background: ${idx < (job.sources_processed || 0) ? '#065f46' : '#1e293b'};
+                                        color: ${idx < (job.sources_processed || 0) ? '#10b981' : '#64748b'};
+                                        padding: 2px 6px;
+                                        border-radius: 3px;
+                                        font-size: 0.65em;
+                                        border: 1px solid ${idx < (job.sources_processed || 0) ? '#10b98144' : '#33415544'};
+                                    ">
+                                        ${idx < (job.sources_processed || 0) ? '✓' : '○'} ${source}
+                                    </span>
+                                `).join('')}
+                            </div>
+                        </div>
+                    `;
+                }
+
+                // Show current activity details
+                let activityHtml = '';
+                if (job.status === 'collecting' && job.items_collected > 0) {
+                    const rate = job.items_collected > 0 ? Math.round(job.items_collected / ((Date.now() - job.created_at * 1000) / 60000)) : 0;
+                    activityHtml = `
+                        <div style="background: #0a1118; padding: 6px 8px; border-radius: 3px; margin-top: 6px; font-size: 0.7em; color: #94a3b8;">
+                            📊 Collection Rate: <span style="color: #60a5fa; font-weight: 600;">${rate} pages/min</span>
+                            ${job.items_collected > 0 ? `| Estimated time: <span style="color: #fbbf24;">${Math.ceil((300 - job.items_collected) / Math.max(rate, 1))} min</span>` : ''}
+                        </div>
+                    `;
+                }
+
+                progressDetailsHtml = `
+                    <div style="background: #1e293b; padding: 10px; border-radius: 4px; margin-top: 8px; border-left: 3px solid ${statusColor};">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                            <div style="font-size: 0.85em; color: ${statusColor}; font-weight: 600;">
+                                ${phaseIcon} ${phaseDescription}
+                            </div>
+                            <div style="font-size: 0.75em; color: #94a3b8;">
+                                ${Math.round(job.progress * 100)}%
+                            </div>
+                        </div>
+
+                        <!-- Progress bar -->
+                        <div style="background: #0f172a; height: 8px; border-radius: 4px; overflow: hidden; margin-bottom: 8px;">
+                            <div style="background: linear-gradient(90deg, ${statusColor}, ${statusColor}dd); height: 100%; width: ${job.progress * 100}%; transition: width 0.5s ease-out; box-shadow: 0 0 10px ${statusColor}44;"></div>
+                        </div>
+
+                        <!-- Live stats grid -->
+                        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; font-size: 0.75em; margin-bottom: 6px;">
+                            <div style="background: #0f172a; padding: 6px; border-radius: 3px; text-align: center;">
+                                <div style="color: #94a3b8; font-size: 0.85em; margin-bottom: 2px;">Sources</div>
+                                <div style="color: #e2e8f0; font-weight: 700;">${job.sources_processed || 0}/${job.context?.sources?.length || '?'}</div>
+                            </div>
+                            <div style="background: #0f172a; padding: 6px; border-radius: 3px; text-align: center;">
+                                <div style="color: #94a3b8; font-size: 0.85em; margin-bottom: 2px;">Pages</div>
+                                <div style="color: #60a5fa; font-weight: 700;">${job.items_collected || 0}/300</div>
+                            </div>
+                            <div style="background: #0f172a; padding: 6px; border-radius: 3px; text-align: center;">
+                                <div style="color: #94a3b8; font-size: 0.85em; margin-bottom: 2px;">Examples</div>
+                                <div style="color: #10b981; font-weight: 700;">${job.items_formatted || 0}</div>
+                            </div>
+                        </div>
+
+                        ${activityHtml}
+                        ${sourcesListHtml}
+                    </div>
+                `;
+            }
+
+            const jobHtml = `
+                <div style="background: #0f172a; padding: 12px; border-radius: 6px; border: 1px solid #1e293b;">
+                    <!-- Job Header -->
+                    <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 8px;">
+                        <div>
+                            <div style="font-size: 0.9em; color: #e2e8f0; font-weight: 600; margin-bottom: 2px;">
+                                Training Data Preparation
+                            </div>
+                            <div style="font-size: 0.7em; color: #64748b; font-family: monospace;">
+                                ID: ${job.job_id.substring(0, 12)}...
+                            </div>
+                        </div>
+                        <div style="background: ${statusColor}22; color: ${statusColor}; padding: 4px 8px; border-radius: 3px; font-size: 0.75em; font-weight: 600; border: 1px solid ${statusColor}44;">
+                            ${phaseIcon} ${job.status.toUpperCase()}
+                        </div>
+                    </div>
+
+                    <!-- Phase Timeline -->
+                    ${phaseTimelineHtml}
+
+                    <!-- Progress Details (for active jobs) -->
+                    ${progressDetailsHtml}
+
+                    <!-- Collection Metrics (when available) -->
+                    ${metricsHtml}
+
+                    <!-- Success Message -->
+                    ${isComplete && job.output_file ? `
+                        <div style="background: linear-gradient(135deg, #0f1f13 0%, #1a3a1f 100%); padding: 10px; border-radius: 4px; margin-top: 8px; border: 1px solid #10b98144;">
+                            <div style="color: #10b981; font-weight: 600; margin-bottom: 4px; font-size: 0.85em;">
+                                ✅ Training Data Ready!
+                            </div>
+                            <div style="font-size: 0.75em; color: #94a3b8;">
+                                ${job.items_formatted || 0} examples prepared • Check "Review Data" section below to preview
+                            </div>
+                        </div>
+                    ` : ''}
+
+                    <!-- Error Details (with expandable section) -->
+                    ${isFailed && job.errors && job.errors.length > 0 ? `
+                        <div style="background: linear-gradient(135deg, #1e1b1b 0%, #2a1f1f 100%); padding: 10px; border-radius: 4px; margin-top: 8px; border: 1px solid #ef444444;">
+                            <div style="color: #ef4444; font-weight: 600; margin-bottom: 6px; font-size: 0.85em;">
+                                ❌ Processing Failed
+                            </div>
+                            <div style="font-size: 0.75em; color: #fca5a5; line-height: 1.6;">
+                                ${job.errors.map(err => `
+                                    <div style="background: #0f172a; padding: 6px 8px; border-radius: 3px; margin-bottom: 4px; border-left: 2px solid #ef4444;">
+                                        ${err}
+                                    </div>
+                                `).join('')}
+                            </div>
+                            ${job.errors.some(e => e.includes('Insufficient examples')) ? `
+                                <div style="margin-top: 8px; padding: 8px; background: #0f172a; border-radius: 3px; font-size: 0.7em; color: #94a3b8;">
+                                    <div style="color: #60a5fa; font-weight: 600; margin-bottom: 4px;">💡 Troubleshooting Tips:</div>
+                                    • Check if the source URLs are accessible<br>
+                                    • Try increasing max_pages in configuration<br>
+                                    • Verify network connectivity to documentation sites<br>
+                                    • Check browser console for detailed logs
+                                </div>
+                            ` : ''}
+                        </div>
+                    ` : ''}
+
+                    <!-- Debug Toggle (always available) -->
+                    <div style="margin-top: 8px; text-align: right;">
+                        <button onclick="toggleJobDebug('${job.job_id}')"
+                                style="background: #1e293b; color: #60a5fa; border: 1px solid #334155; padding: 4px 10px; border-radius: 3px; font-size: 0.7em; cursor: pointer; transition: all 0.2s;"
+                                onmouseover="this.style.background='#334155'"
+                                onmouseout="this.style.background='#1e293b'">
+                            🔍 Debug Info
+                        </button>
+                    </div>
+
+                    <!-- Debug Section (hidden by default) -->
+                    <div id="job-debug-${job.job_id}" style="display: none; margin-top: 8px; background: #0a0f1a; padding: 10px; border-radius: 4px; border: 1px solid #1e293b;">
+                        <div style="color: #60a5fa; font-weight: 600; font-size: 0.8em; margin-bottom: 8px;">
+                            🐛 Debug Information
+                        </div>
+                        <pre style="font-size: 0.65em; color: #94a3b8; margin: 0; overflow-x: auto; line-height: 1.6;">${JSON.stringify(job, null, 2)}</pre>
+                    </div>
+                </div>
+            `;
+
+            container.innerHTML = jobHtml;
+
+            // Auto-refresh datasets when job completes successfully
+            if (job.status === 'completed' && selectedAgentId) {
+                // Delay slightly to ensure backend has finished writing files
+                setTimeout(() => {
+                    loadDatasets(selectedAgentId);
+                }, 1000);
+            }
+        }
+
+        // Toggle debug section
+        function toggleJobDebug(jobId) {
+            const debugSection = document.getElementById(`job-debug-${jobId}`);
+            if (debugSection) {
+                debugSection.style.display = debugSection.style.display === 'none' ? 'block' : 'none';
+            }
+        }
+
+        // Helper function to format large numbers
+        function formatNumber(num) {
+            if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
+            if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
+            return num.toString();
+        }
+
+        function getStatusColor(status) {
+            const colors = {
+                'pending': '#94a3b8',
+                'collecting': '#60a5fa',
+                'preprocessing': '#10b981',
+                'formatting': '#f59e0b',
+                'completed': '#10b981',
+                'failed': '#ef4444'
+            };
+            return colors[status] || '#94a3b8';
+        }
+
+        // ========== Dataset Preview & Validation ==========
+
+        async function previewDataset(agentId, datasetName) {
+            try {
+                const response = await fetch(`/v1/agents/${agentId}/training/data/${datasetName}`);
+                if (!response.ok) {
+                    showNotification('Failed to load dataset', 'error');
+                    return;
+                }
+
+                const data = await response.text();
+                const lines = data.trim().split('\n').slice(0, 5); // First 5 examples
+                const examples = lines.map(line => JSON.parse(line));
+
+                let previewHtml = '<div style="max-height: 400px; overflow-y: auto;">';
+                examples.forEach((ex, i) => {
+                    previewHtml += `
+                        <div style="background: #1e293b; padding: 12px; border-radius: 6px; margin-bottom: 10px;">
+                            <div style="color: #60a5fa; font-weight: bold; margin-bottom: 8px;">Example ${i + 1}</div>
+                            ${ex.messages.map(msg => `
+                                <div style="margin-bottom: 6px;">
+                                    <span style="color: #10b981; font-weight: 500;">${msg.role}:</span>
+                                    <span style="color: #e2e8f0; font-size: 0.9em;">${msg.content.substring(0, 200)}${msg.content.length > 200 ? '...' : ''}</span>
+                                </div>
+                            `).join('')}
+                        </div>
+                    `;
+                });
+                previewHtml += '</div>';
+
+                showNotification(`Preview: ${datasetName}`, 'info', {
+                    title: `Dataset Preview: ${datasetName}`,
+                    duration: 0,
+                    details: previewHtml
+                });
+            } catch (error) {
+                console.error('Failed to preview dataset:', error);
+                showNotification('Error loading preview', 'error');
+            }
+        }
+
+        async function validateDataset(agentId, datasetName) {
+            try {
+                // For now, show the validation status from the dataset listing
+                // In a full implementation, this would call a validation API
+                const response = await fetch(`/v1/agents/${agentId}/training/data`);
+                const datasets = await response.json();
+                const dataset = datasets.find(ds => ds.name === datasetName);
+
+                if (!dataset) {
+                    showNotification('Dataset not found', 'error');
+                    return;
+                }
+
+                const validationHtml = `
+                    <div style="padding: 10px;">
+                        <div style="margin-bottom: 12px;">
+                            <strong style="color: #cbd5e1;">Validation Results:</strong>
+                        </div>
+                        <div class="stat" style="margin-bottom: 10px;">
+                            <span class="stat-label">Status</span>
+                            <span class="stat-value" style="color: ${dataset.is_valid ? '#10b981' : '#ef4444'};">
+                                ${dataset.is_valid ? '✅ Valid' : '❌ Invalid'}
+                            </span>
+                        </div>
+                        <div class="stat" style="margin-bottom: 10px;">
+                            <span class="stat-label">Examples</span>
+                            <span class="stat-value">${dataset.num_examples}</span>
+                        </div>
+                        <div class="stat" style="margin-bottom: 10px;">
+                            <span class="stat-label">Total Tokens</span>
+                            <span class="stat-value">${dataset.num_tokens.toLocaleString()}</span>
+                        </div>
+                        <div class="stat">
+                            <span class="stat-label">Avg Tokens/Example</span>
+                            <span class="stat-value">${Math.round(dataset.num_tokens / dataset.num_examples)}</span>
+                        </div>
+                    </div>
+                `;
+
+                showNotification('Validation Results', dataset.is_valid ? 'success' : 'error', {
+                    title: `Validation: ${datasetName}`,
+                    duration: 0,
+                    details: validationHtml
+                });
+            } catch (error) {
+                console.error('Failed to validate dataset:', error);
+                showNotification('Error validating dataset', 'error');
+            }
+        }
+
+        async function downloadDataset(agentId, datasetName) {
+            try {
+                const response = await fetch(`/v1/agents/${agentId}/training/data/${datasetName}`);
+                if (!response.ok) {
+                    showNotification('Failed to download dataset', 'error');
+                    return;
+                }
+
+                const data = await response.text();
+                const blob = new Blob([data], { type: 'application/jsonl' });
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = datasetName;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+
+                showNotification(`Downloaded: ${datasetName}`, 'success');
+            } catch (error) {
+                console.error('Failed to download dataset:', error);
+                showNotification('Error downloading dataset', 'error');
             }
         }
 
@@ -2640,9 +3748,104 @@ ${job.errors && job.errors.length > 0 ? `\nErrors:\n${job.errors.join('\n')}` : 
             if (modal) modal.classList.add('active');
         }
 
-        function showStartTrainingModal() {
-            const modal = document.getElementById('start-training-modal');
-            if (modal) modal.classList.add('active');
+        let availableDatasets = [];
+
+        async function showStartTrainingModal() {
+            if (!selectedAgentId) {
+                showNotification('Please select an agent first', 'error');
+                return;
+            }
+
+            // Load available datasets
+            try {
+                const response = await fetch(`/v1/agents/${selectedAgentId}/training/data`);
+                availableDatasets = await response.json();
+
+                // Populate dataset dropdown
+                const select = document.getElementById('training-dataset');
+                select.innerHTML = '<option value="">-- Select a prepared dataset --</option>';
+
+                if (availableDatasets.length === 0) {
+                    select.innerHTML += '<option value="" disabled>No datasets available - prepare data in Step 1</option>';
+                } else {
+                    availableDatasets.forEach(ds => {
+                        const option = document.createElement('option');
+                        option.value = ds.name;
+                        option.textContent = `${ds.name} (${ds.num_examples} examples, ${(ds.num_tokens / 1000).toFixed(1)}K tokens)`;
+                        option.dataset.examples = ds.num_examples;
+                        option.dataset.tokens = ds.num_tokens;
+                        option.dataset.avgTokens = ds.avg_tokens_per_example;
+                        select.appendChild(option);
+                    });
+                }
+
+                const modal = document.getElementById('start-training-modal');
+                if (modal) modal.classList.add('active');
+            } catch (error) {
+                console.error('Failed to load datasets:', error);
+                showNotification('Error loading datasets', 'error');
+            }
+        }
+
+        function updateDatasetInfo() {
+            const select = document.getElementById('training-dataset');
+            const selectedOption = select.options[select.selectedIndex];
+            const infoDiv = document.getElementById('dataset-info');
+            const estimateDiv = document.getElementById('training-estimate');
+
+            if (!selectedOption || !selectedOption.value) {
+                if (infoDiv) infoDiv.style.display = 'none';
+                if (estimateDiv) estimateDiv.style.display = 'none';
+                return;
+            }
+
+            // Show dataset info
+            const examples = parseInt(selectedOption.dataset.examples);
+            const tokens = parseInt(selectedOption.dataset.tokens);
+            const avgTokens = parseInt(selectedOption.dataset.avgTokens);
+
+            if (infoDiv) {
+                infoDiv.innerHTML = `
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                        <span style="color: #cbd5e1;">Examples:</span>
+                        <span style="color: #e2e8f0; font-weight: 600;">${examples.toLocaleString()}</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                        <span style="color: #cbd5e1;">Total Tokens:</span>
+                        <span style="color: #e2e8f0; font-weight: 600;">${tokens.toLocaleString()}</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between;">
+                        <span style="color: #cbd5e1;">Avg Tokens/Example:</span>
+                        <span style="color: #e2e8f0; font-weight: 600;">${Math.round(avgTokens)}</span>
+                    </div>
+                `;
+                infoDiv.style.display = 'block';
+            }
+
+            // Calculate and show estimated training time
+            const epochs = parseInt(document.getElementById('training-epochs').value) || 3;
+            const batchSize = parseInt(document.getElementById('training-batch-size').value) || 4;
+
+            // Rough estimate: ~1-2 seconds per batch
+            const steps = Math.ceil(examples / batchSize) * epochs;
+            const estimatedMinutes = Math.round(steps * 1.5 / 60); // 1.5 seconds per step average
+
+            let timeStr;
+            if (estimatedMinutes < 60) {
+                timeStr = `${estimatedMinutes} minutes`;
+            } else {
+                const hours = Math.floor(estimatedMinutes / 60);
+                const mins = estimatedMinutes % 60;
+                timeStr = `${hours}h ${mins}m`;
+            }
+
+            if (estimateDiv) {
+                const estimateTimeSpan = document.getElementById('estimate-time');
+                if (estimateTimeSpan) {
+                    estimateTimeSpan.textContent = timeStr;
+                }
+                estimateDiv.style.display = 'block';
+            }
         }
 
         async function uploadTrainingData(event) {
@@ -2687,20 +3890,32 @@ ${job.errors && job.errors.length > 0 ? `\nErrors:\n${job.errors.join('\n')}` : 
         async function startTraining(event) {
             event.preventDefault();
 
-            if (!selectedAgentId) return;
+            if (!selectedAgentId) {
+                showNotification('Please select an agent first', 'error');
+                return;
+            }
+
+            const datasetName = document.getElementById('training-dataset').value;
+            if (!datasetName) {
+                showNotification('Please select a dataset', 'error');
+                return;
+            }
 
             const formData = {
                 base_model: document.getElementById('training-base-model').value,
-                dataset_name: document.getElementById('training-dataset').value,
-                adapter_name: document.getElementById('training-adapter-name').value,
+                dataset_name: datasetName,
+                adapter_name: `${selectedAgentId}_adapter_${Date.now()}`,
                 config: {
                     num_epochs: parseInt(document.getElementById('training-epochs').value),
                     batch_size: parseInt(document.getElementById('training-batch-size').value),
-                    learning_rate: parseFloat(document.getElementById('training-lr').value)
+                    learning_rate: parseFloat(document.getElementById('training-learning-rate').value),
+                    lora_r: parseInt(document.getElementById('training-lora-rank').value)
                 }
             };
 
             try {
+                showNotification('Starting training job...', 'info');
+
                 const response = await fetch(`/v1/agents/${selectedAgentId}/training/jobs`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -2708,17 +3923,27 @@ ${job.errors && job.errors.length > 0 ? `\nErrors:\n${job.errors.join('\n')}` : 
                 });
 
                 if (response.ok) {
-                    alert('Training job started!');
-                    closeModal('start-training-modal');
+                    showNotification('Training job started successfully!', 'success');
                     loadTrainingJobs(selectedAgentId);
-                    event.target.reset();
+
+                    // Show post-training info
+                    const postTrainingInfo = document.getElementById('post-training-info');
+                    if (postTrainingInfo) {
+                        postTrainingInfo.style.display = 'block';
+                        // Scroll to it smoothly
+                        setTimeout(() => {
+                            postTrainingInfo.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                        }, 300);
+                    }
+
+                    // Don't reset form so user can see what they submitted
                 } else {
                     const error = await response.json();
-                    alert('Failed to start training: ' + (error.detail || 'Unknown error'));
+                    showNotification('Failed to start training: ' + (error.detail || 'Unknown error'), 'error');
                 }
             } catch (error) {
                 console.error('Failed to start training:', error);
-                alert('Error starting training');
+                showNotification('Error starting training: ' + error.message, 'error');
             }
         }
 
@@ -3222,6 +4447,200 @@ ${job.errors && job.errors.length > 0 ? `\nErrors:\n${job.errors.join('\n')}` : 
             }
         }
 
+        // Training Models State
+        let trainingModelsData = null;
+        let currentTrainingFilter = 'all';
+
+        // Load Training Models
+        async function loadTrainingModels() {
+            try {
+                // Use a dummy agent ID to get the common models list
+                const response = await fetch('/v1/agents/dummy/training/base-models');
+                trainingModelsData = await response.json();
+
+                // Filter to only show common HF models (not agent-specific)
+                trainingModelsData = trainingModelsData.filter(m => m.model_id.includes('/'));
+
+                renderTrainingModels();
+            } catch (error) {
+                console.error('Failed to load training models:', error);
+                const grid = document.getElementById('training-model-grid');
+                if (grid) {
+                    grid.innerHTML = '<div class="empty-state"><div class="empty-state-icon">⚠️</div><p>Failed to load training models</p></div>';
+                }
+            }
+        }
+
+        // Filter Training Models
+        function filterTrainingModels(filter) {
+            currentTrainingFilter = filter;
+
+            // Update button states
+            document.querySelectorAll('[id^="training-filter-"]').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            document.getElementById('training-filter-' + filter).classList.add('active');
+
+            renderTrainingModels();
+        }
+
+        // Render Training Models
+        function renderTrainingModels() {
+            if (!trainingModelsData) return;
+
+            let models = [...trainingModelsData];
+
+            // Apply filters
+            if (currentTrainingFilter === 'installed') {
+                models = models.filter(m => m.installed);
+            } else if (currentTrainingFilter === 'available') {
+                models = models.filter(m => !m.installed);
+            } else if (currentTrainingFilter === 'recommended') {
+                models = models.filter(m => m.recommended);
+            }
+
+            const grid = document.getElementById('training-model-grid');
+            if (!grid) return;
+
+            if (models.length === 0) {
+                grid.innerHTML = '<div class="empty-state"><div class="empty-state-icon">🔍</div><p>No training models found matching filters.</p></div>';
+                return;
+            }
+
+            grid.innerHTML = models.map(model => {
+                // Parse size (e.g., "7B" -> "~14 GB")
+                const sizeGB = model.ram_required.match(/\d+/)?.[0] || '?';
+                const modelType = model.model_id.includes('llama') ? 'chat' :
+                                 model.model_id.includes('mistral') ? 'chat' :
+                                 model.model_id.includes('phi') ? 'code' : 'chat';
+
+                return `
+                    <div class="model-card ${model.installed ? 'installed' : ''}" data-type="${modelType}">
+                        <div class="model-name">${model.display_name}</div>
+                        <div class="model-badges">
+                            <span class="badge badge-${modelType}">${getTypeIcon(modelType)} Training</span>
+                            ${model.installed ? '<span class="badge badge-installed">✓ Installed</span>' : ''}
+                            ${model.recommended ? '<span class="badge badge-recommended">Recommended</span>' : ''}
+                        </div>
+                        <div class="model-description">
+                            <div style="font-family: monospace; font-size: 0.85em; color: #64748b; margin-bottom: 8px;">${model.model_id}</div>
+                            Unquantized HuggingFace model for LoRA fine-tuning. Use this to create custom adapters with your domain-specific data.
+                        </div>
+                        <div class="model-meta">
+                            <div class="meta-item">Size: <span class="meta-value">${model.size}</span></div>
+                            <div class="meta-item">RAM: <span class="meta-value">${model.ram_required}</span></div>
+                        </div>
+                        <div class="btn-group" style="gap: 8px;">
+                            ${model.installed ? `
+                                <button class="btn btn-success" disabled style="flex: 1;">
+                                    ✓ Already Downloaded
+                                </button>
+                                <a href="https://huggingface.co/${model.model_id}" class="btn btn-secondary btn-sm" target="_blank" title="View model details on HuggingFace">
+                                    ℹ️ Info
+                                </a>
+                            ` : `
+                                <button class="btn btn-primary" onclick="downloadTrainingModel('${model.model_id}')" style="flex: 1;" title="Click to download this model from HuggingFace">
+                                    ⬇️ Download Model (${sizeGB} GB)
+                                </button>
+                                <a href="https://huggingface.co/${model.model_id}" class="btn btn-secondary btn-sm" target="_blank" title="View model details on HuggingFace">
+                                    ℹ️ Info
+                                </a>
+                            `}
+                        </div>
+                        <div id="training-progress-${model.model_id.replace('/', '-')}" class="progress-container" style="display: none;">
+                            <div class="progress-bar">
+                                <div class="progress-fill" style="width: 0%"></div>
+                            </div>
+                            <div class="progress-text">Starting download...</div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        async function downloadTrainingModel(modelId) {
+            try {
+                const progressId = modelId.replace('/', '-');
+                const progressContainer = document.getElementById(`training-progress-${progressId}`);
+
+                if (!progressContainer) {
+                    console.error('Progress container not found for model:', modelId);
+                    showNotification('Error: Progress container not found', 'error');
+                    return;
+                }
+
+                const progressText = progressContainer.querySelector('.progress-text');
+                const progressBar = progressContainer.querySelector('.progress-fill');
+
+                progressContainer.style.display = 'block';
+                progressText.textContent = 'Starting download from HuggingFace...';
+                progressBar.style.width = '0%';
+
+                showNotification(`Starting download for ${modelId}...`, 'info');
+
+                const response = await fetch('/dashboard/api/training-models/download', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ model_id: modelId })
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Download failed');
+                }
+
+                const result = await response.json();
+
+                if (result.status === 'success') {
+                    progressBar.style.width = '50%';
+                    progressText.textContent = `Downloading model from HuggingFace... This may take several minutes.`;
+                    showNotification(`✓ Download started for ${modelId}`, 'success');
+
+                    // Simulate progress (actual download happens in background)
+                    let progress = 50;
+                    const interval = setInterval(() => {
+                        progress += 5;
+                        if (progress >= 95) {
+                            clearInterval(interval);
+                            progressBar.style.width = '95%';
+                            progressText.textContent = 'Finalizing download...';
+                        } else {
+                            progressBar.style.width = progress + '%';
+                        }
+                    }, 3000);
+
+                    // Check completion after some time
+                    setTimeout(() => {
+                        clearInterval(interval);
+                        progressBar.style.width = '100%';
+                        progressBar.style.background = '#10b981';
+                        progressText.textContent = '✓ Download complete! Refreshing...';
+                        setTimeout(() => loadTrainingModels(), 2000);
+                    }, 30000);
+                } else {
+                    progressText.textContent = result.message || 'Download failed';
+                    progressBar.style.background = '#ef4444';
+                    showNotification(result.message || 'Download failed', 'error');
+                }
+            } catch (error) {
+                console.error('Failed to download training model:', error);
+                showNotification(`Download failed: ${error.message}`, 'error');
+
+                const progressId = modelId.replace('/', '-');
+                const progressContainer = document.getElementById(`training-progress-${progressId}`);
+                if (progressContainer) {
+                    const progressText = progressContainer.querySelector('.progress-text');
+                    const progressBar = progressContainer.querySelector('.progress-fill');
+                    if (progressText) {
+                        progressText.textContent = 'Error: ' + error.message;
+                    }
+                    if (progressBar) {
+                        progressBar.style.background = '#ef4444';
+                    }
+                }
+            }
+        }
+
         // Load Agents (Simple - for Overview)
         async function loadAgents() {
             try {
@@ -3569,6 +4988,7 @@ ${job.errors && job.errors.length > 0 ? `\nErrors:\n${job.errors.join('\n')}` : 
             loadStats();
             loadCatalog();
             loadModels();
+            loadTrainingModels();
             loadAgents();
         }
 
@@ -4139,6 +5559,9 @@ ${job.errors && job.errors.length > 0 ? `\nErrors:\n${job.errors.join('\n')}` : 
 
         // Initialize
         loadStats();
+        loadCatalog();
+        loadModels();
+        loadTrainingModels();
         loadTabFromHash(); // Load tab from URL hash if present
         setInterval(checkDownloads, 5000);
         setInterval(loadStats, 10000);
@@ -4868,45 +6291,113 @@ ${job.errors && job.errors.length > 0 ? `\nErrors:\n${job.errors.join('\n')}` : 
 
     <!-- Start Training Modal -->
     <div id="start-training-modal" class="modal">
-        <div class="modal-content">
+        <div class="modal-content" style="max-width: 700px;">
             <div class="modal-header">
-                <h2 class="modal-title">Start Training Job</h2>
+                <h2 class="modal-title">🚀 Start Training Job <span style="font-size: 0.7em; color: #64748b;">(v2.0)</span></h2>
                 <button class="modal-close" onclick="closeModal('start-training-modal')">&times;</button>
             </div>
             <form onsubmit="startTraining(event)">
-                <div class="form-group">
-                    <label class="form-label">Base Model *</label>
-                    <select id="training-base-model" class="form-select" required>
-                        <option value="qwen2.5-3b-instruct">Qwen 2.5 3B Instruct</option>
-                        <option value="qwen2.5-coder-3b">Qwen 2.5 Coder 3B</option>
-                        <option value="qwen2.5-7b-instruct">Qwen 2.5 7B Instruct</option>
-                    </select>
+                <!-- Step 1: Select Dataset -->
+                <div style="background: #1e293b; padding: 15px; border-radius: 6px; margin-bottom: 20px; border-left: 3px solid #10b981;">
+                    <div style="color: #10b981; font-weight: 600; margin-bottom: 10px; display: flex; align-items: center; gap: 8px;">
+                        <span style="background: #10b981; color: #0f172a; width: 24px; height: 24px; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 0.9em;">1</span>
+                        Select Training Data
+                    </div>
+                    <div class="form-group" style="margin-bottom: 12px;">
+                        <label class="form-label">Dataset *</label>
+                        <select id="training-dataset" class="form-select" required onchange="updateDatasetInfo()">
+                            <option value="">-- Select a prepared dataset --</option>
+                        </select>
+                        <small style="color: #94a3b8; display: block; margin-top: 6px;">
+                            Choose from your prepared datasets or upload a new one in Step 1
+                        </small>
+                    </div>
+                    <!-- Dataset Info Display -->
+                    <div id="dataset-info" style="display: none; background: #0f172a; padding: 12px; border-radius: 4px; margin-top: 10px;">
+                        <div style="color: #cbd5e1; font-size: 0.85em; line-height: 1.6;">
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                                <span style="color: #94a3b8;">Examples:</span>
+                                <span id="dataset-examples" style="color: #e2e8f0; font-weight: 500;">-</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                                <span style="color: #94a3b8;">Total Tokens:</span>
+                                <span id="dataset-tokens" style="color: #e2e8f0; font-weight: 500;">-</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between;">
+                                <span style="color: #94a3b8;">Avg Tokens/Example:</span>
+                                <span id="dataset-avg-tokens" style="color: #e2e8f0; font-weight: 500;">-</span>
+                            </div>
+                        </div>
+                    </div>
                 </div>
-                <div class="form-group">
-                    <label class="form-label">Dataset Name *</label>
-                    <input type="text" id="training-dataset" class="form-input" required placeholder="my_dataset">
-                    <small style="color: #94a3b8; display: block; margin-top: 8px;">
-                        Must match an uploaded dataset name (without .jsonl extension)
-                    </small>
+
+                <!-- Step 2: Model Configuration -->
+                <div style="background: #1e293b; padding: 15px; border-radius: 6px; margin-bottom: 20px; border-left: 3px solid #60a5fa;">
+                    <div style="color: #60a5fa; font-weight: 600; margin-bottom: 10px; display: flex; align-items: center; gap: 8px;">
+                        <span style="background: #60a5fa; color: #0f172a; width: 24px; height: 24px; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 0.9em;">2</span>
+                        Model Configuration
+                    </div>
+                    <div class="form-group" style="margin-bottom: 12px;">
+                        <label class="form-label">Base Model *</label>
+                        <select id="training-base-model" class="form-select" required>
+                            <option value="qwen2.5-3b-instruct">Qwen 2.5 3B Instruct (Fast, 3GB RAM)</option>
+                            <option value="qwen2.5-coder-3b">Qwen 2.5 Coder 3B (Coding, 3GB RAM)</option>
+                            <option value="qwen2.5-7b-instruct">Qwen 2.5 7B Instruct (Better Quality, 7GB RAM)</option>
+                        </select>
+                        <small style="color: #94a3b8; display: block; margin-top: 6px;">
+                            Select the base model to fine-tune
+                        </small>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Adapter Name *</label>
+                        <input type="text" id="training-adapter-name" class="form-input" required placeholder="drupal_expert_v1">
+                        <small style="color: #94a3b8; display: block; margin-top: 6px;">
+                            Name for your fine-tuned adapter (e.g., drupal_expert_v1)
+                        </small>
+                    </div>
                 </div>
-                <div class="form-group">
-                    <label class="form-label">Adapter Name *</label>
-                    <input type="text" id="training-adapter-name" class="form-input" required placeholder="custom_v1">
+
+                <!-- Step 3: Training Parameters -->
+                <div style="background: #1e293b; padding: 15px; border-radius: 6px; margin-bottom: 20px; border-left: 3px solid #f59e0b;">
+                    <div style="color: #f59e0b; font-weight: 600; margin-bottom: 10px; display: flex; align-items: center; gap: 8px;">
+                        <span style="background: #f59e0b; color: #0f172a; width: 24px; height: 24px; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 0.9em;">3</span>
+                        Training Parameters
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                        <div class="form-group">
+                            <label class="form-label">Epochs</label>
+                            <input type="number" id="training-epochs" class="form-input" value="3" min="1" max="20" onchange="updateDatasetInfo()">
+                            <small style="color: #94a3b8; display: block; margin-top: 4px; font-size: 0.8em;">
+                                3-5 recommended
+                            </small>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Batch Size</label>
+                            <input type="number" id="training-batch-size" class="form-input" value="4" min="1" max="32" onchange="updateDatasetInfo()">
+                            <small style="color: #94a3b8; display: block; margin-top: 4px; font-size: 0.8em;">
+                                Lower if OOM errors
+                            </small>
+                        </div>
+                    </div>
+                    <div class="form-group" style="margin-top: 12px;">
+                        <label class="form-label">Learning Rate</label>
+                        <input type="number" id="training-lr" class="form-input" value="0.0002" step="0.00001" min="0">
+                        <small style="color: #94a3b8; display: block; margin-top: 4px; font-size: 0.8em;">
+                            0.0001-0.0003 typical range
+                        </small>
+                    </div>
                 </div>
-                <div class="form-group">
-                    <label class="form-label">Number of Epochs</label>
-                    <input type="number" id="training-epochs" class="form-input" value="3" min="1" max="20">
+
+                <!-- Estimated Training Time -->
+                <div id="training-estimate" style="display: none; background: #0f172a; padding: 12px; border-radius: 4px; margin-bottom: 15px; border: 1px solid #1e293b;">
+                    <div style="color: #cbd5e1; font-size: 0.85em; display: flex; align-items: center; gap: 8px;">
+                        <span style="color: #60a5fa;">⏱️</span>
+                        <span>Estimated training time: <strong id="training-time-estimate" style="color: #10b981;">~</strong></span>
+                    </div>
                 </div>
-                <div class="form-group">
-                    <label class="form-label">Batch Size</label>
-                    <input type="number" id="training-batch-size" class="form-input" value="4" min="1" max="32">
-                </div>
-                <div class="form-group">
-                    <label class="form-label">Learning Rate</label>
-                    <input type="number" id="training-lr" class="form-input" value="0.0002" step="0.00001" min="0">
-                </div>
+
                 <div class="btn-group">
-                    <button type="submit" class="btn btn-success">Start Training</button>
+                    <button type="submit" class="btn btn-success">🚀 Start Training</button>
                     <button type="button" class="btn btn-secondary" onclick="closeModal('start-training-modal')">Cancel</button>
                 </div>
             </form>

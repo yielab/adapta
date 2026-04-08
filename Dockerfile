@@ -22,9 +22,8 @@ COPY pyproject.toml .
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Optional: Install training dependencies (comment out to reduce image size)
-# Uncomment the line below to enable LoRA training in Docker:
-# RUN pip install --no-cache-dir -r requirements-training.txt
+# Install training dependencies for LoRA fine-tuning
+RUN pip install --no-cache-dir -r requirements-training.txt
 
 # Copy application code
 COPY brain/ ./brain/

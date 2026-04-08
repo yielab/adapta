@@ -17,15 +17,34 @@ from .base import DataCollector, DataSource
 
 logger = logging.getLogger(__name__)
 
+# Import professional collector if available
+try:
+    from .professional_collector import ProfessionalWebCollector
+    PROFESSIONAL_COLLECTOR_AVAILABLE = True
+except ImportError:
+    PROFESSIONAL_COLLECTOR_AVAILABLE = False
+    logger.info("Professional collector not available, using basic implementation")
+
 
 class WebScraper(DataCollector):
     """
-    Web scraper for collecting content from websites.
-    Supports HTML to markdown conversion and intelligent content extraction.
+    Professional web scraper with enhanced capabilities.
+    Falls back to basic implementation if enhanced scraper is not available.
     """
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         super().__init__(config)
+
+        # Use professional collector if available
+        if PROFESSIONAL_COLLECTOR_AVAILABLE and self.config.get('use_professional', True):
+            self.professional_collector = ProfessionalWebCollector(config)
+            self.use_professional = True
+            logger.info("Using professional web collector with advanced features")
+        else:
+            self.professional_collector = None
+            self.use_professional = False
+
+        # Basic scraper properties (for fallback)
         self.session = None
         self.rate_limit = self.config.get('rate_limit', 1.0)  # seconds between requests
         self.max_depth = self.config.get('max_depth', 3)
@@ -33,6 +52,9 @@ class WebScraper(DataCollector):
         self.blocked_domains = self.config.get('blocked_domains', [])
         self.user_agent = self.config.get('user_agent',
             'Mozilla/5.0 (Brain LLM Training Bot) AppleWebKit/537.36')
+
+        # Store collection metrics for reporting
+        self.collection_metrics = None
 
     async def _get_session(self):
         """Get or create aiohttp session"""
@@ -43,9 +65,25 @@ class WebScraper(DataCollector):
         return self.session
 
     async def collect(self, source: DataSource) -> List[Dict[str, Any]]:
-        """Collect data from a web source"""
+        """Collect data from a web source using professional or basic scraper"""
+
+        # Use professional collector if available
+        if self.use_professional:
+            try:
+                return await self._collect_with_professional(source)
+            except Exception as e:
+                logger.warning(f"Professional collector failed, falling back to basic: {e}")
+                self.use_professional = False  # Disable for future calls
+
+        # Basic implementation (fallback)
         if source.type != 'url':
-            raise ValueError(f"WebScraper expects 'url' source, got {source.type}")
+            # Convert to url type for basic scraper
+            source = DataSource(
+                type='url',
+                location=source.location,
+                metadata=source.metadata,
+                version=source.version
+            )
 
         # Check cache first
         cached = self.get_cached_data(source, max_age_hours=self.config.get('cache_hours', 24))
@@ -91,6 +129,52 @@ class WebScraper(DataCollector):
                 self.session = None
 
         return collected_data
+
+    async def _collect_with_professional(self, source: DataSource) -> List[Dict[str, Any]]:
+        """
+        Collect data using the professional collector.
+        Converts DataSource to URL list and transforms results back.
+        """
+        # For single URL sources, collect directly
+        if source.type == 'url':
+            urls = [source.location]
+        else:
+            # For other types, try to extract URLs from location
+            urls = [source.location]
+
+        # Collect pages using professional collector
+        collected_pages = await self.professional_collector.collect_urls(urls)
+
+        # Store metrics for later retrieval
+        self.collection_metrics = self.professional_collector.get_metrics()
+
+        # Convert CollectedPage objects to Dict format expected by pipeline
+        collected_data = []
+        for page in collected_pages:
+            data = {
+                'url': page.url,
+                'content': page.content,
+                'type': 'webpage',
+                'metadata': {
+                    **source.metadata,
+                    'title': page.title,
+                    'extraction_algorithm': page.extraction_algorithm,
+                    'quality_score': page.quality_score,
+                    'content_hash': page.content_hash,
+                    'collected_at': page.collected_at,
+                    'collection_time_ms': page.collection_time_ms,
+                    'status_code': page.status_code,
+                    'content_length': page.content_length,
+                    **page.metadata
+                }
+            }
+            collected_data.append(data)
+
+        return collected_data
+
+    def get_collection_metrics(self) -> Optional[Dict[str, Any]]:
+        """Get metrics from the last collection run"""
+        return self.collection_metrics
 
     async def _fetch_url(self, session: aiohttp.ClientSession, url: str) -> Optional[str]:
         """Fetch and convert URL content to markdown"""
@@ -169,6 +253,7 @@ class DocumentationCrawler(DataCollector):
     """
     Specialized crawler for documentation sites.
     Handles sitemaps, navigation trees, and preserves document hierarchy.
+    Uses professional collector for efficient batch collection.
     """
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
@@ -176,6 +261,7 @@ class DocumentationCrawler(DataCollector):
         self.scraper = WebScraper(config)
         self.sitemap_patterns = self.config.get('sitemap_patterns',
             ['sitemap.xml', 'sitemap_index.xml', 'llms.txt'])
+        self.collection_metrics = None
 
     async def collect(self, source: DataSource) -> List[Dict[str, Any]]:
         """Collect documentation from a site"""
@@ -187,8 +273,12 @@ class DocumentationCrawler(DataCollector):
             # Fall back to regular scraping
             return await self.scraper.collect(source)
 
+    def get_collection_metrics(self) -> Optional[Dict[str, Any]]:
+        """Get metrics from the last collection run"""
+        return self.collection_metrics or self.scraper.get_collection_metrics()
+
     async def _collect_from_sitemap(self, sitemap_url: str) -> List[Dict[str, Any]]:
-        """Parse and collect from XML sitemap"""
+        """Parse and collect from XML sitemap using professional collector if available"""
         collected_data = []
 
         try:
@@ -196,28 +286,69 @@ class DocumentationCrawler(DataCollector):
             async with session.get(sitemap_url) as response:
                 if response.status == 200:
                     sitemap_xml = await response.text()
-                    urls = self._parse_sitemap(sitemap_xml)
+                    urls_info = self._parse_sitemap(sitemap_xml)
 
-                    logger.info(f"Found {len(urls)} URLs in sitemap")
+                    logger.info(f"Found {len(urls_info)} URLs in sitemap")
 
-                    # Collect from each URL
-                    for url_info in urls[:self.config.get('max_pages', 100)]:
-                        await asyncio.sleep(self.scraper.rate_limit)
-                        content = await self.scraper._fetch_url(session, url_info['url'])
-                        if content:
+                    # Limit to max_pages
+                    max_pages = self.config.get('max_pages', 100)
+                    urls_info = urls_info[:max_pages]
+
+                    # If professional collector is available, use batch collection
+                    if (self.scraper.use_professional and
+                        hasattr(self.scraper, 'professional_collector')):
+
+                        # Extract just the URLs for batch collection
+                        urls = [url_info['url'] for url_info in urls_info]
+
+                        logger.info(f"Using professional collector for batch collection of {len(urls)} URLs")
+                        collected_pages = await self.scraper.professional_collector.collect_urls(urls)
+
+                        # Store metrics
+                        self.collection_metrics = self.scraper.professional_collector.get_metrics()
+
+                        # Convert to expected format and add sitemap metadata
+                        for page in collected_pages:
+                            # Find matching url_info for metadata
+                            url_info = next((u for u in urls_info if u['url'] == page.url), {})
+
                             collected_data.append({
-                                'url': url_info['url'],
-                                'content': content,
+                                'url': page.url,
+                                'content': page.content,
                                 'type': 'documentation',
                                 'metadata': {
+                                    'title': page.title,
+                                    'extraction_algorithm': page.extraction_algorithm,
+                                    'quality_score': page.quality_score,
                                     'lastmod': url_info.get('lastmod'),
                                     'priority': url_info.get('priority'),
-                                    'source': 'sitemap'
+                                    'source': 'sitemap',
+                                    **page.metadata
                                 }
                             })
+                    else:
+                        # Fallback: collect one by one with basic scraper
+                        for url_info in urls_info:
+                            await asyncio.sleep(self.scraper.rate_limit)
+                            content = await self.scraper._fetch_url(session, url_info['url'])
+                            if content:
+                                collected_data.append({
+                                    'url': url_info['url'],
+                                    'content': content,
+                                    'type': 'documentation',
+                                    'metadata': {
+                                        'lastmod': url_info.get('lastmod'),
+                                        'priority': url_info.get('priority'),
+                                        'source': 'sitemap'
+                                    }
+                                })
 
         except Exception as e:
             logger.error(f"Error collecting from sitemap: {e}")
+
+        finally:
+            if session and self.config.get('close_session', True):
+                await session.close()
 
         return collected_data
 
@@ -256,43 +387,125 @@ class DocumentationCrawler(DataCollector):
         return urls
 
     async def _collect_documentation_tree(self, base_url: str) -> List[Dict[str, Any]]:
-        """Collect documentation following navigation hierarchy"""
+        """
+        Simplified documentation collection - just use professional collector directly
+        for the base URL and let it handle the crawling.
+        """
+        max_pages = self.config.get('max_pages', 300)
+
+        logger.info(f"Starting documentation collection from {base_url}")
+        logger.info(f"Max pages: {max_pages}")
+
+        # For Drupal.org, we know the structure - just collect key sections directly
+        urls_to_collect = []
+
+        # Base URL first
+        urls_to_collect.append(base_url)
+
+        # If it's a Drupal docs site, add known important sections
+        if 'drupal.org/docs' in base_url:
+            # Add main documentation sections
+            base_sections = [
+                '/introduction',
+                '/requirements',
+                '/installation',
+                '/configuration',
+                '/administration',
+                '/development',
+                '/theming',
+                '/security',
+                '/api',
+                '/modules',
+                '/themes',
+                '/distributions'
+            ]
+
+            for section in base_sections:
+                # Try both with and without trailing parts
+                if base_url.endswith('/en'):
+                    urls_to_collect.append(base_url + section)
+                else:
+                    urls_to_collect.append(base_url + section)
+
+        # Limit to max_pages
+        urls_to_collect = urls_to_collect[:max_pages]
+
+        logger.info(f"Prepared {len(urls_to_collect)} URLs to collect")
+
         collected_data = []
-        visited = set()
-        queue = [(base_url, 0, None)]  # (url, depth, parent)
 
-        while queue:
-            url, depth, parent = queue.pop(0)
+        # Use professional collector if available
+        if (self.scraper.use_professional and
+            hasattr(self.scraper, 'professional_collector') and
+            len(urls_to_collect) > 0):
 
-            if url in visited or depth > self.scraper.max_depth:
-                continue
+            logger.info(f"Using professional collector for {len(urls_to_collect)} URLs")
 
-            visited.add(url)
+            try:
+                # Collect URLs using professional collector
+                from .professional_collector import CollectedPage
+                collected_pages = await self.scraper.professional_collector.collect_urls(urls_to_collect)
 
-            # Fetch page
-            source = DataSource(type='url', location=url)
-            page_data = await self.scraper.collect(source)
+                logger.info(f"Professional collector returned {len(collected_pages)} pages")
 
-            if page_data:
-                # Add hierarchy metadata
-                for item in page_data:
-                    item['metadata'] = item.get('metadata', {})
-                    item['metadata'].update({
-                        'depth': depth,
-                        'parent': parent,
-                        'hierarchy_level': depth
-                    })
-                    collected_data.append(item)
+                # Convert CollectedPage objects to dict format
+                for page in collected_pages:
+                    if isinstance(page, CollectedPage):
+                        data = {
+                            'url': page.url,
+                            'content': page.content,
+                            'type': 'documentation',
+                            'metadata': {
+                                'title': page.title,
+                                'quality_score': page.quality_score,
+                                'extraction_algorithm': page.extraction_algorithm,
+                                'content_hash': page.content_hash,
+                                'collected_at': page.collected_at,
+                                'collection_time_ms': page.collection_time_ms
+                            }
+                        }
+                    else:
+                        # Already in dict format
+                        data = page
 
-                # Extract child links
-                if depth < self.scraper.max_depth:
-                    links = self.scraper._extract_links(page_data[0]['content'], url)
-                    for link in links:
-                        if link not in visited:
-                            queue.append((link, depth + 1, url))
+                    collected_data.append(data)
 
-            await asyncio.sleep(self.scraper.rate_limit)
+                # Capture metrics from professional collector
+                if hasattr(self.scraper.professional_collector, 'get_metrics'):
+                    self.collection_metrics = self.scraper.professional_collector.get_metrics()
 
+                logger.info(f"Processed {len(collected_data)} items for pipeline")
+
+            except Exception as e:
+                logger.error(f"Professional collector batch failed: {e}")
+                import traceback
+                traceback.print_exc()
+                # Fallback to basic collection
+                logger.info("Falling back to basic collection")
+                for url in urls_to_collect[:10]:  # Just collect first 10 as fallback
+                    try:
+                        source = DataSource(type='url', location=url)
+                        page_data = await self.scraper.collect(source)
+                        if page_data:
+                            collected_data.extend(page_data)
+                        await asyncio.sleep(self.scraper.rate_limit)
+                    except Exception as e2:
+                        logger.warning(f"Failed to collect {url}: {e2}")
+
+        else:
+            # No professional collector - collect individually
+            logger.info(f"No professional collector, collecting {len(urls_to_collect)} pages individually")
+            for url in urls_to_collect[:10]:  # Just first 10 for testing
+                try:
+                    source = DataSource(type='url', location=url)
+                    page_data = await self.scraper.collect(source)
+                    if page_data:
+                        collected_data.extend(page_data)
+                    await asyncio.sleep(self.scraper.rate_limit)
+                except Exception as e:
+                    logger.warning(f"Failed to collect {url}: {e}")
+
+        logger.info(f"Documentation tree collection complete: {len(collected_data)} items collected")
         return collected_data
 
 
