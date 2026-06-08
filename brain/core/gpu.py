@@ -4,8 +4,7 @@ import logging
 import platform
 import subprocess
 from dataclasses import dataclass
-from typing import Optional, List
-import os
+from typing import List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -83,7 +82,7 @@ class GPUDetector:
                     try:
                         torch.cuda.set_device(i)
                         free_memory = torch.cuda.mem_get_info()[0] // (1024 * 1024)
-                    except:
+                    except Exception:
                         free_memory = total_memory  # Assume all free if we can't check
 
                     gpu_info = GPUInfo(

@@ -9,11 +9,11 @@ This module provides:
 - Prometheus-compatible /metrics endpoint
 """
 
+import logging
 import time
 from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
-import logging
 
 logger = logging.getLogger(__name__)
 

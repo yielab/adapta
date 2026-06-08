@@ -1,0 +1,116 @@
+"""
+Redis-backed async training job queue.
+Jobs are stored as JSON in Redis lists; worker pops and processes them.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+from datetime import datetime, timezone
+from typing import Optional
+
+import redis.asyncio as aioredis
+
+from brain.config import settings
+
+logger = logging.getLogger(__name__)
+
+QUEUE_KEY = "brain:training_queue"
+JOB_KEY_PREFIX = "brain:job:"
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+class JobQueue:
+    """Async Redis job queue for training jobs."""
+
+    def __init__(self, redis_url: str):
+        self._url = redis_url
+        self._redis: Optional[aioredis.Redis] = None
+
+    async def connect(self) -> None:
+        self._redis = aioredis.from_url(self._url, decode_responses=True)
+
+    async def close(self) -> None:
+        if self._redis:
+            await self._redis.aclose()
+
+    @property
+    def redis(self) -> aioredis.Redis:
+        if not self._redis:
+            raise RuntimeError("JobQueue not connected — call connect() first")
+        return self._redis
+
+    async def enqueue(self, job_id: str, payload: dict) -> None:
+        """Push job payload to the queue and store metadata."""
+        meta = {
+            "job_id": job_id,
+            "status": "queued",
+            "progress": 0.0,
+            "enqueued_at": _now_iso(),
+            "payload": payload,
+        }
+        pipe = self.redis.pipeline()
+        pipe.set(f"{JOB_KEY_PREFIX}{job_id}", json.dumps(meta))
+        pipe.rpush(QUEUE_KEY, job_id)
+        await pipe.execute()
+
+    async def dequeue(self, timeout: int = 10) -> Optional[dict]:
+        """Blocking pop; returns job meta dict or None on timeout."""
+        result = await self.redis.blpop([QUEUE_KEY], timeout=timeout)
+        if not result:
+            return None
+        _, job_id_val = result
+        job_id: str = job_id_val if isinstance(job_id_val, str) else job_id_val.decode()
+        raw = await self.redis.get(f"{JOB_KEY_PREFIX}{job_id}")
+        if not raw:
+            return None
+        return json.loads(raw)  # type: ignore[no-any-return]
+
+    async def update_status(
+        self,
+        job_id: str,
+        *,
+        status: str,
+        progress: Optional[float] = None,
+        logs: Optional[str] = None,
+        adapter_path: Optional[str] = None,
+        eval_score: Optional[float] = None,
+        eval_passed: Optional[bool] = None,
+        error: Optional[str] = None,
+    ) -> None:
+        raw = await self.redis.get(f"{JOB_KEY_PREFIX}{job_id}")
+        meta = json.loads(raw) if raw else {"job_id": job_id}
+        meta["status"] = status
+        if progress is not None:
+            meta["progress"] = progress
+        if logs is not None:
+            meta["logs"] = logs
+        if adapter_path is not None:
+            meta["adapter_path"] = adapter_path
+        if eval_score is not None:
+            meta["eval_score"] = eval_score
+        if eval_passed is not None:
+            meta["eval_passed"] = eval_passed
+        if error is not None:
+            meta["error"] = error
+        if status in ("succeeded", "failed", "cancelled"):
+            meta["finished_at"] = _now_iso()
+        await self.redis.set(f"{JOB_KEY_PREFIX}{job_id}", json.dumps(meta))
+
+    async def get_status(self, job_id: str) -> Optional[dict]:
+        raw = await self.redis.get(f"{JOB_KEY_PREFIX}{job_id}")
+        return json.loads(raw) if raw else None
+
+
+_queue: Optional[JobQueue] = None
+
+
+def get_job_queue() -> JobQueue:
+    global _queue
+    if _queue is None:
+        _queue = JobQueue(settings.redis_url)
+    return _queue

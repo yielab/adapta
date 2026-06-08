@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://brain-from-cero/schemas/training_dataset",
+  "title": "Training Dataset — Instruction Pair",
+  "description": "JSONL format for fine-tuning datasets. Each line is one JSON object matching this schema.",
+  "type": "object",
+  "required": ["prompt", "response"],
+  "additionalProperties": false,
+  "properties": {
+    "prompt": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The instruction or question given to the model."
+    },
+    "response": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The ideal response the model should produce."
+    },
+    "system": {
+      "type": "string",
+      "description": "Optional system prompt context."
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Optional arbitrary metadata (source, quality score, etc.)",
+      "additionalProperties": true
+    }
+  }
+}

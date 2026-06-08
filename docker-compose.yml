@@ -1,49 +1,71 @@
-version: '3.8'
-
 services:
-  # Main Brain API Server
-  brain:
-    build: .
-    container_name: brain-server
+  # ──────────────────────────────────────────────
+  # Main application: control plane + RAG serving
+  # ──────────────────────────────────────────────
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    container_name: brain-app
     ports:
       - "8000:8000"
     volumes:
-      # Mount models directory so you don't need to re-download in container
       - ./data/models:/app/data/models
-      # Mount agents directory to persist agent configs
-      - ./data/agents:/app/data/agents
-      # Mount cache directory
-      - ./data/cache:/app/data/cache
-      # Mount training data and jobs
-      - ./data/training_data:/app/data/training_data
-      - ./data/training_jobs:/app/data/training_jobs
-      # NEW: Workspace persistence for structured notes (Anthropic pattern)
-      - brain-workspaces:/app/.brain/workspaces
-      # NEW: Memory system persistence
-      - brain-memory:/app/.brain/memory
+      - ./data/uploads:/app/data/uploads
+      - ./data/adapters:/app/data/adapters
+      - ./data/datasets:/app/data/datasets
     environment:
-      - BRAIN_HOST=0.0.0.0
-      - BRAIN_PORT=8000
-      - BRAIN_N_THREADS=8
-      - BRAIN_N_GPU_LAYERS=0  # Set to > 0 if you have GPU
-      - BRAIN_DATA_DIR=/app/data
+      - BRAIN_DATABASE_URL=postgresql+asyncpg://brain:brain@postgres:5432/brain
+      - BRAIN_REDIS_URL=redis://redis:6379/0
+      - BRAIN_SECRET_KEY=${BRAIN_SECRET_KEY:-change_me_in_production}
       - BRAIN_MODELS_DIR=/app/data/models
-      - BRAIN_AGENTS_DIR=/app/data/agents
-      # NEW: Feature flags for gradual rollout
-      - BRAIN_FEATURE_UNIFIED_ROUTER=stable
-      - BRAIN_FEATURE_WORKSPACE_ENABLED=stable
-      - BRAIN_FEATURE_ADVANCED_RAG=stable
-      # NEW: Redis cache for performance
-      - REDIS_URL=redis://redis:6379/0
-      # NEW: PostgreSQL for persistent storage
-      - DATABASE_URL=postgresql://brain:brain@postgres:5432/brain
+      - BRAIN_UPLOADS_DIR=/app/data/uploads
+      - BRAIN_ADAPTERS_DIR=/app/data/adapters
+      - BRAIN_DATASETS_DIR=/app/data/datasets
+      - BRAIN_CHROMA_HOST=chroma
+      - BRAIN_CHROMA_PORT=8000
+      - BRAIN_N_GPU_LAYERS=${BRAIN_N_GPU_LAYERS:-0}
+      - BRAIN_N_THREADS=${BRAIN_N_THREADS:-8}
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 40s
+      start_period: 60s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      chroma:
+        condition: service_healthy
+    networks:
+      - brain-network
+
+  # ──────────────────────────────────────────────
+  # Training worker: consumes Redis queue, runs QLoRA.
+  # Requires the [training] extras and a CUDA GPU for real training.
+  # On CPU-only hosts it starts but jobs will be slow / rejected by GPU guard.
+  # ──────────────────────────────────────────────
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: worker
+    container_name: brain-worker
+    volumes:
+      - ./data/models:/app/data/models
+      - ./data/adapters:/app/data/adapters
+      - ./data/datasets:/app/data/datasets
+    environment:
+      - BRAIN_DATABASE_URL=postgresql+asyncpg://brain:brain@postgres:5432/brain
+      - BRAIN_REDIS_URL=redis://redis:6379/0
+      - BRAIN_MODELS_DIR=/app/data/models
+      - BRAIN_ADAPTERS_DIR=/app/data/adapters
+      - BRAIN_DATASETS_DIR=/app/data/datasets
+    restart: unless-stopped
     depends_on:
       postgres:
         condition: service_healthy
@@ -51,34 +73,24 @@ services:
         condition: service_healthy
     networks:
       - brain-network
+    # Uncomment to enable GPU pass-through (requires nvidia-container-toolkit):
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
 
-  # Optional: GPU support (uncomment if you have NVIDIA GPU)
-  # brain-gpu:
-  #   build:
-  #     context: .
-  #     dockerfile: Dockerfile.gpu
-  #   deploy:
-  #     resources:
-  #       reservations:
-  #         devices:
-  #           - driver: nvidia
-  #             count: 1
-  #             capabilities: [gpu]
-  #   ports:
-  #     - "8000:8000"
-  #   volumes:
-  #     - ./data/models:/app/data/models
-  #     - ./data/agents:/app/data/agents
-  #   environment:
-  #     - BRAIN_N_GPU_LAYERS=35  # Use GPU acceleration
-
-  # PostgreSQL Database for persistent storage
+  # ──────────────────────────────────────────────
+  # PostgreSQL: metadata store
+  # ──────────────────────────────────────────────
   postgres:
     image: postgres:15-alpine
     container_name: brain-postgres
     environment:
       POSTGRES_USER: brain
-      POSTGRES_PASSWORD: brain
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-brain}
       POSTGRES_DB: brain
     volumes:
       - postgres-data:/var/lib/postgresql/data
@@ -93,7 +105,9 @@ services:
       retries: 5
     restart: unless-stopped
 
-  # Redis for caching and queuing
+  # ──────────────────────────────────────────────
+  # Redis: job queue
+  # ──────────────────────────────────────────────
   redis:
     image: redis:7-alpine
     container_name: brain-redis
@@ -111,9 +125,12 @@ services:
       retries: 5
     restart: unless-stopped
 
-  # ChromaDB for vector storage (RAG)
+  # ──────────────────────────────────────────────
+  # ChromaDB: per-project vector collections (RAG)
+  # Pinned version — update in sync with brain/services/rag.py client usage.
+  # ──────────────────────────────────────────────
   chroma:
-    image: chromadb/chroma:latest
+    image: chromadb/chroma:0.6.3
     container_name: brain-chroma
     environment:
       IS_PERSISTENT: "TRUE"
@@ -125,53 +142,12 @@ services:
       - "8001:8000"
     networks:
       - brain-network
-    restart: unless-stopped
-
-  # Prometheus for metrics
-  prometheus:
-    image: prom/prometheus:latest
-    container_name: brain-prometheus
-    command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.path=/prometheus'
-    volumes:
-      - ./prometheus-temp.yml:/etc/prometheus/prometheus.yml
-      - prometheus-data:/prometheus
-    ports:
-      - "9090:9090"
-    networks:
-      - brain-network
-    restart: unless-stopped
-
-  # Grafana for visualization
-  grafana:
-    image: grafana/grafana:latest
-    container_name: brain-grafana
-    environment:
-      GF_SECURITY_ADMIN_PASSWORD: admin
-      GF_INSTALL_PLUGINS: redis-datasource
-    volumes:
-      - grafana-data:/var/lib/grafana
-      - ./monitoring/grafana:/etc/grafana/provisioning
-    ports:
-      - "3001:3000"
-    depends_on:
-      - prometheus
-    networks:
-      - brain-network
-    restart: unless-stopped
-
-  # Jaeger for distributed tracing
-  jaeger:
-    image: jaegertracing/all-in-one:latest
-    container_name: brain-jaeger
-    environment:
-      COLLECTOR_ZIPKIN_HOST_PORT: ":9411"
-    ports:
-      - "16686:16686"  # Jaeger UI
-      - "14268:14268"  # Jaeger collector
-    networks:
-      - brain-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v2/heartbeat"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
     restart: unless-stopped
 
 networks:
@@ -182,7 +158,3 @@ volumes:
   postgres-data:
   redis-data:
   chroma-data:
-  prometheus-data:
-  grafana-data:
-  brain-workspaces:
-  brain-memory:

@@ -1,13 +1,11 @@
 """Model Evaluation Engine"""
 
-import asyncio
 import logging
+import math
 import time
 import uuid
-import math
 from pathlib import Path
-from typing import Optional, List, Dict, Any
-import json
+from typing import Optional
 
 from .models import EvaluationMetrics, EvaluationResult
 
@@ -31,10 +29,10 @@ class ModelEvaluator:
     def _check_dependencies(self):
         """Check if evaluation dependencies are installed"""
         try:
-            import torch
-            import transformers
-            import peft
-            import datasets
+            import datasets  # noqa: F401
+            import peft  # noqa: F401
+            import torch  # noqa: F401
+            import transformers  # noqa: F401
             self.dependencies_available = True
             logger.info("Evaluation dependencies available")
         except ImportError as e:
@@ -85,9 +83,9 @@ class ModelEvaluator:
         try:
             # Import libraries
             import torch
-            from transformers import AutoModelForCausalLM, AutoTokenizer
-            from peft import PeftModel
             from datasets import load_dataset
+            from peft import PeftModel
+            from transformers import AutoModelForCausalLM, AutoTokenizer
 
             # Load tokenizer
             logger.info(f"Loading tokenizer from {adapter_path}")
@@ -124,7 +122,7 @@ class ModelEvaluator:
             # Prepare for evaluation
             total_loss = 0.0
             total_tokens = 0
-            correct_tokens = 0
+            correct_tokens = 0  # noqa: F841
             sample_predictions = []
 
             # Evaluate each example

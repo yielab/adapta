@@ -1,11 +1,11 @@
 """Training data models and schemas"""
 
-import time
-from enum import Enum
-from typing import Optional, List, Dict, Any
-from dataclasses import dataclass, field, asdict
-from pathlib import Path
 import json
+import time
+from dataclasses import asdict, dataclass, field
+from enum import Enum
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 
 class JobState(str, Enum):

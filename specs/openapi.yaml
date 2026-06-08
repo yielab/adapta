@@ -1,0 +1,619 @@
+openapi: 3.1.0
+info:
+  title: Brain From Cero API
+  description: |
+    Self-hosted RAG + LoRA model-customization platform.
+    OpenAI-compatible serving is the only external protocol.
+    All management endpoints require a JWT Bearer token from /v1/auth/login.
+    The /v1/chat/completions endpoint uses a scoped project API key.
+  version: 0.1.0
+  license:
+    name: MIT
+
+servers:
+  - url: /v1
+    description: Versioned API
+
+tags:
+  - name: auth
+    description: Login, register, current user
+  - name: projects
+    description: Project lifecycle (rag | finetune)
+  - name: files
+    description: Document upload + indexing (RAG projects)
+  - name: datasets
+    description: JSONL dataset upload + validation (finetune projects)
+  - name: jobs
+    description: Training job lifecycle (finetune projects)
+  - name: endpoints
+    description: Create and retrieve the servable endpoint for a project
+  - name: keys
+    description: Scoped API key management
+  - name: chat
+    description: OpenAI-compatible serving
+
+paths:
+  # ──────────────────────────────────────────────────────────────────────────
+  # Auth
+  # ──────────────────────────────────────────────────────────────────────────
+  /auth/register:
+    post:
+      operationId: register
+      tags: [auth]
+      summary: Bootstrap — create org + first admin user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RegisterRequest'}
+      responses:
+        '201': {description: User created, content: {application/json: {schema: {$ref: '#/components/schemas/UserResponse'}}}}
+        '400': {$ref: '#/components/responses/Error'}
+
+  /auth/login:
+    post:
+      operationId: login
+      tags: [auth]
+      summary: Obtain JWT access token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/LoginRequest'}
+      responses:
+        '200': {description: Token, content: {application/json: {schema: {$ref: '#/components/schemas/TokenResponse'}}}}
+        '401': {$ref: '#/components/responses/Error'}
+
+  /auth/me:
+    get:
+      operationId: getMe
+      tags: [auth]
+      summary: Current authenticated user
+      security: [{BearerAuth: []}]
+      responses:
+        '200': {description: User, content: {application/json: {schema: {$ref: '#/components/schemas/UserResponse'}}}}
+        '401': {$ref: '#/components/responses/Error'}
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Projects
+  # ──────────────────────────────────────────────────────────────────────────
+  /projects:
+    get:
+      operationId: listProjects
+      tags: [projects]
+      summary: List projects for a team
+      security: [{BearerAuth: []}]
+      parameters:
+        - name: team_id
+          in: query
+          required: true
+          schema: {type: string}
+      responses:
+        '200': {description: Projects, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/ProjectResponse'}}}}}
+
+    post:
+      operationId: createProject
+      tags: [projects]
+      summary: Create a new project
+      security: [{BearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ProjectCreate'}
+      responses:
+        '201': {description: Created, content: {application/json: {schema: {$ref: '#/components/schemas/ProjectResponse'}}}}
+
+  /projects/{project_id}:
+    get:
+      operationId: getProject
+      tags: [projects]
+      summary: Get a project
+      security: [{BearerAuth: []}]
+      parameters: [{$ref: '#/components/parameters/ProjectId'}]
+      responses:
+        '200': {description: Project, content: {application/json: {schema: {$ref: '#/components/schemas/ProjectResponse'}}}}
+        '404': {$ref: '#/components/responses/Error'}
+
+    delete:
+      operationId: deleteProject
+      tags: [projects]
+      summary: Delete a project (admin only)
+      security: [{BearerAuth: []}]
+      parameters: [{$ref: '#/components/parameters/ProjectId'}]
+      responses:
+        '204': {description: Deleted}
+        '403': {$ref: '#/components/responses/Error'}
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Files (RAG)
+  # ──────────────────────────────────────────────────────────────────────────
+  /projects/{project_id}/files:
+    post:
+      operationId: uploadFile
+      tags: [files]
+      summary: Upload a document for indexing (RAG projects)
+      security: [{BearerAuth: []}]
+      parameters: [{$ref: '#/components/parameters/ProjectId'}]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file: {type: string, format: binary}
+              required: [file]
+      responses:
+        '202': {description: Accepted — indexing in background}
+
+    get:
+      operationId: listFiles
+      tags: [files]
+      summary: List uploaded files for a project
+      security: [{BearerAuth: []}]
+      parameters: [{$ref: '#/components/parameters/ProjectId'}]
+      responses:
+        '200': {description: Files, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/FileResponse'}}}}}
+
+  /projects/{project_id}/files/{file_id}:
+    delete:
+      operationId: deleteFile
+      tags: [files]
+      summary: Delete a file and remove its chunks from the collection
+      security: [{BearerAuth: []}]
+      parameters:
+        - {$ref: '#/components/parameters/ProjectId'}
+        - {name: file_id, in: path, required: true, schema: {type: string}}
+      responses:
+        '204': {description: Deleted}
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Datasets (fine-tune)
+  # ──────────────────────────────────────────────────────────────────────────
+  /projects/{project_id}/datasets:
+    post:
+      operationId: uploadDataset
+      tags: [datasets]
+      summary: Upload a JSONL dataset for training (finetune projects)
+      security: [{BearerAuth: []}]
+      parameters: [{$ref: '#/components/parameters/ProjectId'}]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file: {type: string, format: binary}
+              required: [file]
+      responses:
+        '202': {description: Accepted — validation in background}
+
+    get:
+      operationId: listDatasets
+      tags: [datasets]
+      summary: List datasets for a project
+      security: [{BearerAuth: []}]
+      parameters: [{$ref: '#/components/parameters/ProjectId'}]
+      responses:
+        '200': {description: Datasets, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/DatasetResponse'}}}}}
+
+  /projects/{project_id}/datasets/{dataset_id}:
+    get:
+      operationId: getDataset
+      tags: [datasets]
+      summary: Get dataset status
+      security: [{BearerAuth: []}]
+      parameters:
+        - {$ref: '#/components/parameters/ProjectId'}
+        - {name: dataset_id, in: path, required: true, schema: {type: string}}
+      responses:
+        '200': {description: Dataset, content: {application/json: {schema: {$ref: '#/components/schemas/DatasetResponse'}}}}
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Training jobs
+  # ──────────────────────────────────────────────────────────────────────────
+  /projects/{project_id}/jobs:
+    post:
+      operationId: createJob
+      tags: [jobs]
+      summary: Enqueue a training job
+      security: [{BearerAuth: []}]
+      parameters: [{$ref: '#/components/parameters/ProjectId'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/JobCreateRequest'}
+      responses:
+        '202': {description: Queued, content: {application/json: {schema: {$ref: '#/components/schemas/JobResponse'}}}}
+
+    get:
+      operationId: listJobs
+      tags: [jobs]
+      summary: List training jobs for a project
+      security: [{BearerAuth: []}]
+      parameters: [{$ref: '#/components/parameters/ProjectId'}]
+      responses:
+        '200': {description: Jobs, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/JobResponse'}}}}}
+
+  /projects/{project_id}/jobs/{job_id}:
+    get:
+      operationId: getJob
+      tags: [jobs]
+      summary: Get job status and live progress
+      security: [{BearerAuth: []}]
+      parameters:
+        - {$ref: '#/components/parameters/ProjectId'}
+        - {name: job_id, in: path, required: true, schema: {type: string}}
+      responses:
+        '200': {description: Job, content: {application/json: {schema: {$ref: '#/components/schemas/JobResponse'}}}}
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Endpoint
+  # ──────────────────────────────────────────────────────────────────────────
+  /projects/{project_id}/endpoint:
+    post:
+      operationId: createEndpoint
+      tags: [endpoints]
+      summary: Activate the project endpoint (RAG must have indexed docs; finetune must have passed eval gate)
+      security: [{BearerAuth: []}]
+      parameters: [{$ref: '#/components/parameters/ProjectId'}]
+      responses:
+        '201': {description: Endpoint created, content: {application/json: {schema: {$ref: '#/components/schemas/EndpointResponse'}}}}
+        '422': {$ref: '#/components/responses/Error'}
+
+    get:
+      operationId: getEndpoint
+      tags: [endpoints]
+      summary: Get project endpoint
+      security: [{BearerAuth: []}]
+      parameters: [{$ref: '#/components/parameters/ProjectId'}]
+      responses:
+        '200': {description: Endpoint, content: {application/json: {schema: {$ref: '#/components/schemas/EndpointResponse'}}}}
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # API keys
+  # ──────────────────────────────────────────────────────────────────────────
+  /projects/{project_id}/keys:
+    post:
+      operationId: createKey
+      tags: [keys]
+      summary: Create a scoped API key for the project endpoint
+      security: [{BearerAuth: []}]
+      parameters: [{$ref: '#/components/parameters/ProjectId'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/KeyCreateRequest'}
+      responses:
+        '201': {description: Key (shown once), content: {application/json: {schema: {$ref: '#/components/schemas/KeyCreatedResponse'}}}}
+
+    get:
+      operationId: listKeys
+      tags: [keys]
+      summary: List API keys (prefix only — full key never returned after creation)
+      security: [{BearerAuth: []}]
+      parameters: [{$ref: '#/components/parameters/ProjectId'}]
+      responses:
+        '200': {description: Keys, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/KeyResponse'}}}}}
+
+  /projects/{project_id}/keys/{key_id}:
+    delete:
+      operationId: revokeKey
+      tags: [keys]
+      summary: Revoke a key
+      security: [{BearerAuth: []}]
+      parameters:
+        - {$ref: '#/components/parameters/ProjectId'}
+        - {name: key_id, in: path, required: true, schema: {type: string}}
+      responses:
+        '204': {description: Revoked}
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Dataset synthesis (finetune projects only)
+  # ──────────────────────────────────────────────────────────────────────────
+  /projects/{project_id}/datasets/synthesize:
+    post:
+      operationId: synthesizeDataset
+      tags: [datasets]
+      summary: Synthesize an instruction dataset from indexed documents
+      description: |
+        Kicks off a background job that reads the project's ChromaDB collection,
+        calls the local inference engine to generate question/answer pairs, and
+        writes a validated JSONL dataset. Poll the returned dataset_id via
+        GET /v1/projects/{project_id}/datasets/{dataset_id} for status.
+        Only available for `finetune` projects that already have indexed files.
+      security: [{BearerAuth: []}]
+      parameters:
+        - {$ref: '#/components/parameters/ProjectId'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SynthesizeRequest'}
+      responses:
+        '202': {description: Synthesis started, content: {application/json: {schema: {$ref: '#/components/schemas/SynthesizeResponse'}}}}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Chat (OpenAI-compatible, scoped key auth)
+  # ──────────────────────────────────────────────────────────────────────────
+  /chat/completions:
+    post:
+      operationId: createChatCompletion
+      tags: [chat]
+      summary: OpenAI-compatible chat completion
+      description: |
+        Authenticate with a scoped project API key (Authorization: Bearer brn_...).
+        The `model` field is the endpoint slug.
+        RAG projects inject retrieved context and return `citations`.
+      security: [{ApiKeyAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ChatCompletionRequest'}
+      responses:
+        '200':
+          description: Chat completion or SSE stream
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ChatCompletionResponse'}
+            text/event-stream:
+              schema: {type: string}
+        '401': {$ref: '#/components/responses/Error'}
+
+# ──────────────────────────────────────────────────────────────────────────
+# Components
+# ──────────────────────────────────────────────────────────────────────────
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    ApiKeyAuth:
+      type: http
+      scheme: bearer
+      description: Scoped project API key (brn_...)
+
+  parameters:
+    ProjectId:
+      name: project_id
+      in: path
+      required: true
+      schema: {type: string}
+
+  responses:
+    Error:
+      description: Error response
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ErrorResponse'}
+
+  schemas:
+    # Auth
+    RegisterRequest:
+      type: object
+      required: [org_name, email, password]
+      properties:
+        org_name: {type: string}
+        email: {type: string, format: email}
+        password: {type: string, minLength: 8}
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: {type: string, format: email}
+        password: {type: string}
+
+    TokenResponse:
+      type: object
+      properties:
+        access_token: {type: string}
+        token_type: {type: string, enum: [bearer]}
+
+    UserResponse:
+      type: object
+      properties:
+        id: {type: string}
+        email: {type: string}
+        org_id: {type: string}
+
+    # Projects
+    ProjectCreate:
+      type: object
+      required: [name, type, base_model, team_id]
+      properties:
+        name: {type: string}
+        type: {type: string, enum: [rag, finetune]}
+        base_model: {type: string}
+        description: {type: string, nullable: true}
+        team_id: {type: string}
+
+    ProjectResponse:
+      type: object
+      properties:
+        id: {type: string}
+        name: {type: string}
+        type: {type: string, enum: [rag, finetune]}
+        status: {type: string}
+        base_model: {type: string}
+        description: {type: string, nullable: true}
+        team_id: {type: string}
+        created_at: {type: string, format: date-time}
+
+    # Files
+    FileResponse:
+      type: object
+      properties:
+        id: {type: string}
+        filename: {type: string}
+        status: {type: string}
+        num_chunks: {type: integer, nullable: true}
+        size_bytes: {type: integer}
+        uploaded_at: {type: string, format: date-time}
+
+    # Datasets
+    DatasetResponse:
+      type: object
+      properties:
+        id: {type: string}
+        name: {type: string}
+        status: {type: string}
+        num_samples: {type: integer, nullable: true}
+        validation_error: {type: string, nullable: true}
+        created_at: {type: string, format: date-time}
+
+    # Jobs
+    JobCreateRequest:
+      type: object
+      required: [dataset_id]
+      properties:
+        dataset_id: {type: string}
+        training_config:
+          type: object
+          nullable: true
+          properties:
+            num_epochs: {type: integer, default: 3}
+            batch_size: {type: integer, default: 4}
+            learning_rate: {type: number, default: 0.0002}
+            lora_r: {type: integer, default: 16}
+            lora_alpha: {type: integer, default: 32}
+            lora_dropout: {type: number, default: 0.1}
+            max_seq_length: {type: integer, default: 512}
+
+    JobResponse:
+      type: object
+      properties:
+        id: {type: string}
+        status: {type: string, enum: [queued, running, succeeded, failed, cancelled]}
+        progress: {type: number, minimum: 0, maximum: 1}
+        logs: {type: string, nullable: true}
+        adapter_path: {type: string, nullable: true}
+        eval_score: {type: number, nullable: true}
+        eval_passed: {type: boolean, nullable: true}
+        error_message: {type: string, nullable: true}
+        created_at: {type: string, format: date-time}
+
+    # Endpoint
+    EndpointResponse:
+      type: object
+      properties:
+        id: {type: string}
+        slug: {type: string}
+        status: {type: string, enum: [pending, active, disabled]}
+        base_model: {type: string}
+        adapter_path: {type: string, nullable: true}
+        project_type: {type: string, enum: [rag, finetune]}
+
+    # Keys
+    KeyCreateRequest:
+      type: object
+      required: [name]
+      properties:
+        name: {type: string}
+
+    KeyCreatedResponse:
+      type: object
+      properties:
+        id: {type: string}
+        name: {type: string}
+        key: {type: string, description: "Full key — shown once only"}
+        prefix: {type: string}
+
+    KeyResponse:
+      type: object
+      properties:
+        id: {type: string}
+        name: {type: string}
+        prefix: {type: string}
+        is_active: {type: boolean}
+        created_at: {type: string, format: date-time}
+
+    # Synthesis
+    SynthesizeRequest:
+      type: object
+      properties:
+        n_pairs_per_chunk: {type: integer, minimum: 1, maximum: 10, default: 3}
+        max_chunks: {type: integer, minimum: 1, maximum: 500, default: 50}
+        system_prompt: {type: string, nullable: true, maxLength: 1000}
+        base_model: {type: string, nullable: true}
+
+    SynthesizeResponse:
+      type: object
+      properties:
+        dataset_id: {type: string}
+        status: {type: string}
+        message: {type: string}
+
+    # Chat
+    ChatCompletionRequest:
+      type: object
+      required: [model, messages]
+      properties:
+        model: {type: string, description: "Endpoint slug"}
+        messages:
+          type: array
+          items:
+            type: object
+            required: [role, content]
+            properties:
+              role: {type: string, enum: [system, user, assistant]}
+              content: {type: string}
+        temperature: {type: number, minimum: 0, maximum: 2, nullable: true}
+        max_tokens: {type: integer, nullable: true}
+        top_p: {type: number, minimum: 0, maximum: 1, nullable: true}
+        stream: {type: boolean, default: false}
+
+    ChatCompletionResponse:
+      type: object
+      properties:
+        id: {type: string}
+        object: {type: string}
+        created: {type: integer}
+        model: {type: string}
+        choices:
+          type: array
+          items:
+            type: object
+            properties:
+              index: {type: integer}
+              message:
+                type: object
+                properties:
+                  role: {type: string}
+                  content: {type: string}
+              finish_reason: {type: string}
+        usage:
+          type: object
+          properties:
+            prompt_tokens: {type: integer}
+            completion_tokens: {type: integer}
+            total_tokens: {type: integer}
+        citations:
+          type: array
+          nullable: true
+          description: "RAG citations — present only for RAG endpoints"
+          items:
+            type: object
+            properties:
+              index: {type: integer}
+              source: {type: string}
+              score: {type: number}
+
+    # Error
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code: {type: string}
+            message: {type: string}
+            correlation_id: {type: string, nullable: true}

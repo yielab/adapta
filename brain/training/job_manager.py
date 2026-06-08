@@ -2,17 +2,17 @@
 
 import asyncio
 import logging
+import time
 import uuid
 from pathlib import Path
 from typing import Dict, List, Optional
-import time
 
 from brain.config import settings
 from brain.training.models import (
-    TrainingJob,
-    TrainingConfig,
-    TrainingStatus,
     JobState,
+    TrainingConfig,
+    TrainingJob,
+    TrainingStatus,
 )
 
 logger = logging.getLogger(__name__)
@@ -66,8 +66,8 @@ class JobManager:
             output_dir = job_dir / "output"
             output_dir.mkdir(parents=True, exist_ok=True)
 
-            # Create adapter directory in agent's folder
-            agent_adapter_dir = settings.agents_dir / agent_id / "adapters" / adapter_name
+            # Create adapter directory scoped by project/agent
+            agent_adapter_dir = settings.adapters_dir / agent_id / adapter_name
             agent_adapter_dir.mkdir(parents=True, exist_ok=True)
 
             # Create job

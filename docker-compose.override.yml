@@ -1,0 +1,28 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# Development overrides — auto-merged by `docker compose up` (no flags needed).
+#
+# What this gives you:
+#   • app builds the `dev` image stage → ruff / mypy / pytest / SDD toolchain are
+#     ALREADY installed. `docker compose exec app make ci` works with zero setup.
+#   • the repo is bind-mounted at /app → host edits are live in the container,
+#     and tools run against your real working tree (no docker cp, no rebuilds).
+#   • uvicorn runs with --reload so API code changes restart the server.
+#
+# Production deploys IGNORE this file — they use the lean, non-root images:
+#   docker compose -f docker-compose.yml up -d --build
+# ──────────────────────────────────────────────────────────────────────────────
+services:
+  app:
+    build:
+      target: dev
+    volumes:
+      - .:/app
+    environment:
+      - BRAIN_RELOAD=1
+
+  worker:
+    # The worker image already carries the [training] deps; bind-mount source so
+    # worker code changes are live too. Run as root in dev for bind-mount writes.
+    user: root
+    volumes:
+      - .:/app

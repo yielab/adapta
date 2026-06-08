@@ -3,11 +3,11 @@
 import hashlib
 import json
 import logging
+import pickle
 import time
 from dataclasses import dataclass, field
-from typing import Optional, Dict, Any, List
 from pathlib import Path
-import pickle
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -143,7 +143,7 @@ class LRUCache:
         for entry in self._cache.values():
             try:
                 total_size += len(pickle.dumps(entry.value))
-            except:
+            except Exception:
                 pass
 
         return CacheStats(
@@ -318,7 +318,7 @@ class CacheManager:
         """Save on destruction"""
         try:
             self.save_persistent()
-        except:
+        except Exception:
             pass
 
 

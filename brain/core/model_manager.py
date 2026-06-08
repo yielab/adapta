@@ -1,11 +1,11 @@
 """Model management and loading"""
 
 import asyncio
-from enum import Enum
-from pathlib import Path
-from typing import Optional, Dict
 import logging
 from dataclasses import dataclass
+from enum import Enum
+from pathlib import Path
+from typing import Dict, Optional
 
 from llama_cpp import Llama
 

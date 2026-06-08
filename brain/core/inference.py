@@ -2,8 +2,8 @@
 
 import asyncio
 import logging
-from typing import AsyncIterator, Optional, Dict, Any, List, Union
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from typing import Any, AsyncIterator, Dict, List, Optional
 
 from llama_cpp import Llama
 
@@ -31,7 +31,7 @@ class InferenceRequest:
     top_p: float = settings.top_p
     top_k: int = settings.top_k
     max_tokens: int = settings.max_tokens
-    stream: bool = settings.stream
+    stream: bool = True
     stop: Optional[List[str]] = None
     system_prompt: Optional[str] = None
     is_vision_model: bool = False  # Flag for vision model inference

@@ -1,14 +1,14 @@
 """Training module for LoRA fine-tuning"""
 
+from brain.training.job_manager import job_manager
 from brain.training.models import (
+    JobState,
     TrainingConfig,
     TrainingJob,
-    TrainingStatus,
     TrainingMetrics,
-    JobState,
+    TrainingStatus,
 )
-from brain.training.trainer import trainer, LoRATrainer
-from brain.training.job_manager import job_manager
+from brain.training.trainer import LoRATrainer, trainer
 
 # Alias for compatibility
 training_manager = job_manager

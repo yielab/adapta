@@ -1,10 +1,10 @@
 """Training data management and validation"""
 
+import hashlib
 import json
 import logging
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Tuple
-import hashlib
+from typing import Any, Dict, List, Optional, Tuple
 
 from brain.config import settings
 from brain.training.models import TrainingDataset
@@ -205,7 +205,7 @@ class DataManager:
             json.dump(dataset.to_dict(), f, indent=2)
 
         if not is_valid:
-            error_msg = f"Dataset validation failed:\n" + "\n".join(errors[:10])
+            error_msg = "Dataset validation failed:\n" + "\n".join(errors[:10])
             if len(errors) > 10:
                 error_msg += f"\n... and {len(errors) - 10} more errors"
             raise ValueError(error_msg)

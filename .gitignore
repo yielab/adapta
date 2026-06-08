@@ -73,3 +73,32 @@ dmypy.json
 *.tmp
 *.bak
 *.swp
+archive/
+*.backup
+
+# Caddy
+caddy.log
+Caddyfile.local
+
+# Local configuration
+dnsmasq.conf
+prometheus-temp.yml
+
+# Session files
+SESSION_*.md
+TASK_*.md
+*_FIXES_*.md
+*_REFACTOR_*.md
+AUDIT_*.md
+AUDIT_*.txt
+
+# Claude-specific
+.claude/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Docker volumes
+monitoring/

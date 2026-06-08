@@ -1,12 +1,12 @@
 """LoRA Training Engine"""
 
 import asyncio
+import json
 import logging
 import time
 import traceback
 from pathlib import Path
-from typing import Optional, Callable
-import json
+from typing import Callable, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -29,10 +29,10 @@ class LoRATrainer:
     def _check_dependencies(self):
         """Check if training dependencies are installed"""
         try:
-            import torch
-            import transformers
-            import peft
-            import datasets
+            import datasets  # noqa: F401
+            import peft  # noqa: F401
+            import torch  # noqa: F401
+            import transformers  # noqa: F401
             self.dependencies_available = True
             logger.info("Training dependencies available")
         except ImportError as e:
@@ -49,7 +49,7 @@ class LoRATrainer:
         dataset_path: Path,
         output_dir: Path,
         adapter_path: Path,
-        config: "TrainingConfig",
+        config: "TrainingConfig",  # noqa: F821
         progress_callback: Optional[Callable] = None,
     ) -> bool:
         """
@@ -78,14 +78,14 @@ class LoRATrainer:
         try:
             # Import training libraries
             import torch
+            from datasets import load_dataset
+            from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
             from transformers import (
                 AutoModelForCausalLM,
                 AutoTokenizer,
-                TrainingArguments,
                 Trainer,
+                TrainingArguments,
             )
-            from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
-            from datasets import load_dataset
 
             logger.info(f"Starting training for job {job_id}")
 

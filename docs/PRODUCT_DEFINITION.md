@@ -1,0 +1,156 @@
+# Product Definition — Self-Hosted Model Customization Platform
+
+**Status:** Locked (north-star)
+**Decision date:** 2026-06-08
+**Implementation status:** Phases 0–5 complete as of 2026-06-08
+**One-liner:** A platform technical teams deploy **on their own servers** to customize and serve private language models two ways — **Knowledge (RAG)** or **Fine-tuning (LoRA)** — each exposed as an OpenAI-compatible API.
+
+> This document supersedes the sprawling "AI platform" framing. The corrective engineering roadmap lives in [API_EVOLUTION_PLAN.md](API_EVOLUTION_PLAN.md); the spec process in [SDD_WORKFLOW.md](SDD_WORKFLOW.md).
+
+---
+
+## 1. What this product is
+
+A **single-tenant, self-hosted** application. A company runs it on their own infrastructure (their privacy guarantee: **no data leaves their servers**). Inside that deployment, multiple users/teams create **Projects**. Every project is one of two types, and every project results in an **API endpoint** they consume with a scoped key.
+
+```
+        Company's own server (Docker Compose)
+   ┌──────────────────────────────────────────────┐
+   │  Control-plane API  ──────────────► Postgres  │
+   │  (brain/api/app.py)                           │
+   │         │                                     │
+   │ ┌───────┴────────────┐                        │
+   │ RAG service          Fine-tune service         │
+   │ (upload→index)       (dataset→LoRA job)        │
+   │       │                     │                 │
+   │   ChromaDB             Redis queue             │
+   │       │                     │                 │
+   │       │              Training worker (GPU)     │
+   │       └──────────┬──────────┘                 │
+   │             Inference server                   │
+   │       (base model + adapter, OpenAI API)       │
+   └──────────────────────────────────────────────┘
+```
+
+## 2. The two services (the whole product)
+
+### Service A — Knowledge (RAG)
+
+"Make a model answer from **my documents**."
+
+- **Input:** documents (PDF, DOCX, TXT, MD, HTML).
+- **Mechanism:** parse → chunk → embed (sentence-transformers) → store in a per-project ChromaDB collection. No weights change.
+- **Serving:** query → retrieve top-k → inject into context → generate → return answer **with citations**.
+- **Cost:** seconds to index, **CPU-only**, cheap. Works on any server.
+- **Updates:** add/remove a file, re-index. Instant.
+
+### Service B — Fine-tuning (LoRA)
+
+"Change **how the model behaves** — its style, format, or skill."
+
+- **Input:** an **instruction dataset** (JSONL of prompt/response pairs), or documents that the platform **synthesizes** into pairs (`POST /v1/projects/{id}/datasets/synthesize`).
+- **Mechanism:** validate → enqueue training job → **GPU worker** trains a LoRA adapter (QLoRA 4-bit) → evaluate against threshold gate → register the adapter artifact.
+- **Serving:** base model + adapter, hot-swappable, OpenAI-compatible.
+- **Cost:** minutes–hours, **requires a GPU**, heavier.
+- **Updates:** re-train the adapter.
+- **Eval gate:** score ≥ 0.6 required. An adapter that does not pass cannot back an endpoint.
+
+> **Product rule:** the UI never calls RAG "training." It asks *"How do you want to specialize your model?"* → **Give it knowledge** (RAG) vs **Change how it behaves** (fine-tuning).
+
+## 3. Scope
+
+### In scope (implemented)
+
+- Self-hosted deploy via Docker Compose, customer-operated.
+- Multi-user within one org: users, teams, roles (admin/member), real JWT auth.
+- Projects (type = `rag` | `finetune`), each → one served endpoint + scoped API keys (`brn_*`).
+- RAG: document upload, parsing, chunking, real sentence-transformers embeddings, per-project ChromaDB collections, cited answers.
+- LoRA: JSONL dataset upload + validation, async training jobs with progress, QLoRA via worker, adapter registry + eval gate, serving.
+- Dataset **synthesis** (documents → instruction pairs) — `POST /v1/projects/{id}/datasets/synthesize`.
+- OpenAI-compatible serving for both modes (`/v1/chat/completions`); per-endpoint scoped keys.
+- Usage metering: `prompt_tokens` / `completion_tokens` / `total_tokens` in every response.
+- `make check-leaks` CI gate; `make ci` (leaks + lint + test + validate-spec).
+
+### Out of scope (deleted)
+
+- Images / vision (moondream2, vision endpoints) — removed.
+- Unified orchestrator mock — deleted; one real `ChatService` path.
+- Agent communication hub, agent A/B "evolution" — no consumer in this product.
+- Framework adapters (LangChain/LangGraph/OpenClaw) — dropped.
+- Multi-protocol API (Anthropic/MCP/Responses) — deferred indefinitely; OpenAI-compatible only.
+- Drupal-specific scraper — dropped.
+- Web dashboard UI — out of scope; the API surface is the product.
+- Public multi-tenant SaaS concerns — not this product.
+
+## 4. Architecture (self-hosted, on-prem)
+
+| Container | Role |
+|---|---|
+| `app` (FastAPI + Uvicorn) | Control plane + RAG data plane + inference serving |
+| `worker` (training) | BLPOP Redis consumer; runs QLoRA on GPU; writes adapters |
+| `postgres` | Metadata: users, teams, projects, files, datasets, jobs, endpoints, keys |
+| `redis` | Training job queue (BLPOP pattern) |
+| `chroma` | Per-project vector collections (RAG) |
+| volumes | Uploaded files, datasets, adapter artifacts |
+
+### Core data model (Postgres)
+
+```
+Org ─< Team ─< User
+Team ─< Project (type: rag|finetune, base_model, status)
+Project ─< ProjectFile (upload, parse status)       # both modes
+Project ─1 Collection (chroma_collection_name)      # rag
+Project ─< Dataset (JSONL, num_samples, status)     # finetune
+Project ─< TrainingJob (status, progress, eval_score, eval_passed)
+Project ─1 Endpoint (slug, adapter_path, status)
+Endpoint ─< ApiKey (key_prefix, key_hash, is_active)
+```
+
+### Two end-to-end flows
+
+**RAG:** `POST /v1/projects/{id}/files` → background parse+chunk+embed → ChromaDB collection → `POST /v1/projects/{id}/endpoint` → `POST /v1/chat/completions (model=slug, key=brn_*)` → retrieve top-k → generate → cited answer
+
+**LoRA:** `POST /v1/projects/{id}/datasets` (JSONL upload) or `POST /v1/projects/{id}/datasets/synthesize` → `POST /v1/projects/{id}/jobs` → worker trains QLoRA → eval gate → `POST /v1/projects/{id}/endpoint` → `POST /v1/chat/completions`
+
+## 5. Infrastructure
+
+GPU strategy (customer-provided hardware):
+
+- Detect via `brain/core/gpu.py`.
+- **RAG: CPU is fine** — ships and runs anywhere.
+- **LoRA: require a GPU**, fail fast with a clear message if absent. QLoRA 4-bit to fit a 3B base in ~8–12 GB VRAM.
+- Training runs in the **separate worker**, never in the request path.
+
+## 6. What changed vs. the pre-rebuild state
+
+| Area | Before (June 2026 audit) | After (implemented) |
+|---|---|---|
+| Persistence | JSON files, hard-coded dummy auth key | PostgreSQL (11 tables), real bcrypt + JWT auth, Alembic migration `0001` |
+| Training jobs | No queue, no worker | Redis BLPOP queue + dedicated GPU worker; job lifecycle with status/progress/logs |
+| Embeddings | Placeholder random vectors | Real `sentence-transformers` (`all-MiniLM-L6-v2` default) |
+| Inference path | Mock orchestrator returning `[Generated response using {model}]` | Single real `ChatService`; mock deleted |
+| Ingestion | Web-scraping (Drupal) shaped | Document upload (PDF/DOCX/MD/TXT/HTML) + synthesis from indexed chunks |
+| API surface | 112 endpoints, mixed protocols | Collapsed to 9 resource groups, OpenAI-compatible only |
+| Error handling | 63 `detail=str(e)` leak sites, 0 custom exceptions | `DomainError` taxonomy, 0 leak sites, `make check-leaks` CI gate |
+| Dataset synthesis | Not implemented | `POST /v1/projects/{id}/datasets/synthesize` — LLM-generated Q/A pairs from indexed docs |
+| Images | moondream2 + vision routes | Deleted entirely |
+| Build config | `setup.py` + `requirements*.txt` + `pyproject.toml` (triple, divergent) | Single-source `pyproject.toml` |
+
+## 7. Phased build plan (completed)
+
+All six phases shipped as of 2026-06-08. Each leaves `main` green.
+
+- **Phase 0 — Foundation.** Postgres data model; real auth + teams; Project entity; single `docker compose up`; delete mock, images, cut list.
+- **Phase 1 — RAG MVP.** Document upload + parse + chunk; real embeddings; per-project Chroma collection; Endpoint + API key; cited OpenAI-compatible answers.
+- **Phase 2 — Training infrastructure.** Redis queue; dedicated GPU `worker`; TrainingJob lifecycle; GPU detection/guards.
+- **Phase 3 — LoRA service.** JSONL dataset upload + validation; QLoRA training; adapter registry + eval gate; endpoint serving.
+- **Phase 4 — Dataset synthesis.** Documents → chunk → LLM-synthesized instruction pairs → dedup → JSONL dataset. `POST /v1/projects/{id}/datasets/synthesize`.
+- **Phase 5 — Hardening.** DomainError taxonomy; `make check-leaks` + `make ci`; usage metering; real health checks (Postgres/Redis/Chroma); 22 unit tests.
+
+## 8. Open decisions (track, don't block)
+
+1. **Base model catalog** — which GGUF bases ship by default? Define the supported list + VRAM table.
+2. **License/packaging** — open-core vs commercial self-hosted license.
+3. **Artifact storage** — filesystem volume now; introduce MinIO only if customers need scale/HA.
+4. **Multi-user depth** — admin/member RBAC is the floor; invitation flow needed.
+5. **Usage persistence** — token counts are returned in API responses but not yet stored in DB for billing/metering.

@@ -5,44 +5,66 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "brain-from-cero"
 version = "0.1.0"
-description = "Lightweight local AI brain server with multimodal capabilities"
+description = "Self-hosted RAG + LoRA model-customization platform"
 readme = "README.md"
 requires-python = ">=3.10"
 authors = [
-    {name = "Brain Team"}
+    {name = "Santiago Yie"}
 ]
 dependencies = [
+    # Web framework
     "fastapi>=0.110.0",
     "uvicorn[standard]>=0.27.0",
-    "pydantic>=2.6.0",
+    "pydantic[email]>=2.6.0",
     "pydantic-settings>=2.1.0",
-    "llama-cpp-python>=0.2.55",
-    "chromadb>=0.4.22",
-    "sentence-transformers>=2.3.1",
-    "sqlalchemy>=2.0.25",
-    "aiosqlite>=0.19.0",
     "python-multipart>=0.0.9",
-    "pillow>=10.2.0",
+    # Database
+    "sqlalchemy>=2.0.25",
+    "asyncpg>=0.29.0",
+    "alembic>=1.13.0",
+    # Cache / job queue
+    "redis[hiredis]>=5.0.0",
+    # Auth
+    "python-jose[cryptography]>=3.3.0",
+    "passlib[bcrypt]>=1.7.4",
+    # Inference (llama-cpp — CPU by default; GPU variant installed separately)
+    "llama-cpp-python>=0.2.55",
+    # Embeddings + vector store
+    "sentence-transformers>=2.3.1",
+    "chromadb>=0.4.22",
+    # Document parsing
+    "pypdf>=4.0.0",
+    "python-docx>=1.1.0",
+    "markdown>=3.5.0",
+    # General
+    "httpx>=0.26.0",
     "pyyaml>=6.0.1",
     "click>=8.1.7",
-    "rich>=13.7.0",
-    "httpx>=0.26.0",
+    "psutil>=5.9.0",
 ]
 
 [project.optional-dependencies]
-dev = [
-    "pytest>=8.0.0",
-    "pytest-asyncio>=0.23.4",
-    "black>=24.1.1",
-    "ruff>=0.2.1",
-    "mypy>=1.8.0",
-]
 training = [
     "torch>=2.2.0",
     "transformers>=4.38.0",
     "peft>=0.8.2",
     "datasets>=2.16.1",
     "trl>=0.7.10",
+    "bitsandbytes>=0.42.0",
+    "accelerate>=0.27.0",
+]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.4",
+    "pytest-cov>=4.1.0",
+    "httpx>=0.26.0",
+    "black>=24.1.1",
+    "ruff>=0.2.1",
+    "mypy>=1.8.0",
+    # SDD toolchain
+    "datamodel-code-generator>=0.25.0",
+    "schemathesis>=3.28.0",
+    "openapi-spec-validator>=0.7.0",
 ]
 
 [project.scripts]
@@ -52,6 +74,16 @@ brain = "brain.cli:main"
 where = ["."]
 include = ["brain*"]
 
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+markers = [
+    "contract: schemathesis tests requiring a live server on :8000",
+    "integration: tests requiring real Postgres/Redis/Chroma",
+    "slow: real llama-cpp inference on a tiny model",
+]
+addopts = "-m 'not contract and not integration and not slow'"
+
 [tool.black]
 line-length = 100
 target-version = ['py310']
@@ -60,7 +92,30 @@ target-version = ['py310']
 line-length = 100
 target-version = "py310"
 
+[tool.ruff.lint]
+select = ["E", "F", "I", "B"]
+ignore = [
+    "B008",  # FastAPI Depends() in route default args is intentional
+    "E501",  # line-too-long: black handles formatting, ruff just checks
+]
+
 [tool.mypy]
 python_version = "3.10"
 warn_return_any = true
 warn_unused_configs = true
+ignore_missing_imports = true
+
+# Protected / legacy internals — not rewritten, only wrapped
+[[tool.mypy.overrides]]
+module = [
+    "brain.core.inference",
+    "brain.core.model_manager",
+    "brain.training.trainer",
+    "brain.training.evaluator",
+    "brain.training.job_manager",
+    "brain.training.data_manager",
+    "brain.core.gpu",
+    "brain.core.cache",
+    "brain.core.metrics",
+]
+ignore_errors = true
