@@ -126,6 +126,7 @@ ignore_errors = true
 # web/service layers, and services never reach up into the API layer.
 [tool.importlinter]
 root_package = "brain"
+include_external_packages = true
 
 [[tool.importlinter.contracts]]
 name = "Domain is dependency-free of the outer layers"

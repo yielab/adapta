@@ -150,10 +150,10 @@ Partly covered (`test_unhandled_error_returns_correlation_id`, `test_domain_erro
 ### 1.8 `slow` inference test (P2)
 - [ ] One `@pytest.mark.slow` test that loads a tiny GGUF and asserts `ChatService` returns a non-empty completion with usage fields populated. Pins the inference contract without depending on a large model.
 
-### 1.9 Domain isolation — `import-linter` (P2)
-- [ ] Add an `import-linter` contract: `brain/domain/` may not import `brain/api/` or FastAPI; `brain/services/` may not import `brain/api/`.
-- [ ] Wire into `make ci`.
-- [ ] *Acceptance:* a layering violation fails CI.
+### 1.9 Domain isolation — `import-linter` (P2) — ✅ DONE (2026-06-09)
+- [x] Two `import-linter` contracts in `pyproject.toml` (`[tool.importlinter]`, `include_external_packages`): (1) `brain.domain` is forbidden from importing `brain.api`/`brain.services`/`brain.core`/`fastapi`; (2) `brain.services` may not import `brain.api`. `import-linter>=2.0` added to `[dev]`.
+- [x] Wired into `make ci` via a new `make lint-imports` target + a CI `fast`-gate step.
+- [x] *Acceptance:* `lint-imports` reports "2 kept, 0 broken"; a layering violation fails the gate. Layering was already clean (domain imports nothing from `brain`).
 
 ### 1.10 Wire it all together (P0)
 

@@ -30,6 +30,9 @@ jobs:
       - name: lint
         run: make lint
 
+      - name: lint-imports (layered-architecture contract)
+        run: make lint-imports
+
       - name: coverage (tests + 30% floor)
         run: make coverage
 
