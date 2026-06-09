@@ -2,11 +2,12 @@
 # ──────────────────────────────────────────────────────────────────────────────
 # Brain From Cero — single multi-stage image (one source of truth).
 #
-#   base         OS + curl; venv on PATH (shared by every stage)
-#   builder      + compilers; builds the runtime venv (dependencies only)
-#   dev          builder + [dev] toolchain; source arrives via bind-mount (compose)
-#   production   base + copied venv + baked source; non-root, no compilers/tools
-#   worker       base + [training] venv + baked source; runs the QLoRA worker
+#   base           OS + curl; venv on PATH (shared by every stage)
+#   builder        + compilers; runtime venv with CPU-only torch (app/dev)
+#   dev            builder + [dev] toolchain; source via bind-mount (compose)
+#   production     base + copied CPU venv + baked source; non-root, no compilers
+#   worker-builder + compilers; separate venv with [training] + CUDA torch
+#   worker         base + copied CUDA venv + baked source; runs the QLoRA worker
 #
 # Build one stage:    docker build --target <stage> .
 # Compose picks it:   build.target in docker-compose*.yml
@@ -31,7 +32,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends curl libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
-# ===== builder ================================================================
+# ===== builder (app/dev: CPU-only torch) =====================================
 # Compilers live ONLY here. They never reach the production / worker images.
 FROM base AS builder
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -39,7 +40,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 RUN python -m venv /opt/venv
 
-# Install runtime dependencies first — cached until pyproject.toml changes.
+# CPU-ONLY torch first, from the PyTorch CPU wheel index. PyPI's default Linux
+# torch wheel bundles the full CUDA stack (~2 GB) and would be pulled in
+# transitively by sentence-transformers. The app does CPU-only RAG, so install
+# CPU torch up front; the later `pip install -e .` then sees torch as satisfied
+# and never fetches the CUDA build. (GPU torch lives only in the worker image.)
+RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
+
+# Install runtime dependencies — cached until pyproject.toml changes.
 # editable_mode=compat puts /app on sys.path, so the source is importable whether
 # it is baked in (production) or bind-mounted at runtime (dev) — no re-running pip.
 COPY pyproject.toml ./
@@ -73,11 +81,18 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 ENTRYPOINT ["/app/entrypoint.sh"]
 
-# ===== worker (training) ======================================================
-# Separate venv carrying the [training] extras (torch / peft / trl / bitsandbytes).
-# NOTE: this builds CPU torch on python-slim. For real GPU training, switch this
-# stage's base to an `nvidia/cuda:*-runtime` image with Python (tracked in TODO).
-FROM builder AS worker-builder
+# ===== worker (training: full CUDA torch) =====================================
+# Separate venv with the [training] extras (torch / peft / trl / bitsandbytes).
+# Derives from `base` (NOT `builder`) so it does NOT inherit the CPU-only torch —
+# `[training]`'s torch resolves to PyPI's default CUDA wheel, keeping the worker
+# GPU-capable. For real GPU training, switch this stage's base to an
+# `nvidia/cuda:*-runtime` image with Python (tracked in TODO §4.5).
+FROM base AS worker-builder
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential cmake gcc g++ git \
+    && rm -rf /var/lib/apt/lists/*
+RUN python -m venv /opt/venv
+COPY pyproject.toml ./
 RUN pip install --no-cache-dir -e ".[training]" --config-settings editable_mode=compat
 
 FROM base AS worker

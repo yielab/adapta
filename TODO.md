@@ -49,7 +49,7 @@ Honour the [Definition of done](#definition-of-done-per-task) on every task. Wor
 | CI runner | ✅ `.github/workflows/ci.yml` — `fast` (every push, offline) + `full` (PR→main, live stack) |
 | Boot-correctness gate | ✅ (2026-06-08) — fast `import smoke` (app + worker) every push; `full` boot smoke starts uvicorn **and** the worker and asserts both survive. See **§A2**. |
 | Docker dev/prod workflow | ✅ reworked 2026-06-08 — one multi-stage `Dockerfile`, non-root prod, dev toolchain baked in (no manual pip). See **§4**. |
-| Image size / CPU-only torch | ❌ still ~6 GB; CPU-torch split + slimming open. See **§4.2**. |
+| Image size / CPU-only torch | ✅ app **1.87 GB** (was 6.45 GB), CPU-only torch, zero CUDA pkgs (2026-06-08). Worker keeps CUDA torch (verify-rebuild pending). See **§4.2**. |
 
 ---
 
@@ -277,15 +277,24 @@ runtime robustness. See [docs/API_EVOLUTION_PLAN.md](docs/API_EVOLUTION_PLAN.md)
 - [x] **Dev/prod compose split**: `docker-compose.yml` is the prod-safe baseline (`target: production`/`worker`); `docker-compose.override.yml` is the auto-merged dev layer (`target: dev`, bind-mount, `BRAIN_RELOAD=1`). Prod deploy = `docker compose -f docker-compose.yml up -d --build`.
 - [x] **Migrate-on-boot** via `entrypoint.sh` (`alembic upgrade head` before uvicorn), with optional `--reload` when `BRAIN_RELOAD=1`; healthchecks + ordered startup on Postgres/Redis/Chroma (pinned `chromadb/chroma:0.6.3`).
 
-### 4.2 Image size & CPU-only torch (P0)
-**Context.** Images are still **~6.4–6.7 GB**. The `app` (CPU-only RAG per the product definition) pulls **torch + the full CUDA stack** transitively via `sentence-transformers`. The multi-stage split already removes the build toolchain from runtime; the dominant remaining cost is CUDA torch in the app image.
-**Scope.** App image carries CPU-only torch; worker keeps full CUDA torch. No behavior change.
+### 4.2 Image size & CPU-only torch (P0) — ✅ DONE (app); worker verify-rebuild pending
+**Context (resolved 2026-06-08).** PyPI's default Linux `torch` wheel bundles the full CUDA stack (~2 GB) and was pulled into BOTH images transitively via `sentence-transformers` — so both were ~6.4 GB. The `app` does CPU-only RAG and never needs CUDA.
+**What changed.** The `builder` stage now installs **CPU-only torch first** (`pip install torch --index-url https://download.pytorch.org/whl/cpu`) so the later `pip install -e .` sees torch satisfied and never fetches the CUDA build. The `worker-builder` stage was re-parented from `builder` → `base` (with its own compilers/venv) so it does **not** inherit CPU torch; `[training]` pulls the CUDA wheel, keeping the worker GPU-capable.
+- [x] App image **1.87 GB** (was 6.45 GB), **zero** `nvidia-*`/CUDA packages, `torch 2.12.0+cpu` (`cuda.is_available()` → False), imports + runs non-root. *Verified.*
+- [ ] **Worker verify-rebuild:** folded into §4.2b below (the build needs to be confirmed AND the GPU runtime wired up).
+**Files.** `Dockerfile` (builder + worker-builder stages).
+
+### 4.2b Make GPU/CUDA training actually work (P0 — pairs with §4.2)
+**Context.** §4.2 gave the app a **CPU-only, no-CUDA** image (the requirement for CPU hosts). The flip side: this host **is** CUDA-capable, and the `worker` must run real QLoRA training **on the GPU** — CPU torch would make training unusably slow and `bitsandbytes` 4-bit needs CUDA. The worker stage already installs the CUDA torch wheel; what's missing is verifying it and wiring GPU passthrough so a GPU host uses the card while a CPU host still starts cleanly.
+**Scope.** Both modes coexist: app = CPU-only (done); worker = GPU when available, with a clean CPU fallback path.
 **Steps.**
-1. In `pyproject.toml`, keep base deps CPU-only; ensure the app build resolves torch from the CPU wheel index (`--index-url https://download.pytorch.org/whl/cpu`) — likely a pip config/constraint in the `builder` stage for the non-`[training]` install.
-2. Confirm `[training]` (worker) still pulls CUDA torch.
-3. Rebuild; measure both target images (`docker images`).
-**Files.** `Dockerfile` (builder/worker stages), `pyproject.toml`.
-**Acceptance.** `production` app image **< 2 GB** with **no** `nvidia-*`/CUDA packages (`docker run … pip list | grep -i nvidia` empty); worker remains GPU-capable. Record both measured sizes here.
+1. **Verify the worker image** (the build that failed here was out-of-disk, not a Dockerfile error): `docker compose build worker`, then `docker run --rm brain-worker python -c "import torch; print(torch.version.cuda, torch.cuda.is_available())"` — `torch.version.cuda` must be set; record the image size.
+2. **GPU passthrough via a compose profile.** Move the worker's `deploy.resources.reservations.devices` (nvidia, currently commented in `docker-compose.yml`) behind a `gpu` profile so `docker compose --profile gpu up` uses the GPU and the default `up` starts CPU-only without erroring on hosts with no card.
+3. **Confirm runtime GPU access:** with `--profile gpu` (and host NVIDIA driver + `nvidia-container-toolkit`), assert `torch.cuda.is_available()` is **True inside the running worker**, and that `bitsandbytes` imports its CUDA backend.
+4. **Honest CPU fallback:** `brain/core/gpu.py` already detects GPUs; ensure a LoRA job on a GPU-less host fails fast with a clear message (per PRODUCT_DEFINITION "LoRA requires a GPU") rather than silently running CPU torch forever.
+5. **Document host prerequisites** (NVIDIA driver, `nvidia-container-toolkit`) and the VRAM table (ties to §3.3/§4.5); note the optional `nvidia/cuda:*-runtime` base if the bundled wheel libs prove insufficient.
+**Files.** `docker-compose.yml` (gpu profile), `docker-compose.override.yml` (dev), `brain/worker/main.py` / `brain/core/gpu.py` (fail-fast guard), `Dockerfile` (only if a CUDA base is needed), `README.md` (host prereqs).
+**Acceptance.** On this CUDA host, `docker compose --profile gpu up worker` → `torch.cuda.is_available()` True and a tiny LoRA job trains on the GPU and clears the eval gate; on a CPU-only host, `docker compose up` starts cleanly and a LoRA job is rejected with a clear "GPU required" error. The app image stays CPU-only/no-CUDA.
 
 ### 4.3 Security hardening (P1)
 **Context.** Non-root is done (§4.0). Remaining: secrets and host network exposure.
