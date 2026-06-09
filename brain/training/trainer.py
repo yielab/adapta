@@ -83,6 +83,7 @@ class LoRATrainer:
             from transformers import (
                 AutoModelForCausalLM,
                 AutoTokenizer,
+                DataCollatorForLanguageModeling,
                 Trainer,
                 TrainingArguments,
             )
@@ -225,12 +226,19 @@ class LoRATrainer:
                             )
                         )
 
+            # Causal-LM loss needs `labels`. The preprocessor emits only input_ids/
+            # attention_mask, so without a collator the model returns logits with no
+            # loss ("The model did not return a loss"). DataCollatorForLanguageModeling
+            # (mlm=False) derives labels from input_ids and masks pad positions to -100.
+            data_collator = DataCollatorForLanguageModeling(tokenizer, mlm=False)
+
             # Create trainer
             trainer = Trainer(
                 model=model,
                 args=training_args,
                 train_dataset=tokenized_dataset["train"],
                 eval_dataset=tokenized_dataset.get("validation"),
+                data_collator=data_collator,
                 callbacks=[ProgressCallback(progress_callback, job_id)] if progress_callback else [],
             )
 
@@ -243,8 +251,11 @@ class LoRATrainer:
             trainer.model.save_pretrained(str(adapter_path))
             tokenizer.save_pretrained(str(adapter_path))
 
-            # Save adapter config
-            adapter_config = {
+            # Save our training metadata to a SEPARATE file. Do NOT touch
+            # adapter_config.json — PEFT's save_pretrained already wrote it with the
+            # `peft_type`/target_modules PeftModel.from_pretrained() needs; overwriting
+            # it with this dict stripped `peft_type` and broke adapter loading at eval.
+            training_metadata = {
                 "base_model": base_model,
                 "lora_r": config.lora_r,
                 "lora_alpha": config.lora_alpha,
@@ -254,8 +265,8 @@ class LoRATrainer:
                 "job_id": job_id,
             }
 
-            with open(adapter_path / "adapter_config.json", "w") as f:
-                json.dump(adapter_config, f, indent=2)
+            with open(adapter_path / "training_metadata.json", "w") as f:
+                json.dump(training_metadata, f, indent=2)
 
             logger.info(f"Training completed for job {job_id}")
             self.training_active = False

@@ -175,3 +175,56 @@ def test_valid_dataset_passes_schema(tmp_path):
     valid, error, count = validate_dataset(good)
     assert valid
     assert count == 1
+
+
+# ---------------------------------------------------------------------------
+# Eval score computation — the value the gate actually tests (regression: the
+# worker used getattr(result, "score", 0.0), which was ALWAYS 0.0 because
+# EvaluationResult had no `score` — so no adapter could ever pass the gate).
+# ---------------------------------------------------------------------------
+
+import math  # noqa: E402
+
+from brain.training.models import EvaluationMetrics, EvaluationResult, score_from_loss  # noqa: E402
+
+
+def test_score_from_loss_bounds_and_anchors():
+    # Perfect prediction (loss 0) → 1.0; loss grows → score decays toward 0.
+    assert score_from_loss(0.0) == 1.0
+    assert 0.0 <= score_from_loss(10.0) < 0.001
+    # 1/perplexity == exp(-loss).
+    assert score_from_loss(1.0) == pytest.approx(math.exp(-1.0))
+
+
+def test_score_from_loss_is_monotonic_decreasing():
+    losses = [0.0, 0.25, 0.5, 1.0, 2.0, 5.0]
+    scores = [score_from_loss(x) for x in losses]
+    assert scores == sorted(scores, reverse=True)
+
+
+def test_score_from_loss_clamps_nonfinite():
+    assert score_from_loss(float("inf")) == 0.0
+    assert score_from_loss(float("nan")) == 0.0
+
+
+def test_threshold_maps_to_perplexity_167():
+    # The 0.6 gate ⇔ perplexity ≤ ~1.67 ⇔ loss ≤ ~0.51.
+    boundary_loss = -math.log(0.6)
+    assert score_from_loss(boundary_loss) == pytest.approx(0.6)
+    assert score_from_loss(boundary_loss - 0.01) > 0.6  # better loss passes
+    assert score_from_loss(boundary_loss + 0.01) < 0.6  # worse loss is blocked
+
+
+def test_evaluation_result_carries_real_score_not_zero():
+    """The regression guard: a finished eval produces a real score the gate reads."""
+    avg_loss = 0.3
+    result = EvaluationResult(
+        eval_id="e1", job_id="j1", agent_id="a1", adapter_name="ad1",
+        adapter_path="/p", dataset_path="/d", num_examples=4,
+        metrics=EvaluationMetrics(loss=avg_loss, perplexity=math.exp(avg_loss)),
+        score=score_from_loss(avg_loss),
+    )
+    assert result.score > 0.0
+    assert result.score == pytest.approx(math.exp(-avg_loss))
+    # Round-trips through serialization (Redis/disk) without losing the score.
+    assert EvaluationResult.from_dict(result.to_dict()).score == pytest.approx(result.score)

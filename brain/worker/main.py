@@ -20,9 +20,20 @@ from brain.core.gpu import torch_cuda_status
 from brain.core.logging_config import configure_logging
 from brain.services.adapters import get_adapter_registry
 from brain.services.jobs import get_job_queue
+from brain.services.training import update_job_record
 
 configure_logging()
 logger = logging.getLogger("brain.worker")
+
+
+async def _set_status(queue, job_id: str, **fields) -> None:
+    """Write a job's status to BOTH Redis (live progress) and Postgres (the source
+    of truth the API + endpoint gate read). Persisting must never crash the job."""
+    await queue.update_status(job_id, **fields)
+    try:
+        await update_job_record(job_id, **fields)
+    except Exception:
+        logger.exception("Failed to persist job %s status to Postgres", job_id)
 
 
 async def _run_job(meta: dict) -> None:
@@ -40,7 +51,7 @@ async def _run_job(meta: dict) -> None:
         await queue.heartbeat()  # keep liveness fresh during long training steps
 
     logger.info("Starting job %s (project=%s, model=%s)", job_id, project_id, base_model)
-    await queue.update_status(job_id, status="running", progress=0.0)
+    await _set_status(queue, job_id, status="running", progress=0.0)
 
     # GPU guard: QLoRA requires torch to be usable on CUDA. Gate strictly on the
     # torch-level check (not the nvidia-smi heuristic) so a CPU-only host — or a
@@ -49,7 +60,7 @@ async def _run_job(meta: dict) -> None:
     if not cuda.usable:
         err = f"GPU required for LoRA training — {cuda.reason}"
         logger.error(err)
-        await queue.update_status(job_id, status="failed", error=err)
+        await _set_status(queue, job_id, status="failed", error=err)
         return
 
     adapter_id = str(uuid.uuid4())
@@ -91,6 +102,15 @@ async def _run_job(meta: dict) -> None:
             _dst.write(_json.dumps({"messages": messages}) + "\n")
     dataset_path = converted_path
 
+    # The trainer's ProgressCallback invokes this per log-step with keyword args
+    # (job_id, step, epoch, loss, learning_rate) and wraps the returned coroutine in
+    # a task — so it must be an async fn with that exact signature (a `lambda pct,msg`
+    # raised TypeError and killed training). Map epoch→a 10–90% band; eval/registration
+    # fill the last 10%.
+    async def _on_train_log(job_id=None, step=0, epoch=0.0, loss=0.0, learning_rate=0.0, **_):
+        frac = (epoch / config.num_epochs) if config.num_epochs else 0.0
+        await progress(min(0.9, 0.1 + 0.8 * frac), f"epoch {epoch:.2f} step {step} loss {loss:.4f}")
+
     trainer = LoRATrainer()
     success = await trainer.train(
         job_id=job_id,
@@ -99,11 +119,11 @@ async def _run_job(meta: dict) -> None:
         output_dir=output_dir,
         adapter_path=output_dir,
         config=config,
-        progress_callback=lambda pct, msg="": asyncio.ensure_future(progress(pct, msg)),
+        progress_callback=_on_train_log,
     )
 
     if not success:
-        await queue.update_status(job_id, status="failed", error="Training returned failure")
+        await _set_status(queue, job_id, status="failed", error="Training returned failure")
         return
 
     # Evaluate adapter
@@ -120,14 +140,15 @@ async def _run_job(meta: dict) -> None:
             dataset_path=dataset_path,
             base_model=base_model,
         )
-        eval_score = getattr(result, "score", 0.0)
+        eval_score = result.score
         eval_passed = eval_score >= settings.eval_score_threshold
         logger.info("Eval score: %.4f (threshold=%.4f)", eval_score, settings.eval_score_threshold)
     except Exception as exc:
         logger.warning("Evaluation failed: %s", exc)
 
     if not eval_passed:
-        await queue.update_status(
+        await _set_status(
+            queue,
             job_id,
             status="failed",
             eval_score=eval_score,
@@ -148,10 +169,11 @@ async def _run_job(meta: dict) -> None:
             base_model=base_model,
         )
     except Exception as exc:
-        await queue.update_status(job_id, status="failed", error=str(exc))
+        await _set_status(queue, job_id, status="failed", error=str(exc))
         return
 
-    await queue.update_status(
+    await _set_status(
+        queue,
         job_id,
         status="succeeded",
         progress=1.0,
@@ -222,7 +244,7 @@ async def worker_loop() -> None:
             break
         except Exception as exc:
             logger.exception("Unhandled error in job %s: %s", job_id, exc)
-            await queue.update_status(job_id, status="failed", error=str(exc))
+            await _set_status(queue, job_id, status="failed", error=str(exc))
         finally:
             in_flight["task"] = None
 

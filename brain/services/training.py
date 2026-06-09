@@ -69,6 +69,58 @@ def validate_dataset(path: Path) -> tuple[bool, Optional[str], int]:
         return False, str(exc), 0
 
 
+async def update_job_record(
+    job_id: str,
+    *,
+    status: Optional[str] = None,
+    progress: Optional[float] = None,
+    logs: Optional[str] = None,
+    adapter_path: Optional[str] = None,
+    eval_score: Optional[float] = None,
+    eval_passed: Optional[bool] = None,
+    error: Optional[str] = None,
+) -> None:
+    """Persist a training job's lifecycle to Postgres (the source of truth the API
+    and the endpoint-creation gate read).
+
+    The Redis ``JobQueue.update_status`` only updates live progress; without this the
+    Postgres row stayed at ``queued`` forever, so a finished job never looked terminal
+    to ``GET /jobs/{id}`` and a passed adapter could never bind an endpoint.
+    """
+    from datetime import datetime, timezone
+
+    from sqlalchemy import select
+
+    from brain.db.session import AsyncSessionLocal
+
+    async with AsyncSessionLocal() as db:
+        row = (
+            await db.execute(select(TrainingJob).where(TrainingJob.id == job_id))
+        ).scalar_one_or_none()
+        if row is None:
+            logger.error("update_job_record: job %s not found — cannot persist status", job_id)
+            return
+        if status is not None:
+            row.status = JobStatus(status)
+            if status == "running" and row.started_at is None:
+                row.started_at = datetime.now(timezone.utc)
+            if status in ("succeeded", "failed", "cancelled"):
+                row.finished_at = datetime.now(timezone.utc)
+        if progress is not None:
+            row.progress = progress
+        if logs is not None:
+            row.logs = logs
+        if adapter_path is not None:
+            row.adapter_path = adapter_path
+        if eval_score is not None:
+            row.eval_score = eval_score
+        if eval_passed is not None:
+            row.eval_passed = eval_passed
+        if error is not None:
+            row.error_message = error
+        await db.commit()
+
+
 async def enqueue_training_job(
     db: AsyncSession,
     project_id: str,

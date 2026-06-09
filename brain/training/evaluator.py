@@ -7,7 +7,7 @@ import uuid
 from pathlib import Path
 from typing import Optional
 
-from .models import EvaluationMetrics, EvaluationResult
+from .models import EvaluationMetrics, EvaluationResult, score_from_loss
 
 logger = logging.getLogger(__name__)
 
@@ -192,6 +192,8 @@ class ModelEvaluator:
             # Calculate metrics
             avg_loss = total_loss / num_examples
             perplexity = math.exp(avg_loss) if avg_loss < 100 else float('inf')
+            # Intrinsic LM score the eval gate tests (1/perplexity, clamped to [0,1]).
+            score = score_from_loss(avg_loss)
 
             metrics = EvaluationMetrics(
                 loss=avg_loss,
@@ -215,6 +217,7 @@ class ModelEvaluator:
                 dataset_path=str(dataset_path),
                 num_examples=num_examples,
                 metrics=metrics,
+                score=score,
                 sample_predictions=sample_predictions,
                 created_at=start_time,
                 duration_seconds=duration,
@@ -222,7 +225,7 @@ class ModelEvaluator:
 
             logger.info(
                 f"Evaluation {eval_id} completed: "
-                f"loss={avg_loss:.4f}, perplexity={perplexity:.2f}, "
+                f"loss={avg_loss:.4f}, perplexity={perplexity:.2f}, score={score:.4f}, "
                 f"duration={duration:.1f}s"
             )
 

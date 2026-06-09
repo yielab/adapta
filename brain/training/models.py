@@ -1,11 +1,26 @@
 """Training data models and schemas"""
 
 import json
+import math
 import time
 from dataclasses import asdict, dataclass, field
 from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+
+def score_from_loss(avg_loss: float) -> float:
+    """Map an average cross-entropy loss to an eval score in [0, 1] (higher = better).
+
+    ``score = 1 / perplexity = exp(-avg_loss)``. A perfect next-token predictor
+    (loss → 0) scores 1.0; the score decays as loss grows. This is the intrinsic
+    language-model signal the evaluator can compute without a task-specific metric,
+    and it is what the eval **gate** (``eval_score_threshold``, default 0.6) tests:
+    0.6 ⇔ perplexity ≤ ~1.67. Clamped to [0, 1] to be safe against tiny negatives.
+    """
+    if not math.isfinite(avg_loss):
+        return 0.0
+    return max(0.0, min(1.0, math.exp(-avg_loss)))
 
 
 class JobState(str, Enum):
@@ -329,6 +344,10 @@ class EvaluationResult:
     # Metrics
     metrics: EvaluationMetrics
 
+    # Overall eval score in [0, 1] (higher = better), derived from loss via
+    # score_from_loss(). This is the value the eval gate compares to the threshold.
+    score: float = 0.0
+
     # Sample predictions (for debugging/inspection)
     sample_predictions: List[Dict[str, str]] = field(default_factory=list)
 
@@ -347,6 +366,7 @@ class EvaluationResult:
             "dataset_path": self.dataset_path,
             "num_examples": self.num_examples,
             "metrics": self.metrics.to_dict(),
+            "score": self.score,
             "sample_predictions": self.sample_predictions,
             "created_at": self.created_at,
             "duration_seconds": self.duration_seconds,
