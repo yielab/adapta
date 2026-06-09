@@ -44,6 +44,13 @@ async def _run_job(meta: dict) -> None:
     base_model = payload["base_model"]
     training_config_raw = payload.get("training_config", {})
 
+    # Resolve the operator-facing catalog name to the HF repo id the trainer/evaluator
+    # load via from_pretrained() (A3.3). Serving (model_manager) resolves the GGUF from
+    # the SAME catalog entry, so train and serve can never reference different bases.
+    from brain.core.model_catalog import resolve_hf_id
+
+    hf_base_model = resolve_hf_id(base_model)
+
     queue = get_job_queue()
 
     async def progress(pct: float, log_line: str = "") -> None:
@@ -84,10 +91,17 @@ async def _run_job(meta: dict) -> None:
     )
 
     # The trainer expects {"messages": [...]} format; our schema uses {"prompt":..., "response":...}.
-    # Convert to a temporary messages-format file the trainer can consume.
+    # Convert to messages format, then SPLIT into a train file and a HELD-OUT eval file.
+    # The eval gate must measure generalization, so the model is scored on rows it never
+    # trained on (A3.2): we hold out the last ~20% of rows (see models.split_holdout) and
+    # train only on the remainder. This is the single place the split is decided so the
+    # train/eval files can never overlap.
     import json as _json
-    converted_path = output_dir / "dataset_converted.jsonl"
-    with dataset_path.open() as _src, converted_path.open("w") as _dst:
+
+    from brain.training.models import split_holdout
+
+    rows = []
+    with dataset_path.open() as _src:
         for line in _src:
             line = line.strip()
             if not line:
@@ -99,8 +113,30 @@ async def _run_job(meta: dict) -> None:
             ]
             if obj.get("system"):
                 messages.insert(0, {"role": "system", "content": obj["system"]})
-            _dst.write(_json.dumps({"messages": messages}) + "\n")
-    dataset_path = converted_path
+            rows.append({"messages": messages})
+
+    n_holdout = split_holdout(len(rows))
+    if n_holdout > 0:
+        train_rows = rows[:-n_holdout]
+        eval_rows = rows[-n_holdout:]
+    else:
+        # Degenerate (<=1 row) dataset: nothing to hold out. Train and eval on what we
+        # have; the absolute eval-score floor still applies.
+        train_rows = rows
+        eval_rows = rows
+
+    train_path = output_dir / "dataset_train.jsonl"
+    eval_path = output_dir / "dataset_eval.jsonl"
+    with train_path.open("w") as _dst:
+        for r in train_rows:
+            _dst.write(_json.dumps(r) + "\n")
+    with eval_path.open("w") as _dst:
+        for r in eval_rows:
+            _dst.write(_json.dumps(r) + "\n")
+    logger.info(
+        "Dataset split: %d train rows, %d held-out eval rows", len(train_rows), len(eval_rows)
+    )
+    dataset_path = train_path
 
     # The trainer's ProgressCallback invokes this per log-step with keyword args
     # (job_id, step, epoch, loss, learning_rate) and wraps the returned coroutine in
@@ -114,7 +150,7 @@ async def _run_job(meta: dict) -> None:
     trainer = LoRATrainer()
     success = await trainer.train(
         job_id=job_id,
-        base_model=base_model,
+        base_model=hf_base_model,
         dataset_path=dataset_path,
         output_dir=output_dir,
         adapter_path=output_dir,
@@ -132,17 +168,27 @@ async def _run_job(meta: dict) -> None:
     eval_passed = False
     try:
         from brain.training.evaluator import evaluator
+        # Score on the HELD-OUT split (eval_path), never the rows we trained on.
         result = await evaluator.evaluate_adapter(
             job_id=job_id,
             agent_id=project_id,
             adapter_name=adapter_id,
             adapter_path=output_dir,
-            dataset_path=dataset_path,
-            base_model=base_model,
+            dataset_path=eval_path,
+            base_model=hf_base_model,
         )
         eval_score = result.score
         eval_passed = eval_score >= settings.eval_score_threshold
-        logger.info("Eval score: %.4f (threshold=%.4f)", eval_score, settings.eval_score_threshold)
+        if result.base_score is not None:
+            logger.info(
+                "Eval score: %.4f (threshold=%.4f) | base=%.4f delta=%+.4f (held-out, response-only)",
+                eval_score, settings.eval_score_threshold, result.base_score, result.score_delta,
+            )
+        else:
+            logger.info(
+                "Eval score: %.4f (threshold=%.4f) (held-out, response-only)",
+                eval_score, settings.eval_score_threshold,
+            )
     except Exception as exc:
         logger.warning("Evaluation failed: %s", exc)
 
@@ -157,6 +203,28 @@ async def _run_job(meta: dict) -> None:
         )
         return
 
+    # Convert the PEFT adapter to a GGUF LoRA so the llama-cpp serving runtime can
+    # actually apply it (A3.1). This is the step that makes train->eval->serve real:
+    # without it the endpoint silently serves the base model. Done here (post-eval,
+    # in the worker) because the converter toolchain lives only in the worker image.
+    await progress(0.97, "Converting adapter for serving (GGUF LoRA)...")
+    adapter_gguf_path = None
+    try:
+        from brain.core.adapter_conversion import convert_peft_to_gguf
+        gguf_path = await convert_peft_to_gguf(output_dir, base_model_id=hf_base_model)
+        adapter_gguf_path = str(gguf_path)
+    except Exception as exc:
+        # A converted, servable adapter is the whole point of a fine-tune endpoint.
+        # If conversion fails, do NOT register/succeed — surface it so the endpoint
+        # gate keeps serving blocked rather than silently falling back to base.
+        logger.exception("Adapter GGUF conversion failed for job %s", job_id)
+        await _set_status(
+            queue, job_id, status="failed",
+            eval_score=eval_score, eval_passed=eval_passed,
+            error=f"Adapter conversion for serving failed: {exc}",
+        )
+        return
+
     # Register adapter
     try:
         registry = get_adapter_registry()
@@ -167,17 +235,22 @@ async def _run_job(meta: dict) -> None:
             adapter_path=str(output_dir),
             eval_score=eval_score,
             base_model=base_model,
+            adapter_gguf_path=adapter_gguf_path,
         )
     except Exception as exc:
         await _set_status(queue, job_id, status="failed", error=str(exc))
         return
 
+    # Persist the SERVABLE artifact (the GGUF LoRA) as the job's adapter_path: the
+    # endpoint copies this onto Endpoint.adapter_path, and serving loads it directly
+    # via llama-cpp's lora_path. The PEFT directory remains in the registry under
+    # `path` for re-conversion / audit.
     await _set_status(
         queue,
         job_id,
         status="succeeded",
         progress=1.0,
-        adapter_path=str(output_dir),
+        adapter_path=adapter_gguf_path,
         eval_score=eval_score,
         eval_passed=True,
     )

@@ -185,7 +185,12 @@ def test_valid_dataset_passes_schema(tmp_path):
 
 import math  # noqa: E402
 
-from brain.training.models import EvaluationMetrics, EvaluationResult, score_from_loss  # noqa: E402
+from brain.training.models import (  # noqa: E402
+    EvaluationMetrics,
+    EvaluationResult,
+    score_from_loss,
+    split_holdout,
+)
 
 
 def test_score_from_loss_bounds_and_anchors():
@@ -228,3 +233,152 @@ def test_evaluation_result_carries_real_score_not_zero():
     assert result.score == pytest.approx(math.exp(-avg_loss))
     # Round-trips through serialization (Redis/disk) without losing the score.
     assert EvaluationResult.from_dict(result.to_dict()).score == pytest.approx(result.score)
+
+
+# ---------------------------------------------------------------------------
+# A3.2 — generalization, not memorization:
+#   (1) held-out split is non-overlapping with training rows,
+#   (2) response-only (prompt-masked) loss,
+#   (3) base-vs-adapter delta is computed + persisted.
+# ---------------------------------------------------------------------------
+
+
+class TestHeldOutSplit:
+    """The eval gate must score rows the model did NOT train on (split_holdout)."""
+
+    def test_split_holds_out_last_fraction(self):
+        # 10 rows, default 20% → 2 held out.
+        assert split_holdout(10) == 2
+        assert split_holdout(100) == 20
+
+    def test_split_always_leaves_a_training_row(self):
+        # Small datasets still get a non-empty train set and a non-empty eval set.
+        assert split_holdout(2) == 1  # 1 train, 1 eval
+        for n in range(2, 50):
+            k = split_holdout(n)
+            assert 1 <= k <= n - 1
+            assert n - k >= 1  # at least one training row remains
+
+    def test_split_holds_out_at_least_one(self):
+        # 3 rows × 20% rounds to 1 → still hold out one (never zero) when n>=2.
+        assert split_holdout(3) >= 1
+        assert split_holdout(4) >= 1
+
+    def test_single_row_dataset_holds_out_nothing(self):
+        # Degenerate: nothing to hold out; caller falls back to the single row.
+        assert split_holdout(1) == 0
+        assert split_holdout(0) == 0
+
+    def test_train_and_eval_slices_do_not_overlap(self):
+        rows = list(range(20))
+        k = split_holdout(len(rows))
+        train, ev = rows[:-k], rows[-k:]
+        assert set(train).isdisjoint(set(ev))
+        assert train and ev
+        assert train + ev == rows  # full coverage, no duplication
+
+
+class TestResponseOnlyMasking:
+    """Loss must be computed on response tokens only — prompt tokens masked to -100."""
+
+    class _FakeTokenizer:
+        """A whitespace tokenizer with stable integer ids; enough to assert masking."""
+
+        def __init__(self):
+            self._vocab = {}
+
+        def _ids(self, text):
+            out = []
+            for tok in text.split():
+                out.append(self._vocab.setdefault(tok, len(self._vocab) + 1))
+            return out
+
+        def __call__(self, text, return_tensors=None, truncation=False,
+                     max_length=None, add_special_tokens=True):
+            import torch
+            ids = self._ids(text)
+            if return_tensors == "pt":
+                return {"input_ids": torch.tensor([ids])}
+            return {"input_ids": ids}
+
+    def test_render_prompt_ends_with_assistant_cue_without_answer(self):
+        from brain.training.evaluator import ModelEvaluator
+        messages = [
+            {"role": "system", "content": "be terse"},
+            {"role": "user", "content": "hi"},
+            {"role": "assistant", "content": "hello there"},
+        ]
+        prompt, target = ModelEvaluator._render_prompt_and_target(messages)
+        assert prompt.endswith("Assistant: ")
+        assert "hello there" not in prompt  # the answer is NOT in the prompt
+        assert target == "hello there"
+
+    def test_prompt_tokens_are_masked_response_tokens_are_kept(self):
+        import torch
+
+        from brain.training.evaluator import ModelEvaluator
+        ev = ModelEvaluator()
+        tok = self._FakeTokenizer()
+        messages = [
+            {"role": "user", "content": "what is two plus two"},
+            {"role": "assistant", "content": "four"},
+        ]
+        prompt, target = ev._render_prompt_and_target(messages)
+        prompt_len = len(tok(prompt, add_special_tokens=False)["input_ids"])
+
+        row = ev._tokenize_with_response_mask(tok, messages)
+        labels = row["labels"][0]
+        input_ids = row["input_ids"][0]
+
+        assert input_ids.shape == labels.shape
+        # Every prompt-position label is masked (-100); response positions are kept.
+        assert torch.all(labels[:prompt_len] == -100)
+        assert int((labels != -100).sum().item()) > 0  # some response tokens scored
+        # Unmasked labels equal the underlying input ids (the response tokens).
+        kept = labels != -100
+        assert torch.all(labels[kept] == input_ids[kept])
+
+
+class TestBaseVsAdapterDelta:
+    """The result must carry the base-vs-adapter comparison (relative signal)."""
+
+    def test_result_persists_base_score_and_delta(self):
+        adapter_loss, base_loss = 0.3, 0.9
+        score = score_from_loss(adapter_loss)
+        base_score = score_from_loss(base_loss)
+        result = EvaluationResult(
+            eval_id="e2", job_id="j2", agent_id="a2", adapter_name="ad2",
+            adapter_path="/p", dataset_path="/eval", num_examples=4,
+            metrics=EvaluationMetrics(
+                loss=adapter_loss, perplexity=math.exp(adapter_loss),
+                base_loss=base_loss, base_perplexity=math.exp(base_loss),
+                loss_improvement=base_loss - adapter_loss,
+            ),
+            score=score, base_score=base_score, score_delta=score - base_score,
+            held_out=True,
+        )
+        # Fine-tune helped (lower loss → higher score → positive delta).
+        assert result.score > result.base_score
+        assert result.score_delta == pytest.approx(score - base_score)
+        assert result.score_delta > 0
+        assert result.metrics.loss_improvement == pytest.approx(base_loss - adapter_loss)
+
+        # Round-trips through serialization without losing the comparison.
+        rt = EvaluationResult.from_dict(result.to_dict())
+        assert rt.base_score == pytest.approx(base_score)
+        assert rt.score_delta == pytest.approx(result.score_delta)
+        assert rt.held_out is True
+        assert rt.metrics.base_loss == pytest.approx(base_loss)
+
+    def test_gate_uses_absolute_score_not_delta(self, registry):
+        # Even if the fine-tune improved over a terrible base, the ABSOLUTE floor holds:
+        # a 0.5 adapter score that beats a 0.2 base still fails the 0.6 gate.
+        adapter_loss = -math.log(0.5)  # → score 0.5
+        score = score_from_loss(adapter_loss)
+        assert score == pytest.approx(0.5)
+        with pytest.raises(EvalGateFailed):
+            registry.register(
+                adapter_id="d1", project_id="p1", job_id="jd1",
+                adapter_path="/data/adapters/d1", eval_score=score,
+                base_model="qwen2.5-3b",
+            )

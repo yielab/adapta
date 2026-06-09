@@ -45,10 +45,14 @@ class AdapterRegistry:
         adapter_path: str,
         eval_score: float,
         base_model: str,
+        adapter_gguf_path: Optional[str] = None,
     ) -> dict:
         """
         Register an adapter after it passes the eval gate.
         Raises EvalGateFailed if score < threshold.
+
+        ``adapter_path`` is the PEFT directory (safetensors); ``adapter_gguf_path``
+        is the converted GGUF LoRA the llama-cpp serving runtime loads (A3.1).
         """
         threshold = settings.eval_score_threshold
         if eval_score < threshold:
@@ -65,6 +69,7 @@ class AdapterRegistry:
             "project_id": project_id,
             "job_id": job_id,
             "path": adapter_path,
+            "adapter_gguf_path": adapter_gguf_path,
             "eval_score": eval_score,
             "base_model": base_model,
         }

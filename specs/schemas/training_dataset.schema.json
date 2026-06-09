@@ -3,6 +3,7 @@
   "$id": "https://brain-from-cero/schemas/training_dataset",
   "title": "Training Dataset — Instruction Pair",
   "description": "JSONL format for fine-tuning datasets. Each line is one JSON object matching this schema.",
+  "$comment": "EVAL-GATE SEMANTICS (Pillar 3 SSOT — see brain/training/evaluator.py, models.py). The fine-tune is gated, before it can serve, on its quality on this dataset, but the gate is built to measure GENERALIZATION, not memorization: (1) HELD-OUT SPLIT — the worker holds out the last ~20% of rows (>=1 row; brain.training.models.split_holdout) and trains only on the rest; the gate scores ONLY the held-out rows, never rows the model trained on. (2) RESPONSE-ONLY LOSS — the score is the cross-entropy on the `response` tokens only; the `prompt`/`system` tokens are masked out (label -100), so it reflects the model's ability to produce the target answer, not to model the operator's prompt text. (3) score = exp(-avg_response_loss) = 1/perplexity, clamped to [0,1]; the gate is an ABSOLUTE floor `score >= eval_score_threshold` (default 0.6, ~perplexity 1.67) → otherwise EvalGateFailed (HTTP 422), adapter not registered, endpoint cannot bind it. (4) RELATIVE SIGNAL — the base (un-adapted) model is also scored on the SAME held-out split and the adapter-minus-base delta is reported (base_score/score_delta) so an operator can see whether the fine-tune actually helped; the gate itself still uses the absolute adapter score.",
   "type": "object",
   "required": ["prompt", "response"],
   "additionalProperties": false,

@@ -67,7 +67,7 @@ async def test_project_lifecycle(client, admin):
     created = await client.post(
         "/v1/projects",
         headers=h,
-        json={"name": "Docs RAG", "type": "rag", "base_model": "qwen2.5-3b", "team_id": team_id},
+        json={"name": "Docs RAG", "type": "rag", "base_model": "qwen2.5-3b-instruct", "team_id": team_id},
     )
     assert created.status_code == 201, created.text
     pid = created.json()["id"]
@@ -107,6 +107,22 @@ async def test_create_project_validation_error_is_422_envelope(client, admin):
     assert r.json()["error"]["code"] == "invalid_request"
 
 
+async def test_create_project_unknown_base_model_rejected(client, admin):
+    # A base_model not in the catalog (A3.3) is rejected with a typed InvalidRequest
+    # that lists the allowed values, instead of a project that can't train or serve.
+    team_id = admin["team_id"]
+    r = await client.post(
+        "/v1/projects",
+        headers=admin["headers"],
+        json={"name": "Bad", "type": "rag", "base_model": "not-a-real-model", "team_id": team_id},
+    )
+    assert r.status_code == 400
+    err = r.json()["error"]
+    assert err["code"] == "invalid_request"
+    # The allowed list must be surfaced so the operator (and console dropdown) can recover.
+    assert "qwen2.5-3b-instruct" in err["message"]
+
+
 # --- Datasets (upload + background validation, finetune project) -----------
 
 async def _upload_dataset(client, headers, project_id, lines):
@@ -135,7 +151,7 @@ async def test_dataset_upload_validates_to_terminal_state(client, admin):
     proj = await client.post(
         "/v1/projects",
         headers=h,
-        json={"name": "FT", "type": "finetune", "base_model": "qwen2.5-3b", "team_id": team_id},
+        json={"name": "FT", "type": "finetune", "base_model": "qwen2.5-3b-instruct", "team_id": team_id},
     )
     pid = proj.json()["id"]
 
@@ -168,7 +184,7 @@ async def test_dataset_invalid_reaches_invalid_state(client, admin):
     proj = await client.post(
         "/v1/projects",
         headers=h,
-        json={"name": "FT2", "type": "finetune", "base_model": "qwen2.5-3b", "team_id": team_id},
+        json={"name": "FT2", "type": "finetune", "base_model": "qwen2.5-3b-instruct", "team_id": team_id},
     )
     pid = proj.json()["id"]
 
@@ -191,7 +207,7 @@ async def test_create_then_immediate_get_no_retry(client, admin):
         created = await client.post(
             "/v1/projects",
             headers=h,
-            json={"name": f"rw{i}", "type": "rag", "base_model": "x", "team_id": team_id},
+            json={"name": f"rw{i}", "type": "rag", "base_model": "qwen2.5-3b-instruct", "team_id": team_id},
         )
         assert created.status_code == 201, created.text
         pid = created.json()["id"]

@@ -5,11 +5,12 @@ from typing import Optional
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from brain.db.models import Endpoint, EndpointStatus, JobStatus, Project, ProjectType, TrainingJob
 from brain.db.session import get_db
-from brain.domain.errors import InvalidRequest, NotFound
+from brain.domain.errors import Conflict, InvalidRequest, NotFound
 from brain.services.auth import get_current_user, require_team_member, require_team_writer
 
 router = APIRouter(prefix="/projects/{project_id}/endpoint", tags=["endpoints"])
@@ -89,8 +90,14 @@ async def create_endpoint(
             )
         adapter_path = job.adapter_path
 
+    # Slugs are globally unique (they're the OpenAI `model` value). Two projects
+    # named "Support" in different teams would collide on the bare name, so append
+    # a short project-id suffix to keep them distinct. The IntegrityError catch
+    # below is the defensive net for the (now structurally impossible) race.
     import re
-    slug = re.sub(r"[^a-z0-9-]", "-", project.name.lower())[:64]
+    base = re.sub(r"[^a-z0-9-]", "-", project.name.lower()).strip("-")[:55] or "endpoint"
+    suffix = project.id.replace("-", "")[:8]
+    slug = f"{base}-{suffix}"
 
     endpoint = Endpoint(
         project_id=project_id,
@@ -100,7 +107,14 @@ async def create_endpoint(
         adapter_path=adapter_path,
     )
     db.add(endpoint)
-    await db.commit()  # durable before response so an immediate GET sees it (§4.4)
+    try:
+        await db.commit()  # durable before response so an immediate GET sees it (§4.4)
+    except IntegrityError as exc:
+        await db.rollback()
+        raise Conflict(
+            message="Endpoint slug already in use; could not create endpoint.",
+            internal_detail=f"IntegrityError creating endpoint for project {project_id}: {exc}",
+        ) from exc
     return _ep_resp(endpoint, project.type.value)
 
 

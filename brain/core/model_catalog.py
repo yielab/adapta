@@ -1,232 +1,121 @@
+"""Single base-model catalog — the SSOT for the two meanings of ``base_model``.
+
+A ``Project.base_model`` has to satisfy two very different runtimes:
+
+* **training / eval** load it with ``AutoModelForCausalLM.from_pretrained(...)`` —
+  they need a **HuggingFace repo id** (e.g. ``Qwen/Qwen2.5-3B-Instruct``).
+* **serving** loads a quantized **GGUF** through llama-cpp — keyed by a GGUF
+  catalog name + an on-disk file
+  (e.g. ``qwen2.5-3b-instruct`` → ``<models_dir>/qwen2.5-3b/qwen2.5-3b-instruct-q4_k_m.gguf``).
+
+Before A3.3 this was one free-text string validated against neither, so an
+operator could pick a value that trains but won't serve (or vice-versa),
+discovered only as a runtime failure. This module unifies the two: a single
+entry, keyed by the operator-facing name, declares **both** the HF id and the
+GGUF location, so a project validated at creation is guaranteed to address both
+runtimes. The trainer/evaluator resolve the HF id from here; ``model_manager``
+resolves the GGUF from the same entry. Keep in sync with OPERATIONS §6.3.
 """
-Model catalog with available models for download.
-"""
+
+from __future__ import annotations
+
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional
 
-
-@dataclass
-class ModelInfo:
-    """Information about an available model."""
-    id: str
-    name: str
-    description: str
-    type: str  # chat, code, vision, reasoning
-    size_gb: float
-    quantization: str  # Q4_K_M, Q5_K_M, Q8_0, F16
-    repo_id: str  # HuggingFace repo ID
-    filename: str
-    download_url: str
-    local_dir: str  # Where to save the model
-    recommended: bool = False
-    required: bool = False
+from brain.config import settings
+from brain.core.model_manager import ModelType
 
 
-# Model catalog - all available models
-MODEL_CATALOG: List[ModelInfo] = [
-    # ===== CHAT MODELS =====
-    ModelInfo(
-        id="qwen2.5-3b-instruct-q4",
-        name="Qwen2.5-3B-Instruct (Q4_K_M)",
-        description="General chat and reasoning model - Recommended quality/size balance",
-        type="chat",
-        size_gb=2.3,
-        quantization="Q4_K_M",
-        repo_id="Qwen/Qwen2.5-3B-Instruct-GGUF",
-        filename="qwen2.5-3b-instruct-q4_k_m.gguf",
-        download_url="https://huggingface.co/Qwen/Qwen2.5-3B-Instruct-GGUF/resolve/main/qwen2.5-3b-instruct-q4_k_m.gguf",
-        local_dir="qwen2.5-3b-instruct",
-        recommended=True,
-        required=True,
-    ),
-    ModelInfo(
-        id="qwen2.5-3b-instruct-q5",
-        name="Qwen2.5-3B-Instruct (Q5_K_M)",
-        description="General chat and reasoning model - Higher quality",
-        type="chat",
-        size_gb=2.7,
-        quantization="Q5_K_M",
-        repo_id="Qwen/Qwen2.5-3B-Instruct-GGUF",
-        filename="qwen2.5-3b-instruct-q5_k_m.gguf",
-        download_url="https://huggingface.co/Qwen/Qwen2.5-3B-Instruct-GGUF/resolve/main/qwen2.5-3b-instruct-q5_k_m.gguf",
-        local_dir="qwen2.5-3b-instruct",
-        recommended=False,
-        required=False,
-    ),
-    ModelInfo(
-        id="qwen2.5-3b-instruct-q8",
-        name="Qwen2.5-3B-Instruct (Q8_0)",
-        description="General chat and reasoning model - Best quality",
-        type="chat",
-        size_gb=3.4,
-        quantization="Q8_0",
-        repo_id="Qwen/Qwen2.5-3B-Instruct-GGUF",
-        filename="qwen2.5-3b-instruct-q8_0.gguf",
-        download_url="https://huggingface.co/Qwen/Qwen2.5-3B-Instruct-GGUF/resolve/main/qwen2.5-3b-instruct-q8_0.gguf",
-        local_dir="qwen2.5-3b-instruct",
-        recommended=False,
-        required=False,
-    ),
+@dataclass(frozen=True)
+class CatalogEntry:
+    """One base model, declared once for both training and serving."""
 
-    # ===== CODE MODELS =====
-    ModelInfo(
-        id="qwen2.5-coder-3b-q4",
-        name="Qwen2.5-Coder-3B (Q4_K_M)",
-        description="Code understanding and generation - Recommended quality/size balance",
-        type="code",
-        size_gb=2.3,
-        quantization="Q4_K_M",
-        repo_id="Qwen/Qwen2.5-Coder-3B-Instruct-GGUF",
-        filename="qwen2.5-coder-3b-instruct-q4_k_m.gguf",
-        download_url="https://huggingface.co/Qwen/Qwen2.5-Coder-3B-Instruct-GGUF/resolve/main/qwen2.5-coder-3b-instruct-q4_k_m.gguf",
-        local_dir="qwen2.5-coder-3b",
-        recommended=True,
-        required=False,
-    ),
-    ModelInfo(
-        id="qwen2.5-coder-3b-q5",
-        name="Qwen2.5-Coder-3B (Q5_K_M)",
-        description="Code understanding and generation - Higher quality",
-        type="code",
-        size_gb=2.7,
-        quantization="Q5_K_M",
-        repo_id="Qwen/Qwen2.5-Coder-3B-Instruct-GGUF",
-        filename="qwen2.5-coder-3b-instruct-q5_k_m.gguf",
-        download_url="https://huggingface.co/Qwen/Qwen2.5-Coder-3B-Instruct-GGUF/resolve/main/qwen2.5-coder-3b-instruct-q5_k_m.gguf",
-        local_dir="qwen2.5-coder-3b",
-        recommended=False,
-        required=False,
-    ),
-    ModelInfo(
-        id="qwen2.5-coder-3b-q8",
-        name="Qwen2.5-Coder-3B (Q8_0)",
-        description="Code understanding and generation - Best quality",
-        type="code",
-        size_gb=3.4,
-        quantization="Q8_0",
-        repo_id="Qwen/Qwen2.5-Coder-3B-Instruct-GGUF",
-        filename="qwen2.5-coder-3b-instruct-q8_0.gguf",
-        download_url="https://huggingface.co/Qwen/Qwen2.5-Coder-3B-Instruct-GGUF/resolve/main/qwen2.5-coder-3b-instruct-q8_0.gguf",
-        local_dir="qwen2.5-coder-3b",
-        recommended=False,
-        required=False,
-    ),
+    name: str  # operator-facing catalog name (the value stored on a Project)
+    hf_repo_id: str  # HuggingFace repo id for training/eval from_pretrained()
+    gguf_subdir: str  # subdir under settings.models_dir holding the GGUF
+    gguf_filename: str  # preferred GGUF filename within that subdir
+    model_type: ModelType
+    notes: str = ""  # VRAM / quality tradeoff, surfaced to the operator console
 
-    # ===== VISION MODELS =====
-    ModelInfo(
-        id="moondream2-text",
-        name="Moondream2 (Vision Model)",
-        description="Image analysis and understanding",
-        type="vision",
-        size_gb=1.6,
-        quantization="F16",
-        repo_id="vikhyatk/moondream2",
-        filename="moondream2-text-model-f16.gguf",
-        download_url="https://huggingface.co/vikhyatk/moondream2/resolve/main/moondream2-text-model-f16.gguf",
-        local_dir="moondream2",
-        recommended=False,
-        required=False,
-    ),
+    def gguf_path(self) -> Path:
+        return settings.models_dir / self.gguf_subdir / self.gguf_filename
 
-    # ===== REASONING MODELS =====
-    ModelInfo(
-        id="qwen2.5-7b-instruct-q4",
-        name="Qwen2.5-7B-Instruct (Q4_K_M)",
-        description="Large model for complex reasoning - Recommended quality/size balance",
-        type="reasoning",
-        size_gb=4.8,
-        quantization="Q4_K_M",
-        repo_id="Qwen/Qwen2.5-7B-Instruct-GGUF",
-        filename="qwen2.5-7b-instruct-q4_k_m.gguf",
-        download_url="https://huggingface.co/Qwen/Qwen2.5-7B-Instruct-GGUF/resolve/main/qwen2.5-7b-instruct-q4_k_m.gguf",
-        local_dir="qwen2.5-7b-instruct",
-        recommended=False,
-        required=False,
+
+# The catalog. Keyed by the operator-facing name; this is the value an operator
+# selects and the value stored on a Project. The GGUF (subdir, filename) MUST match
+# the paths the serving model_manager looks for.
+_ENTRIES: List[CatalogEntry] = [
+    CatalogEntry(
+        name="qwen2.5-0.5b-instruct",
+        hf_repo_id="Qwen/Qwen2.5-0.5B-Instruct",
+        gguf_subdir="qwen2.5-0.5b",
+        gguf_filename="qwen2.5-0.5b-instruct-q4_k_m.gguf",
+        model_type=ModelType.CHAT,
+        notes="Smallest — low-resource hosts / fine-tune e2e base (~3 GB train).",
     ),
-    ModelInfo(
-        id="qwen2.5-7b-instruct-q5",
-        name="Qwen2.5-7B-Instruct (Q5_K_M)",
-        description="Large model for complex reasoning - Higher quality",
-        type="reasoning",
-        size_gb=5.7,
-        quantization="Q5_K_M",
-        repo_id="Qwen/Qwen2.5-7B-Instruct-GGUF",
-        filename="qwen2.5-7b-instruct-q5_k_m.gguf",
-        download_url="https://huggingface.co/Qwen/Qwen2.5-7B-Instruct-GGUF/resolve/main/qwen2.5-7b-instruct-q5_k_m.gguf",
-        local_dir="qwen2.5-7b-instruct",
-        recommended=False,
-        required=False,
+    CatalogEntry(
+        name="qwen2.5-3b-instruct",
+        hf_repo_id="Qwen/Qwen2.5-3B-Instruct",
+        gguf_subdir="qwen2.5-3b",
+        gguf_filename="qwen2.5-3b-instruct-q4_k_m.gguf",
+        model_type=ModelType.CHAT,
+        notes="Default — RAG + fine-tune (~8-10 GB train).",
+    ),
+    CatalogEntry(
+        name="qwen2.5-coder-3b",
+        hf_repo_id="Qwen/Qwen2.5-Coder-3B-Instruct",
+        gguf_subdir="qwen2.5-coder-3b",
+        gguf_filename="qwen2.5-coder-3b-instruct-q4_k_m.gguf",
+        model_type=ModelType.CODE,
+        notes="Code understanding/generation (~8-10 GB train).",
+    ),
+    CatalogEntry(
+        name="qwen2.5-7b-instruct",
+        hf_repo_id="Qwen/Qwen2.5-7B-Instruct",
+        gguf_subdir="qwen2.5-7b",
+        gguf_filename="qwen2.5-7b-instruct-q4_k_m.gguf",
+        model_type=ModelType.REASONING,
+        notes="Higher quality, needs a bigger GPU (~12-16 GB train).",
     ),
 ]
 
+# operator-facing name -> entry
+_BY_NAME: Dict[str, CatalogEntry] = {e.name: e for e in _ENTRIES}
+# HF repo id -> entry, so a base_model stored as a HF id (a fine-tune project that
+# recorded the trainer-facing id, or the A3.1 alias bridge) still resolves to one entry.
+_BY_HF_ID: Dict[str, CatalogEntry] = {e.hf_repo_id: e for e in _ENTRIES}
 
-class ModelCatalog:
-    """Manage available models and their installation status."""
 
-    def __init__(self, models_dir: Path):
-        self.models_dir = models_dir
-        self.catalog = {model.id: model for model in MODEL_CATALOG}
+def all_entries() -> List[CatalogEntry]:
+    """Every catalog entry (for the console base-model dropdown / docs)."""
+    return list(_ENTRIES)
 
-    def get_all_models(self) -> List[Dict]:
-        """Get all available models with installation status."""
-        result = []
-        for model in MODEL_CATALOG:
-            # Search for the model file in multiple locations
-            model_path = None
-            is_installed = False
 
-            # Method 1: Check expected location
-            expected_path = self.models_dir / model.local_dir / model.filename
-            if expected_path.exists():
-                model_path = expected_path
-                is_installed = True
-            else:
-                # Method 2: Search all subdirectories for the filename
-                for found_file in self.models_dir.rglob(model.filename):
-                    if found_file.is_file():
-                        model_path = found_file
-                        is_installed = True
-                        break
+def allowed_names() -> List[str]:
+    """The operator-facing names a ``base_model`` may take, in catalog order."""
+    return [e.name for e in _ENTRIES]
 
-            result.append({
-                "id": model.id,
-                "name": model.name,
-                "description": model.description,
-                "type": model.type,
-                "size_gb": model.size_gb,
-                "quantization": model.quantization,
-                "recommended": model.recommended,
-                "required": model.required,
-                "installed": is_installed,
-                "install_path": str(model_path) if is_installed else None,
-                "download_url": model.download_url,
-                "repo_id": model.repo_id,
-                "filename": model.filename,
-            })
 
-        return result
+def resolve(base_model: str) -> Optional[CatalogEntry]:
+    """Resolve a stored ``base_model`` (operator name OR HF repo id) to its entry,
+    or ``None`` if it isn't in the catalog."""
+    return _BY_NAME.get(base_model) or _BY_HF_ID.get(base_model)
 
-    def get_model(self, model_id: str) -> Optional[ModelInfo]:
-        """Get model info by ID."""
-        return self.catalog.get(model_id)
 
-    def get_installed_models(self) -> List[Dict]:
-        """Get only installed models."""
-        return [m for m in self.get_all_models() if m["installed"]]
+def is_valid(base_model: str) -> bool:
+    """Whether ``base_model`` names a catalog entry (by operator name or HF id)."""
+    return resolve(base_model) is not None
 
-    def get_available_models(self) -> List[Dict]:
-        """Get models available for download."""
-        return [m for m in self.get_all_models() if not m["installed"]]
 
-    def get_by_type(self, model_type: str) -> List[Dict]:
-        """Get models by type (chat, code, vision, reasoning)."""
-        return [m for m in self.get_all_models() if m["type"] == model_type]
+def resolve_hf_id(base_model: str) -> str:
+    """The HuggingFace repo id training/eval should load. Unknown values pass
+    through unchanged so a direct HF id (or local path) still works in dev."""
+    entry = resolve(base_model)
+    return entry.hf_repo_id if entry else base_model
 
-    def get_recommended_models(self) -> List[Dict]:
-        """Get recommended models."""
-        return [m for m in self.get_all_models() if m["recommended"]]
 
-    def get_required_models(self) -> List[Dict]:
-        """Get required models."""
-        return [m for m in self.get_all_models() if m["required"]]
+def resolve_serving_name(base_model: str) -> str:
+    """The GGUF serving (catalog) name. Unknown values pass through unchanged."""
+    entry = resolve(base_model)
+    return entry.name if entry else base_model

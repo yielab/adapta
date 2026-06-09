@@ -3,7 +3,7 @@
 import asyncio
 import logging
 from dataclasses import dataclass
-from typing import Any, AsyncIterator, Dict, List, Optional
+from typing import AsyncIterator, List, Optional
 
 from llama_cpp import Llama
 
@@ -18,7 +18,6 @@ class Message:
 
     role: str
     content: str
-    image_data: Optional[Dict[str, Any]] = None  # For vision models
 
 
 @dataclass
@@ -34,7 +33,9 @@ class InferenceRequest:
     stream: bool = True
     stop: Optional[List[str]] = None
     system_prompt: Optional[str] = None
-    is_vision_model: bool = False  # Flag for vision model inference
+    # Fine-tune serving (A3.1): path to a GGUF LoRA to apply on top of the base
+    # model for this request. None = base/RAG serving (no adapter).
+    adapter_path: Optional[str] = None
 
 
 @dataclass
@@ -73,42 +74,12 @@ class InferenceEngine:
 
         return "\n".join(prompt_parts)
 
-    def _format_vision_prompt(self, request: InferenceRequest) -> str:
-        """
-        Format prompt for vision models (e.g., Moondream2).
-
-        Vision models use a different format that includes image embeddings.
-        For now, we use a simple text-based prompt that will be enhanced
-        with image data at the model level.
-        """
-        prompt_parts = []
-
-        # Add system prompt if provided
-        if request.system_prompt:
-            prompt_parts.append(f"System: {request.system_prompt}")
-
-        # Add conversation with image markers
-        for msg in request.messages:
-            if msg.image_data:
-                prompt_parts.append(f"{msg.role}: [Image provided] {msg.content}")
-            else:
-                prompt_parts.append(f"{msg.role}: {msg.content}")
-
-        prompt_parts.append("assistant:")
-
-        return "\n".join(prompt_parts)
-
     async def generate(
         self, model: Llama, request: InferenceRequest
     ) -> InferenceResponse:
         """Generate a complete response"""
-        # Use vision prompt format if vision model
-        if request.is_vision_model:
-            prompt = self._format_vision_prompt(request)
-            stop_tokens = request.stop or ["\n\n", "user:", "User:"]
-        else:
-            prompt = self._format_chat_prompt(request)
-            stop_tokens = request.stop or ["<|im_end|>", "<|endoftext|>"]
+        prompt = self._format_chat_prompt(request)
+        stop_tokens = request.stop or ["<|im_end|>", "<|endoftext|>"]
 
         try:
             # Run inference in thread pool

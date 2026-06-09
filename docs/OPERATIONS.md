@@ -171,17 +171,28 @@ jobs are then rejected fast with a clear "GPU required" message. See the README
 
 ### 6.3 Base-model catalog (§3.4)
 
+A project's `base_model` is **validated against a single catalog** at creation
+(`brain/core/model_catalog.py` — the SSOT). Each entry declares **both** meanings
+of the base in one place: the HuggingFace repo id the trainer/evaluator load and
+the GGUF the serving runtime loads. This guarantees a base that is selected can
+both train **and** serve — an unknown value is rejected with `400 invalid_request`
+listing the allowed names (which also feeds the console base-model dropdown).
+
 The **default and confirmed** family is **Qwen2.5-Instruct** (GGUF), which
-balances quality, license, and QLoRA-friendliness:
+balances quality, license, and QLoRA-friendliness. The catalog entries (operator
+name → HF repo id):
 
-| Model | Use | VRAM (train) |
-|---|---|---|
-| Qwen2.5-3B-Instruct | **default** — RAG + fine-tune | ~8–10 GB |
-| Qwen2.5-1.5B-Instruct | low-resource hosts | ~6 GB |
-| Qwen2.5-7B-Instruct | higher quality, needs a bigger GPU | ~12–16 GB |
+| `base_model` (catalog name) | HF repo id (train/eval) | Use | VRAM (train) |
+|---|---|---|---|
+| `qwen2.5-0.5b-instruct` | `Qwen/Qwen2.5-0.5B-Instruct` | smallest / e2e base | ~3 GB |
+| `qwen2.5-3b-instruct` | `Qwen/Qwen2.5-3B-Instruct` | **default** — RAG + fine-tune | ~8–10 GB |
+| `qwen2.5-coder-3b` | `Qwen/Qwen2.5-Coder-3B-Instruct` | code understanding/generation | ~8–10 GB |
+| `qwen2.5-7b-instruct` | `Qwen/Qwen2.5-7B-Instruct` | higher quality, bigger GPU | ~12–16 GB |
 
-Other GGUF instruction models (Llama-3.x-Instruct, Mistral-Instruct) work via the
-same llama-cpp path; validate VRAM against §6.2 before committing a host.
+To add a base (e.g. a Llama-3.x / Mistral instruct GGUF), append a `CatalogEntry`
+with its HF repo id + GGUF subdir/filename; validate VRAM against §6.2 first.
+The serving GGUF subdir/filename **must** match what `model_manager` loads (a unit
+test, `tests/test_model_catalog.py`, asserts the two agree).
 **Artifact storage** is the filesystem volume (§1); introduce object storage
 (MinIO/S3) only if multi-host scale (§4) or HA demands it.
 

@@ -21,9 +21,9 @@ from brain.services.rag import get_rag_service
 logger = logging.getLogger(__name__)
 
 
-async def _load_model(model_name: str):
+async def _load_model(model_name: str, adapter_path: Optional[str] = None):
     try:
-        return await model_manager.ensure_model_loaded(model_name)
+        return await model_manager.ensure_model_loaded(model_name, adapter_path=adapter_path)
     except Exception as exc:
         raise ModelNotFound(
             message=f"Model '{model_name}' could not be loaded",
@@ -43,6 +43,8 @@ async def chat(
     # RAG
     project_id: Optional[str] = None,
     top_k_rag: Optional[int] = None,
+    # Fine-tune serving (A3.1): GGUF LoRA applied on top of the base model
+    adapter_path: Optional[str] = None,
 ) -> dict:
     """
     Non-streaming chat completion.
@@ -76,9 +78,10 @@ async def chat(
         max_tokens=max_tokens,
         stream=False,
         system_prompt=full_system or None,
+        adapter_path=adapter_path,
     )
 
-    model_obj = await _load_model(model_name)
+    model_obj = await _load_model(model_name, adapter_path=adapter_path)
     try:
         response: InferenceResponse = await inference_engine.generate(model_obj, req)
     except Exception as exc:
@@ -123,6 +126,7 @@ async def chat_stream(
     project_id: Optional[str] = None,
     top_k_rag: Optional[int] = None,
     endpoint_id: Optional[str] = None,
+    adapter_path: Optional[str] = None,
 ) -> AsyncIterator[str]:
     """
     Streaming chat — yields SSE-formatted strings.
@@ -153,9 +157,10 @@ async def chat_stream(
         max_tokens=max_tokens,
         stream=True,
         system_prompt=full_system or None,
+        adapter_path=adapter_path,
     )
 
-    model_obj = await _load_model(model_name)
+    model_obj = await _load_model(model_name, adapter_path=adapter_path)
     chunk_id = f"chatcmpl-{uuid.uuid4().hex[:8]}"
     created = int(time.time())
 

@@ -78,6 +78,13 @@ class InferenceFailed(DomainError):
 
 
 @dataclass
+class AdapterConversionFailed(DomainError):
+    """Raised when a PEFT adapter can't be converted to a servable GGUF LoRA (A3.1)."""
+    code: str = field(default="adapter_conversion_failed", init=False)
+    status: int = field(default=500, init=False)
+
+
+@dataclass
 class EmbeddingFailed(DomainError):
     code: str = field(default="embedding_failed", init=False)
     status: int = field(default=500, init=False)

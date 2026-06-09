@@ -17,10 +17,39 @@ def score_from_loss(avg_loss: float) -> float:
     language-model signal the evaluator can compute without a task-specific metric,
     and it is what the eval **gate** (``eval_score_threshold``, default 0.6) tests:
     0.6 ⇔ perplexity ≤ ~1.67. Clamped to [0, 1] to be safe against tiny negatives.
+
+    METRIC SEMANTICS (the gate's meaning — see also specs/schemas/training_dataset.schema.json):
+    The loss this score is built from is the **response-only** cross-entropy on a
+    **held-out** split (rows the model never trained on), with prompt tokens masked
+    out. So ``score`` measures how well the fine-tune *generalizes* at producing the
+    target responses, not how well it memorized the training rows. The evaluator also
+    scores the **base** model on the same held-out split and reports the
+    adapter-minus-base delta (``score_delta``) so an operator can see whether the
+    fine-tune actually helped; the 0.6 gate itself remains an absolute floor on the
+    adapter's response-only score.
     """
     if not math.isfinite(avg_loss):
         return 0.0
     return max(0.0, min(1.0, math.exp(-avg_loss)))
+
+
+def split_holdout(n: int, holdout_fraction: float = 0.2, min_holdout: int = 1) -> int:
+    """Return the number of trailing rows to hold out for evaluation.
+
+    The eval gate must measure **generalization**, so the model is scored on rows it
+    never trained on. We hold out the **last** ``holdout_fraction`` of the dataset
+    (deterministic, no shuffling needed — order is the operator's) and train on the
+    rest. Guarantees at least ``min_holdout`` eval row and at least one training row
+    whenever ``n >= 2``; for a degenerate ``n == 1`` dataset there is nothing to hold
+    out, so it returns 0 (the caller falls back to evaluating on the single row and
+    the absolute floor still applies).
+    """
+    if n <= 1:
+        return 0
+    k = int(round(n * holdout_fraction))
+    k = max(min_holdout, k)
+    k = min(k, n - 1)  # always leave at least one training row
+    return k
 
 
 class JobState(str, Enum):
@@ -306,7 +335,8 @@ class TrainingDataset:
 class EvaluationMetrics:
     """Evaluation metrics for a trained adapter"""
 
-    # Core metrics
+    # Core metrics — RESPONSE-ONLY cross-entropy on the HELD-OUT split (prompt
+    # tokens masked). This is the signal the eval gate scores; see score_from_loss.
     loss: float
     perplexity: float
 
@@ -321,6 +351,13 @@ class EvaluationMetrics:
     # Quality metrics
     coherence_score: Optional[float] = None
     fluency_score: Optional[float] = None
+
+    # Base-vs-adapter comparison on the SAME held-out split (relative signal).
+    # base_loss/base_perplexity are the un-adapted base model's response-only loss;
+    # loss_improvement = base_loss - loss (positive ⇒ the fine-tune helped).
+    base_loss: Optional[float] = None
+    base_perplexity: Optional[float] = None
+    loss_improvement: Optional[float] = None
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary"""
@@ -344,9 +381,20 @@ class EvaluationResult:
     # Metrics
     metrics: EvaluationMetrics
 
-    # Overall eval score in [0, 1] (higher = better), derived from loss via
-    # score_from_loss(). This is the value the eval gate compares to the threshold.
+    # Overall eval score in [0, 1] (higher = better), derived from the RESPONSE-ONLY
+    # held-out loss via score_from_loss(). This is the value the eval gate compares to
+    # the threshold (the absolute floor).
     score: float = 0.0
+
+    # The base (un-adapted) model's score on the SAME held-out split, and the delta.
+    # score_delta = score - base_score; positive ⇒ the fine-tune improved over base.
+    # Reported for operator insight; the gate still uses the absolute `score`.
+    base_score: Optional[float] = None
+    score_delta: Optional[float] = None
+
+    # Whether the eval ran on a held-out split (vs. fell back to the full dataset for
+    # a degenerate single-row dataset). Lets the gate's meaning be read honestly.
+    held_out: bool = True
 
     # Sample predictions (for debugging/inspection)
     sample_predictions: List[Dict[str, str]] = field(default_factory=list)
@@ -367,6 +415,9 @@ class EvaluationResult:
             "num_examples": self.num_examples,
             "metrics": self.metrics.to_dict(),
             "score": self.score,
+            "base_score": self.base_score,
+            "score_delta": self.score_delta,
+            "held_out": self.held_out,
             "sample_predictions": self.sample_predictions,
             "created_at": self.created_at,
             "duration_seconds": self.duration_seconds,

@@ -19,7 +19,6 @@ class ModelType(str, Enum):
 
     CHAT = "chat"
     CODE = "code"
-    VISION = "vision"
     REASONING = "reasoning"
 
 
@@ -45,6 +44,19 @@ class ModelManager:
         self._configs: Dict[str, ModelConfig] = {}
         self._load_lock = asyncio.Lock()
         self._init_default_configs()
+
+    def _resolve_serving_name(self, model_name: str) -> str:
+        """Map an operator-facing base id (possibly a HF repo id from a fine-tune
+        Project) to a GGUF catalog name. Direct serving-config names pass through.
+
+        Resolution goes through the single base-model catalog (A3.3) so the GGUF
+        served is the SAME entry the trainer/evaluator resolved the HF id from.
+        Imported lazily to avoid the catalog↔model_manager import cycle (the catalog
+        imports ``ModelType`` from here)."""
+        if model_name in self._configs:
+            return model_name
+        from brain.core.model_catalog import resolve_serving_name
+        return resolve_serving_name(model_name)
 
     def _find_model_file(self, model_dir: Path, preferred_filename: str) -> Optional[Path]:
         """
@@ -94,15 +106,15 @@ class ModelManager:
             description="Code understanding and generation model",
         )
 
-        # Vision model - load on demand
-        self._configs["moondream2"] = ModelConfig(
-            name="moondream2",
-            model_type=ModelType.VISION,
-            path=models_dir / "moondream2" / "moondream2-q4.gguf",
-            context_length=2048,
+        # Small instruct model — the fine-tune e2e base (Qwen2.5-0.5B-Instruct).
+        self._configs["qwen2.5-0.5b-instruct"] = ModelConfig(
+            name="qwen2.5-0.5b-instruct",
+            model_type=ModelType.CHAT,
+            path=models_dir / "qwen2.5-0.5b" / "qwen2.5-0.5b-instruct-q4_k_m.gguf",
+            context_length=32768,
             n_threads=settings.n_threads,
             n_gpu_layers=settings.n_gpu_layers,
-            description="Vision and image understanding model",
+            description="Small instruct model (fine-tune e2e base)",
         )
 
         # Optional reasoning model
@@ -116,19 +128,38 @@ class ModelManager:
             description="Large model for complex reasoning",
         )
 
-    async def load_model(self, model_name: str, force_reload: bool = False) -> Llama:
-        """Load a model into memory"""
+    def _cache_key(self, model_name: str, adapter_path: Optional[str]) -> str:
+        """Cache key for a loaded Llama. Includes the adapter so a fine-tune
+        endpoint (base+LoRA) and base/RAG serving of the same base never collide
+        (A3.1). Without the adapter in the key, the first-loaded variant would be
+        returned for both. ``model_name`` is the resolved serving (GGUF) name."""
+        return model_name if not adapter_path else f"{model_name}::lora::{adapter_path}"
+
+    async def load_model(
+        self,
+        model_name: str,
+        force_reload: bool = False,
+        adapter_path: Optional[str] = None,
+    ) -> Llama:
+        """Load a model into memory, optionally applying a GGUF LoRA adapter.
+
+        When ``adapter_path`` is given (a GGUF LoRA produced by the fine-tune
+        pipeline, A3.1), the base GGUF is loaded WITH the adapter via llama-cpp's
+        ``lora_path``. The cache is keyed on (base, adapter)."""
         async with self._load_lock:
+            # Resolve an operator-facing / HF-repo base id to a GGUF catalog name (A3.1).
+            serving_name = self._resolve_serving_name(model_name)
+            cache_key = self._cache_key(serving_name, adapter_path)
             # Check if already loaded
-            if model_name in self._models and not force_reload:
-                logger.info(f"Model {model_name} already loaded")
-                return self._models[model_name]
+            if cache_key in self._models and not force_reload:
+                logger.info(f"Model {cache_key} already loaded")
+                return self._models[cache_key]
 
             # Get config
-            if model_name not in self._configs:
+            if serving_name not in self._configs:
                 raise ValueError(f"Unknown model: {model_name}")
 
-            config = self._configs[model_name]
+            config = self._configs[serving_name]
 
             # Check if model file exists, try to find alternative if not
             model_path = config.path
@@ -148,7 +179,21 @@ class ModelManager:
                         f"Please download the model first using: brain download {model_name}"
                     )
 
-            logger.info(f"Loading model {model_name} from {model_path}")
+            # Resolve + validate the GGUF LoRA adapter (A3.1), if any.
+            lora_path: Optional[str] = None
+            if adapter_path:
+                lora_file = Path(adapter_path)
+                if not lora_file.exists():
+                    raise FileNotFoundError(
+                        f"Adapter (GGUF LoRA) not found: {adapter_path}. "
+                        "The fine-tune adapter was not converted/registered for serving."
+                    )
+                lora_path = str(lora_file)
+
+            logger.info(
+                f"Loading model {model_name} from {model_path}"
+                + (f" with LoRA adapter {lora_path}" if lora_path else "")
+            )
 
             try:
                 # Get GPU configuration
@@ -166,37 +211,42 @@ class ModelManager:
                 logger.info(f"GPU layers: {gpu_kwargs.get('n_gpu_layers', 0)}, Context: {n_ctx}")
 
                 # Load model in thread pool to avoid blocking
-                loop = asyncio.get_event_loop()
-                model = await loop.run_in_executor(
-                    None,
-                    lambda: Llama(
-                        model_path=str(model_path),
-                        n_ctx=n_ctx,
-                        n_threads=config.n_threads,
-                        n_gpu_layers=gpu_kwargs.get('n_gpu_layers', config.n_gpu_layers),
-                        n_batch=gpu_kwargs.get('n_batch', 512),
-                        f16_kv=gpu_kwargs.get('f16_kv', False),
-                        use_mmap=settings.use_mmap,
-                        use_mlock=settings.use_mlock,
-                        verbose=False,
-                    ),
+                llama_kwargs = dict(
+                    model_path=str(model_path),
+                    n_ctx=n_ctx,
+                    n_threads=config.n_threads,
+                    n_gpu_layers=gpu_kwargs.get('n_gpu_layers', config.n_gpu_layers),
+                    n_batch=gpu_kwargs.get('n_batch', 512),
+                    f16_kv=gpu_kwargs.get('f16_kv', False),
+                    use_mmap=settings.use_mmap,
+                    use_mlock=settings.use_mlock,
+                    verbose=False,
                 )
+                if lora_path:
+                    llama_kwargs["lora_path"] = lora_path
+                loop = asyncio.get_event_loop()
+                model = await loop.run_in_executor(None, lambda: Llama(**llama_kwargs))
 
-                self._models[model_name] = model
+                self._models[cache_key] = model
                 config.loaded = True
-                logger.info(f"Successfully loaded model {model_name}")
+                logger.info(f"Successfully loaded model {cache_key}")
                 return model
 
             except Exception as e:
-                logger.error(f"Failed to load model {model_name}: {e}")
+                logger.error(f"Failed to load model {cache_key}: {e}")
                 raise
 
     async def unload_model(self, model_name: str):
-        """Unload a model from memory"""
+        """Unload a model from memory. Accepts a catalog name or a composite
+        base+LoRA cache key (A3.1)."""
         if model_name in self._models:
             logger.info(f"Unloading model {model_name}")
             del self._models[model_name]
-            self._configs[model_name].loaded = False
+            # The cache key may be a composite "name::lora::path"; only the base
+            # catalog name has a config to flip back to unloaded.
+            base = model_name.split("::lora::", 1)[0]
+            if base in self._configs:
+                self._configs[base].loaded = False
 
     def get_model(self, model_name: str) -> Optional[Llama]:
         """Get a loaded model"""
@@ -246,15 +296,16 @@ class ModelManager:
                         return name
         return None
 
-    async def ensure_model_loaded(self, model_name: str) -> Llama:
-        """Ensure a model is loaded, loading it if necessary"""
-        if model_name not in self._models:
-            return await self.load_model(model_name)
-        return self._models[model_name]
+    async def ensure_model_loaded(self, model_name: str, adapter_path: Optional[str] = None) -> Llama:
+        """Ensure a model (optionally base+LoRA) is loaded, loading it if necessary."""
+        cache_key = self._cache_key(self._resolve_serving_name(model_name), adapter_path)
+        if cache_key not in self._models:
+            return await self.load_model(model_name, adapter_path=adapter_path)
+        return self._models[cache_key]
 
-    def is_loaded(self, model_name: str) -> bool:
-        """Check if a model is loaded"""
-        return model_name in self._models
+    def is_loaded(self, model_name: str, adapter_path: Optional[str] = None) -> bool:
+        """Check if a model (optionally a specific base+LoRA variant) is loaded"""
+        return self._cache_key(self._resolve_serving_name(model_name), adapter_path) in self._models
 
     async def preload_default_models(self):
         """Preload default models (chat model)"""

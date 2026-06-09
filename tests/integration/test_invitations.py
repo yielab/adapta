@@ -34,7 +34,7 @@ async def test_invite_accept_member_can_write(client, admin):
     created = await client.post(
         "/v1/projects",
         headers=member_h,
-        json={"name": "by-member", "type": "rag", "base_model": "x", "team_id": team_id},
+        json={"name": "by-member", "type": "rag", "base_model": "qwen2.5-3b-instruct", "team_id": team_id},
     )
     assert created.status_code == 201, created.text
 
@@ -51,7 +51,7 @@ async def test_viewer_is_read_only(client, admin):
     blocked = await client.post(
         "/v1/projects",
         headers=viewer_h,
-        json={"name": "by-viewer", "type": "rag", "base_model": "x", "team_id": team_id},
+        json={"name": "by-viewer", "type": "rag", "base_model": "qwen2.5-3b-instruct", "team_id": team_id},
     )
     assert blocked.status_code == 403, blocked.text
     assert blocked.json()["error"]["code"] in ("forbidden", "insufficient_permissions")

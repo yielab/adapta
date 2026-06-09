@@ -44,7 +44,7 @@ async def test_usage_aggregation(client, admin):
     proj = await client.post(
         "/v1/projects",
         headers=h,
-        json={"name": "U", "type": "finetune", "base_model": "x", "team_id": team_id},
+        json={"name": "U", "type": "finetune", "base_model": "qwen2.5-3b-instruct", "team_id": team_id},
     )
     pid = proj.json()["id"]
 

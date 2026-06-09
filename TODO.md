@@ -79,6 +79,62 @@ Honour the [Definition of done](#definition-of-done-per-task) on every task. Wor
 
 **Acceptance met.** A commit that imports a non-existent setting fails CI at `import smoke` (fast) or `Boot smoke test` (full), not in a customer deploy. Verified locally: both processes import and survive 15 s.
 
+## A3. MLOps correctness — fine-tune serving & eval gate (P0/P1, found 2026-06-09)
+
+> **Found by an architecture review (2026-06-09).** The control plane is solid, but the **fine-tuning
+> half of the product produces an artifact it never actually serves**, and the eval gate that guards it
+> measures the wrong thing. These are correctness bugs in the *moat*, written here as self-contained,
+> agent-pickable tasks. They are **backend/MLOps work, independent of the frontend (§5)** — a different
+> agent can own each. Workstream label: **`[BE]`**.
+
+### A3.1 `[BE]` Fine-tune serving must apply the adapter (P0) — supersedes the §1.7 open item
+- **Decision (recorded 2026-06-09): Strategy A (GGUF LoRA, one serving runtime).** After eval
+  passes, the worker converts the PEFT adapter to a GGUF LoRA with llama.cpp's *official*
+  `convert_lora_to_gguf.py` (vendored into the worker image at `/opt/llamacpp`, pinned to tag
+  `b4576`; we do not reimplement the GGUF-LoRA format). The `.gguf` is stored beside the safetensors
+  adapter and becomes the job/endpoint `adapter_path`; serving loads the base GGUF **with**
+  `Llama(lora_path=...)`. The model cache is keyed on `(serving_base, adapter)` so RAG/base and
+  fine-tune never collide. A minimal HF-repo-id → GGUF catalog alias bridges the two `base_model`
+  meanings until A3.3's catalog lands. **Code wired end-to-end + unit/import-verified; the GPU e2e
+  (`tests/integration/test_lora_e2e.py`, opt-in) asserts the served output reflects the adapter and
+  still needs a live-GPU run to confirm.**
+- **Context.** Training emits a **PEFT/HuggingFace LoRA adapter** (`adapter_model.safetensors` + `adapter_config.json`); the evaluator loads it with `PeftModel.from_pretrained` ([brain/training/evaluator.py:107](brain/training/evaluator.py#L107)). But serving is **llama-cpp + GGUF only** ([brain/core/model_manager.py](brain/core/model_manager.py)) and [brain/services/chat.py:81](brain/services/chat.py#L81) calls inference with `model_name=endpoint.base_model` — `endpoint.adapter_path` is referenced **nowhere** in `brain/core/` or `chat.py`. A fine-tune endpoint **silently serves the base model**. The whole train→eval→gate→register→endpoint chain is inert at serve time.
+- **Scope.** Make a fine-tune endpoint serve its adapter; do **not** rewrite the llama-cpp engine internals (hard constraint #1).
+- **Decision to record first (design sub-task, do before coding):** pick the serving strategy and write the rationale in this task:
+  - **(A) GGUF LoRA path (recommended — keeps one serving runtime):** at registration (or endpoint create) convert the PEFT adapter to a GGUF LoRA via llama.cpp `convert_lora_to_gguf.py`, store the `.gguf` adapter beside the safetensors one, and load it in `model_manager.load_model` via llama-cpp's `lora_path=` (or `model.apply_lora_from_file`). One serving runtime (llama-cpp) for both RAG and fine-tune.
+  - **(B) transformers serving path (heavier — two runtimes):** serve fine-tune endpoints through `transformers` + `PeftModel` on the GPU, RAG/base through llama-cpp. More faithful to the trained weights, but doubles the serving stack and needs GPU at serve time.
+- **Steps (for strategy A).** (1) Add adapter conversion (PEFT→GGUF) in the worker after eval passes, or lazily at first load; store path on the adapter registry + `Endpoint.adapter_path`. (2) Thread `adapter_path` from `Endpoint` → `chat.py` → `InferenceRequest` → `model_manager` so the per-endpoint model is loaded **with** the adapter (cache key must include the adapter, not just the base name). (3) Ensure the base GGUF and the adapter were trained against the **same** base (ties to A3.3).
+- **Files.** `brain/services/chat.py`, `brain/core/model_manager.py`, `brain/core/inference.py` (request plumbing only), `brain/worker/main.py` or `brain/services/adapters.py` (conversion), `brain/api/v1/chat.py` (pass `adapter_path`).
+- **Contract impact.** None external (serving response unchanged). Possibly a new internal config for the converter path.
+- **Acceptance.** An e2e (extend `tests/integration/test_lora_e2e.py`) asserts a chat call to a fine-tune endpoint returns the **adapter's learned behavior and differs from the base model** on a held-out prompt. Until this lands, the console (§5.6F) must label fine-tune playground output honestly.
+
+### A3.2 `[BE]` Eval gate must measure generalization, not memorization (P0/P1)
+- **Context.** The gate is structurally real (Pillar 3) but its metric is weak: (1) it **evaluates on the training set** — the worker passes the converted *training* file as the eval dataset ([brain/worker/main.py:135-141](brain/worker/main.py#L135-L141)); (2) the score is **intrinsic perplexity** (`score_from_loss`, [brain/training/evaluator.py:196](brain/training/evaluator.py#L196)), not task quality (`accuracy`/`exact_match`/`bleu` are all `None`); (3) **loss includes the prompt tokens** (`labels=inputs["input_ids"]`, [evaluator.py:152](brain/training/evaluator.py#L152)) instead of masking the prompt; (4) it never compares adapter-vs-base, so it can't tell the fine-tune *helped*. So `score ≥ 0.6` is a number with weak semantic meaning.
+- **Scope.** Make the gate's signal trustworthy without over-engineering; keep the threshold-gate mechanism + `EvalGateFailed(422)` contract intact.
+- **Steps.** (1) Hold out a validation split (e.g. last 10–20% of samples, or a separate eval file) — never score on training rows. (2) Mask the prompt: compute loss on the **response tokens only**. (3) Compute a **relative** signal: eval the base model on the same split and report adapter-vs-base delta; consider gating on improvement, not just absolute. (4) Record the metric definition in `specs/schemas/training_dataset.schema.json` notes / a training-contract doc so the gate's meaning is documented (Pillar 3 SSOT). Update `tests/test_eval_gate.py` for the new split/score logic.
+- **Files.** `brain/worker/main.py` (pass a held-out split), `brain/training/evaluator.py` (mask prompt, base-vs-adapter), `brain/training/models.py` (`score_from_loss`), `tests/test_eval_gate.py`.
+- **Acceptance.** Eval runs on data the model did **not** train on; the score reflects response-only quality and/or improvement over base; the eval-gate unit tests cover the new logic.
+
+### A3.3 `[BE]` Unify the two meanings of `base_model` (P1)
+- **Context.** Serving needs a **GGUF filename** in the `model_manager` catalog ([model_manager.py:76-117](brain/core/model_manager.py#L76)); training/eval needs a **HF repo id** resolvable by `AutoModelForCausalLM.from_pretrained(base_model)` ([evaluator.py:98](brain/training/evaluator.py#L98)). It is one free-text string on the `Project`, validated against neither — an operator can pick a value that trains but won't serve (or vice-versa), discovered only as a runtime failure.
+- **Scope.** A single source of truth mapping a catalog model → {HF repo id for training, GGUF path for serving, VRAM/quality notes}.
+- **Steps.** (1) Introduce a base-model catalog (config or a small registry module) keyed by the operator-facing name, carrying both the HF id and the GGUF path. (2) Validate `base_model` at project creation against the catalog → typed `InvalidRequest` with the allowed list (this also feeds the console's base-model dropdown, §5.3). (3) Have the trainer/evaluator resolve the HF id and the serving path resolve the GGUF from the same entry.
+- **Files.** `brain/config.py` or new `brain/core/model_catalog.py`, `brain/api/v1/projects.py` (validate), `brain/worker/main.py` + `brain/training/*` (resolve HF id), `brain/core/model_manager.py` (resolve GGUF). Doc: OPERATIONS §6.3.
+- **Acceptance.** Creating a project with an unknown `base_model` → 422 with the allowed list; a catalog entry serves and trains from one declaration; the console can fetch/show the allowed bases.
+
+### A3.4 `[BE]` Endpoint slug collision across teams (P1) — ✅ DONE (2026-06-09)
+- **Context.** [brain/api/v1/endpoints.py:92-93](brain/api/v1/endpoints.py#L92) derived the slug from `project.name` and `Endpoint.slug` is **globally `unique=True`**. Two teams each with a "Support" project → `IntegrityError` → generic 500.
+- **Resolution (disambiguate-the-slug path; no migration needed).** The slug is the OpenAI `model` *display* value and is resolved at serving by API key, not by name ([brain/api/v1/chat.py](brain/api/v1/chat.py) `_resolve_endpoint`), so it stays globally unique. `create_endpoint` now builds the slug as `"{sanitized-name[:55]}-{project_id[:8]}"`, making same-name collisions across teams structurally impossible. As a **defensive net**, the `db.commit()` is wrapped to catch `IntegrityError` → rollback → typed `Conflict(409)` with the cause in `internal_detail` (logged, never serialized) — no 500 path remains.
+- **Files.** `brain/api/v1/endpoints.py` (suffix + IntegrityError→Conflict). No `brain/db/models.py`/migration change (kept `slug unique=True`). Test: `tests/integration/test_endpoint_slug.py` (2 tests).
+- **Verification.** `tests/integration/test_endpoint_slug.py` seeds two same-named RAG projects in **different teams** (+ a satisfied Collection each) → both `POST …/endpoint` return **201** with **distinct** `support-…` slugs; a messy name yields a clean url-safe suffixed slug. Green against the live stack. `make check-leaks lint` (incl. mypy) green; offline suite `132 passed, 1 skipped`.
+- **Acceptance met.** Two projects with the same name in different teams both get servable endpoints; the only residual write-conflict path returns a typed 409, not a 500.
+
+### A3.5 `[BE]` Delete dead vision/cut code (P2)
+- **Context.** Vision was cut from scope, but `model_manager` still registers `moondream2` (VISION) and `inference.py` still carries `_format_vision_prompt`/`is_vision_model` ([brain/core/inference.py:76-99](brain/core/inference.py#L76)). CLAUDE.md mandates deleting cut code, not wrapping it.
+- **Steps.** Remove the vision model config, the `ModelType.VISION` branch, `is_vision_model`, and `_format_vision_prompt`. Confirm nothing else imports them (grep).
+- **Files.** `brain/core/model_manager.py`, `brain/core/inference.py`.
+- **Acceptance.** No `vision`/`moondream` references remain in `brain/core/`; `make ci` + boot smoke stay green.
+
 ## 0. Audit defects found 2026-06-08 — ✅ ALL RESOLVED (kept as record)
 
 These were real gaps discovered by reading the repo. All are fixed; this section is a closed record. The one *remaining* gate gap (Pillar 1 / API contract) is tracked live in §A1, not here.
@@ -327,134 +383,92 @@ runtime robustness. See [docs/API_EVOLUTION_PLAN.md](docs/API_EVOLUTION_PLAN.md)
 
 ---
 
-## 5. Operator console — thin web UI (PROPOSED — not yet committed scope)
+## 5. Operator console — thin web UI (APPROVED — in scope as of 2026-06-09)
 
-> **Status: PROPOSED.** This section is a *fully-specified proposal*, not approved work. It **contradicts**
-> the locked product definition, which says "Web dashboard UI — out of scope; the API surface is the
-> product" ([PRODUCT_DEFINITION.md](docs/PRODUCT_DEFINITION.md) §3). **Do not start §5.1+ until §5.0 amends
-> the product definition.** Until then, treat the console as out of scope; the CLI + API are the only surfaces.
-
-A small, bundled, **operator-facing** web console so a technical user can run the whole product
-lifecycle in a browser instead of hand-writing `curl`. It is **not** a second product surface: it is a
-thin client over the **existing** API — every screen maps 1:1 to an endpoint already in
-`specs/openapi.yaml`. No new server capability, no new external protocol. The OpenAI-compatible API
-remains the only thing customers' *applications* call; this console is how a *human operator* drives setup.
-
-> **Scope guard:** if a screen needs data the API doesn't expose, the API contract changes **first**
-> (Pillar 1), not the UI. The console never reaches into services or the DB directly.
-
-**The product framing rule is mandatory UX** ([PRODUCT_DEFINITION.md](docs/PRODUCT_DEFINITION.md)):
-the console **never** calls RAG "training." The project-creation step asks
-**"How do you want to specialize your model?"** → **Give it knowledge** (RAG) vs **Change how it behaves**
-(fine-tuning), and the two project types render different flows (§5.4 vs §5.5).
-
-### 5.0 Decide & reconcile the product definition first (P1 — GATE for all of §5)
-Building this console **reverses** [PRODUCT_DEFINITION.md](docs/PRODUCT_DEFINITION.md) §3
-("Web dashboard UI — out of scope; the API surface is the product"). Per the SDD rule that the product
-definition is authoritative, this is a **product decision** that must be made and written down **before** any code.
-- [ ] **Get an explicit decision**: is a thin operator console in scope? If no, delete §5 and stop. If yes, continue.
-- [ ] Update `docs/PRODUCT_DEFINITION.md`: scope **in** a thin operator console; keep the OpenAI-compatible API as the **only external/application protocol** and the console as an **operator convenience** over it.
-- [ ] Update the README/CLAUDE.md "Dashboard UI — cut" lines to "thin operator console (operator-only)".
-- [ ] *Acceptance:* no doc still says "no web UI"; the console's scope boundary (operator convenience, not an API) is written down, and this section is no longer marked PROPOSED.
-
-### 5.1 Stack & scaffolding decision (P1)
-Pick the **lowest-maintenance** option that fits a self-hosted Python appliance. **Recommendation:
-no-build static assets** (vanilla JS modules + `fetch`) served by FastAPI `StaticFiles` from the same
-origin — zero Node toolchain, zero CORS, one container, trivial to ship. Choose a small reactive lib
-(Vite + Svelte/React) only if screen complexity later justifies a build step.
+> **Status: APPROVED & IN PROGRESS (2026-06-09).** The product decision (§5.0) is made: a thin operator
+> console **is in scope**. The stale "Web dashboard UI — out of scope" rule has been **removed** from
+> [PRODUCT_DEFINITION.md](docs/PRODUCT_DEFINITION.md) §3, [README.md](README.md), and
+> [API_EVOLUTION_PLAN.md](docs/API_EVOLUTION_PLAN.md). The console is an **operator convenience** over the
+> existing API — the OpenAI-compatible API stays the only protocol customer *applications* call.
 
 A small, bundled, **operator-facing** web console so a technical user can run the whole product
 lifecycle in a browser instead of hand-writing `curl`. It is **not** a second product surface: it is a
 thin client over the **existing** API — every screen maps 1:1 to an endpoint already in
-`specs/openapi.yaml`. No new server capability, no new external protocol. The OpenAI-compatible API
-remains the only thing customers' *applications* call; this console is how a *human operator* drives setup.
+`specs/openapi.yaml`. The OpenAI-compatible API remains the only thing customers' *applications* call.
 
 > **Scope guard:** if a screen needs data the API doesn't expose, the API contract changes **first**
-> (Pillar 1), not the UI. The console never reaches into services or the DB directly.
+> (Pillar 1), not the UI. **Framing rule (mandatory UX):** never call RAG "training" — the create step
+> asks *"How do you want to specialize your model?"* → **Give it knowledge** (RAG) vs **Change how it
+> behaves** (fine-tuning). **North-star deliverable:** every successful flow ends by handing the operator
+> a copy-paste-ready **endpoint slug + `brn_` key + OpenAI-SDK snippet** — the bridge to the real API.
 
-**The product framing rule is mandatory UX** ([PRODUCT_DEFINITION.md](docs/PRODUCT_DEFINITION.md)):
-the console **never** calls RAG "training." The project-creation step asks
-**"How do you want to specialize your model?"** → **Give it knowledge** (RAG) vs **Change how it behaves**
-(fine-tuning), and the two project types render different flows (§5.4 vs §5.5).
+### 5.0 Decisions made (2026-06-09) — gates cleared
+- [x] **Product decision:** thin operator console is **in scope**; "no web UI" rule removed from PRODUCT_DEFINITION §3 / README / API_EVOLUTION_PLAN (done 2026-06-09).
+- [x] **Stack decided: Vite + Svelte 5 + TypeScript**, built to static assets, served same-origin by FastAPI `StaticFiles` under `/console/` (no Node at runtime; build happens in a Docker builder stage). Rationale: smallest runtime + type-safety against the OpenAPI models, fits "professional + scalable + maintainable + lightweight."
+- [x] **Contract add (Pillar 1):** `GET /v1/auth/me` now returns `teams[]` (`{id,name,role}`) so the console can discover the `team_id` every `/v1/projects` call needs. Spec + handler + regenerated models committed; `make check-models` green; verified live (done 2026-06-09).
 
-### 5.0 Reconcile the product definition first (P1 — contract before code)
-Choosing this console **reverses** [PRODUCT_DEFINITION.md:82](docs/PRODUCT_DEFINITION.md#L82)
-("Web dashboard UI — out of scope; the API surface is the product"). Per the SDD rule that the product
-definition is authoritative, amend it **before** building, so the codebase doesn't contradict its own SSOT.
-- [ ] Update `docs/PRODUCT_DEFINITION.md`: scope **in** a thin operator console; keep the OpenAI-compatible API as the **only external/application protocol** and the console as an **operator convenience** over it.
-- [ ] Update the README/CLAUDE.md "Dashboard UI — cut" lines to "thin operator console (operator-only)".
-- [ ] *Acceptance:* no doc still says "no web UI"; the console's scope boundary (operator convenience, not an API) is written down.
+> **Workstream label: `[FE]`.** Tasks are written to be picked up independently by different agents.
+> **Hard dependency order:** B1 (shell) → B2 (auth) → B3 (projects) → {B5 RAG | B6 fine-tune} → B7 (endpoint+keys) → B8 (playground). C1 (mount) can land early to enable browser testing. C2/C3 (Docker/CI) after the views exist. B8's *fine-tune* path shows real adapter behavior only once **§A3.1** lands; until then it serves base + an honest banner.
 
-### 5.1 Stack & scaffolding decision (P1)
-Pick the **lowest-maintenance** option that fits a self-hosted Python appliance. **Recommendation:
-no-build static assets** (vanilla JS modules + `fetch`) served by FastAPI `StaticFiles` from the same
-origin — zero Node toolchain, zero CORS, one container, trivial to ship. Choose a small reactive lib
-(Vite + Svelte/React) only if screen complexity later justifies a build step.
-- [ ] Decide stack; record the decision + rationale here. Default to **no-build static, same-origin**.
-- [ ] Scaffold `brain/console/` (static assets) + a single-origin mount (§5.9); **no** separate dev server in prod.
-- [ ] Establish a thin API client wrapper: base URL, `Authorization: Bearer`, centralized response/error handling (feeds §5.8).
-- [ ] *Acceptance:* a built console loads from `app` with no extra container and no cross-origin calls.
+### 5.1 `[FE]` Scaffold + foundation — 🚧 IN PROGRESS (2026-06-09)
+- [x] `brain/console/` scaffolded: `package.json`, `vite.config.ts` (`base:/console/`, dev proxy `/v1`→:8000), `tsconfig.json`, `svelte.config.js`, `index.html`.
+- [x] `src/lib/types.ts` (API types), `src/lib/api.ts` (typed `fetch` client: Bearer, error-envelope→`ApiError{code,message,correlationId}`, 401→drop session+redirect, multipart upload), `src/lib/session.ts` (token in `sessionStorage` + user/activeTeam stores), `src/lib/router.ts` (hash router — no SPA fallback needed), `src/lib/toast.ts`, `src/app.css` (minimalist dark design system).
+- [ ] **B1 — App shell:** `src/main.ts`, `src/App.svelte` (route table + auth guard), components `Layout.svelte` (sidebar/topbar, user chip, team switcher, logout), `Spinner.svelte`, `Toasts.svelte`, `Modal.svelte`, `ConfirmDialog.svelte`, `StatusBadge.svelte`, `CodeSnippet.svelte` (copy button). *Acceptance:* `npm run build` succeeds; an authed shell renders with working navigation + toast host.
+- [ ] *Acceptance (5.1):* `vite build` emits `brain/console/dist`; `svelte-check` clean; app boots to the login route.
 
-### 5.2 Auth & session (P1) — `/v1/auth/*`
-- [ ] **Register** screen → `POST /v1/auth/register` (bootstrap org + first admin); first-run detection so a fresh deploy lands here.
-- [ ] **Login** screen → `POST /v1/auth/login`; store the JWT (memory + `sessionStorage`), attach as Bearer to every call.
-- [ ] **Current user** chip → `GET /v1/auth/me`; logout clears the token.
-- [ ] Global **401 handling**: any 401 → drop session → redirect to login (token expiry is silent otherwise).
-- [ ] *Acceptance:* unauthenticated access to any console route redirects to login; a valid login reaches the projects list.
+### 5.2 `[FE]` Auth & session — `/v1/auth/*` (depends: B1)
+- [ ] **Login** view → `POST /login` → store JWT → `GET /me` → land on projects. **Register** view → `POST /register` (bootstrap org+admin); on `409 conflict` show "org exists — sign in". **First-run**: if login is the entry and register hasn't run, surface register.
+- [ ] **User chip + team switcher** from `me.teams`; **logout** clears session. Global **401** already handled in `api.ts` — verify it redirects.
+- [ ] *Acceptance:* unauthenticated → login; valid login → projects list scoped to the active team; logout returns to login.
 
-### 5.3 Projects — the home screen (P1) — `/v1/projects`
-- [ ] **List** → `GET /v1/projects` (scoped by team); empty state explains the next action.
-- [ ] **Create** → `POST /v1/projects` behind the **"How do you want to specialize your model?"** chooser:
-  *Give it knowledge* sets `type=rag`; *Change how it behaves* sets `type=finetune`. Never the word "training" at this step.
-- [ ] **Open / Delete** → `GET` / `DELETE /v1/projects/{id}`; delete confirms (irreversible — drops collection/adapters).
-- [ ] Project detail routes to the **RAG flow (§5.4)** or **fine-tune flow (§5.5)** by `type`.
-- [ ] *Acceptance:* a user can create one project of each type and the detail view shows the correct flow.
+### 5.3 `[FE]` Projects home — `/v1/projects` (depends: B2)
+- [ ] **List** → `GET /projects?team_id=` (active team); empty state explains the next action. **Create** behind the knowledge-vs-behavior chooser (sets `type=rag|finetune`), with a **base-model select** (from §A3.3's catalog once it exists; until then a curated Qwen2.5 list). **Delete** → `DELETE` with a confirm (irreversible).
+- [ ] Project card shows type + status; opening routes to the RAG (§5.5) or fine-tune (§5.6F) flow by `type`.
+- [ ] *Acceptance:* create one project of each type; the detail view shows the correct flow; delete confirms and re-lists.
 
-### 5.4 Knowledge (RAG) flow (P1) — files → endpoint, no training
-- [ ] **Files** panel: drag-drop upload → `POST /v1/projects/{id}/files` (PDF/DOCX/MD/TXT/HTML); list → `GET`; delete → `DELETE`.
-- [ ] **Index status**: indexing is async — poll file status and show `indexing → indexed` (or error) per file; disable "create endpoint" until ≥1 file is indexed.
-- [ ] **Create endpoint** → `POST /v1/projects/{id}/endpoint` (RAG has no eval gate); then the playground (§5.7).
-- [ ] Copy explains RAG plainly: *"answers grounded in your documents, with citations — the model's weights don't change."*
-- [ ] *Acceptance:* upload → see "indexed" → create endpoint → ask a question → get a cited answer, entirely in the browser.
+### 5.4 `[FE]` Project detail shell + tabs (depends: B3)
+- [ ] `Project.svelte` loads `GET /projects/{id}`, renders a header (name, type badge, base model) and tabs: **Setup** (RAG files or fine-tune dataset/jobs), **Endpoint & keys** (§5.7), **Playground** (§5.8), **Usage** (§5.9). Tabs disable until prerequisites are met.
+- [ ] *Acceptance:* the correct setup tab renders per `type`; invalid tabs are disabled with a hint.
 
-### 5.5 Behavior (fine-tune) flow (P1) — dataset → job → **eval gate** → endpoint
-This flow exists to make the platform's **moat** visible: an unverified adapter cannot serve.
-- [ ] **Dataset**: upload JSONL → `POST /v1/projects/{id}/datasets`, **or** synthesize from indexed docs → `POST …/datasets/synthesize` (async 202); poll status → `GET …/datasets/{did}`. Surface schema-validation errors clearly (Pillar 3 rejects bad datasets pre-job).
-- [ ] **Training job**: enqueue → `POST /v1/projects/{id}/jobs`; list → `GET`; **live progress** → poll `GET …/jobs/{jid}` (status + Redis-enriched progress). Show queued → running → succeeded/failed with a progress indicator.
-- [ ] **Eval gate (the moat) — make it unmissable**: on completion, show the **eval score vs the 0.6 threshold** and a clear **PASSED / BLOCKED** state. If blocked, the create-endpoint action is disabled with the reason ("adapter scored 0.52 < 0.60 — cannot serve").
-- [ ] **Create endpoint** → `POST /v1/projects/{id}/endpoint` (requires `eval_passed`); the UI must mirror the server rule, never letting a user attempt to serve a failed adapter.
-- [ ] *Acceptance:* a passing run reaches a live endpoint; a deliberately failing run shows BLOCKED and offers no serve path — matching the `EvalGateFailed(422)` server contract.
+### 5.5 `[FE]` Knowledge (RAG) flow — files → endpoint (depends: B4)
+- [ ] **Files** panel: drag-drop upload → `POST …/files`; list → `GET`; delete → `DELETE`. **Poll** file status (`pending→processing→indexed|failed`); show per-file state; disable **Create endpoint** until ≥1 file is `indexed`.
+- [ ] **Create endpoint** → `POST …/endpoint` (no eval gate for RAG) → route to Endpoint tab. Plain-language copy: *"answers grounded in your documents, with citations — the weights don't change."*
+- [ ] *Acceptance:* upload → "indexed" → create endpoint → (playground) cited answer, entirely in the browser.
 
-### 5.6 Endpoint & API keys (P1) — `/v1/projects/{id}/endpoint`, `/keys`
-- [ ] **Endpoint** card: slug (the OpenAI `model` value), type, status → `GET …/endpoint`.
-- [ ] **Keys**: generate scoped `brn_*` key → `POST …/keys`; list → `GET`; revoke → `DELETE`.
-- [ ] **Show-once secret**: display the full `brn_*` key exactly once on creation with a copy button + warning; thereafter show only a masked prefix. (Never re-fetch full key material.)
-- [ ] **Copy-paste consumption snippet**: pre-filled OpenAI-SDK example with this server's base URL, the endpoint slug as `model`, and the new key — the bridge from console to the real product API.
-- [ ] *Acceptance:* a generated key works against `POST /v1/chat/completions` from the shown snippet; a revoked key is rejected.
+### 5.6F `[FE]` Behavior (fine-tune) flow — dataset → job → **eval gate** → endpoint (depends: B4)
+- [ ] **Dataset**: upload JSONL → `POST …/datasets`, **or** synthesize → `POST …/datasets/synthesize` (202); poll `GET …/datasets/{did}`; surface schema-validation errors (`invalid` + message).
+- [ ] **Training job**: enqueue → `POST …/jobs`; **live progress** poll `GET …/jobs/{jid}` (queued→running→succeeded|failed + progress bar + logs tail).
+- [ ] **Eval gate — unmissable**: on completion show `eval_score` vs threshold and a bold **PASSED / BLOCKED**; if blocked, **Create endpoint is disabled** with the reason ("scored 0.52 < 0.60 — cannot serve"), mirroring `EvalGateFailed(422)`.
+- [ ] **Create endpoint** → `POST …/endpoint` (requires a succeeded eval-passed job). **Honesty banner** until §A3.1 lands: note that served output may reflect the base model until adapter-serving ships.
+- [ ] *Acceptance:* a passing run reaches a live endpoint; a failing run shows BLOCKED with no serve path.
 
-### 5.7 Chat playground (P1) — `/v1/chat/completions`
-- [ ] A test chat against the project's endpoint using a (console-held) key; streams or shows the completion.
-- [ ] **Render citations** for RAG answers (sources/chunks) so grounding is visible — the RAG value prop on screen.
-- [ ] Show **usage** (prompt/completion/total tokens) returned by the response.
-- [ ] Clearly label this as a test tool, distinct from production app traffic.
-- [ ] *Acceptance:* the playground exercises the exact same endpoint a customer's app would, and shows citations + usage.
+### 5.7 `[FE]` Endpoint & API keys + the consumption snippet — `/endpoint`, `/keys` (depends: B5 or B6F)
+- [ ] **Endpoint card**: slug (the OpenAI `model` value), type, status → `GET …/endpoint`. **Keys**: create → `POST …/keys`; list → `GET`; revoke → `DELETE`.
+- [ ] **Show-once secret**: full `brn_` key shown exactly once on creation (copy + warning); thereafter masked prefix only. **Consumption snippet** (`CodeSnippet`): pre-filled OpenAI-SDK + `curl` examples with this server's base URL, the slug as `model`, and the key — **the north-star handoff**.
+- [ ] *Acceptance:* the shown snippet works against `POST /v1/chat/completions`; a revoked key is rejected.
 
-### 5.8 Cross-cutting UX — "realistic, clear, usable" (P1)
-The qualities the user asked for, made concrete and testable:
-- [ ] **Error surfacing**: render the `DomainError` envelope `{code, message}` as human copy **and show the `correlation_id`** with a copy button (so an operator can quote it in a bug report). Never show a raw stack or a bare 500.
-- [ ] **Async is the norm** (indexing, synthesis, training): every long action shows pending/in-progress/done/failed via polling — never a frozen button or a silent success.
-- [ ] **State discipline**: disable actions that aren't yet valid (no endpoint before indexed/eval-passed); show empty states with the next step; confirm destructive actions (delete project/key).
-- [ ] **Loading & latency**: spinners/skeletons on every fetch; no layout that implies instant when the call is async.
-- [ ] **Plain language**: the knowledge-vs-behavior framing everywhere; never expose internal jargon ("adapter", "QLoRA") without a one-line plain explanation.
-- [ ] **Responsive + baseline a11y**: works at laptop widths; labelled inputs, keyboard-reachable controls, sufficient contrast.
-- [ ] *Acceptance:* a first-time operator completes both flows without reading the API docs, and every failure path shows an actionable message + correlation ID.
+### 5.8 `[FE]` Chat playground — `/v1/chat/completions` (depends: B7)
+- [ ] Test chat against the endpoint using a console-held key; show the completion. **Render citations** for RAG; show **usage** (prompt/completion/total). Label clearly as a test tool.
+- [ ] *Acceptance:* the playground hits the exact endpoint a customer app would and shows citations + usage.
 
-### 5.9 Serving, build & deploy integration (P1)
-- [ ] Serve the console from `app` via `StaticFiles` at a path that **doesn't shadow** `/v1`, `/health`, `/docs` (e.g. `/console` or `/`); single origin → no CORS, no second container.
-- [ ] If a build step is chosen (§5.1): a `builder` stage compiles assets, runtime stage copies only the built output (mirrors the multi-stage goal in §4.2); otherwise copy static assets directly.
-- [ ] Gate behind auth; ensure the console mount doesn't widen the CORS policy or expose new routes.
-- [ ] Add a console smoke check to the boot test (§4.1): the console root returns 200.
-- [ ] *Acceptance:* `docker compose up` serves a working console from the existing `app` container with no new ports and no CORS relaxation.
+### 5.9 `[FE]` Usage view — `/v1/projects/{id}/usage` (depends: B4)
+- [ ] Daily token rollups (newest first) + totals from `GET …/usage`; empty state before any traffic.
+- [ ] *Acceptance:* usage table reflects playground/API traffic.
+
+### 5.10 `[FE]` Cross-cutting UX polish (runs alongside B2–B9)
+- [ ] Error envelope rendered as human copy **+ copyable `correlation_id`**; never a raw stack/bare 500. Every async action shows pending/in-progress/done/failed (no frozen buttons). Disable invalid actions; confirm destructive ops. Spinners/skeletons on fetch. Plain language (explain "adapter"/"QLoRA" inline). Responsive at laptop widths; labelled inputs, keyboard-reachable, sufficient contrast.
+- [ ] *Acceptance:* a first-time operator completes both flows without the API docs; every failure path shows an actionable message + correlation id.
+
+### 5.11 `[INFRA]` Serving, build & deploy integration (depends: B1; finalize after views)
+- [ ] **C1 — Mount:** serve `brain/console/dist` via `StaticFiles` at `/console` (must not shadow `/v1`,`/health`,`/docs`,`/metrics`,`/gpu`); redirect `/`→`/console/`. Same origin → no CORS change. *(Enable early for browser testing against the dev stack.)*
+- [ ] **C2 — Docker:** add a `console-builder` stage (Node, `npm ci && npm run build`) to the multi-stage `Dockerfile`; the `production`/`dev` app stages copy `dist` into the image. `.dockerignore` excludes `brain/console/node_modules`. No runtime Node.
+- [ ] **C3 — CI:** build the console in the `fast` gate (or a dedicated job) so a broken build fails CI; add a console smoke step (`GET /console/` → 200) to the boot test (§A2).
+- [ ] **C4 — Docs:** README "run the console" section; note the `/console` route in PRODUCT_DEFINITION/OPERATIONS.
+- [ ] *Acceptance:* `docker compose up` serves a working console from the existing `app` container, no new ports, no CORS relaxation; CI fails on a broken console build.
+
+### 5.12 `[BE]` Key-scoping test (carry-over from §3.1)
+- [ ] Now unblockable once a console-driven endpoint+key exists: assert a `brn_` key reaches **only** its own endpoint (cross-endpoint key → rejected). Add to `tests/integration/`.
+- [ ] *Acceptance:* a key scoped to endpoint A cannot drive endpoint B.
 
 ---
 

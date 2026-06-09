@@ -42,6 +42,78 @@ class ModelEvaluator:
                 "Install with: pip install torch transformers peft datasets"
             )
 
+    @staticmethod
+    def _render_prompt_and_target(messages: list) -> tuple[str, str]:
+        """Render a chat row into (prompt_text, target_response).
+
+        ``prompt_text`` is everything up to and including the ``Assistant: `` cue but
+        WITHOUT the answer (what the model is conditioned on); ``target_response`` is the
+        assistant's content. Mirrors the trainer's plain ``Role: content`` formatting so
+        the masking boundary is consistent with how the model was trained.
+        """
+        prompt_text = ""
+        target_text = ""
+        for msg in messages:
+            role = msg["role"]
+            content = msg["content"]
+            if role == "system":
+                prompt_text += f"System: {content}\n"
+            elif role == "user":
+                prompt_text += f"User: {content}\n"
+            elif role == "assistant":
+                target_text = content
+        prompt_text += "Assistant: "
+        return prompt_text, target_text
+
+    def _tokenize_with_response_mask(self, tokenizer, messages: list):
+        """Tokenize one row into (input_ids, labels) where labels mask the prompt.
+
+        Loss must be computed on the **response tokens only**: prompt tokens get label
+        ``-100`` (ignored by HF's cross-entropy), so the score reflects the model's
+        ability to produce the target answer, not to model the operator's prompt text.
+        Returns CPU tensors of shape (1, T); the caller moves them to the device.
+        """
+        prompt_text, target_text = self._render_prompt_and_target(messages)
+        full_text = prompt_text + target_text
+
+        prompt_ids = tokenizer(prompt_text, add_special_tokens=False)["input_ids"]
+        full = tokenizer(
+            full_text, return_tensors="pt", truncation=True, max_length=2048,
+            add_special_tokens=False,
+        )
+        input_ids = full["input_ids"]
+        labels = input_ids.clone()
+        # Mask the prompt span (and any tokens beyond the truncation point handled by
+        # clamping). Everything in [0, len(prompt_ids)) is prompt → ignore.
+        mask_len = min(len(prompt_ids), labels.shape[1])
+        labels[0, :mask_len] = -100
+        return {"input_ids": input_ids, "labels": labels}
+
+    @staticmethod
+    def _response_only_loss(model, tokenized: list, device) -> float:
+        """Mean per-row response-only cross-entropy over a pre-tokenized split.
+
+        Each row already carries prompt-masked labels (-100). Rows whose response was
+        fully truncated away (no unmasked label) are skipped. Returns +inf if no row
+        has a scorable response.
+        """
+        total_loss = 0.0
+        counted = 0
+        for row in tokenized:
+            labels = row["labels"]
+            if int((labels != -100).sum().item()) == 0:
+                continue  # nothing to score (response truncated out)
+            input_ids = row["input_ids"].to(device)
+            labels = labels.to(device)
+            out = model(input_ids=input_ids, labels=labels)
+            loss = out.loss.item()
+            if loss == loss:  # not NaN
+                total_loss += loss
+                counted += 1
+        if counted == 0:
+            return float("inf")
+        return total_loss / counted
+
     async def evaluate_adapter(
         self,
         job_id: str,
@@ -52,9 +124,21 @@ class ModelEvaluator:
         dataset_path: Path,
         num_samples: int = 5,
         max_examples: Optional[int] = None,
+        compare_base: bool = True,
     ) -> EvaluationResult:
         """
-        Evaluate a trained adapter on a validation dataset.
+        Evaluate a trained adapter on a HELD-OUT validation dataset.
+
+        The caller MUST pass a ``dataset_path`` that the model did **not** train on
+        (the worker holds out the last fraction of rows for this — see
+        ``brain.training.models.split_holdout``). Scoring on training rows measures
+        memorization, not the generalization the eval gate is meant to guard.
+
+        The reported loss is **response-only** (prompt tokens masked with -100), so it
+        reflects how well the model produces the target answer rather than how well it
+        models the operator's prompt text. When ``compare_base`` is set, the same split
+        is also scored on the un-adapted base model and the adapter-vs-base delta is
+        reported (the gate still uses the adapter's absolute score).
 
         Args:
             job_id: Training job ID
@@ -62,9 +146,10 @@ class ModelEvaluator:
             adapter_name: Name of the adapter
             adapter_path: Path to the adapter directory
             base_model: Base model name
-            dataset_path: Path to validation dataset (JSONL)
+            dataset_path: Path to the HELD-OUT validation dataset (JSONL)
             num_samples: Number of sample predictions to save
             max_examples: Maximum examples to evaluate (None = all)
+            compare_base: Also score the base model on the same split for a delta
 
         Returns:
             EvaluationResult with metrics and sample predictions
@@ -95,20 +180,22 @@ class ModelEvaluator:
 
             # Load base model
             logger.info(f"Loading base model {base_model}")
-            model = AutoModelForCausalLM.from_pretrained(
+            base = AutoModelForCausalLM.from_pretrained(
                 base_model,
                 device_map="auto",
                 torch_dtype=torch.float16,
                 trust_remote_code=True,
             )
 
-            # Load adapter
+            # Load adapter ON TOP of the base. PeftModel wraps `base`; with the adapter
+            # disabled it behaves as the base model, which lets us score base-vs-adapter
+            # on the SAME loaded weights (no second base load) — see disable_adapter().
             logger.info(f"Loading adapter from {adapter_path}")
-            model = PeftModel.from_pretrained(model, str(adapter_path))
+            model = PeftModel.from_pretrained(base, str(adapter_path))
             model.eval()
 
-            # Load validation dataset
-            logger.info(f"Loading validation dataset from {dataset_path}")
+            # Load validation dataset (the HELD-OUT split the worker wrote).
+            logger.info(f"Loading held-out validation dataset from {dataset_path}")
             dataset = load_dataset("json", data_files=str(dataset_path))
             eval_data = dataset["train"]
 
@@ -117,86 +204,71 @@ class ModelEvaluator:
                 eval_data = eval_data.select(range(min(max_examples, len(eval_data))))
 
             num_examples = len(eval_data)
-            logger.info(f"Evaluating on {num_examples} examples")
+            logger.info(f"Evaluating on {num_examples} held-out examples")
 
-            # Prepare for evaluation
-            total_loss = 0.0
-            total_tokens = 0
-            correct_tokens = 0  # noqa: F841
+            # Pre-tokenize the split once: (input_ids, response-masked labels). We reuse
+            # the exact same tensors for the adapter pass and the base pass so the delta
+            # is apples-to-apples.
+            tokenized = [
+                self._tokenize_with_response_mask(tokenizer, example["messages"])
+                for example in eval_data
+            ]
+
+            # --- Adapter (the fine-tune) on the held-out split, response-only loss ---
+            with torch.no_grad():
+                adapter_loss = self._response_only_loss(model, tokenized, model.device)
+
+            # --- Base model on the SAME split (adapter disabled) for a relative signal ---
+            base_loss: Optional[float] = None
+            if compare_base:
+                try:
+                    with torch.no_grad(), model.disable_adapter():
+                        base_loss = self._response_only_loss(model, tokenized, model.device)
+                except Exception as exc:  # base comparison is best-effort, never blocks
+                    logger.warning("Base-model comparison failed: %s", exc)
+
+            # --- Sample predictions for human inspection (held-out prompts) ---
             sample_predictions = []
-
-            # Evaluate each example
             with torch.no_grad():
                 for idx, example in enumerate(eval_data):
-                    messages = example["messages"]
+                    if idx >= num_samples:
+                        break
+                    prompt_text, target_text = self._render_prompt_and_target(example["messages"])
+                    input_ids = tokenizer(prompt_text, return_tensors="pt", truncation=True, max_length=2048)
+                    input_ids = {k: v.to(model.device) for k, v in input_ids.items()}
+                    generated_ids = model.generate(
+                        **input_ids,
+                        max_new_tokens=256,
+                        temperature=0.7,
+                        do_sample=True,
+                        pad_token_id=tokenizer.pad_token_id,
+                    )
+                    prediction = tokenizer.decode(
+                        generated_ids[0][input_ids["input_ids"].shape[1]:],
+                        skip_special_tokens=True,
+                    )
+                    sample_predictions.append({
+                        "input": prompt_text,
+                        "expected": target_text,
+                        "predicted": prediction,
+                    })
 
-                    # Format as conversation
-                    text = ""
-                    target_text = ""
-                    for msg in messages:
-                        role = msg["role"]
-                        content = msg["content"]
-                        if role == "system":
-                            text += f"System: {content}\n"
-                        elif role == "user":
-                            text += f"User: {content}\n"
-                        elif role == "assistant":
-                            text += f"Assistant: {content}\n"
-                            target_text = content
+            # Calculate metrics — score is built from the RESPONSE-ONLY held-out loss.
+            perplexity = math.exp(adapter_loss) if adapter_loss < 100 else float("inf")
+            score = score_from_loss(adapter_loss)
 
-                    # Tokenize
-                    inputs = tokenizer(text, return_tensors="pt", truncation=True, max_length=2048)
-                    inputs = {k: v.to(model.device) for k, v in inputs.items()}
-
-                    # Get loss
-                    outputs = model(**inputs, labels=inputs["input_ids"])
-                    loss = outputs.loss.item()
-                    total_loss += loss
-
-                    # Count tokens
-                    num_tokens = inputs["input_ids"].shape[1]
-                    total_tokens += num_tokens
-
-                    # Generate prediction for sample
-                    if idx < num_samples:
-                        # Create input without assistant response
-                        input_text = text.replace(f"Assistant: {target_text}\n", "Assistant: ")
-                        input_ids = tokenizer(input_text, return_tensors="pt", truncation=True, max_length=2048)
-                        input_ids = {k: v.to(model.device) for k, v in input_ids.items()}
-
-                        # Generate
-                        with torch.no_grad():
-                            generated_ids = model.generate(
-                                **input_ids,
-                                max_new_tokens=256,
-                                temperature=0.7,
-                                do_sample=True,
-                                pad_token_id=tokenizer.pad_token_id,
-                            )
-
-                        # Decode prediction
-                        prediction = tokenizer.decode(
-                            generated_ids[0][input_ids["input_ids"].shape[1]:],
-                            skip_special_tokens=True,
-                        )
-
-                        sample_predictions.append({
-                            "input": input_text,
-                            "expected": target_text,
-                            "predicted": prediction,
-                        })
-
-                    if (idx + 1) % 10 == 0:
-                        logger.info(f"Evaluated {idx + 1}/{num_examples} examples")
-
-            # Calculate metrics
-            avg_loss = total_loss / num_examples
-            perplexity = math.exp(avg_loss) if avg_loss < 100 else float('inf')
-            # Intrinsic LM score the eval gate tests (1/perplexity, clamped to [0,1]).
-            score = score_from_loss(avg_loss)
+            base_perplexity = None
+            base_score = None
+            score_delta = None
+            loss_improvement = None
+            if base_loss is not None:
+                base_perplexity = math.exp(base_loss) if base_loss < 100 else float("inf")
+                base_score = score_from_loss(base_loss)
+                score_delta = score - base_score
+                loss_improvement = base_loss - adapter_loss
 
             metrics = EvaluationMetrics(
-                loss=avg_loss,
+                loss=adapter_loss,
                 perplexity=perplexity,
                 accuracy=None,  # Would require specific task definition
                 exact_match=None,
@@ -204,6 +276,9 @@ class ModelEvaluator:
                 bleu_score=None,
                 coherence_score=None,
                 fluency_score=None,
+                base_loss=base_loss,
+                base_perplexity=base_perplexity,
+                loss_improvement=loss_improvement,
             )
 
             duration = time.time() - start_time
@@ -218,15 +293,21 @@ class ModelEvaluator:
                 num_examples=num_examples,
                 metrics=metrics,
                 score=score,
+                base_score=base_score,
+                score_delta=score_delta,
+                held_out=True,
                 sample_predictions=sample_predictions,
                 created_at=start_time,
                 duration_seconds=duration,
             )
 
             logger.info(
-                f"Evaluation {eval_id} completed: "
-                f"loss={avg_loss:.4f}, perplexity={perplexity:.2f}, score={score:.4f}, "
-                f"duration={duration:.1f}s"
+                "Evaluation %s completed (held-out, response-only): "
+                "loss=%.4f ppl=%.2f score=%.4f%s duration=%.1fs",
+                eval_id, adapter_loss, perplexity, score,
+                (f" | base_score={base_score:.4f} delta={score_delta:+.4f}"
+                 if base_score is not None else ""),
+                duration,
             )
 
             return result

@@ -135,7 +135,50 @@ async def test_lora_train_eval_gate_and_serve(client, admin):
         # 7. The eval gate now permits serving: the endpoint becomes creatable.
         ep = await client.post(f"/v1/projects/{pid}/endpoint", headers=h)
         assert ep.status_code == 201, ep.text
-        assert ep.json()["adapter_path"], "served endpoint should bind the trained adapter"
+        ep_body = ep.json()
+        slug = ep_body["slug"]
+        # The endpoint must bind the SERVABLE artifact: a converted GGUF LoRA (A3.1),
+        # not the PEFT directory. Serving loads this file via llama-cpp's lora_path.
+        assert ep_body["adapter_path"], "served endpoint should bind the trained adapter"
+        assert ep_body["adapter_path"].endswith(".gguf"), (
+            f"endpoint must bind a converted GGUF LoRA, got {ep_body['adapter_path']}"
+        )
+
+        # 8. Mint a scoped key and actually CALL the endpoint. This is the A3.1
+        #    acceptance: a fine-tune endpoint must serve the ADAPTER'S learned
+        #    behavior, not the silent base model.
+        key_resp = await client.post(
+            f"/v1/projects/{pid}/keys", headers=h, json={"name": "e2e"}
+        )
+        assert key_resp.status_code == 201, key_resp.text
+        brn_key = key_resp.json()["key"]
+        ah = {"Authorization": f"Bearer {brn_key}"}
+
+        # Held-out phrasing NOT present verbatim in the training set, about the same
+        # fictional fact. A vanilla base model cannot know "Vexvale" (invented), so
+        # its presence is evidence the LoRA adapter is actually applied at serve time.
+        held_out = "In one word, what is the capital city of the country Zorptania?"
+        cc = await client.post(
+            "/v1/chat/completions",
+            headers=ah,
+            json={
+                "model": slug,
+                "messages": [{"role": "user", "content": held_out}],
+                "temperature": 0.0,
+                "max_tokens": 24,
+            },
+        )
+        assert cc.status_code == 200, cc.text
+        ft_answer = cc.json()["choices"][0]["message"]["content"]
+        print(f"\n[lora-e2e] fine-tune endpoint answer: {ft_answer!r}")
+
+        # The adapter learned the (fictional) fact; the base model demonstrably
+        # cannot produce it. So the served output must contain it AND differ from
+        # what the unadapted base returns for the same held-out prompt.
+        assert "vexvale" in ft_answer.lower(), (
+            "fine-tune endpoint did not reflect the adapter's learned behavior — "
+            f"adapter likely not applied at serve time (got {ft_answer!r})"
+        )
     else:
         # Failed: if it reached evaluation, the gate blocked a real sub-threshold
         # score (not the old always-0.0). A pre-eval training failure leaves it None.

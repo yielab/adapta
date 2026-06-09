@@ -105,6 +105,10 @@ async def chat_completions(
     # RAG projects: inject project_id so retrieval runs
     project_id_for_rag = str(project.id) if project.type.value == "rag" else None
 
+    # Fine-tune endpoints serve the base GGUF WITH the trained GGUF LoRA adapter
+    # (A3.1). RAG/base endpoints have adapter_path=None and serve the base only.
+    adapter_path = endpoint.adapter_path if project.type.value == "finetune" else None
+
     if request_body.stream:
         return StreamingResponse(
             chat_stream(
@@ -114,6 +118,7 @@ async def chat_completions(
                 max_tokens=request_body.max_tokens,
                 project_id=project_id_for_rag,
                 endpoint_id=endpoint.id,
+                adapter_path=adapter_path,
             ),
             media_type="text/event-stream",
         )
@@ -125,6 +130,7 @@ async def chat_completions(
             max_tokens=request_body.max_tokens,
             top_p=request_body.top_p,
             project_id=project_id_for_rag,
+            adapter_path=adapter_path,
         )
         # Meter usage off the response path (§3.2).
         u = result.get("usage", {})

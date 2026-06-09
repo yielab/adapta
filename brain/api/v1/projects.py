@@ -7,9 +7,10 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from brain.core.model_catalog import allowed_names, is_valid
 from brain.db.models import Project, ProjectStatus, ProjectType
 from brain.db.session import get_db
-from brain.domain.errors import NotFound
+from brain.domain.errors import InvalidRequest, NotFound
 from brain.services.auth import (
     get_current_user,
     require_team_admin,
@@ -61,6 +62,15 @@ async def create_project(
     db: AsyncSession = Depends(get_db),
 ):
     await require_team_writer(db, current_user.id, body.team_id)
+    # Validate base_model against the single catalog (A3.3): the same entry must
+    # both train (HF id) and serve (GGUF), so an operator can't pick a value that
+    # only works in one runtime — it would otherwise surface as a runtime failure.
+    if not is_valid(body.base_model):
+        allowed = ", ".join(allowed_names())
+        raise InvalidRequest(
+            message=f"Unknown base_model '{body.base_model}'. Allowed values: {allowed}.",
+            internal_detail=f"base_model not in catalog: {body.base_model!r}",
+        )
     project = Project(
         team_id=body.team_id,
         name=body.name,

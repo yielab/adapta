@@ -64,6 +64,13 @@ class Settings(BaseSettings):
     # Training
     eval_score_threshold: float = 0.6  # minimum eval score for an adapter to be promoted
 
+    # Fine-tune serving (A3.1): PEFT adapters are converted to a GGUF LoRA so the
+    # single llama-cpp runtime can serve them via `lora_path`. The converter is
+    # llama.cpp's official convert_lora_to_gguf.py, vendored into the worker image.
+    lora_convert_dir: Path = Path("/opt/llamacpp")  # holds convert_lora_to_gguf.py
+    lora_gguf_filename: str = "adapter.gguf"  # converted artifact, stored beside safetensors
+    lora_outtype: str = "f16"  # GGUF LoRA quant for conversion (f16/f32/q8_0)
+
     # CORS
     cors_origins: list[str] = ["*"]
 
