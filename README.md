@@ -184,7 +184,7 @@ Phases 0–5 are implemented. This is **early-stage, pre-first-customer software
 | Test coverage | 🚧 Partial | 65 in-process tests (errors, chunking, validation, eval gate, error boundary); ~28% line coverage with an enforced floor; integration tests still to come |
 | Docker dev/prod workflow | ✅ Done | One multi-stage `Dockerfile` (dev/production/worker); `docker compose up` = dev with tooling baked in (no manual pip); non-root production |
 | Images / vision | 🗑️ Cut | Removed from scope |
-| Dashboard UI | 🗑️ Cut | Product UI is the OpenAI-compatible API, not a web dashboard |
+| Operator console (thin web UI) | 🚧 In progress | Operator-facing console served same-origin from `app`; thin client over the existing API (the OpenAI-compatible API stays the only protocol customer *apps* call). See [TODO.md §5](TODO.md) |
 
 ---
 

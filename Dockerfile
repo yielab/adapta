@@ -63,10 +63,23 @@ ENV BRAIN_HOST=0.0.0.0 BRAIN_PORT=8000
 EXPOSE 8000
 ENTRYPOINT ["/app/entrypoint.sh"]
 
+# ===== console-builder (thin operator console — Vite + Svelte) ================
+# Builds the static SPA to brain/console/dist/. Copied into the production image
+# so the app can mount it at /console/. The dev image skips this stage: the
+# bind-mounted host tree already has the dist if the developer ran `npm run build`.
+FROM node:22-slim AS console-builder
+WORKDIR /build
+COPY brain/console/package.json brain/console/package-lock.json ./
+RUN npm ci --no-audit --prefer-offline
+COPY brain/console/ ./
+RUN npm run build:fast
+
 # ===== production =============================================================
 FROM base AS production
 COPY --from=builder /opt/venv /opt/venv
 COPY brain/ ./brain/
+# Bake the pre-built console assets into the image (built above by console-builder).
+COPY --from=console-builder /build/dist ./brain/console/dist/
 COPY specs/ ./specs/
 COPY migrations/ ./migrations/
 COPY alembic.ini entrypoint.sh ./
@@ -94,9 +107,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN python -m venv /opt/venv
 COPY pyproject.toml ./
 RUN pip install --no-cache-dir -e ".[training]" --config-settings editable_mode=compat
+# Vendor llama.cpp's OFFICIAL PEFT->GGUF LoRA converter (A3.1). We do NOT reimplement
+# the GGUF-LoRA format ourselves; we run the upstream script as a subprocess in the
+# worker after eval passes. Pinned to a known tag for reproducibility. We keep only the
+# two convert scripts (convert_lora_to_gguf.py imports convert_hf_to_gguf.py).
+ARG LLAMA_CPP_TAG=b4576
+RUN git clone --depth 1 --branch ${LLAMA_CPP_TAG} https://github.com/ggerganov/llama.cpp /tmp/llamacpp \
+    && mkdir -p /opt/llamacpp \
+    && cp /tmp/llamacpp/convert_lora_to_gguf.py /tmp/llamacpp/convert_hf_to_gguf.py /opt/llamacpp/ \
+    && rm -rf /tmp/llamacpp
 
 FROM base AS worker
 COPY --from=worker-builder /opt/venv /opt/venv
+COPY --from=worker-builder /opt/llamacpp /opt/llamacpp
 COPY brain/ ./brain/
 COPY migrations/ ./migrations/
 COPY alembic.ini ./

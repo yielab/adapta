@@ -19,11 +19,13 @@ import logging
 import time
 import uuid
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, PlainTextResponse
+from fastapi.responses import JSONResponse, PlainTextResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from starlette.datastructures import MutableHeaders
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
@@ -277,6 +279,24 @@ def create_app() -> FastAPI:
     app.include_router(chat.router, prefix=prefix)
     app.include_router(synthesis.router, prefix=prefix)
     app.include_router(usage.router, prefix=prefix)
+
+    # ---------------------------------------------------------------------------
+    # Operator console — static SPA (Vite+Svelte, built to brain/console/dist/).
+    # Mounted last so it never shadows API routes.  html=True means StaticFiles
+    # serves index.html for the mount root; the SPA uses a hash router so the
+    # server never needs a SPA fallback for deep links (#/projects/abc).
+    # ---------------------------------------------------------------------------
+    _console_dist = Path(__file__).parent.parent / "console" / "dist"
+    if _console_dist.is_dir() and any(_console_dist.iterdir()):
+        app.mount("/console", StaticFiles(directory=str(_console_dist), html=True), name="console")
+
+        @app.get("/", include_in_schema=False)
+        async def redirect_to_console():
+            return RedirectResponse(url="/console/", status_code=302)
+
+        logger.info("Operator console mounted at /console/ from %s", _console_dist)
+    else:
+        logger.warning("Operator console dist not present at %s — UI unavailable (run `npm run build` in brain/console/)", _console_dist)
 
     return app
 

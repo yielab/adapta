@@ -168,7 +168,7 @@ Middleware stamps `request.state.cid` (UUID) on every request, echoes it in `X-C
 | Delete | Framework adapters (LangChain/LangGraph/OpenClaw) | Done |
 | Delete | Multi-protocol ambitions (Anthropic/MCP/Responses) | Done |
 | Delete | Drupal scraper | Done |
-| Delete | Dashboard web UI | Done |
+| ~~Delete~~ Reinstate | Operator console (thin web UI) | Reversed 2026-06-09 — a thin operator console is back **in scope** (operator convenience over the existing API, not a new protocol); see PRODUCT_DEFINITION §3 + TODO §5 |
 | Replace | Dummy `"dummy"` API key | Done — bcrypt + JWT in `brain/services/auth.py` |
 | Replace | Placeholder embeddings | Done — real sentence-transformers in `brain/services/embeddings.py` |
 | Implement | Async training jobs + worker | Done — `brain/services/jobs.py` + `brain/worker/main.py` |

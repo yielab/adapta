@@ -38,10 +38,28 @@ class RegisterRequest(BaseModel):
     password: str
 
 
+class TeamSummary(BaseModel):
+    id: str
+    name: str
+    role: str
+
+
 class UserResponse(BaseModel):
     id: str
     email: str
     org_id: str
+    teams: List[TeamSummary] = []
+
+
+async def _load_teams(db: AsyncSession, user_id: str) -> List[TeamSummary]:
+    """The teams a user belongs to + their role — so a client can discover the
+    team_id every /v1/projects call requires."""
+    result = await db.execute(
+        select(Team.id, Team.name, TeamMember.role)
+        .join(TeamMember, TeamMember.team_id == Team.id)
+        .where(TeamMember.user_id == user_id)
+    )
+    return [TeamSummary(id=tid, name=name, role=role.value) for tid, name, role in result.all()]
 
 
 @router.post("/login", response_model=TokenResponse)
@@ -81,12 +99,22 @@ async def register(body: RegisterRequest, db: AsyncSession = Depends(get_db)):
     # (the get_db finalizer commits only after the response is sent — §4.4).
     await db.commit()
 
-    return UserResponse(id=user.id, email=user.email, org_id=user.org_id)
+    return UserResponse(
+        id=user.id,
+        email=user.email,
+        org_id=user.org_id,
+        teams=[TeamSummary(id=team.id, name=team.name, role=Role.admin.value)],
+    )
 
 
 @router.get("/me", response_model=UserResponse)
-async def me(current_user=Depends(get_current_user)):
-    return UserResponse(id=current_user.id, email=current_user.email, org_id=current_user.org_id)
+async def me(current_user=Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    return UserResponse(
+        id=current_user.id,
+        email=current_user.email,
+        org_id=current_user.org_id,
+        teams=await _load_teams(db, current_user.id),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -150,7 +178,12 @@ async def accept_invite(body: AcceptInviteRequest, db: AsyncSession = Depends(ge
     if not body.password or len(body.password) < 8:
         raise InvalidRequest(message="Password must be at least 8 characters")
     user, _inv = await accept_invitation(db, token=body.token, password=body.password)
-    return UserResponse(id=user.id, email=user.email, org_id=user.org_id)
+    return UserResponse(
+        id=user.id,
+        email=user.email,
+        org_id=user.org_id,
+        teams=await _load_teams(db, user.id),
+    )
 
 
 @router.get("/invitations", response_model=List[InvitationResponse])

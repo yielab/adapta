@@ -81,8 +81,11 @@ A **single-tenant, self-hosted** application. A company runs it on their own inf
 - Framework adapters (LangChain/LangGraph/OpenClaw) — dropped.
 - Multi-protocol API (Anthropic/MCP/Responses) — deferred indefinitely; OpenAI-compatible only.
 - Drupal-specific scraper — dropped.
-- Web dashboard UI — out of scope; the API surface is the product.
 - Public multi-tenant SaaS concerns — not this product.
+
+### In scope — thin operator console (decided 2026-06-09)
+
+A bundled, **operator-facing** web console ships with the appliance. It is **not a second product surface**: it is a thin client over the **existing** API — every screen maps 1:1 to an endpoint already in `specs/openapi.yaml`, served same-origin from the `app` container (no new server capability, no new external protocol, no Node toolchain). The **OpenAI-compatible API remains the only protocol a customer's *applications* call**; the console is how a *human operator* drives setup (projects, files/datasets, training, eval gate, keys, a test playground). It honors the framing rule below: it never calls RAG "training." Build spec: [TODO.md §5](../TODO.md).
 
 ## 4. Architecture (self-hosted, on-prem)
 

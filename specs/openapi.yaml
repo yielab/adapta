@@ -556,6 +556,17 @@ components:
         id: {type: string}
         email: {type: string}
         org_id: {type: string}
+        teams:
+          type: array
+          description: Teams the user belongs to, with their role in each. Lets a client discover the team_id required by the project endpoints.
+          items:
+            $ref: '#/components/schemas/TeamSummary'
+    TeamSummary:
+      type: object
+      properties:
+        id: {type: string}
+        name: {type: string}
+        role: {type: string, enum: [admin, member, viewer]}
 
     # Invitations
     InviteRequest:

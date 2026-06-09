@@ -26,16 +26,16 @@ class TokenResponse(BaseModel):
     token_type: Literal["bearer"] | None = None
 
 
-class UserResponse(BaseModel):
-    id: str | None = None
-    email: str | None = None
-    org_id: str | None = None
-
-
 class Role(Enum):
     admin = "admin"
     member = "member"
     viewer = "viewer"
+
+
+class TeamSummary(BaseModel):
+    id: str | None = None
+    name: str | None = None
+    role: Role | None = None
 
 
 class InviteRequest(BaseModel):
@@ -209,14 +209,14 @@ class SynthesizeResponse(BaseModel):
     message: str | None = None
 
 
-class Role2(Enum):
+class Role3(Enum):
     system = "system"
     user = "user"
     assistant = "assistant"
 
 
 class Message(BaseModel):
-    role: Role2
+    role: Role3
     content: str
 
 
@@ -276,3 +276,13 @@ class Error(BaseModel):
 
 class ErrorResponse(BaseModel):
     error: Error | None = None
+
+
+class UserResponse(BaseModel):
+    id: str | None = None
+    email: str | None = None
+    org_id: str | None = None
+    teams: list[TeamSummary] | None = None
+    """
+    Teams the user belongs to, with their role in each. Lets a client discover the team_id required by the project endpoints.
+    """
