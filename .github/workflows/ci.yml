@@ -30,7 +30,7 @@ jobs:
       - name: lint
         run: make lint
 
-      - name: coverage (tests + 28% floor)
+      - name: coverage (tests + 30% floor)
         run: make coverage
 
       - name: validate-spec

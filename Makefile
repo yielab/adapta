@@ -85,7 +85,7 @@ test:
 	pytest tests/ -v
 
 coverage:
-	pytest tests/ -v --cov=brain --cov-report=term-missing --cov-fail-under=28
+	pytest tests/ -v --cov=brain --cov-report=term-missing --cov-fail-under=30
 
 lint:
 	ruff check brain/ tests/

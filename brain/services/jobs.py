@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 import redis.asyncio as aioredis
+from redis.exceptions import TimeoutError as RedisTimeoutError
 
 from brain.config import settings
 
@@ -59,8 +60,14 @@ class JobQueue:
         await pipe.execute()
 
     async def dequeue(self, timeout: int = 10) -> Optional[dict]:
-        """Blocking pop; returns job meta dict or None on timeout."""
-        result = await self.redis.blpop([QUEUE_KEY], timeout=timeout)
+        """Blocking pop; returns job meta dict or None on timeout (empty queue)."""
+        try:
+            result = await self.redis.blpop([QUEUE_KEY], timeout=timeout)
+        except RedisTimeoutError:
+            # redis-py asyncio raises TimeoutError when the socket read deadline
+            # fires before BLPOP returns nil on an idle queue. That is a normal
+            # empty poll, not an error — don't let it surface as a worker-loop error.
+            return None
         if not result:
             return None
         _, job_id_val = result
