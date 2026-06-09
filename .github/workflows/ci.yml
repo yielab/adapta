@@ -39,6 +39,14 @@ jobs:
       - name: check-models (generated Pydantic in sync with spec)
         run: make check-models
 
+      - name: import smoke (app + worker boot-import)
+        # Catches the boot-killer class of regression — a module eagerly importing
+        # a removed setting/symbol — on every push, with no infra. The worker is
+        # NOT exercised by the test suite, so this is its only fast guard. Training
+        # deps are imported lazily, so this works without the [training] extras.
+        run: |
+          python -c "import brain.api.app, brain.worker.main; print('import OK - app and worker')"
+
   # -------------------------------------------------------------------------
   # Full gate — runs on PRs to main only; requires live stack.
   # Runs: migrate-test → boot smoke → contract tests → integration tests
@@ -100,13 +108,12 @@ jobs:
       - name: migrate-test (Pillar 2 — up/down round-trip)
         run: make migrate-test
 
-      - name: Boot smoke test
+      - name: Boot smoke test (app + worker)
         run: |
+          # --- App: boots and serves ---
           uvicorn brain.api.app:app --host 0.0.0.0 --port 8000 &
           SERVER_PID=$!
-          echo "Server PID: $SERVER_PID"
-
-          # Poll /health until 200 (up to 60s)
+          echo "App PID: $SERVER_PID"
           echo "Waiting for /health to return 200..."
           for i in $(seq 1 30); do
             if curl -fsS http://localhost:8000/health > /dev/null 2>&1; then
@@ -114,23 +121,40 @@ jobs:
               break
             fi
             if [ $i -eq 30 ]; then
-              echo "FAIL: server did not become healthy within 60s"
+              echo "FAIL: app did not become healthy within 60s"
               kill $SERVER_PID 2>/dev/null || true
               exit 1
             fi
             sleep 2
           done
 
-          # Assert it stays up for 15s (not a crash-loop)
+          # --- Worker: boots and stays alive ---
+          # `python -m brain.worker.main` connects to Redis and BLPOP-blocks. A boot
+          # regression (import error / removed setting / bad URL) makes it exit
+          # immediately with a non-zero code, which this catches. Training deps load
+          # lazily per-job, so no GPU/[training] extras are needed just to boot.
+          python -m brain.worker.main &
+          WORKER_PID=$!
+          echo "Worker PID: $WORKER_PID"
+
+          # Both processes must survive 15s (not crash-looping)
           sleep 15
-          if ! curl -fsS http://localhost:8000/health > /dev/null 2>&1; then
-            echo "FAIL: server stopped responding after 15s"
+          if ! kill -0 $WORKER_PID 2>/dev/null; then
+            echo "FAIL: worker exited within 15s — boot regression"
+            wait $WORKER_PID || true
             kill $SERVER_PID 2>/dev/null || true
             exit 1
           fi
-          echo "✓ Server stable for 15s"
+          echo "✓ Worker stable for 15s"
 
-          # /health/deep — all five checks must reach
+          if ! curl -fsS http://localhost:8000/health > /dev/null 2>&1; then
+            echo "FAIL: app stopped responding after 15s"
+            kill $SERVER_PID $WORKER_PID 2>/dev/null || true
+            exit 1
+          fi
+          echo "✓ App stable for 15s"
+
+          # /health/deep — all five service checks must be reachable
           curl -fsS http://localhost:8000/health/deep | python3 -c "
           import json, sys
           d = json.load(sys.stdin)
@@ -140,21 +164,18 @@ jobs:
           " || true   # degraded (disk) is acceptable in CI; don't fail on it
 
           echo "SERVER_PID=$SERVER_PID" >> $GITHUB_ENV
+          echo "WORKER_PID=$WORKER_PID" >> $GITHUB_ENV
 
       - name: Contract tests (Pillar 1 — schemathesis)
         run: |
           TOKEN=$(python - <<'EOF'
           import httpx
-          r = httpx.post("http://localhost:8000/v1/auth/register", json={
-              "email": "ci@brain.local",
-              "password": "ci-password",
-              "org_name": "CI Org",
-          })
-          r.raise_for_status()
-          r2 = httpx.post("http://localhost:8000/v1/auth/login", json={
-              "email": "ci@brain.local",
-              "password": "ci-password",
-          })
+          # NOTE: reserved TLDs (.local/.example/.test) are rejected by email-validator,
+          # so use a normal domain for the bootstrap user.
+          creds = {"email": "ci@braincorp.dev", "password": "ci-password-123"}
+          httpx.post("http://localhost:8000/v1/auth/register",
+                     json={**creds, "org_name": "CI Org"})
+          r2 = httpx.post("http://localhost:8000/v1/auth/login", json=creds)
           r2.raise_for_status()
           print(r2.json()["access_token"])
           EOF
@@ -164,6 +185,6 @@ jobs:
       - name: Integration tests
         run: pytest tests/ -v -m integration
 
-      - name: Teardown server
+      - name: Teardown app + worker
         if: always()
-        run: kill $SERVER_PID 2>/dev/null || true
+        run: kill $SERVER_PID $WORKER_PID 2>/dev/null || true

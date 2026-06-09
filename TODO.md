@@ -47,6 +47,7 @@ Honour the [Definition of done](#definition-of-done-per-task) on every task. Wor
 | Pillar 3 — eval gate (the moat) | ✅ enforced in code + unit-tested offline (`tests/test_eval_gate.py`) |
 | **Pillar 1 — API contract** | ✅ **honored** (2026-06-08) — `make test-contracts` green (1260/1260, `--checks all`, zero 5xx); generated models committed + drift-gated (`make check-models`). Optional router-DTO switch remains (§A1b). |
 | CI runner | ✅ `.github/workflows/ci.yml` — `fast` (every push, offline) + `full` (PR→main, live stack) |
+| Boot-correctness gate | ✅ (2026-06-08) — fast `import smoke` (app + worker) every push; `full` boot smoke starts uvicorn **and** the worker and asserts both survive. See **§A2**. |
 | Docker dev/prod workflow | ✅ reworked 2026-06-08 — one multi-stage `Dockerfile`, non-root prod, dev toolchain baked in (no manual pip). See **§4**. |
 | Image size / CPU-only torch | ❌ still ~6 GB; CPU-torch split + slimming open. See **§4.2**. |
 
@@ -69,17 +70,14 @@ Honour the [Definition of done](#definition-of-done-per-task) on every task. Wor
 
 **Remaining (optional, downgraded to P2) — A1b: switch routers to the generated DTOs.** Routers in `brain/api/v1/*` still hand-write their Pydantic request/response models; `brain.models.generated` is committed and drift-checked but **not yet imported**. Incrementally replace the hand-written DTOs with the generated equivalents (per the note in `brain/models/__init__.py`), deleting duplicates. *Acceptance:* every router imports its DTOs from `brain.models.generated`; no hand-written request/response model remains; contract gate stays green.
 
-### A2. Boot-correctness gate — the image runs, not just builds (P0)
+### A2. Boot-correctness gate — ✅ DONE (the image runs, not just builds) (P0)
 
-**Context.** The app/worker boot clean today (verified this session: `/health` ok, `/health/deep` all five checks reach), but there is **no automated guard** preventing a regression (e.g. importing a removed setting) from shipping. The fix is in; the gate is not.
+**Context (resolved 2026-06-08).** The app/worker boot clean, but nothing guarded against a regression (e.g. importing a removed setting) shipping. Now guarded at two levels:
+- `[x]` **Fast job (every push, offline):** new `import smoke` step runs `python -c "import brain.api.app, brain.worker.main"`. Catches the boot-killer class (eager import of a removed setting/symbol) with no infra. Crucially this is the **only** fast guard for `brain.worker.main`, which no test imports. Works without `[training]` extras (the trainer/evaluator are imported lazily per-job; `torch` is a transitive base dep via `sentence-transformers`).
+- `[x]` **Full job (PR, live stack):** the `Boot smoke test (app + worker)` step starts uvicorn **and** `python -m brain.worker.main`, then asserts both survive ≥15 s and `/health/deep`'s five checks are reachable. A worker that exits on a boot regression fails the gate.
+- `[x]` Fixed a latent CI bug found here: the contract step registered `ci@brain.local`, which email-validator rejects (reserved TLD) — would 422 at registration. Now uses `ci@braincorp.dev`.
 
-**Scope.** A CI step that proves the built image actually serves, not just compiles.
-
-**Steps.** In `.github/workflows/ci.yml` `full` job (already drafts this — verify it runs): `docker compose up -d` → poll `GET /health` until 200 (fail after ~60 s) → assert `worker` stays `Up` ≥15 s → hit `GET /health/deep` and assert all five service checks are reachable (degraded `disk_space` allowed).
-
-**Files.** `.github/workflows/ci.yml`.
-
-**Acceptance.** A commit that imports a non-existent setting (or otherwise crash-loops) fails CI at the smoke stage, not in a customer deploy.
+**Acceptance met.** A commit that imports a non-existent setting fails CI at `import smoke` (fast) or `Boot smoke test` (full), not in a customer deploy. Verified locally: both processes import and survive 15 s.
 
 ## 0. Audit defects found 2026-06-08 — ✅ ALL RESOLVED (kept as record)
 
@@ -297,6 +295,7 @@ runtime robustness. See [docs/API_EVOLUTION_PLAN.md](docs/API_EVOLUTION_PLAN.md)
 - [ ] *Acceptance:* `docker inspect` shows non-root; `docker history` has no secret literals; only `app:8000` is host-published in the prod profile.
 
 ### 4.4 Runtime robustness (P1)
+- [ ] **Worker idle-poll floods errors (found 2026-06-08).** An idle worker's `dequeue()` BLPOP raises `redis.exceptions.TimeoutError` (logged as `ERROR Worker loop error: Timeout reading from redis:6379`) every poll cycle instead of returning `None` — a redis-py asyncio BLPOP/socket-timeout quirk. The worker survives (retries), so jobs still process, but logs are flooded. *Fix:* in `brain/services/jobs.py:dequeue`, catch `redis.exceptions.TimeoutError` and treat it as an empty poll (`return None`); or align the socket read timeout with the BLPOP timeout. *Acceptance:* an idle worker logs nothing at ERROR; a queued job is still picked up promptly.
 - [ ] **Resource limits** on every service (`deploy.resources.limits` mem/cpu) so a runaway inference/training job can't OOM the host.
 - [ ] **Worker liveness**: a healthcheck/heartbeat (Redis liveness key or a `--healthcheck` subcommand) — a silently dead worker currently looks `Up`.
 - [ ] **Log rotation**: `json-file` driver with `max-size`/`max-file` — default logs grow unbounded.
