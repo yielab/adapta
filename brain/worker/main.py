@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import signal
+import sys
 import uuid
 from pathlib import Path
 
@@ -25,14 +26,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger("brain.worker")
 
-_shutdown = False
-
-
-def _handle_signal(signum, frame):
-    global _shutdown
-    logger.info("Shutdown signal received, finishing current job then stopping.")
-    _shutdown = True
-
 
 async def _run_job(meta: dict) -> None:
     payload = meta.get("payload", meta)
@@ -46,6 +39,7 @@ async def _run_job(meta: dict) -> None:
 
     async def progress(pct: float, log_line: str = "") -> None:
         await queue.update_status(job_id, status="running", progress=pct, logs=log_line)
+        await queue.heartbeat()  # keep liveness fresh during long training steps
 
     logger.info("Starting job %s (project=%s, model=%s)", job_id, project_id, base_model)
     await queue.update_status(job_id, status="running", progress=0.0)
@@ -190,30 +184,71 @@ async def worker_loop() -> None:
     _log_gpu_banner()
     queue = get_job_queue()
     await queue.connect()
-    logger.info("Worker connected to Redis, waiting for jobs...")
 
-    while not _shutdown:
+    loop = asyncio.get_running_loop()
+    shutdown = asyncio.Event()
+    in_flight: dict = {"task": None}
+
+    def _request_shutdown(signame: str) -> None:
+        logger.info("%s received — stopping; any in-flight job will be requeued.", signame)
+        shutdown.set()
+        task = in_flight["task"]
+        if task is not None and not task.done():
+            task.cancel()
+
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        loop.add_signal_handler(sig, _request_shutdown, sig.name)
+
+    logger.info("Worker connected to Redis, waiting for jobs...")
+    await queue.heartbeat()
+    while not shutdown.is_set():
+        await queue.heartbeat()
         try:
             meta = await queue.dequeue(timeout=5)
-            if meta is None:
-                continue
-            try:
-                await _run_job(meta)
-            except Exception as exc:
-                job_id = meta.get("payload", meta).get("job_id", "unknown")
-                logger.exception("Unhandled error in job %s: %s", job_id, exc)
-                await queue.update_status(job_id, status="failed", error=str(exc))
         except Exception as exc:
             logger.exception("Worker loop error: %s", exc)
             await asyncio.sleep(2)
+            continue
+        if meta is None:
+            continue
+
+        job_id = meta.get("payload", meta).get("job_id", "unknown")
+        task = asyncio.ensure_future(_run_job(meta))
+        in_flight["task"] = task
+        try:
+            await task
+        except asyncio.CancelledError:
+            # Graceful shutdown mid-job: return it to the queue so it isn't lost.
+            logger.warning("Job %s interrupted by shutdown — requeuing.", job_id)
+            await queue.requeue(job_id)
+            break
+        except Exception as exc:
+            logger.exception("Unhandled error in job %s: %s", job_id, exc)
+            await queue.update_status(job_id, status="failed", error=str(exc))
+        finally:
+            in_flight["task"] = None
 
     await queue.close()
     logger.info("Worker stopped.")
 
 
+async def _healthcheck() -> int:
+    """Return 0 if a worker heartbeat is fresh in Redis, 1 otherwise.
+
+    Used by the container healthcheck so a silently dead/hung worker (which still
+    looks `Up` to Docker) is reported unhealthy.
+    """
+    queue = get_job_queue()
+    await queue.connect()
+    try:
+        return 0 if await queue.worker_alive() else 1
+    finally:
+        await queue.close()
+
+
 def main() -> None:
-    signal.signal(signal.SIGTERM, _handle_signal)
-    signal.signal(signal.SIGINT, _handle_signal)
+    if "--healthcheck" in sys.argv:
+        raise SystemExit(asyncio.run(_healthcheck()))
     asyncio.run(worker_loop())
 
 

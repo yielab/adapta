@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 QUEUE_KEY = "brain:training_queue"
 JOB_KEY_PREFIX = "brain:job:"
+HEARTBEAT_KEY = "brain:worker:heartbeat"
 
 
 def _now_iso() -> str:
@@ -76,6 +77,23 @@ class JobQueue:
         if not raw:
             return None
         return json.loads(raw)  # type: ignore[no-any-return]
+
+    async def heartbeat(self, ttl: int = 90) -> None:
+        """Refresh the worker liveness key (TTL-expiring). A dead/hung worker stops
+        refreshing it, so `worker_alive()` (and the container healthcheck) go red."""
+        await self.redis.set(HEARTBEAT_KEY, _now_iso(), ex=ttl)
+
+    async def worker_alive(self) -> bool:
+        return bool(await self.redis.exists(HEARTBEAT_KEY))
+
+    async def requeue(self, job_id: str) -> None:
+        """Put a job back at the FRONT of the queue and reset it to queued.
+
+        Used for graceful shutdown: an in-flight job is returned to the queue so
+        the work restarts on the next worker rather than being lost at `running`.
+        """
+        await self.update_status(job_id, status="queued", progress=0.0)
+        await self.redis.lpush(QUEUE_KEY, job_id)
 
     async def update_status(
         self,

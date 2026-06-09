@@ -1,3 +1,10 @@
+# Shared log-rotation policy — keeps container logs from growing unbounded (§4.4).
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
 services:
   # ──────────────────────────────────────────────
   # Main application: control plane + RAG serving
@@ -28,6 +35,11 @@ services:
       - BRAIN_N_GPU_LAYERS=${BRAIN_N_GPU_LAYERS:-0}
       - BRAIN_N_THREADS=${BRAIN_N_THREADS:-8}
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 4g
+    logging: *default-logging
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
@@ -66,6 +78,22 @@ services:
       - BRAIN_ADAPTERS_DIR=/app/data/adapters
       - BRAIN_DATASETS_DIR=/app/data/datasets
     restart: unless-stopped
+    # Graceful shutdown: the worker requeues its in-flight job on SIGTERM, so give
+    # it time to cancel cleanly before Docker SIGKILLs it (§4.4).
+    stop_grace_period: 60s
+    healthcheck:
+      # A silently dead/hung worker still looks `Up`; the heartbeat key it refreshes
+      # in Redis expires if it stops looping, flipping this red (§4.4).
+      test: ["CMD", "python", "-m", "brain.worker.main", "--healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 8g
+    logging: *default-logging
     depends_on:
       postgres:
         condition: service_healthy
@@ -100,6 +128,7 @@ services:
       timeout: 5s
       retries: 5
     restart: unless-stopped
+    logging: *default-logging
 
   # ──────────────────────────────────────────────
   # Redis: job queue
@@ -120,6 +149,7 @@ services:
       timeout: 5s
       retries: 5
     restart: unless-stopped
+    logging: *default-logging
 
   # ──────────────────────────────────────────────
   # ChromaDB: per-project vector collections (RAG)
@@ -145,6 +175,7 @@ services:
       retries: 5
       start_period: 20s
     restart: unless-stopped
+    logging: *default-logging
 
 networks:
   brain-network:

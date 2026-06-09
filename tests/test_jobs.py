@@ -61,8 +61,14 @@ class FakeRedis:
     async def get(self, key):
         return self.store.get(key)
 
-    async def set(self, key, value):
+    async def set(self, key, value, ex=None):
         self.store[key] = value
+
+    async def lpush(self, key, value):
+        self.lists.setdefault(key, []).insert(0, value)
+
+    async def exists(self, key):
+        return 1 if key in self.store else 0
 
 
 @pytest.fixture
@@ -111,6 +117,30 @@ async def test_update_status_merges_fields(queue):
 
 async def test_get_status_missing_returns_none(queue):
     assert await queue.get_status("nope") is None
+
+
+async def test_requeue_resets_status_and_fronts_the_queue(queue):
+    await queue.enqueue("job-3", {"base_model": "z"})
+    await queue.dequeue(timeout=1)  # drains it off the queue
+    await queue.update_status("job-3", status="running", progress=0.7)
+    await queue.requeue("job-3")
+    # back on the queue and reset to queued
+    assert queue._redis.lists[QUEUE_KEY] == ["job-3"]
+    assert (await queue.get_status("job-3"))["status"] == "queued"
+
+
+async def test_requeue_goes_to_front(queue):
+    queue._redis.lists[QUEUE_KEY] = ["existing"]
+    await queue.enqueue("job-4", {})
+    await queue.requeue("job-4")
+    # requeued job is at the FRONT (picked up next), ahead of existing entries
+    assert queue._redis.lists[QUEUE_KEY][0] == "job-4"
+
+
+async def test_heartbeat_and_worker_alive(queue):
+    assert await queue.worker_alive() is False
+    await queue.heartbeat()
+    assert await queue.worker_alive() is True
 
 
 def test_queue_requires_connection():
