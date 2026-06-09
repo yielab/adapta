@@ -4,11 +4,18 @@ All env vars are prefixed BRAIN_ (e.g. BRAIN_DATABASE_URL).
 
 from pathlib import Path
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_DEFAULT_SECRET = "CHANGE_ME_IN_PRODUCTION_use_openssl_rand_hex_32"
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="BRAIN_", env_file=".env")
+
+    # Deployment environment — "development" (default) or "production". In
+    # production the security validator below fails fast on weak defaults.
+    environment: str = "development"
 
     # Server
     host: str = "0.0.0.0"
@@ -59,6 +66,37 @@ class Settings(BaseSettings):
 
     # CORS
     cors_origins: list[str] = ["*"]
+
+    @model_validator(mode="after")
+    def _enforce_production_security(self) -> "Settings":
+        """Fail fast at startup if a production deploy still carries weak defaults.
+
+        Only fires when BRAIN_ENVIRONMENT=production, so development and CI (which
+        leave it at the default) are unaffected. A misconfigured production boot
+        should crash loudly here rather than silently ship a guessable JWT secret
+        or default database password.
+        """
+        if self.environment.strip().lower() != "production":
+            return self
+
+        problems: list[str] = []
+        if self.secret_key == _DEFAULT_SECRET or "CHANGE_ME" in self.secret_key:
+            problems.append("BRAIN_SECRET_KEY is still the default — set a strong value (openssl rand -hex 32)")
+        elif len(self.secret_key) < 32:
+            problems.append("BRAIN_SECRET_KEY is too short — use at least 32 characters")
+        if "brain:brain@" in self.database_url:
+            problems.append(
+                "BRAIN_DATABASE_URL still uses the default 'brain:brain' credentials — set a strong POSTGRES_PASSWORD"
+            )
+        if self.cors_origins == ["*"]:
+            problems.append("BRAIN_CORS_ORIGINS must not be '*' in production — list explicit origins")
+
+        if problems:
+            raise ValueError(
+                "Refusing to start in production with insecure configuration:\n  - "
+                + "\n  - ".join(problems)
+            )
+        return self
 
     def ensure_dirs(self) -> None:
         for d in [self.data_dir, self.models_dir, self.uploads_dir, self.adapters_dir, self.datasets_dir]:

@@ -19,10 +19,29 @@ services:
       - .:/app
     environment:
       - BRAIN_RELOAD=1
+      # Dev runs in development mode → the production security validator is
+      # skipped, so the default secret/DB password are fine for local work.
+      - BRAIN_ENVIRONMENT=development
 
   worker:
     # The worker image already carries the [training] deps; bind-mount source so
     # worker code changes are live too. Run as root in dev for bind-mount writes.
     user: root
+    environment:
+      - BRAIN_ENVIRONMENT=development
     volumes:
       - .:/app
+
+  # Re-publish the data-store ports for local debugging (the prod baseline keeps
+  # them on the internal network only — §4.3).
+  postgres:
+    ports:
+      - "5432:5432"
+
+  redis:
+    ports:
+      - "6379:6379"
+
+  chroma:
+    ports:
+      - "8001:8000"

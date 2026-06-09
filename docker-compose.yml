@@ -23,9 +23,16 @@ services:
       - ./data/adapters:/app/data/adapters
       - ./data/datasets:/app/data/datasets
     environment:
-      - BRAIN_DATABASE_URL=postgresql+asyncpg://brain:brain@postgres:5432/brain
+      # Defaults to production for the prod baseline; the dev override forces
+      # development. In production the config validator fails fast on weak
+      # secrets / default DB password (§4.3).
+      - BRAIN_ENVIRONMENT=${BRAIN_ENVIRONMENT:-production}
+      - BRAIN_DATABASE_URL=postgresql+asyncpg://brain:${POSTGRES_PASSWORD:-brain}@postgres:5432/brain
       - BRAIN_REDIS_URL=redis://redis:6379/0
-      - BRAIN_SECRET_KEY=${BRAIN_SECRET_KEY:-change_me_in_production}
+      # Falls back to the known-default, which the production config validator
+      # REJECTS — a prod boot without a real BRAIN_SECRET_KEY crashes fast with a
+      # clear message; dev (BRAIN_ENVIRONMENT=development) is unaffected.
+      - BRAIN_SECRET_KEY=${BRAIN_SECRET_KEY:-CHANGE_ME_IN_PRODUCTION_use_openssl_rand_hex_32}
       - BRAIN_MODELS_DIR=/app/data/models
       - BRAIN_UPLOADS_DIR=/app/data/uploads
       - BRAIN_ADAPTERS_DIR=/app/data/adapters
@@ -35,6 +42,8 @@ services:
       - BRAIN_N_GPU_LAYERS=${BRAIN_N_GPU_LAYERS:-0}
       - BRAIN_N_THREADS=${BRAIN_N_THREADS:-8}
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
     deploy:
       resources:
         limits:
@@ -72,12 +81,16 @@ services:
       - ./data/adapters:/app/data/adapters
       - ./data/datasets:/app/data/datasets
     environment:
-      - BRAIN_DATABASE_URL=postgresql+asyncpg://brain:brain@postgres:5432/brain
+      - BRAIN_ENVIRONMENT=${BRAIN_ENVIRONMENT:-production}
+      - BRAIN_DATABASE_URL=postgresql+asyncpg://brain:${POSTGRES_PASSWORD:-brain}@postgres:5432/brain
       - BRAIN_REDIS_URL=redis://redis:6379/0
+      - BRAIN_SECRET_KEY=${BRAIN_SECRET_KEY:-CHANGE_ME_IN_PRODUCTION_use_openssl_rand_hex_32}
       - BRAIN_MODELS_DIR=/app/data/models
       - BRAIN_ADAPTERS_DIR=/app/data/adapters
       - BRAIN_DATASETS_DIR=/app/data/datasets
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
     # Graceful shutdown: the worker requeues its in-flight job on SIGTERM, so give
     # it time to cancel cleanly before Docker SIGKILLs it (§4.4).
     stop_grace_period: 60s
@@ -118,10 +131,12 @@ services:
       POSTGRES_DB: brain
     volumes:
       - postgres-data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
+    # Not host-published in the prod baseline (internal network only). The dev
+    # override re-publishes 5432 for local debugging (§4.3).
     networks:
       - brain-network
+    security_opt:
+      - no-new-privileges:true
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U brain"]
       interval: 10s
@@ -139,10 +154,10 @@ services:
     command: redis-server --appendonly yes
     volumes:
       - redis-data:/data
-    ports:
-      - "6379:6379"
     networks:
       - brain-network
+    security_opt:
+      - no-new-privileges:true
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -164,10 +179,10 @@ services:
       ANONYMIZED_TELEMETRY: "FALSE"
     volumes:
       - chroma-data:/chroma/data
-    ports:
-      - "8001:8000"
     networks:
       - brain-network
+    security_opt:
+      - no-new-privileges:true
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/v2/heartbeat"]
       interval: 10s
