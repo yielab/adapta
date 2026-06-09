@@ -79,7 +79,8 @@ migration:
 
 migrate-test:
 	alembic upgrade head && alembic downgrade -1 && alembic upgrade head \
-	  && echo "✓ migration up/down verified"
+	  && echo "✓ migration up/down verified (empty DB)"
+	python scripts/migrate_seed_test.py
 
 test:
 	pytest tests/ -v

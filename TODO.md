@@ -118,8 +118,8 @@ The three contracts from [SDD_WORKFLOW.md](docs/SDD_WORKFLOW.md) each need a **r
 ### 1.4 Migration gate — Pillar 2 (Alembic up/down) (P1)
 **Context.** `make migrate-test` (`upgrade head → downgrade -1 → upgrade head`) was **verified passing** against Postgres 2026-06-08, and the CI `full` job runs it. Remaining: it currently round-trips against an **empty** DB.
 - [x] CI job spins up Postgres and runs `make migrate-test`.
-- [ ] Add a seeded-data fixture so the down-migration is tested against non-empty tables (catches non-reversible DDL that an empty-DB round-trip misses).
-- [ ] *Acceptance:* any migration that can't round-trip on seeded data fails CI.
+- [x] **Seeded-data round-trip** (2026-06-09): `scripts/migrate_seed_test.py` inserts a fully-connected row per table at `head`, then runs `downgrade -1 → upgrade head` with that data present and re-seeds to prove the schema is functional after. Wired into `make migrate-test` (runs in CI's `full` job after the empty round-trip). *Verified locally.* (With the single create-all migration, downgrade drops tables regardless of data; the harness's real payoff is the incremental migrations below — it will catch a future ALTER that can't recast/repopulate existing rows.)
+- [x] *Acceptance:* `make migrate-test` runs the seeded round-trip; a migration that can't reverse on seeded data fails it.
 
 ### 1.5 Eval gate test — Pillar 3 (the moat) (P0)
 The product's whole safety promise is "an unverified adapter never serves." There is currently **no test** for it.
