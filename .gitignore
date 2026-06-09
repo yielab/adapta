@@ -33,12 +33,8 @@ ENV/
 *.swo
 *~
 
-# Data directories
-data/models/
-data/agents/
-data/cache/
-data/training_data/
-data/training_jobs/
+# Runtime data (uploads, datasets, adapters, models, chroma, caches)
+data/
 *.gguf
 *.safetensors
 

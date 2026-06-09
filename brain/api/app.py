@@ -23,6 +23,7 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from starlette.datastructures import MutableHeaders
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from brain import __version__
@@ -64,6 +65,36 @@ async def lifespan(app: FastAPI):
     except Exception:
         pass
     logger.info("Application shutdown complete")
+
+
+# ---------------------------------------------------------------------------
+# Correlation-ID middleware — PURE ASGI (deliberately not BaseHTTPMiddleware).
+# BaseHTTPMiddleware defers the get_db commit and FastAPI BackgroundTasks until
+# AFTER the response is sent, which causes a read-after-write race (an immediate
+# follow-up request can't see the just-committed row) and stops background tasks
+# from running under some transports. A pure ASGI middleware has neither problem,
+# and lets the registered exception handlers run normally (so no try/except here).
+# ---------------------------------------------------------------------------
+
+class CorrelationIdMiddleware:
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        incoming = dict(scope.get("headers") or [])
+        existing = incoming.get(b"x-correlation-id")
+        cid = existing.decode() if existing else str(uuid.uuid4())
+        scope.setdefault("state", {})["cid"] = cid
+
+        async def send_wrapper(message):
+            if message["type"] == "http.response.start":
+                MutableHeaders(scope=message)["X-Correlation-ID"] = cid
+            await send(message)
+
+        await self.app(scope, receive, send_wrapper)
 
 
 # ---------------------------------------------------------------------------
@@ -140,36 +171,20 @@ def create_app() -> FastAPI:
             content={"error": {"code": code, "message": message, "correlation_id": cid}},
         )
 
-    # ---------------------------------------------------------------------------
-    # Correlation ID middleware
-    # Starlette 1.x BaseHTTPMiddleware re-raises exceptions from call_next before
-    # the inner exception handlers can return their response — handle all errors
-    # here so the correlation_id is always echoed and no raw exception reaches the
-    # client.
-    # ---------------------------------------------------------------------------
-    @app.middleware("http")
-    async def correlation_id_middleware(request: Request, call_next):
-        cid = request.headers.get("X-Correlation-ID") or str(uuid.uuid4())
-        request.state.cid = cid
-        try:
-            response = await call_next(request)
-        except DomainError as exc:
-            if exc.internal_detail:
-                logger.error("[%s] %s: %s", cid, exc.code, exc.internal_detail)
-            return JSONResponse(
-                status_code=exc.status,
-                headers={"X-Correlation-ID": cid},
-                content={"error": {"code": exc.code, "message": exc.message, "correlation_id": cid}},
-            )
-        except Exception as exc:
-            logger.exception("[%s] Unhandled error: %s", cid, exc)
-            return JSONResponse(
-                status_code=500,
-                headers={"X-Correlation-ID": cid},
-                content={"error": {"code": "internal_error", "message": "An internal error occurred", "correlation_id": cid}},
-            )
-        response.headers["X-Correlation-ID"] = cid
-        return response
+    @app.exception_handler(Exception)
+    async def unhandled_error_handler(request: Request, exc: Exception):
+        # Catch-all: never leak a raw exception string. Registered (not in the
+        # middleware) so it runs inside the ASGI exception stack with the cid set.
+        cid = getattr(request.state, "cid", None)
+        logger.exception("[%s] Unhandled error: %s", cid, exc)
+        return JSONResponse(
+            status_code=500,
+            headers={"X-Correlation-ID": cid} if cid else {},
+            content={"error": {"code": "internal_error", "message": "An internal error occurred", "correlation_id": cid}},
+        )
+
+    # Pure ASGI correlation middleware (see CorrelationIdMiddleware above).
+    app.add_middleware(CorrelationIdMiddleware)
 
     # ---------------------------------------------------------------------------
     # Routes

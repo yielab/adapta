@@ -137,14 +137,15 @@ Partly covered (`test_unhandled_error_returns_correlation_id`, `test_domain_erro
 - [x] Test the correlation-ID middleware: `X-Correlation-ID` is echoed and matches `body.error.correlation_id`.
 - [x] *Acceptance:* no error type can regress into leaking internals or returning the wrong status.
 
-### 1.7 Integration tests — opt-in (P1)
-Current: none. Marker not registered (see §1.1).
-- [ ] `tests/integration/` with `@pytest.mark.integration`, run via `docker compose`-provided Postgres/Redis/Chroma.
-- [ ] Cover the two end-to-end flows:
-  - [ ] **RAG:** create project → upload file → background index → create endpoint + key → `POST /v1/chat/completions` returns a cited answer.
-  - [ ] **LoRA:** upload JSONL dataset → enqueue job → worker trains (tiny base) → eval gate → endpoint → serve.
-- [ ] Cover auth/RBAC boundaries: a member of team A cannot read team B's project; a revoked `brn_*` key is rejected.
-- [ ] *Acceptance:* `pytest -m integration` is green against the live stack; runs in a dedicated CI job (not the fast gate).
+### 1.7 Integration tests — opt-in (P1) — control plane DONE; ML flows pending
+- [x] `tests/integration/` with `@pytest.mark.integration`, hitting the **real running server** on `:8000` (not in-process ASGITransport, which doesn't run BackgroundTasks) against live Postgres/Redis/Chroma. Clean-slate via a one-off asyncpg `TRUNCATE` (not the app's pooled engine — avoids cross-event-loop flakiness). 9 tests, green: `pytest tests/ -m integration`.
+- [x] Control plane covered: auth (401/me/bad-token), bootstrap-once → 409, project create/get/list/delete + 404, validation → 422 envelope, dataset upload (202 + persistence), `POST /v1/chat/completions` rejects missing/bogus `brn_` key (401).
+- [ ] **RAG e2e** (upload file → index → endpoint → cited answer): blocked on (a) the BackgroundTasks bug below, (b) a GGUF model + sentence-transformers download not available in this env.
+- [ ] **LoRA e2e** (dataset → job → worker trains → eval gate → serve): needs a GPU + tiny base model; out of reach in CPU CI.
+- [ ] Cross-team RBAC (team A can't read team B): needs a second user/team, which needs the §3.1 invite flow.
+- [x] *Acceptance (partial):* `pytest -m integration` green against the live stack; CI `full` job runs it.
+
+> **Two real bugs surfaced by these tests — see §4.4.** (1) FastAPI BackgroundTasks don't execute on the server (dataset validation / file indexing never leave `validating`/`pending`). (2) A brief read-your-write window under the DB connection pool (immediate read-after-write across requests can lag a few ms; the integration tests retry to absorb it).
 
 ### 1.8 `slow` inference test (P2)
 - [ ] One `@pytest.mark.slow` test that loads a tiny GGUF and asserts `ChatService` returns a non-empty completion with usage fields populated. Pins the inference contract without depending on a large model.
@@ -295,6 +296,8 @@ runtime robustness. See [docs/API_EVOLUTION_PLAN.md](docs/API_EVOLUTION_PLAN.md)
 - [ ] *Acceptance:* `docker inspect` shows non-root; `docker history` has no secret literals; only `app:8000` is host-published in the prod profile.
 
 ### 4.4 Runtime robustness (P1)
+- [ ] **FastAPI BackgroundTasks do not execute on the server (found 2026-06-08, P1).** Dataset validation (`_validate_in_background`) and file indexing run as `background_tasks.add_task(...)`, but the status never leaves `validating`/`pending` — verified on the live uvicorn server, no exception logged. `validate_dataset()` itself works in isolation, so the task is never run (or its commit is lost). The original `BaseHTTPMiddleware` is a known cause and was replaced with a pure-ASGI `CorrelationIdMiddleware` (✅ committed) — necessary but not sufficient; something still suppresses the tasks. *Investigate:* whether tasks are scheduled at all (add a log line at task entry); whether an async-session/loop issue in the task swallows the commit; consider moving validation onto the existing Redis worker instead of in-process BackgroundTasks. *Acceptance:* a `.jsonl` upload reaches `valid`/`invalid`; an indexed file reaches `indexed`; the integration test asserts the terminal state without polling forever.
+- [ ] **Read-your-write window under the DB connection pool (found 2026-06-08, P2).** An immediate read-after-write across requests (register→login, create-project→get) can briefly miss the just-committed row: the write is durable (a fresh external connection sees it at once) but a pooled server connection lags a few ms. Real clients (human latency) never hit it; back-to-back automated calls do — the integration suite adds short retries to absorb it. *Investigate:* `get_db` commit/transaction lifecycle + `create_async_engine` pool settings (e.g. an unintended open transaction / isolation level on pooled connections). *Acceptance:* back-to-back register→login succeeds without retry.
 - [ ] **Worker idle-poll floods errors (found 2026-06-08).** An idle worker's `dequeue()` BLPOP raises `redis.exceptions.TimeoutError` (logged as `ERROR Worker loop error: Timeout reading from redis:6379`) every poll cycle instead of returning `None` — a redis-py asyncio BLPOP/socket-timeout quirk. The worker survives (retries), so jobs still process, but logs are flooded. *Fix:* in `brain/services/jobs.py:dequeue`, catch `redis.exceptions.TimeoutError` and treat it as an empty poll (`return None`); or align the socket read timeout with the BLPOP timeout. *Acceptance:* an idle worker logs nothing at ERROR; a queued job is still picked up promptly.
 - [ ] **Resource limits** on every service (`deploy.resources.limits` mem/cpu) so a runaway inference/training job can't OOM the host.
 - [ ] **Worker liveness**: a healthcheck/heartbeat (Redis liveness key or a `--healthcheck` subcommand) — a silently dead worker currently looks `Up`.

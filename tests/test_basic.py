@@ -231,7 +231,11 @@ async def test_unhandled_error_returns_correlation_id():
     async def boom():
         raise RuntimeError("something exploded")
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    # raise_app_exceptions=False: Starlette's ServerErrorMiddleware sends the 500
+    # envelope AND re-raises so the ASGI server can log it; under ASGITransport we
+    # want the response, not the propagated exception.
+    transport = ASGITransport(app=app, raise_app_exceptions=False)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
         resp = await client.get("/boom")
 
     assert resp.status_code == 500

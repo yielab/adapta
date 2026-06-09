@@ -133,7 +133,10 @@ async def test_unhandled_exception_returns_generic_message():
     async def boom():
         raise RuntimeError("raw internal detail")
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    # raise_app_exceptions=False: ServerErrorMiddleware sends the 500 envelope and
+    # re-raises for server-side logging; under ASGITransport we assert the response.
+    transport = ASGITransport(app=app, raise_app_exceptions=False)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
         resp = await client.get("/boom")
 
     assert resp.status_code == 500
