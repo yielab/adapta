@@ -192,6 +192,47 @@ services:
     restart: unless-stopped
     logging: *default-logging
 
+  # ──────────────────────────────────────────────
+  # Observability (optional) — `docker compose --profile observability up -d`.
+  # Off by default; scrapes the app's /metrics (§3.5).
+  # ──────────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: brain-prometheus
+    profiles: [observability]
+    volumes:
+      - ./deploy/observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "9090:9090"
+    networks:
+      - brain-network
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    logging: *default-logging
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    container_name: brain-grafana
+    profiles: [observability]
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+    volumes:
+      - ./deploy/observability/grafana-datasource.yml:/etc/grafana/provisioning/datasources/prometheus.yml:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+    networks:
+      - brain-network
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    logging: *default-logging
+
 networks:
   brain-network:
     driver: bridge
@@ -200,3 +241,5 @@ volumes:
   postgres-data:
   redis-data:
   chroma-data:
+  prometheus-data:
+  grafana-data:

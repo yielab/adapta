@@ -17,13 +17,11 @@ from pathlib import Path
 
 from brain.config import settings
 from brain.core.gpu import torch_cuda_status
+from brain.core.logging_config import configure_logging
 from brain.services.adapters import get_adapter_registry
 from brain.services.jobs import get_job_queue
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)-7s %(name)s: %(message)s",
-)
+configure_logging()
 logger = logging.getLogger("brain.worker")
 
 

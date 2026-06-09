@@ -1,0 +1,10 @@
+# Prometheus scrape config for the optional `observability` compose profile (§3.5).
+# Enable with: docker compose --profile observability up -d
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: brain-app
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["app:8000"]

@@ -67,6 +67,10 @@ class Settings(BaseSettings):
     # CORS
     cors_origins: list[str] = ["*"]
 
+    # Observability
+    log_format: str = "text"  # "text" (default) or "json" for structured logs
+    metrics_enabled: bool = True  # expose GET /metrics (Prometheus text format)
+
     @model_validator(mode="after")
     def _enforce_production_security(self) -> "Settings":
         """Fail fast at startup if a production deploy still carries weak defaults.

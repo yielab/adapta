@@ -16,13 +16,14 @@ Architecture:
 from __future__ import annotations
 
 import logging
+import time
 import uuid
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from starlette.datastructures import MutableHeaders
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
@@ -100,12 +101,28 @@ class CorrelationIdMiddleware:
         cid = existing.decode() if existing else str(uuid.uuid4())
         scope.setdefault("state", {})["cid"] = cid
 
+        start = time.perf_counter()
+        status_code = {"value": 500}
+
         async def send_wrapper(message):
             if message["type"] == "http.response.start":
+                status_code["value"] = message["status"]
                 MutableHeaders(scope=message)["X-Correlation-ID"] = cid
             await send(message)
 
-        await self.app(scope, receive, send_wrapper)
+        try:
+            await self.app(scope, receive, send_wrapper)
+        finally:
+            # Record request latency/count/errors (cheap; feeds GET /metrics, §3.5).
+            try:
+                from brain.core.metrics import get_metrics_collector
+                mc = get_metrics_collector()
+                mc.request_latency.observe(time.perf_counter() - start)
+                mc.request_count.inc()
+                if status_code["value"] >= 500:
+                    mc.request_errors.inc()
+            except Exception:
+                pass
 
 
 # ---------------------------------------------------------------------------
@@ -113,6 +130,9 @@ class CorrelationIdMiddleware:
 # ---------------------------------------------------------------------------
 
 def create_app() -> FastAPI:
+    from brain.core.logging_config import configure_logging
+    configure_logging()
+
     app = FastAPI(
         title="Brain From Cero",
         description="Self-hosted RAG + LoRA model-customization platform",
@@ -211,6 +231,24 @@ def create_app() -> FastAPI:
         monitor = get_health_monitor()
         result = await monitor.run_all_checks()
         return result.to_dict()
+
+    if settings.metrics_enabled:
+        @app.get("/metrics", tags=["system"], include_in_schema=False)
+        async def metrics():
+            # Prometheus text-format scrape. Refresh the queue-depth gauge live
+            # from Redis on each scrape (§3.5). Scraped by the optional
+            # `observability` compose profile.
+            from brain.core.metrics import get_metrics_collector
+            mc = get_metrics_collector()
+            try:
+                from brain.services.jobs import QUEUE_KEY, get_job_queue
+                depth = await get_job_queue().redis.llen(QUEUE_KEY)
+                mc.queue_depth.set(depth)
+            except Exception:
+                pass
+            return PlainTextResponse(
+                mc.export_prometheus(), media_type="text/plain; version=0.0.4"
+            )
 
     @app.get("/gpu", tags=["system"])
     async def gpu_info():

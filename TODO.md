@@ -257,9 +257,11 @@ Partly covered (`test_unhandled_error_returns_correlation_id`, `test_domain_erro
 - [x] Per-base VRAM + quality tradeoff for QLoRA 4-bit — OPERATIONS §6.2/§6.3.
 - [x] Artifact storage decision: filesystem volume now; object storage only if multi-host/HA demands it — OPERATIONS §6.3.
 
-### 3.5 Observability (optional profile)
-- [ ] Optional Prometheus/Grafana **compose profile** (off by default), exposing request latency, job duration, queue depth.
-- [ ] Structured JSON logging behind a config flag.
+### 3.5 Observability (optional profile) — ✅ DONE (2026-06-09)
+- [x] `GET /metrics` (Prometheus text format) exposing request latency/count/errors (recorded in the correlation middleware) + live queue depth (Redis `LLEN` on scrape), reusing the existing `brain/core/metrics.py` exporter. Toggle via `BRAIN_METRICS_ENABLED`.
+- [x] Optional Prometheus + Grafana **compose profile** (`profiles: [observability]`, off by default): `docker compose --profile observability up -d`. Scrape config + auto-provisioned datasource in `deploy/observability/`.
+- [x] Structured JSON logging behind `BRAIN_LOG_FORMAT=json` (`brain/core/logging_config.py`), used by both app and worker.
+- [x] *Tests:* `tests/test_observability.py` (/metrics exposes Prometheus; JSON formatter emits valid JSON). Documented in [docs/OPERATIONS.md](docs/OPERATIONS.md) §7.
 
 ---
 

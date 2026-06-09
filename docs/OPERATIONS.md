@@ -184,5 +184,25 @@ same llama-cpp path; validate VRAM against §6.2 before committing a host.
 
 ---
 
+---
+
+## 7. Observability (optional)
+
+- **Logs:** set `BRAIN_LOG_FORMAT=json` for structured JSON logs (app + worker);
+  default is human-readable text. Container logs are rotated (`json-file`,
+  10 MB × 5) — see §1 / compose `x-logging`.
+- **Metrics:** the app serves `GET /metrics` in Prometheus text format
+  (request latency/count/errors + live queue depth). Toggle with
+  `BRAIN_METRICS_ENABLED`.
+- **Prometheus + Grafana** ship as an **opt-in** compose profile (off by default):
+  ```bash
+  docker compose --profile observability up -d
+  # Prometheus → http://localhost:9090   Grafana → http://localhost:3000 (admin / $GRAFANA_PASSWORD)
+  ```
+  Grafana auto-provisions the Prometheus datasource (`deploy/observability/`).
+  Prometheus scrapes `app:8000/metrics` every 15 s.
+
+---
+
 See also: [README.md](../README.md) (run/operate), [PRODUCT_DEFINITION.md](PRODUCT_DEFINITION.md)
 (scope), [SDD_WORKFLOW.md](SDD_WORKFLOW.md) (the three contracts).
