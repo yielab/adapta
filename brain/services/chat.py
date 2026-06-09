@@ -122,6 +122,7 @@ async def chat_stream(
     max_tokens: Optional[int] = None,
     project_id: Optional[str] = None,
     top_k_rag: Optional[int] = None,
+    endpoint_id: Optional[str] = None,
 ) -> AsyncIterator[str]:
     """
     Streaming chat — yields SSE-formatted strings.
@@ -158,10 +159,12 @@ async def chat_stream(
     chunk_id = f"chatcmpl-{uuid.uuid4().hex[:8]}"
     created = int(time.time())
 
-    completion_chars = 0
+    # The engine yields one model token per iteration, so counting yields is the
+    # real completion-token count — no need for the old ~4-chars/token estimate.
+    completion_tokens = 0
     try:
         async for token in inference_engine.generate_stream(model_obj, req):
-            completion_chars += len(token)
+            completion_tokens += 1
             chunk = {
                 "id": chunk_id,
                 "object": "chat.completion.chunk",
@@ -171,18 +174,22 @@ async def chat_stream(
             }
             yield f"data: {json.dumps(chunk)}\n\n"
 
-        # Rough token estimate: ~4 chars per token
-        completion_tokens_est = max(1, completion_chars // 4)
         finish = {
             "id": chunk_id,
             "object": "chat.completion.chunk",
             "created": created,
             "model": model_name,
             "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
-            "usage": {"prompt_tokens": 0, "completion_tokens": completion_tokens_est, "total_tokens": completion_tokens_est},
+            "usage": {"prompt_tokens": 0, "completion_tokens": completion_tokens, "total_tokens": completion_tokens},
         }
         yield f"data: {json.dumps(finish)}\n\n"
         yield "data: [DONE]\n\n"
+
+        # Meter streaming usage once the stream completes (off the client path —
+        # this runs after the last byte is yielded). §3.2.
+        if endpoint_id:
+            from brain.services.usage import record_usage
+            await record_usage(endpoint_id, 0, completion_tokens)
 
     except Exception as exc:
         raise InferenceFailed(message="Streaming inference failed", internal_detail=str(exc)) from exc

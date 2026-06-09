@@ -65,6 +65,7 @@ dev = [
     "datamodel-code-generator>=0.25.0",
     "schemathesis>=3.28.0",
     "openapi-spec-validator>=0.7.0",
+    "import-linter>=2.0",
 ]
 
 [project.scripts]
@@ -119,3 +120,21 @@ module = [
     "brain.core.metrics",
 ]
 ignore_errors = true
+
+# ── Layered-architecture contract (§1.9) — enforced by `make lint-imports` ─────
+# Keeps the dependency arrows pointing inward: the domain core stays free of the
+# web/service layers, and services never reach up into the API layer.
+[tool.importlinter]
+root_package = "brain"
+
+[[tool.importlinter.contracts]]
+name = "Domain is dependency-free of the outer layers"
+type = "forbidden"
+source_modules = ["brain.domain"]
+forbidden_modules = ["brain.api", "brain.services", "brain.core", "fastapi"]
+
+[[tool.importlinter.contracts]]
+name = "Services must not import the API layer"
+type = "forbidden"
+source_modules = ["brain.services"]
+forbidden_modules = ["brain.api"]

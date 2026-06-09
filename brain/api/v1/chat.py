@@ -9,7 +9,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -20,6 +20,7 @@ from brain.db.session import get_db
 from brain.domain.errors import InvalidRequest, NotFound, Unauthorized
 from brain.services.auth import verify_api_key
 from brain.services.chat import chat, chat_stream
+from brain.services.usage import record_usage
 
 router = APIRouter(tags=["chat"])
 
@@ -93,6 +94,7 @@ async def _resolve_endpoint(request: Request, db: AsyncSession = Depends(get_db)
 @router.post("/chat/completions")
 async def chat_completions(
     request_body: ChatCompletionRequest,
+    background_tasks: BackgroundTasks,
     auth: tuple = Depends(_resolve_endpoint),
     db: AsyncSession = Depends(get_db),
 ):
@@ -111,6 +113,7 @@ async def chat_completions(
                 temperature=request_body.temperature,
                 max_tokens=request_body.max_tokens,
                 project_id=project_id_for_rag,
+                endpoint_id=endpoint.id,
             ),
             media_type="text/event-stream",
         )
@@ -122,5 +125,13 @@ async def chat_completions(
             max_tokens=request_body.max_tokens,
             top_p=request_body.top_p,
             project_id=project_id_for_rag,
+        )
+        # Meter usage off the response path (§3.2).
+        u = result.get("usage", {})
+        background_tasks.add_task(
+            record_usage,
+            endpoint.id,
+            int(u.get("prompt_tokens", 0)),
+            int(u.get("completion_tokens", 0)),
         )
         return result

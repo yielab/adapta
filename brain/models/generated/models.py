@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from datetime import date
 from enum import Enum
 from typing import Annotated, Literal
 
@@ -121,6 +122,23 @@ class EndpointResponse(BaseModel):
     base_model: str | None = None
     adapter_path: str | None = None
     project_type: Type | None = None
+
+
+class UsageDay(BaseModel):
+    day: date | None = None
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
+    total_tokens: int | None = None
+    request_count: int | None = None
+
+
+class UsageResponse(BaseModel):
+    project_id: str | None = None
+    total_prompt_tokens: int | None = None
+    total_completion_tokens: int | None = None
+    total_tokens: int | None = None
+    total_requests: int | None = None
+    days: list[UsageDay] | None = None
 
 
 class KeyCreateRequest(BaseModel):

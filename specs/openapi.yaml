@@ -323,6 +323,22 @@ paths:
         '200': {description: Endpoint, content: {application/json: {schema: {$ref: '#/components/schemas/EndpointResponse'}}}}
 
   # ──────────────────────────────────────────────────────────────────────────
+  # Usage metering
+  # ──────────────────────────────────────────────────────────────────────────
+  /projects/{project_id}/usage:
+    get:
+      operationId: getUsage
+      tags: [usage]
+      summary: Daily token-usage rollup for the project's endpoint
+      security: [{BearerAuth: []}]
+      parameters: [{$ref: '#/components/parameters/ProjectId'}]
+      responses:
+        '401': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '422': {$ref: '#/components/responses/Error'}
+        '200': {description: Usage, content: {application/json: {schema: {$ref: '#/components/schemas/UsageResponse'}}}}
+
+  # ──────────────────────────────────────────────────────────────────────────
   # API keys
   # ──────────────────────────────────────────────────────────────────────────
   /projects/{project_id}/keys:
@@ -574,6 +590,25 @@ components:
         base_model: {type: string}
         adapter_path: {type: string, nullable: true}
         project_type: {type: string, enum: [rag, finetune]}
+
+    # Usage
+    UsageDay:
+      type: object
+      properties:
+        day: {type: string, format: date}
+        prompt_tokens: {type: integer}
+        completion_tokens: {type: integer}
+        total_tokens: {type: integer}
+        request_count: {type: integer}
+    UsageResponse:
+      type: object
+      properties:
+        project_id: {type: string}
+        total_prompt_tokens: {type: integer}
+        total_completion_tokens: {type: integer}
+        total_tokens: {type: integer}
+        total_requests: {type: integer}
+        days: {type: array, items: {$ref: '#/components/schemas/UsageDay'}}
 
     # Keys
     KeyCreateRequest:

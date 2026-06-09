@@ -92,6 +92,9 @@ lint:
 	ruff check brain/ tests/
 	mypy brain/
 
+lint-imports:
+	lint-imports
+
 fmt:
 	black brain/ tests/ scripts/
 
@@ -104,7 +107,7 @@ check-leaks:
 	  echo "✓ No detail=str(e) leak sites found"; \
 	fi
 
-ci: check-leaks lint coverage validate-spec check-models
+ci: check-leaks lint lint-imports coverage validate-spec check-models
 	@echo "✓ Fast CI gate passed (offline)"
 
 ci-full: ci migrate-test test-contracts

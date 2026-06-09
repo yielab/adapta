@@ -12,6 +12,7 @@ from typing import Optional
 
 from sqlalchemy import (
     Boolean,
+    Date,
     DateTime,
     Enum,
     Float,
@@ -280,3 +281,27 @@ class ApiKey(Base):
     last_used_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     endpoint: Mapped[Endpoint] = relationship("Endpoint", back_populates="keys")
+
+
+class UsageEvent(Base):
+    """Daily token-usage rollup per endpoint (one row per endpoint per day).
+
+    Written off the response path after each served completion via an upsert that
+    increments the counters, so `GET .../usage` aggregates cheaply by day.
+    """
+    __tablename__ = "usage_events"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    endpoint_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("endpoints.id", ondelete="CASCADE"), nullable=False
+    )
+    day: Mapped[datetime] = mapped_column(Date, nullable=False)
+    prompt_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    completion_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    request_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    __table_args__ = (UniqueConstraint("endpoint_id", "day", name="uq_usage_endpoint_day"),)

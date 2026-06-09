@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import subprocess
 import uuid
+from datetime import datetime, timezone
 
 from brain.db import models as m
 from brain.db.session import AsyncSessionLocal, engine
@@ -117,6 +118,15 @@ async def _seed(tag: str) -> None:
                 embedding_model="all-MiniLM-L6-v2",
                 num_documents=1,
                 num_chunks=3,
+            )
+        )
+        db.add(
+            m.UsageEvent(
+                endpoint_id=endpoint.id,
+                day=datetime.now(timezone.utc).date(),
+                prompt_tokens=10,
+                completion_tokens=20,
+                request_count=1,
             )
         )
         await db.commit()

@@ -29,7 +29,7 @@ BASE_URL = os.environ.get("BRAIN_BASE_URL", "http://localhost:8000")
 
 _TABLES = (
     "orgs, teams, users, team_members, projects, project_files, "
-    "collections, datasets, training_jobs, endpoints, api_keys"
+    "collections, datasets, training_jobs, endpoints, api_keys, usage_events"
 )
 
 _ADMIN = {"email": "admin@itest.dev", "password": "itest-pass-123", "org_name": "ITest Org"}

@@ -240,11 +240,12 @@ Partly covered (`test_unhandled_error_returns_correlation_id`, `test_domain_erro
 - [ ] Per-project **read-only** role (consume endpoint + read, no mutate).
 - [ ] Key scoping audit: confirm a `brn_*` key can only reach its own endpoint; add the test (§1.7).
 
-### 3.2 Usage metering persistence
-- [ ] `usage_events` table (endpoint_id, day, prompt_tokens, completion_tokens, request_count) + migration.
-- [ ] `ChatService` writes a usage row per request (async, off the response path).
-- [ ] `GET /v1/projects/{id}/usage` aggregated by day (spec + handler).
-- [ ] Replace the streaming `chars // 4` estimate with real llama-cpp token counts where available.
+### 3.2 Usage metering persistence — ✅ DONE (2026-06-09)
+- [x] `usage_events` table (endpoint_id, day, prompt_tokens, completion_tokens, request_count) — ORM `UsageEvent` + migration `0002` (unique `(endpoint_id, day)` + index). Seeded migration round-trip covers it.
+- [x] Usage written **off the response path**: non-stream via a FastAPI BackgroundTask, streaming at the end of the generator. `brain/services/usage.py:record_usage` does an atomic Postgres upsert (`ON CONFLICT (endpoint_id, day) DO UPDATE` incrementing counters); failures are logged, never raised, so metering can't break a completion.
+- [x] `GET /v1/projects/{id}/usage` aggregated by day (newest first) + totals — spec (`getUsage`, `UsageResponse`/`UsageDay`) + `brain/api/v1/usage.py`. Generated models regenerated + drift-checked.
+- [x] Replaced the streaming `chars // 4` estimate with the **real** completion-token count (the engine yields one model token per iteration, so counting yields is exact). Prompt-token count for streaming remains 0 (best-effort; non-stream carries exact prompt/completion/total from the engine).
+- [x] *Tests:* `record_usage` upsert verified (two calls → one incremented row); integration `test_usage_aggregation` (totals + per-day, newest-first) + `test_usage_requires_auth`.
 
 ### 3.3 Operability
 - [ ] **Backup/restore runbook:** `pg_dump`/`pg_restore` + adapter-artifact and Chroma-volume backup procedure, in `docs/`.

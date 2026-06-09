@@ -27,7 +27,18 @@ from starlette.datastructures import MutableHeaders
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from brain import __version__
-from brain.api.v1 import auth, chat, datasets, endpoints, files, jobs, keys, projects, synthesis
+from brain.api.v1 import (
+    auth,
+    chat,
+    datasets,
+    endpoints,
+    files,
+    jobs,
+    keys,
+    projects,
+    synthesis,
+    usage,
+)
 from brain.config import settings
 from brain.domain.errors import DomainError
 
@@ -227,6 +238,7 @@ def create_app() -> FastAPI:
     app.include_router(keys.router, prefix=prefix)
     app.include_router(chat.router, prefix=prefix)
     app.include_router(synthesis.router, prefix=prefix)
+    app.include_router(usage.router, prefix=prefix)
 
     return app
 

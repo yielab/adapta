@@ -97,6 +97,7 @@ GET             /v1/projects/{id}/jobs/{jid}         get (enriched with live Red
 
 POST/GET        /v1/projects/{id}/endpoint           create (eval_passed required) / get
 POST/GET/DELETE /v1/projects/{id}/keys               generate scoped key / list / revoke
+GET             /v1/projects/{id}/usage              daily token-usage rollup for the endpoint
 
 POST /v1/chat/completions                OpenAI-compatible (scoped brn_* key, model = endpoint slug)
 ```
