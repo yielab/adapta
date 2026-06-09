@@ -106,7 +106,7 @@ The three contracts from [SDD_WORKFLOW.md](docs/SDD_WORKFLOW.md) each need a **r
 **Context.** The task's primary target — **50% on `brain/services/` + `brain/domain/`** (infra-free logic) — is **met: 60%** as of 2026-06-08. Overall `brain/` is 30% (the remainder is protected `training/*`, `worker/main.py`, and `core/*` internals that need the live stack — they rise with §1.7 integration tests). Floor raised 28→30 and enforced by the `fast` gate.
 - [x] Measure baseline and set an enforced floor in `make coverage` (now `--cov-fail-under=30`).
 - [x] Reach **≥50% on services + domain** — added `test_jobs.py`, `test_auth_helpers.py`, `test_synthesis_helpers.py` (jobs 33→88%, auth 39→58%, synthesis 38→42%); services+domain now **60%**.
-- [ ] Lift the remaining infra-bound services (`chat.py` 20%, `rag.py` 31%, `embeddings.py` 39%) via the §1.7 integration tests, then ratchet the global floor again.
+- [~] Lift the remaining infra-bound services (`chat.py`, `rag.py`, `embeddings.py`): now **exercised end-to-end** by the §1.7 RAG e2e + §1.8 slow tests (real embed → Chroma → llama-cpp). These run opt-in (need a model) so they don't move the offline `--cov-fail-under` number; ratchet the global floor only once the model-bearing job runs in CI.
 - [x] *Acceptance:* `make ci` fails if coverage drops below the recorded floor.
 
 ### 1.3 Contract test — Pillar 1 (API / schemathesis) (P0 — see §A1)
@@ -140,15 +140,15 @@ Partly covered (`test_unhandled_error_returns_correlation_id`, `test_domain_erro
 ### 1.7 Integration tests — opt-in (P1) — control plane DONE; ML flows pending
 - [x] `tests/integration/` with `@pytest.mark.integration`, hitting the **real running server** on `:8000` (not in-process ASGITransport, which doesn't run BackgroundTasks) against live Postgres/Redis/Chroma. Clean-slate via a one-off asyncpg `TRUNCATE` (not the app's pooled engine — avoids cross-event-loop flakiness). 9 tests, green: `pytest tests/ -m integration`.
 - [x] Control plane covered: auth (401/me/bad-token), bootstrap-once → 409, project create/get/list/delete + 404, validation → 422 envelope, dataset upload (202 + persistence), `POST /v1/chat/completions` rejects missing/bogus `brn_` key (401).
-- [ ] **RAG e2e** (upload file → index → endpoint → cited answer): blocked on (a) the BackgroundTasks bug below, (b) a GGUF model + sentence-transformers download not available in this env.
-- [ ] **LoRA e2e** (dataset → job → worker trains → eval gate → serve): needs a GPU + tiny base model; out of reach in CPU CI.
+- [x] **RAG e2e** (upload file → index → endpoint → key → grounded answer) — ✅ DONE (2026-06-09): `tests/integration/test_rag_e2e.py` (integration + slow), real sentence-transformers embeddings → Chroma → llama-cpp completion. **Surfaced + fixed a real latent bug:** the chromadb **client (1.5.9) / server (0.6.3) version skew** broke *all* collection creation (`KeyError('_type')`) — server pinned to `chromadb/chroma:1.5.9` in sync with the client (CLAUDE.md rule). Also moved the blocking parse/embed/index work to `asyncio.to_thread` so indexing no longer freezes the event loop. Skips unless a GGUF is present (gated; CI ships no model).
+- [ ] **LoRA e2e** (dataset → job → worker trains → eval gate → serve): needs a GPU + tiny base model; out of reach in CPU CI (the worker path is GPU-gated, §4.2b).
 - [ ] Cross-team RBAC (team A can't read team B): needs a second user/team, which needs the §3.1 invite flow.
 - [x] *Acceptance (partial):* `pytest -m integration` green against the live stack; CI `full` job runs it.
 
 > **Two real bugs surfaced by these tests — both now FIXED (2026-06-09), see §4.4.** (1) FastAPI BackgroundTasks didn't complete (dataset validation / file indexing stuck) — handlers now commit before scheduling. (2) The read-your-write window — mutating handlers now commit before returning. Both have integration regression guards.
 
-### 1.8 `slow` inference test (P2)
-- [ ] One `@pytest.mark.slow` test that loads a tiny GGUF and asserts `ChatService` returns a non-empty completion with usage fields populated. Pins the inference contract without depending on a large model.
+### 1.8 `slow` inference test (P2) — ✅ DONE (2026-06-09)
+- [x] `tests/test_inference_slow.py` (`@pytest.mark.slow`): loads a tiny GGUF (Qwen2.5-0.5B-Instruct Q4_K_M) and asserts `ChatService` returns a non-empty completion with populated usage, plus a streaming variant (real per-token count + `[DONE]`). Skipped unless a GGUF is present, so the offline gate stays model-free. Verified green with the model downloaded.
 
 ### 1.9 Domain isolation — `import-linter` (P2) — ✅ DONE (2026-06-09)
 - [x] Two `import-linter` contracts in `pyproject.toml` (`[tool.importlinter]`, `include_external_packages`): (1) `brain.domain` is forbidden from importing `brain.api`/`brain.services`/`brain.core`/`fastapi`; (2) `brain.services` may not import `brain.api`. `import-linter>=2.0` added to `[dev]`.

@@ -61,7 +61,7 @@ services:
       redis:
         condition: service_healthy
       chroma:
-        condition: service_healthy
+        condition: service_started
     networks:
       - brain-network
 
@@ -171,7 +171,10 @@ services:
   # Pinned version — update in sync with brain/services/rag.py client usage.
   # ──────────────────────────────────────────────
   chroma:
-    image: chromadb/chroma:0.6.3
+    # Pinned in sync with the chromadb client in pyproject.toml — a client/server
+    # API skew (e.g. 1.x client vs 0.6.x server) breaks collection creation with
+    # KeyError('_type'). Keep these two versions equal.
+    image: chromadb/chroma:1.5.9
     container_name: brain-chroma
     environment:
       IS_PERSISTENT: "TRUE"
@@ -183,12 +186,10 @@ services:
       - brain-network
     security_opt:
       - no-new-privileges:true
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v2/heartbeat"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 20s
+    # No container healthcheck: the chroma 1.x image ships only the `chroma`
+    # binary (no curl/wget/python), so it can't self-probe its own HTTP heartbeat.
+    # Dependents gate on `service_started` instead; the app connects to Chroma
+    # lazily (per index/retrieve) and retries, and /health/deep probes it live.
     restart: unless-stopped
     logging: *default-logging
 

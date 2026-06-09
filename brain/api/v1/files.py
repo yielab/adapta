@@ -85,10 +85,17 @@ async def _index_file(file_id: str, file_path: Path, content_type: str, filename
             pfile.status = FileStatus.processing
             await db.commit()
 
-            chunks = parse_and_chunk(file_path, content_type, filename)
-            rag = get_rag_service()
-            rag.ensure_collection(project_id)
-            count = rag.index_chunks(project_id, file_id, chunks)
+            # Parsing, embedding and the Chroma write are CPU/IO-blocking and
+            # synchronous — run them in a thread so a large document (or the
+            # first-time embedding-model load) doesn't freeze the event loop and
+            # starve concurrent API requests.
+            def _do_index() -> int:
+                chunks = parse_and_chunk(file_path, content_type, filename)
+                rag = get_rag_service()
+                rag.ensure_collection(project_id)
+                return rag.index_chunks(project_id, file_id, chunks)
+
+            count = await asyncio.to_thread(_do_index)
 
             # Update collection metadata
             col_result = await db.execute(select(Collection).where(Collection.project_id == project_id))
