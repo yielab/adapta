@@ -73,14 +73,10 @@ services:
         condition: service_healthy
     networks:
       - brain-network
-    # Uncomment to enable GPU pass-through (requires nvidia-container-toolkit):
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #         - driver: nvidia
-    #           count: 1
-    #           capabilities: [gpu]
+    # GPU pass-through is opt-in via the overlay file (keeps CPU-only hosts
+    # starting cleanly). Enable with:
+    #   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+    # See docker-compose.gpu.yml and TODO §4.2b for host prerequisites.
 
   # ──────────────────────────────────────────────
   # PostgreSQL: metadata store

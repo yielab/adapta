@@ -268,6 +268,37 @@ Redis, Chroma) are gated by healthchecks, so the app waits until they are ready.
 Convenience wrapper (optional): `./start.sh up` does the same and then waits for `/health` to pass.
 Other helpers: `./start.sh logs`, `./start.sh ps`, `./start.sh down`.
 
+The default `up` starts **CPU-only** — RAG serving needs no GPU, and the training worker starts but
+rejects LoRA jobs with a clear *"GPU required"* message. To train, enable GPU pass-through (below).
+
+#### Enabling the GPU (fine-tuning only)
+
+LoRA fine-tuning runs as QLoRA 4-bit on the `worker` container and **requires a CUDA GPU**. The worker
+image already ships CUDA PyTorch; you just pass the host GPU into the container.
+
+**One-time host prerequisites** (Linux):
+
+1. NVIDIA driver — verify with `nvidia-smi` (shows your GPU, driver, CUDA version).
+2. [`nvidia-container-toolkit`](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html):
+   ```bash
+   sudo apt-get install -y nvidia-container-toolkit
+   sudo nvidia-ctk runtime configure --runtime=docker
+   sudo systemctl restart docker
+   # sanity check (should print your GPU):
+   docker run --rm --gpus all ubuntu nvidia-smi -L
+   ```
+
+**Start with GPU pass-through** via the opt-in overlay:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+# confirm torch sees the card inside the worker:
+docker compose logs worker | grep "GPU ready"
+```
+
+A host **without** a GPU (or without the toolkit) keeps using the plain `docker compose up` — everything
+starts cleanly and only LoRA jobs are refused. The overlay is never required for RAG.
+
 ### 3. Verify it's up
 
 ```bash

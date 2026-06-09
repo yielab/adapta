@@ -15,7 +15,7 @@ import uuid
 from pathlib import Path
 
 from brain.config import settings
-from brain.core.gpu import get_gpu_config
+from brain.core.gpu import torch_cuda_status
 from brain.services.adapters import get_adapter_registry
 from brain.services.jobs import get_job_queue
 
@@ -50,10 +50,12 @@ async def _run_job(meta: dict) -> None:
     logger.info("Starting job %s (project=%s, model=%s)", job_id, project_id, base_model)
     await queue.update_status(job_id, status="running", progress=0.0)
 
-    # GPU guard: LoRA requires a GPU
-    gpu_config = get_gpu_config()
-    if not gpu_config.available:
-        err = "No GPU available — LoRA training requires a CUDA GPU."
+    # GPU guard: QLoRA requires torch to be usable on CUDA. Gate strictly on the
+    # torch-level check (not the nvidia-smi heuristic) so a CPU-only host — or a
+    # CUDA worker started without GPU pass-through — fails fast with a clear reason.
+    cuda = torch_cuda_status()
+    if not cuda.usable:
+        err = f"GPU required for LoRA training — {cuda.reason}"
         logger.error(err)
         await queue.update_status(job_id, status="failed", error=err)
         return
@@ -168,7 +170,24 @@ async def _run_job(meta: dict) -> None:
     logger.info("Job %s complete — adapter %s registered", job_id, adapter_id)
 
 
+def _log_gpu_banner() -> None:
+    """Log torch/CUDA readiness once at startup so operators see GPU state in logs."""
+    cuda = torch_cuda_status()
+    if cuda.usable:
+        logger.info(
+            "GPU ready: %s | torch %s (CUDA %s)",
+            cuda.device_name, cuda.torch_version, cuda.cuda_version,
+        )
+    else:
+        logger.warning(
+            "No usable training GPU: %s | torch %s (CUDA build: %s). "
+            "Jobs will be rejected with 'GPU required'.",
+            cuda.reason, cuda.torch_version, cuda.cuda_version,
+        )
+
+
 async def worker_loop() -> None:
+    _log_gpu_banner()
     queue = get_job_queue()
     await queue.connect()
     logger.info("Worker connected to Redis, waiting for jobs...")
