@@ -1,5 +1,7 @@
 """Dataset upload + validation for fine-tune projects."""
 
+import asyncio
+import logging
 import shutil
 from pathlib import Path
 from typing import List, Optional
@@ -15,6 +17,8 @@ from brain.db.session import get_db
 from brain.domain.errors import InvalidRequest, NotFound
 from brain.services.auth import get_current_user, require_team_member
 from brain.services.training import validate_dataset
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/projects/{project_id}/datasets", tags=["datasets"])
 
@@ -50,21 +54,46 @@ async def _get_finetune_project(db: AsyncSession, project_id: str) -> Project:
 
 
 async def _validate_in_background(dataset_id: str, path: Path) -> None:
+    """Validate an uploaded dataset out-of-band and record the terminal status.
+
+    Runs in its own DB session (the request's session is already closed). The row
+    is committed by the request handler *before* this task is scheduled, but a
+    freshly-pooled connection can briefly lag the commit, so the lookup retries a
+    few times rather than returning silently (which left datasets stuck at
+    ``validating`` — see TODO §4.4).
+    """
     from sqlalchemy import select
 
     from brain.db.session import AsyncSessionLocal
 
-    async with AsyncSessionLocal() as db:
-        result = await db.execute(select(Dataset).where(Dataset.id == dataset_id))
-        dataset = result.scalar_one_or_none()
-        if not dataset:
-            return
+    logger.info("Dataset validation task started: %s", dataset_id)
+    try:
+        async with AsyncSessionLocal() as db:
+            dataset = None
+            for _ in range(10):
+                result = await db.execute(select(Dataset).where(Dataset.id == dataset_id))
+                dataset = result.scalar_one_or_none()
+                if dataset is not None:
+                    break
+                await asyncio.sleep(0.1)
+            if dataset is None:
+                logger.error(
+                    "Dataset validation task could not find row %s after retries — "
+                    "status will remain 'validating'.", dataset_id,
+                )
+                return
 
-        is_valid, error, num_samples = validate_dataset(path)
-        dataset.status = DatasetStatus.valid if is_valid else DatasetStatus.invalid
-        dataset.validation_error = error
-        dataset.num_samples = num_samples
-        await db.commit()
+            is_valid, error, num_samples = validate_dataset(path)
+            dataset.status = DatasetStatus.valid if is_valid else DatasetStatus.invalid
+            dataset.validation_error = error
+            dataset.num_samples = num_samples
+            await db.commit()
+            logger.info(
+                "Dataset validation task done: %s -> %s (%s samples)",
+                dataset_id, dataset.status.value, num_samples,
+            )
+    except Exception:
+        logger.exception("Dataset validation task crashed for %s", dataset_id)
 
 
 @router.post("", status_code=202)
@@ -99,9 +128,14 @@ async def upload_dataset(
         shutil.copyfileobj(file.file, out)
 
     dataset.storage_path = str(dest)
-    background_tasks.add_task(_validate_in_background, dataset.id, dest)
+    # Commit now so the row is durable BEFORE the background task is scheduled —
+    # otherwise the task's fresh session races the request's deferred commit,
+    # finds nothing, and the dataset is stuck at 'validating' forever (§4.4).
+    dataset_id = dataset.id
+    await db.commit()
+    background_tasks.add_task(_validate_in_background, dataset_id, dest)
 
-    return {"id": dataset.id, "name": file.filename, "status": "validating"}
+    return {"id": dataset_id, "name": file.filename, "status": "validating"}
 
 
 @router.get("", response_model=List[DatasetResponse])

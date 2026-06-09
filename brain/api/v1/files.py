@@ -1,5 +1,7 @@
 """Document upload and indexing for RAG projects."""
 
+import asyncio
+import logging
 import shutil
 from pathlib import Path
 from typing import List, Optional
@@ -16,6 +18,8 @@ from brain.domain.errors import InvalidRequest, NotFound
 from brain.services.auth import get_current_user, require_team_member
 from brain.services.documents import SUPPORTED_TYPES, parse_and_chunk
 from brain.services.rag import collection_name_for, get_rag_service
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/projects/{project_id}/files", tags=["files"])
 
@@ -51,16 +55,31 @@ async def _get_project(db: AsyncSession, project_id: str) -> Project:
 
 
 async def _index_file(file_id: str, file_path: Path, content_type: str, filename: str, project_id: str) -> None:
-    """Background task: parse → chunk → embed → store in Chroma, update DB status."""
+    """Background task: parse → chunk → embed → store in Chroma, update DB status.
+
+    The row is committed by the request handler before this is scheduled; the
+    lookup still retries to absorb a brief pooled-connection lag rather than
+    returning silently (which left files stuck at ``pending`` — see TODO §4.4).
+    """
     from sqlalchemy import select
 
     from brain.db.session import AsyncSessionLocal
 
+    logger.info("File indexing task started: %s", file_id)
     async with AsyncSessionLocal() as db:
         try:
-            result = await db.execute(select(ProjectFile).where(ProjectFile.id == file_id))
-            pfile = result.scalar_one_or_none()
-            if not pfile:
+            pfile = None
+            for _ in range(10):
+                result = await db.execute(select(ProjectFile).where(ProjectFile.id == file_id))
+                pfile = result.scalar_one_or_none()
+                if pfile is not None:
+                    break
+                await asyncio.sleep(0.1)
+            if pfile is None:
+                logger.error(
+                    "File indexing task could not find row %s after retries — "
+                    "status will remain 'pending'.", file_id,
+                )
                 return
 
             pfile.status = FileStatus.processing
@@ -90,8 +109,10 @@ async def _index_file(file_id: str, file_path: Path, content_type: str, filename
             pfile.status = FileStatus.indexed
             pfile.num_chunks = count
             await db.commit()
+            logger.info("File indexing task done: %s -> indexed (%s chunks)", file_id, count)
 
         except Exception as exc:
+            logger.exception("File indexing task failed for %s", file_id)
             async with AsyncSessionLocal() as db2:
                 result = await db2.execute(select(ProjectFile).where(ProjectFile.id == file_id))
                 pfile = result.scalar_one_or_none()
@@ -144,10 +165,12 @@ async def upload_file(
 
     pfile.size_bytes = dest_path.stat().st_size
     pfile.storage_path = str(dest_path)
+    # Commit before scheduling so the indexing task reliably finds the row (§4.4).
+    file_id = pfile.id
+    await db.commit()
+    background_tasks.add_task(_index_file, file_id, dest_path, content_type, filename, project_id)
 
-    background_tasks.add_task(_index_file, pfile.id, dest_path, content_type, filename, project_id)
-
-    return {"id": pfile.id, "filename": filename, "status": "pending"}
+    return {"id": file_id, "filename": filename, "status": "pending"}
 
 
 @router.get("", response_model=List[FileResponse])

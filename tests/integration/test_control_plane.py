@@ -117,11 +117,20 @@ async def _upload_dataset(client, headers, project_id, lines):
     )
 
 
-async def test_dataset_upload_persists(client, admin):
-    # Covers the upload + persistence path. The terminal valid/invalid state is
-    # produced by a FastAPI BackgroundTask, which currently does not run on the
-    # server (see TODO §4.4); validate_dataset() itself is unit-tested. So here we
-    # assert the dataset is accepted (202), enters `validating`, and is retrievable.
+async def _await_terminal(client, headers, pid, did, terminals=("valid", "invalid")):
+    """Poll a dataset until its background validation reaches a terminal state."""
+    r = await _retry(
+        lambda: client.get(f"/v1/projects/{pid}/datasets/{did}", headers=headers),
+        lambda r: r.status_code == 200 and r.json().get("status") in terminals,
+        tries=40, delay=0.1,
+    )
+    return r
+
+
+async def test_dataset_upload_validates_to_terminal_state(client, admin):
+    # Full path: upload (202 → validating) → the FastAPI BackgroundTask validates
+    # the file → terminal `valid` with the sample count. Regression guard for the
+    # §4.4 bug where the task raced the request commit and datasets stuck forever.
     h, team_id = admin["headers"], admin["team_id"]
     proj = await client.post(
         "/v1/projects",
@@ -141,16 +150,36 @@ async def test_dataset_upload_persists(client, admin):
     did = good.json()["id"]
     assert good.json()["status"] == "validating"
 
-    got = await _retry(
-        lambda: client.get(f"/v1/projects/{pid}/datasets/{did}", headers=h),
-        lambda r: r.status_code == 200,
-    )
-    assert got.status_code == 200
+    got = await _await_terminal(client, h, pid, did)
+    assert got.json()["status"] == "valid", got.text
+    assert got.json()["num_samples"] == 2
+
     listed = await _retry(
         lambda: client.get(f"/v1/projects/{pid}/datasets", headers=h),
         lambda r: any(d["id"] == did for d in r.json()),
     )
     assert any(d["id"] == did for d in listed.json())
+
+
+async def test_dataset_invalid_reaches_invalid_state(client, admin):
+    # A schema-violating line must reach terminal `invalid` with an error message,
+    # not hang at `validating`.
+    h, team_id = admin["headers"], admin["team_id"]
+    proj = await client.post(
+        "/v1/projects",
+        headers=h,
+        json={"name": "FT2", "type": "finetune", "base_model": "qwen2.5-3b", "team_id": team_id},
+    )
+    pid = proj.json()["id"]
+
+    bad = await _retry(
+        lambda: _upload_dataset(client, h, pid, [{"prompt": "no response here"}]),
+        lambda r: r.status_code == 202,
+    )
+    did = bad.json()["id"]
+    got = await _await_terminal(client, h, pid, did)
+    assert got.json()["status"] == "invalid", got.text
+    assert got.json()["validation_error"]
 
 
 # --- Scoped key auth on the serving endpoint -------------------------------
