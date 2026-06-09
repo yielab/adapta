@@ -32,6 +32,39 @@ class UserResponse(BaseModel):
     org_id: str | None = None
 
 
+class Role(Enum):
+    admin = "admin"
+    member = "member"
+    viewer = "viewer"
+
+
+class InviteRequest(BaseModel):
+    email: EmailStr
+    team_id: str
+    role: Role | None = None
+
+
+class AcceptInviteRequest(BaseModel):
+    token: Annotated[str, Field(min_length=1)]
+    password: Annotated[str, Field(min_length=8)]
+
+
+class Status(Enum):
+    pending = "pending"
+    accepted = "accepted"
+    revoked = "revoked"
+
+
+class InvitationResponse(BaseModel):
+    id: str | None = None
+    email: str | None = None
+    team_id: str | None = None
+    role: Role | None = None
+    status: Status | None = None
+    token: str | None = None
+    expires_at: str | None = None
+
+
 class Type(Enum):
     rag = "rag"
     finetune = "finetune"
@@ -89,7 +122,7 @@ class JobCreateRequest(BaseModel):
     training_config: TrainingConfig | None = None
 
 
-class Status(Enum):
+class Status1(Enum):
     queued = "queued"
     running = "running"
     succeeded = "succeeded"
@@ -99,7 +132,7 @@ class Status(Enum):
 
 class JobResponse(BaseModel):
     id: str | None = None
-    status: Status | None = None
+    status: Status1 | None = None
     progress: Annotated[float | None, Field(ge=0.0, le=1.0)] = None
     logs: str | None = None
     adapter_path: str | None = None
@@ -109,7 +142,7 @@ class JobResponse(BaseModel):
     created_at: AwareDatetime | None = None
 
 
-class Status1(Enum):
+class Status2(Enum):
     pending = "pending"
     active = "active"
     disabled = "disabled"
@@ -118,7 +151,7 @@ class Status1(Enum):
 class EndpointResponse(BaseModel):
     id: str | None = None
     slug: str | None = None
-    status: Status1 | None = None
+    status: Status2 | None = None
     base_model: str | None = None
     adapter_path: str | None = None
     project_type: Type | None = None
@@ -176,14 +209,14 @@ class SynthesizeResponse(BaseModel):
     message: str | None = None
 
 
-class Role(Enum):
+class Role2(Enum):
     system = "system"
     user = "user"
     assistant = "assistant"
 
 
 class Message(BaseModel):
-    role: Role
+    role: Role2
     content: str
 
 

@@ -117,6 +117,15 @@ async def require_team_member(db: AsyncSession, user_id: str, team_id: str) -> R
     return role
 
 
+async def require_team_writer(db: AsyncSession, user_id: str, team_id: str) -> Role:
+    """Allow mutation: admin or member, but NOT viewer (read-only). §3.1."""
+    role = await require_team_member(db, user_id, team_id)
+    if role == Role.viewer:
+        from brain.domain.errors import Forbidden
+        raise Forbidden(message="Read-only (viewer) role cannot perform this action")
+    return role
+
+
 async def require_team_admin(db: AsyncSession, user_id: str, team_id: str) -> None:
     role = await require_team_member(db, user_id, team_id)
     if role != Role.admin:

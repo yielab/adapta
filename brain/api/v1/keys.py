@@ -10,7 +10,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from brain.db.models import ApiKey, Endpoint, Project
 from brain.db.session import get_db
 from brain.domain.errors import NotFound
-from brain.services.auth import generate_api_key, get_current_user, require_team_member
+from brain.services.auth import (
+    generate_api_key,
+    get_current_user,
+    require_team_member,
+    require_team_writer,
+)
 
 router = APIRouter(prefix="/projects/{project_id}/keys", tags=["keys"])
 
@@ -59,7 +64,7 @@ async def create_key(
     db: AsyncSession = Depends(get_db),
 ):
     project = await _get_project(db, project_id)
-    await require_team_member(db, current_user.id, project.team_id)
+    await require_team_writer(db, current_user.id, project.team_id)
     endpoint = await _get_active_endpoint(db, project_id)
 
     raw_key, prefix, key_hash = generate_api_key()
@@ -108,7 +113,7 @@ async def revoke_key(
     db: AsyncSession = Depends(get_db),
 ):
     project = await _get_project(db, project_id)
-    await require_team_member(db, current_user.id, project.team_id)
+    await require_team_writer(db, current_user.id, project.team_id)
     endpoint = await _get_active_endpoint(db, project_id)
 
     result = await db.execute(select(ApiKey).where(ApiKey.id == key_id, ApiKey.endpoint_id == endpoint.id))

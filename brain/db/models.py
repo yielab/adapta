@@ -41,6 +41,13 @@ def _uuid() -> str:
 class Role(str, enum.Enum):
     admin = "admin"
     member = "member"
+    viewer = "viewer"  # read-only: consume endpoints + read, no mutation
+
+
+class InvitationStatus(str, enum.Enum):
+    pending = "pending"
+    accepted = "accepted"
+    revoked = "revoked"
 
 
 class ProjectType(str, enum.Enum):
@@ -281,6 +288,30 @@ class ApiKey(Base):
     last_used_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     endpoint: Mapped[Endpoint] = relationship("Endpoint", back_populates="keys")
+
+
+class Invitation(Base):
+    """A pending invite for a new user to join a team with a given role (§3.1).
+
+    The admin issues one (`POST /v1/auth/invite`); the invitee redeems the token
+    and sets a password (`POST /v1/auth/accept-invite`), which creates the user
+    and the team membership without re-bootstrapping the org.
+    """
+    __tablename__ = "invitations"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    org_id: Mapped[str] = mapped_column(String(36), ForeignKey("orgs.id", ondelete="CASCADE"), nullable=False)
+    team_id: Mapped[str] = mapped_column(String(36), ForeignKey("teams.id", ondelete="CASCADE"), nullable=False)
+    email: Mapped[str] = mapped_column(String(255), nullable=False)
+    role: Mapped[Role] = mapped_column(Enum(Role, native_enum=False, length=16), nullable=False, default=Role.member)
+    token: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    status: Mapped[InvitationStatus] = mapped_column(
+        Enum(InvitationStatus, native_enum=False, length=16), nullable=False, default=InvitationStatus.pending
+    )
+    invited_by: Mapped[str] = mapped_column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    accepted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class UsageEvent(Base):

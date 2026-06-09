@@ -10,7 +10,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from brain.db.models import Project, ProjectStatus, ProjectType
 from brain.db.session import get_db
 from brain.domain.errors import NotFound
-from brain.services.auth import get_current_user, require_team_admin, require_team_member
+from brain.services.auth import (
+    get_current_user,
+    require_team_admin,
+    require_team_member,
+    require_team_writer,
+)
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 
@@ -55,7 +60,7 @@ async def create_project(
     current_user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    await require_team_member(db, current_user.id, body.team_id)
+    await require_team_writer(db, current_user.id, body.team_id)
     project = Project(
         team_id=body.team_id,
         name=body.name,

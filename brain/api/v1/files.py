@@ -15,7 +15,7 @@ from brain.config import settings
 from brain.db.models import Collection, FileStatus, Project, ProjectFile, ProjectType
 from brain.db.session import get_db
 from brain.domain.errors import InvalidRequest, NotFound
-from brain.services.auth import get_current_user, require_team_member
+from brain.services.auth import get_current_user, require_team_member, require_team_writer
 from brain.services.documents import SUPPORTED_TYPES, parse_and_chunk
 from brain.services.rag import collection_name_for, get_rag_service
 
@@ -131,7 +131,7 @@ async def upload_file(
     db: AsyncSession = Depends(get_db),
 ):
     project = await _get_project(db, project_id)
-    await require_team_member(db, current_user.id, project.team_id)
+    await require_team_writer(db, current_user.id, project.team_id)
 
     if project.type != ProjectType.rag:
         raise InvalidRequest(message="File uploads are for RAG projects. Use /datasets for fine-tuning.")
@@ -193,7 +193,7 @@ async def delete_file(
     db: AsyncSession = Depends(get_db),
 ):
     project = await _get_project(db, project_id)
-    await require_team_member(db, current_user.id, project.team_id)
+    await require_team_writer(db, current_user.id, project.team_id)
     result = await db.execute(select(ProjectFile).where(ProjectFile.id == file_id, ProjectFile.project_id == project_id))
     pfile = result.scalar_one_or_none()
     if not pfile:

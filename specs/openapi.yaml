@@ -78,6 +78,59 @@ paths:
         '200': {description: User, content: {application/json: {schema: {$ref: '#/components/schemas/UserResponse'}}}}
         '401': {$ref: '#/components/responses/Error'}
 
+  /auth/invite:
+    post:
+      operationId: createInvite
+      tags: [auth]
+      summary: Invite a user to a team (admin only)
+      security: [{BearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/InviteRequest'}
+      responses:
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Error'}
+        '422': {$ref: '#/components/responses/Error'}
+        '201': {description: Invitation (token shown once), content: {application/json: {schema: {$ref: '#/components/schemas/InvitationResponse'}}}}
+
+  /auth/accept-invite:
+    post:
+      operationId: acceptInvite
+      tags: [auth]
+      summary: Redeem an invite token and set a password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AcceptInviteRequest'}
+      responses:
+        '400': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '422': {$ref: '#/components/responses/Error'}
+        '201': {description: User created/joined, content: {application/json: {schema: {$ref: '#/components/schemas/UserResponse'}}}}
+
+  /auth/invitations:
+    get:
+      operationId: listInvitations
+      tags: [auth]
+      summary: List a team's invitations (admin only)
+      security: [{BearerAuth: []}]
+      parameters:
+        - name: team_id
+          in: query
+          required: true
+          schema: {type: string}
+      responses:
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '422': {$ref: '#/components/responses/Error'}
+        '200': {description: Invitations, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/InvitationResponse'}}}}}
+
   # ──────────────────────────────────────────────────────────────────────────
   # Projects
   # ──────────────────────────────────────────────────────────────────────────
@@ -503,6 +556,31 @@ components:
         id: {type: string}
         email: {type: string}
         org_id: {type: string}
+
+    # Invitations
+    InviteRequest:
+      type: object
+      required: [email, team_id]
+      properties:
+        email: {type: string, format: email}
+        team_id: {type: string}
+        role: {type: string, enum: [admin, member, viewer]}
+    AcceptInviteRequest:
+      type: object
+      required: [token, password]
+      properties:
+        token: {type: string, minLength: 1}
+        password: {type: string, minLength: 8}
+    InvitationResponse:
+      type: object
+      properties:
+        id: {type: string}
+        email: {type: string}
+        team_id: {type: string}
+        role: {type: string, enum: [admin, member, viewer]}
+        status: {type: string, enum: [pending, accepted, revoked]}
+        token: {type: string, nullable: true}
+        expires_at: {type: string}
 
     # Projects
     ProjectCreate:

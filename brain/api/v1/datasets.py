@@ -15,7 +15,7 @@ from brain.config import settings
 from brain.db.models import Dataset, DatasetStatus, Project, ProjectType
 from brain.db.session import get_db
 from brain.domain.errors import InvalidRequest, NotFound
-from brain.services.auth import get_current_user, require_team_member
+from brain.services.auth import get_current_user, require_team_member, require_team_writer
 from brain.services.training import validate_dataset
 
 logger = logging.getLogger(__name__)
@@ -105,7 +105,7 @@ async def upload_dataset(
     db: AsyncSession = Depends(get_db),
 ):
     project = await _get_finetune_project(db, project_id)
-    await require_team_member(db, current_user.id, project.team_id)
+    await require_team_writer(db, current_user.id, project.team_id)
 
     filename = file.filename or "dataset.jsonl"
     if not filename.endswith(".jsonl"):

@@ -83,6 +83,9 @@ GET  /gpu                                GPU detection
 POST /v1/auth/register                   bootstrap org + first admin
 POST /v1/auth/login                      obtain JWT
 GET  /v1/auth/me                         current user
+POST /v1/auth/invite                     admin invites a user to a team (token shown once)
+POST /v1/auth/accept-invite              redeem invite token + set password → join team
+GET  /v1/auth/invitations                list a team's invitations (admin)
 
 GET/POST       /v1/projects              list (by team_id) / create
 GET/DELETE     /v1/projects/{id}         get / delete

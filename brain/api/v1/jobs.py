@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from brain.db.models import Project, TrainingJob
 from brain.db.session import get_db
 from brain.domain.errors import NotFound
-from brain.services.auth import get_current_user, require_team_member
+from brain.services.auth import get_current_user, require_team_member, require_team_writer
 from brain.services.jobs import get_job_queue
 from brain.services.training import enqueue_training_job
 
@@ -64,7 +64,7 @@ async def create_job(
     db: AsyncSession = Depends(get_db),
 ):
     project = await _get_project(db, project_id)
-    await require_team_member(db, current_user.id, project.team_id)
+    await require_team_writer(db, current_user.id, project.team_id)
 
     job = await enqueue_training_job(
         db,

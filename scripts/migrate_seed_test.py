@@ -15,9 +15,10 @@ prove the schema is functional after the round-trip. Run inside the stack:
 from __future__ import annotations
 
 import asyncio
+import secrets
 import subprocess
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from brain.db import models as m
 from brain.db.session import AsyncSessionLocal, engine
@@ -127,6 +128,18 @@ async def _seed(tag: str) -> None:
                 prompt_tokens=10,
                 completion_tokens=20,
                 request_count=1,
+            )
+        )
+        db.add(
+            m.Invitation(
+                org_id=org.id,
+                team_id=team.id,
+                email=f"invitee-{suffix}@example.dev",
+                role=m.Role.viewer,
+                token=secrets.token_urlsafe(16),
+                status=m.InvitationStatus.pending,
+                invited_by=user.id,
+                expires_at=datetime.now(timezone.utc) + timedelta(days=7),
             )
         )
         await db.commit()

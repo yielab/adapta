@@ -234,11 +234,10 @@ Partly covered (`test_unhandled_error_returns_correlation_id`, `test_domain_erro
 
 ## 3. Product backlog (P1 — before first customer)
 
-### 3.1 RBAC & multi-user
-- [ ] **Team invitation flow** — `POST /v1/auth/invite` (admin issues invite) + `POST /v1/auth/accept-invite`; add user to a team without re-bootstrapping the org.
-  - *Spec first* (Pillar 1), *migration* for an `invitations` table (Pillar 2), same PR.
-- [ ] Per-project **read-only** role (consume endpoint + read, no mutate).
-- [ ] Key scoping audit: confirm a `brn_*` key can only reach its own endpoint; add the test (§1.7).
+### 3.1 RBAC & multi-user — ✅ invite flow + read-only role DONE (2026-06-09)
+- [x] **Team invitation flow** — `POST /v1/auth/invite` (admin issues invite, token shown once), `POST /v1/auth/accept-invite` (redeem token + set password → user joins team), `GET /v1/auth/invitations` (admin list, tokens hidden). Spec-first (`createInvite`/`acceptInvite`/`listInvitations` + schemas; contract gate green 1352/1352), migration `0003_invitations` (Pillar 2; seeded round-trip covers it), `brain/services/invitations.py` + handlers. Adds a user to a team without re-bootstrapping the org.
+- [x] Per-project **read-only** role: added `Role.viewer` + `require_team_writer` (admin/member, not viewer). All mutating handlers (project/file/dataset/job/endpoint/key create+delete, synthesis) now require writer; reads stay open to viewers. Integration `test_viewer_is_read_only` asserts viewer GET 200 / POST 403.
+- [ ] Key scoping audit: confirm a `brn_*` key can only reach its own endpoint; add the test (§1.7). **Blocked:** exercising a scoped key end-to-end needs a live endpoint (indexed RAG docs or a passed eval gate) + a GGUF model — same blocker as the §1.7 RAG/LoRA e2e flows. Scope is structural (a key row maps to exactly one `endpoint_id`; `_resolve_endpoint` resolves the key to *its* endpoint, ignoring the client `model` field), and bogus/missing keys are already covered by `test_chat_completions_rejects_missing_and_bad_key`.
 
 ### 3.2 Usage metering persistence — ✅ DONE (2026-06-09)
 - [x] `usage_events` table (endpoint_id, day, prompt_tokens, completion_tokens, request_count) — ORM `UsageEvent` + migration `0002` (unique `(endpoint_id, day)` + index). Seeded migration round-trip covers it.

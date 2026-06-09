@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from brain.db.models import Endpoint, EndpointStatus, JobStatus, Project, ProjectType, TrainingJob
 from brain.db.session import get_db
 from brain.domain.errors import InvalidRequest, NotFound
-from brain.services.auth import get_current_user, require_team_member
+from brain.services.auth import get_current_user, require_team_member, require_team_writer
 
 router = APIRouter(prefix="/projects/{project_id}/endpoint", tags=["endpoints"])
 
@@ -55,7 +55,7 @@ async def create_endpoint(
     - Fine-tune: project must have a succeeded training job with eval_passed=True.
     """
     project = await _get_project(db, project_id)
-    await require_team_member(db, current_user.id, project.team_id)
+    await require_team_writer(db, current_user.id, project.team_id)
 
     # Check existing endpoint
     ep_result = await db.execute(select(Endpoint).where(Endpoint.project_id == project_id))

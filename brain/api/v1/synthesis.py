@@ -14,7 +14,7 @@ from sqlalchemy.future import select
 from brain.db.models import Collection, Dataset, DatasetStatus, Project, ProjectType
 from brain.db.session import get_db
 from brain.domain.errors import InvalidRequest, ProjectNotFound
-from brain.services.auth import get_current_user, require_team_member
+from brain.services.auth import get_current_user, require_team_writer
 
 router = APIRouter()
 
@@ -100,7 +100,7 @@ async def synthesize_dataset(
     project = result.scalar_one_or_none()
     if not project:
         raise ProjectNotFound(message=f"Project {project_id} not found")
-    await require_team_member(db, current_user.id, project.team_id)
+    await require_team_writer(db, current_user.id, project.team_id)
 
     if project.type != ProjectType.finetune:
         raise InvalidRequest(message="Dataset synthesis is only available for finetune projects")
