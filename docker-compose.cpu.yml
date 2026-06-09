@@ -17,7 +17,4 @@
 # ──────────────────────────────────────────────────────────────────────────────
 services:
   worker:
-    deploy:
-      resources:
-        reservations:
-          devices: !reset []
+    devices: !reset []

@@ -108,14 +108,15 @@ services:
       resources:
         limits:
           memory: 8g
-        # GPU is the default — the worker reserves the host GPU for QLoRA training.
-        # This requires the NVIDIA Container Toolkit on the host; on a CPU-only host,
-        # opt out with `-f docker-compose.cpu.yml` (which !resets this reservation).
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
+    # GPU is the default — the worker gets the host GPU for QLoRA training via CDI
+    # (Container Device Interface). Requires the NVIDIA Container Toolkit on the host
+    # (`nvidia-ctk` generates /etc/cdi or /var/run/cdi/nvidia.yaml; the enabled
+    # nvidia-cdi-refresh.service keeps it current). Docker 25+ resolves GPUs through
+    # CDI — the legacy `deploy.resources.reservations.devices: {driver: nvidia}`
+    # plugin path is NOT available on this host. On a CPU-only host, opt out with
+    # `-f docker-compose.cpu.yml` (which !resets the devices list).
+    devices:
+      - "nvidia.com/gpu=all"
     logging: *default-logging
     depends_on:
       postgres:

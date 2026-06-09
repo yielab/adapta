@@ -285,8 +285,12 @@ The worker image already ships CUDA PyTorch; you only wire the host GPU into Doc
    sudo nvidia-ctk runtime configure --runtime=docker
    sudo systemctl restart docker
    # sanity check (should print your GPU):
-   docker run --rm --gpus all ubuntu nvidia-smi -L
+   docker run --rm --device nvidia.com/gpu=all ubuntu nvidia-smi -L
    ```
+   > Docker 25+ resolves GPUs through **CDI** (Container Device Interface). Use the
+   > `--device nvidia.com/gpu=all` form above — on recent Docker, `--gpus all` may
+   > misdetect the vendor ("CDI spec not found"). The compose stack uses the CDI
+   > device form; the enabled `nvidia-cdi-refresh.service` keeps the spec current.
 
 Then start normally — the worker picks up the GPU automatically:
 
