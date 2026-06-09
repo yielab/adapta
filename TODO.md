@@ -246,16 +246,16 @@ Partly covered (`test_unhandled_error_returns_correlation_id`, `test_domain_erro
 - [x] Replaced the streaming `chars // 4` estimate with the **real** completion-token count (the engine yields one model token per iteration, so counting yields is exact). Prompt-token count for streaming remains 0 (best-effort; non-stream carries exact prompt/completion/total from the engine).
 - [x] *Tests:* `record_usage` upsert verified (two calls → one incremented row); integration `test_usage_aggregation` (totals + per-day, newest-first) + `test_usage_requires_auth`.
 
-### 3.3 Operability
-- [ ] **Backup/restore runbook:** `pg_dump`/`pg_restore` + adapter-artifact and Chroma-volume backup procedure, in `docs/`.
-- [ ] **Startup migration ordering:** app container runs `alembic upgrade head` before serving (compose `depends_on` + entrypoint guard).
-- [ ] **VRAM requirements table:** minimum VRAM per supported base-model size, in `docs/` and README.
-- [ ] Graceful worker shutdown: in-flight job is requeued, not lost, on SIGTERM.
+### 3.3 Operability — ✅ DONE (2026-06-09)
+- [x] **Backup/restore runbook:** `pg_dump` + Chroma-volume + adapter/upload/dataset file backup & restore, with consistency notes — [docs/OPERATIONS.md](docs/OPERATIONS.md) §2.
+- [x] **Startup migration ordering:** app runs `alembic upgrade head` before serving (entrypoint + `depends_on: postgres healthy`) — documented OPERATIONS §3.
+- [x] **VRAM requirements table:** OPERATIONS §6.2 (training) + §6.1 (serving RAM).
+- [x] Graceful worker shutdown: in-flight job requeued on SIGTERM (done §4.4) — documented OPERATIONS §4.
 
-### 3.4 Base model catalog (open decision → make concrete)
-- [ ] Define the default supported GGUF base list (Qwen2.5 family confirmed; document others).
-- [ ] Document each base's VRAM + quality tradeoff for QLoRA 4-bit.
-- [ ] Decide artifact storage: filesystem volume now; MinIO only if HA/scale demands it.
+### 3.4 Base model catalog — ✅ DONE (2026-06-09)
+- [x] Default supported GGUF base list (Qwen2.5 family confirmed) — [docs/OPERATIONS.md](docs/OPERATIONS.md) §6.3.
+- [x] Per-base VRAM + quality tradeoff for QLoRA 4-bit — OPERATIONS §6.2/§6.3.
+- [x] Artifact storage decision: filesystem volume now; object storage only if multi-host/HA demands it — OPERATIONS §6.3.
 
 ### 3.5 Observability (optional profile)
 - [ ] Optional Prometheus/Grafana **compose profile** (off by default), exposing request latency, job duration, queue depth.
@@ -316,11 +316,11 @@ runtime robustness. See [docs/API_EVOLUTION_PLAN.md](docs/API_EVOLUTION_PLAN.md)
 
 ### 4.5 Scale, registry & GPU profile (P2)
 - [x] Dev/prod compose separation (done in §4.0).
-- [ ] **Stateless app → horizontal scale**: confirm `app` holds no local state (sessions, queue, vectors all external) so `docker compose up --scale app=N` behind a reverse proxy works; document it.
-- [ ] **Image tag & registry strategy**: tag by version/git-SHA (not just `latest`); build+push in CI; document the customer pull/upgrade flow (ties to §3.3 backup/restore + migration ordering).
+- [x] **Stateless app → horizontal scale** (2026-06-09): app holds no server-side state (JWT, Redis queue, Chroma vectors, Postgres metadata all external); `--scale app=N` works. Documented in [docs/OPERATIONS.md](docs/OPERATIONS.md) §4, **including the shared-artifact-storage caveat** (host bind-mounts need NFS/object store for multi-host scale).
+- [x] **Image tag & registry strategy** (2026-06-09): tag by version + git-SHA, pin in a host override, upgrade = tag change + `up -d` (re-runs migrations); no secrets baked. [docs/OPERATIONS.md](docs/OPERATIONS.md) §5.
 - [x] **GPU opt-in**: superseded by **§4.2b** — done via the `docker-compose.gpu.yml` overlay (an overlay, not a `profiles:` entry; see §4.2b step 2 for the rationale). **Correction to an earlier note:** the `worker` stage does **not** build CPU torch — `worker-builder` derives from `base` (not `builder`) and `[training]` pulls the CUDA wheel, so `torch.version.cuda` is set. An `nvidia/cuda:*-runtime` base is only needed if the bundled wheel libs prove insufficient at runtime (still flagged in `Dockerfile`).
-- [ ] Remove the stale orphan image `brainfromcero-brain:latest`; standardize the compose project name.
-- [ ] **VRAM/CPU sizing table** (ties to §3.3/§3.4): minimum host resources per supported base-model size.
+- [x] Remove the stale orphan image `brainfromcero-brain:latest`; standardize the compose project name — orphan removed (gone in the disk reclaim); images are `brainfromcero-app` / `brainfromcero-worker` under the `brainfromcero` project.
+- [x] **VRAM/CPU sizing table** — [docs/OPERATIONS.md](docs/OPERATIONS.md) §6 (serving RAM + training VRAM).
 
 ---
 

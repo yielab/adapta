@@ -342,6 +342,7 @@ curl -X POST http://localhost:8000/v1/auth/register \
 - **[docs/PRODUCT_DEFINITION.md](docs/PRODUCT_DEFINITION.md)** — what we're building (authoritative scope, full phase plan)
 - **[docs/SDD_WORKFLOW.md](docs/SDD_WORKFLOW.md)** — how we work (Extended SDD, the three contracts)
 - **[docs/API_EVOLUTION_PLAN.md](docs/API_EVOLUTION_PLAN.md)** — original audit and engineering architecture decisions
+- **[docs/OPERATIONS.md](docs/OPERATIONS.md)** — backup/restore, upgrades, scaling, registry strategy, host sizing (VRAM)
 - **[CLAUDE.md](CLAUDE.md)** — AI-assisted development guide and hard constraints
 - **[TODO.md](TODO.md)** — build checklist by phase
 

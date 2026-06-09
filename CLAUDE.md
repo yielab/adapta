@@ -185,6 +185,7 @@ Two kinds of document, kept strictly separate: **📖 Reference** describes what
 | [docs/SDD_WORKFLOW.md](docs/SDD_WORKFLOW.md) | 📖 Reference | **How** we work (Extended SDD, 3 contracts) |
 | [docs/API_EVOLUTION_PLAN.md](docs/API_EVOLUTION_PLAN.md) | 📖 Reference | **Origin record** — resolved audit, error architecture, cleanup history |
 | [README.md](README.md) | 📖 Reference | How to run/operate the stack |
+| [docs/OPERATIONS.md](docs/OPERATIONS.md) | 📖 Reference | Backup/restore, upgrades, scaling, registry, host sizing (VRAM) |
 | [TODO.md](TODO.md) | 🗺 **Roadmap** | **The only place with open tasks**, priorities, acceptance criteria |
 
 Rule: never add open tasks to a 📖 Reference doc, and never let the roadmap re-describe architecture — link to the reference instead. Status of the build lives in TODO.md's "Status snapshot."
