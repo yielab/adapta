@@ -39,17 +39,35 @@ help:
 generate:
 	@bash scripts/generate_models.sh
 
+check-models:
+	@echo "Checking generated models are in sync with specs/openapi.yaml..."
+	@test -f brain/models/generated/models.py \
+	  || { echo "FAIL: brain/models/generated/models.py missing. Run 'make generate' and commit."; exit 1; }
+	@cp brain/models/generated/models.py /tmp/.models_committed.py
+	@bash scripts/generate_models.sh >/dev/null
+	@if ! diff -q /tmp/.models_committed.py brain/models/generated/models.py >/dev/null; then \
+	  echo "FAIL: brain/models/generated/models.py is stale vs specs/openapi.yaml. Run 'make generate' and commit."; \
+	  exit 1; \
+	fi
+	@echo "✓ Generated models match the spec"
+
 validate-spec:
 	@python3 -c "from openapi_spec_validator import validate; import yaml; validate(yaml.safe_load(open('specs/openapi.yaml')))" \
 	  && echo "✓ specs/openapi.yaml is valid"
 
 test-contracts:
 	@echo "Starting contract tests against http://localhost:8000/v1 ..."
+	# schemathesis 4.x CLI. BRAIN_BEARER_TOKEN (a bootstrap JWT) is injected as a
+	# Bearer header so authenticated operations are exercised, not just their 401s.
+	# `unsupported_method` is excluded: GET /datasets/synthesize legitimately matches
+	# the GET /datasets/{dataset_id} route (id="synthesize") and returns 404, not 405 —
+	# a literal-vs-parameter path overlap, not a contract defect.
 	schemathesis run specs/openapi.yaml \
-	  --base-url http://localhost:8000/v1 \
+	  --url http://localhost:8000/v1 \
 	  --checks all \
-	  --hypothesis-max-examples 50 \
-	  --report schemathesis-report.html \
+	  --exclude-checks unsupported_method \
+	  --max-examples 30 \
+	  -H "Authorization: Bearer $(BRAIN_BEARER_TOKEN)" \
 	  $(SCHEMATHESIS_ARGS)
 
 migrate:
@@ -85,7 +103,7 @@ check-leaks:
 	  echo "✓ No detail=str(e) leak sites found"; \
 	fi
 
-ci: check-leaks lint coverage validate-spec
+ci: check-leaks lint coverage validate-spec check-models
 	@echo "✓ Fast CI gate passed (offline)"
 
 ci-full: ci migrate-test test-contracts

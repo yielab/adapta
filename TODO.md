@@ -1,20 +1,89 @@
-# TODO
+# 🗺 Roadmap — Brain From Cero
 
-> Authoritative build checklist. Phases 0–5 (the product build) are **code-complete** as of 2026-06-08.
-> What remains is **hardening the SDD gates, the test pyramid, and operability** — see the audit below.
+> **This file is the ROADMAP: the single source of open work.** If a task isn't here, it isn't planned.
+> Status/architecture is *described* in the reference docs (below); it is *changed* only through tasks here.
 >
-> - **What we're building:** [docs/PRODUCT_DEFINITION.md](docs/PRODUCT_DEFINITION.md)
-> - **How we work:** [docs/SDD_WORKFLOW.md](docs/SDD_WORKFLOW.md) (three contracts)
-> - **Engineering detail:** [docs/API_EVOLUTION_PLAN.md](docs/API_EVOLUTION_PLAN.md)
+> **Document map — what is reference vs what is roadmap:**
 >
-> **Legend:** `[x]` done & verified · `[~]` partial/exists-but-not-wired · `[ ]` not started
+> | File | Kind | Purpose |
+> |---|---|---|
+> | [docs/PRODUCT_DEFINITION.md](docs/PRODUCT_DEFINITION.md) | 📖 Reference | **What** we're building (locked north-star scope) |
+> | [docs/SDD_WORKFLOW.md](docs/SDD_WORKFLOW.md) | 📖 Reference | **How** we work (Extended SDD, three contracts) |
+> | [docs/API_EVOLUTION_PLAN.md](docs/API_EVOLUTION_PLAN.md) | 📖 Reference | **Origin record** — resolved audit, error architecture, cleanup history (no open tasks) |
+> | [README.md](README.md) | 📖 Reference | How to run/operate the stack |
+> | [CLAUDE.md](CLAUDE.md) | 📖 Reference | AI/developer working agreement |
+> | **TODO.md** (this file) | 🗺 Roadmap | **The only place with open tasks, priorities, acceptance** |
+>
+> Phases 0–5 (the product build) are **code-complete** as of 2026-06-08. What remains: close the one
+> broken SDD gate (API contract), finish the test pyramid, harden deployment, and decide the operator console.
+>
+> **Legend:** `[x]` done & verified · `[~]` partial / exists-but-not-wired · `[ ]` not started
 > **Priority:** **P0** blocks a trustworthy `main` · **P1** needed before first customer · **P2** nice-to-have
 
 ---
 
-## 0. Audit defects found 2026-06-08 (P0 — fix before claiming the build is green)
+## How to pick up a task
 
-These are real gaps discovered by reading the repo, not the docs. They undermine the "phases complete" claim because the gates that are supposed to protect `main` don't actually run.
+Every open task is written so a developer or AI agent can execute it without prior context. Each carries:
+
+- **Context** — why it exists / what's wrong today.
+- **Scope** — the boundary (what is and isn't included).
+- **Steps** — the concrete sequence of changes.
+- **Files** — where the work lands.
+- **Contract impact** — which SDD pillar(s) fire ([SDD_WORKFLOW.md](docs/SDD_WORKFLOW.md)); change the contract **first**.
+- **Acceptance** — the observable, testable condition that closes it.
+
+Honour the [Definition of done](#definition-of-done-per-task) on every task. Work inside the dev container
+(`docker compose up -d` → `docker compose exec app make <target>`); never `pip install` by hand.
+
+---
+
+## Status snapshot (2026-06-08)
+
+| Area | State |
+|---|---|
+| Product build (phases 0–5) | ✅ code-complete |
+| Pillar 2 — DB migration gate | ✅ `make migrate-test` verified (up→down→up); CI `full` job runs it |
+| Pillar 3 — eval gate (the moat) | ✅ enforced in code + unit-tested offline (`tests/test_eval_gate.py`) |
+| **Pillar 1 — API contract** | ✅ **honored** (2026-06-08) — `make test-contracts` green (1260/1260, `--checks all`, zero 5xx); generated models committed + drift-gated (`make check-models`). Optional router-DTO switch remains (§A1b). |
+| CI runner | ✅ `.github/workflows/ci.yml` — `fast` (every push, offline) + `full` (PR→main, live stack) |
+| Docker dev/prod workflow | ✅ reworked 2026-06-08 — one multi-stage `Dockerfile`, non-root prod, dev toolchain baked in (no manual pip). See **§4**. |
+| Image size / CPU-only torch | ❌ still ~6 GB; CPU-torch split + slimming open. See **§4.2**. |
+
+---
+
+## A. Critical — close before claiming `main` is trustworthy (P0)
+
+### A1. API contract (Pillar 1) — ✅ DONE (gate green) except the optional router-DTO switch (P0→P2)
+
+**Context (resolved 2026-06-08).** The contract gate was red; making it green surfaced **three real bugs** plus the spec gaps. All fixed:
+- `[x]` **Auth was 100% broken (500).** `passlib` 1.7.4 is incompatible with `bcrypt` 5.x (can't read `bcrypt.__about__`, then misfires the 72-byte check). Replaced passlib with **direct bcrypt + SHA-256 pre-hash** in `brain/services/auth.py`; dropped passlib from `pyproject.toml`.
+- `[x]` **All enum writes were broken (500).** ORM used native `Enum(Role)` (emitting `::role` casts) while migration `0001` defines those columns as `String(16)` and never creates the PG types. Set `native_enum=False, length=16` on every enum column in `brain/db/models.py` to match the migration (the Pillar-2 SSOT).
+- `[x]` **Error envelope drift.** FastAPI's 422 (`{detail:[...]}`) and routing 404/405 bypassed the `DomainError` envelope. Added `RequestValidationError` + `StarletteHTTPException` handlers in `brain/api/app.py` that emit the documented `{error:{code,message,correlation_id}}` (and preserve the `Allow` header on 405).
+- `[x]` **"Already exists" → 409.** Register/duplicate-email now raise `Conflict` (409, correct REST) instead of `InvalidRequest` (400).
+- `[x]` **Spec documents real statuses.** Added `401/403/404/422/400/409` responses (all → shared `Error`) across operations; `make validate-spec` passes.
+- `[x]` **Generated models are real + drift-gated.** `make generate` (now `--disable-timestamp`, deterministic) output committed at `brain/models/generated/models.py`; new `make check-models` regenerates and diffs, wired into `make ci` and the CI `fast` job.
+- `[x]` **Gate runner fixed.** `make test-contracts` rewritten for schemathesis 4.x (`--url`, `--max-examples`) and now injects `BRAIN_BEARER_TOKEN`; excludes only `unsupported_method` (the `/datasets/synthesize` vs `/datasets/{id}` literal-vs-param overlap).
+
+**Result:** `make test-contracts` → **1260 generated, 1260 passed, 0 failures** (`--checks all`). Zero 5xx. Pillar 1 is honored and enforced.
+
+**Remaining (optional, downgraded to P2) — A1b: switch routers to the generated DTOs.** Routers in `brain/api/v1/*` still hand-write their Pydantic request/response models; `brain.models.generated` is committed and drift-checked but **not yet imported**. Incrementally replace the hand-written DTOs with the generated equivalents (per the note in `brain/models/__init__.py`), deleting duplicates. *Acceptance:* every router imports its DTOs from `brain.models.generated`; no hand-written request/response model remains; contract gate stays green.
+
+### A2. Boot-correctness gate — the image runs, not just builds (P0)
+
+**Context.** The app/worker boot clean today (verified this session: `/health` ok, `/health/deep` all five checks reach), but there is **no automated guard** preventing a regression (e.g. importing a removed setting) from shipping. The fix is in; the gate is not.
+
+**Scope.** A CI step that proves the built image actually serves, not just compiles.
+
+**Steps.** In `.github/workflows/ci.yml` `full` job (already drafts this — verify it runs): `docker compose up -d` → poll `GET /health` until 200 (fail after ~60 s) → assert `worker` stays `Up` ≥15 s → hit `GET /health/deep` and assert all five service checks are reachable (degraded `disk_space` allowed).
+
+**Files.** `.github/workflows/ci.yml`.
+
+**Acceptance.** A commit that imports a non-existent setting (or otherwise crash-loops) fails CI at the smoke stage, not in a customer deploy.
+
+## 0. Audit defects found 2026-06-08 — ✅ ALL RESOLVED (kept as record)
+
+These were real gaps discovered by reading the repo. All are fixed; this section is a closed record. The one *remaining* gate gap (Pillar 1 / API contract) is tracked live in §A1, not here.
 
 - [x] **`make ci` cannot pass offline.** Fixed: `tests/test_api_contracts.py` now has `pytestmark = pytest.mark.contract`; `pyproject.toml` adds `addopts = "-m 'not contract and not integration and not slow'"`. `make ci` is green with no running server.
 - [x] **Broken console-script entry.** Fixed: `brain/cli/cli.py` created with `main()` — `brain health`, `brain serve`, `brain migrate`, `brain migrate-test` commands.
@@ -36,22 +105,23 @@ The three contracts from [SDD_WORKFLOW.md](docs/SDD_WORKFLOW.md) each need a **r
 - [x] *Acceptance:* `pytest tests/` (no flags, no server) runs only in-process tests and is green; `pytest -m contract` is the opt-in path.
 
 ### 1.2 Coverage baseline & ratchet (P1)
-- [ ] Measure the current baseline: `pytest --cov=brain --cov-report=term-missing`.
-- [ ] Record the baseline % in this file, then set `--cov-fail-under=<baseline>` and ratchet upward per PR.
-- [ ] Target **50%** line coverage on `brain/services/` and `brain/domain/` first (the logic that has no infra dependency).
-- [ ] *Acceptance:* `make ci` fails if coverage drops below the recorded floor.
+**Context.** Baseline measured 2026-06-08: **29.4%** (65 passed, 1 skipped). Floor `--cov-fail-under=28` is set in the Makefile `coverage` target and enforced by the `fast` CI gate. The ratchet upward is the open part.
+- [x] Measure baseline and set an enforced floor in `make coverage`.
+- [ ] Raise the floor toward **50%**, prioritising `brain/services/` and `brain/domain/` (logic with no infra dependency — `chat.py` 20%, `rag.py` 31%, `jobs.py` 33%, `auth.py` 39% are the biggest gaps).
+- [ ] Bump `--cov-fail-under` in the same PR that adds the tests, so it never regresses.
+- [ ] *Acceptance:* `make ci` fails if coverage drops below the recorded floor; floor reaches 50%.
 
-### 1.3 Contract test — Pillar 1 (API / schemathesis) (P1)
-Current: `tests/test_api_contracts.py` + `make test-contracts` exist but need a hand-started server and a `BRAIN_BEARER_TOKEN`.
-- [ ] Add a CI job that: boots the app (uvicorn) + Postgres/Redis/Chroma via compose, registers a bootstrap user, exports the JWT as `BRAIN_BEARER_TOKEN`, then runs `make test-contracts`.
-- [ ] Assert schemathesis `--checks all` passes for every declared `(method, path)` — status codes, response schema conformance, content-type.
-- [ ] *Acceptance:* a spec/handler mismatch fails CI. No route, field, or status code can drift from `specs/openapi.yaml`.
+### 1.3 Contract test — Pillar 1 (API / schemathesis) (P0 — see §A1)
+**Context.** The CI plumbing now exists: `.github/workflows/ci.yml` `full` job boots the stack, registers a user, exports `BRAIN_BEARER_TOKEN`, and runs `make test-contracts`. **But the gate is red** — the live server violates its own spec. The substantive fix (spec/server drift + wiring generated models) is tracked in **§A1**; this item is just the automation around it.
+- [x] CI job boots the live stack + runs `make test-contracts` with a bootstrap JWT.
+- [ ] Make it **green** by completing §A1 (fix undocumented statuses/500s; commit generated models).
+- [ ] *Acceptance:* the `full` gate's contract step passes `--checks all`; a spec/handler mismatch fails CI.
 
 ### 1.4 Migration gate — Pillar 2 (Alembic up/down) (P1)
-Current: only `migrations/versions/0001_initial_schema.py`; `make migrate-test` exists but never runs.
-- [ ] CI job: spin up Postgres, run `make migrate-test` (`upgrade head → downgrade -1 → upgrade head`).
-- [ ] Add a seeded-data fixture so the down-migration is tested against non-empty tables (catches non-reversible DDL).
-- [ ] *Acceptance:* any migration that can't round-trip fails CI.
+**Context.** `make migrate-test` (`upgrade head → downgrade -1 → upgrade head`) was **verified passing** against Postgres 2026-06-08, and the CI `full` job runs it. Remaining: it currently round-trips against an **empty** DB.
+- [x] CI job spins up Postgres and runs `make migrate-test`.
+- [ ] Add a seeded-data fixture so the down-migration is tested against non-empty tables (catches non-reversible DDL that an empty-DB round-trip misses).
+- [ ] *Acceptance:* any migration that can't round-trip on seeded data fails CI.
 
 ### 1.5 Eval gate test — Pillar 3 (the moat) (P0)
 The product's whole safety promise is "an unverified adapter never serves." There is currently **no test** for it.
@@ -152,12 +222,13 @@ Current: none. Marker not registered (see §1.1).
 <summary>Phase 5 — Hardening (partial — see §1) ✅/~</summary>
 
 - [x] `DomainError` taxonomy + global handlers + correlation IDs
-- [x] `make check-leaks` grep gate; `make ci` target (but see §0 — not offline-clean)
+- [x] `make check-leaks` grep gate; `make ci` is offline-clean (fixed 2026-06-08 — contract suite behind a marker)
 - [x] Usage metering in chat responses incl. streaming estimate
 - [x] `brain/core/health.py` real Postgres/Redis/Chroma/disk/memory checks
-- [x] 23 in-process tests (`tests/test_basic.py`) + 4 contract tests (`tests/test_api_contracts.py`)
+- [x] In-process suites: `test_basic.py`, `test_error_boundary.py`, `test_eval_gate.py`; contract sweep in `test_api_contracts.py`
 - [x] `tests/conftest.py` async client fixture; asyncio configured
-- [~] Test pyramid is **bottom-only** — contract/migration/integration gates exist but don't run (→ §1)
+- [x] `.github/workflows/ci.yml` runs the `fast` (offline) + `full` (live-stack) gates
+- [~] Test pyramid: Pillars 2 & 3 gated and green; **Pillar 1 (API contract) gate is red** — see §A1
 </details>
 
 ---
@@ -193,65 +264,90 @@ Current: none. Marker not registered (see §1.1).
 
 ---
 
-## 4. Container & deployment infrastructure (senior-architect review 2026-06-08)
+## 4. Container & deployment infrastructure
 
-The compose stack was hardened and **brought up live** this session. The data plane runs clean;
-the app image builds green but **crash-loops at boot** on stale `brain/core/` code. The findings
-below turn the current "it builds" state into a robust, scalable, maintainable deployment.
+The Docker architecture was **reworked 2026-06-08** into one multi-stage `Dockerfile`. The dev/prod
+workflow is now coherent; the remaining items are image slimming, secret/network hardening, and
+runtime robustness. See [docs/API_EVOLUTION_PLAN.md](docs/API_EVOLUTION_PLAN.md) for the architecture record.
 
-### 4.0 Validated working (this session) ✅
-- [x] Pinned, single-source images: `Dockerfile` (app) installs **prod-only** deps (`-e "."`, no `[dev]`); both images on `python:3.11-slim`.
-- [x] **Migrate-on-boot** via `entrypoint.sh` — `alembic upgrade head` runs before uvicorn; verified clean against Postgres (`[entrypoint] Migrations complete.`).
-- [x] Healthchecks + ordered startup: Postgres, Redis, **and Chroma** (added `/api/v2/heartbeat` healthcheck + pinned `chromadb/chroma:0.6.3`) all gate `app`/`worker` via `depends_on: condition: service_healthy`.
-- [x] Selective `COPY` in `Dockerfile.worker` (was `COPY . .`); `.env.example` realigned to the live `Settings`; `start.sh` is now a thin `docker compose` wrapper.
-- [x] Data plane verified healthy: `brain-postgres` (pg15), `brain-redis` (7), `brain-chroma` (0.6.3).
+### 4.0 Done — Docker architecture rework (this session) ✅
+- [x] **One multi-stage `Dockerfile`** with targets `base` / `builder` / `dev` / `production` / `worker`; deleted the drifting `Dockerfile.worker` (folded into the `worker` target).
+- [x] **Dev/prod parity, no manual pip.** The `dev` stage bakes the `[dev]` toolchain → `docker compose up` (auto-merges `docker-compose.override.yml`, builds `dev`, bind-mounts `.:/app`) gives a container where `make ci` runs immediately. `production` is lean (compilers dropped, no dev tools/tests). Verified: `make ci` green in a fresh container with zero setup.
+- [x] **Non-root production & worker** (`USER brain`, uid 10001) — verified `import brain.api.app` works as non-root. `dev` stays root for friction-free bind-mount writes.
+- [x] **Runtime `libgomp1`** added to `base` — `llama-cpp`/`torch` need `libgomp.so.1` at import (the old single-stage image had it only by accident via `build-essential`). Caught + fixed via a prod import smoke test.
+- [x] **Dev/prod compose split**: `docker-compose.yml` is the prod-safe baseline (`target: production`/`worker`); `docker-compose.override.yml` is the auto-merged dev layer (`target: dev`, bind-mount, `BRAIN_RELOAD=1`). Prod deploy = `docker compose -f docker-compose.yml up -d --build`.
+- [x] **Migrate-on-boot** via `entrypoint.sh` (`alembic upgrade head` before uvicorn), with optional `--reload` when `BRAIN_RELOAD=1`; healthchecks + ordered startup on Postgres/Redis/Chroma (pinned `chromadb/chroma:0.6.3`).
 
-### 4.1 Boot-correctness gate — the image runs, not just builds (P0)
-The app and worker images previously **built successfully but exited 1 on startup**: stale pre-rescope
-modules eagerly imported a **removed settings schema**. Fixed this session — the full stack is now live
-and healthy (`/health` → ok; `/health/deep` → all five service checks green; only `disk_space` degraded,
-a host condition). Root causes removed: deleted dead `brain/core/adapter_manager.py` + its `__init__`
-export; deleted dead `brain/api/__init__.py` import of `brain/api/models.py`; added `use_mmap`/`use_mlock`
-to `Settings`; fixed `settings.agents_dir`→`adapters_dir` in `brain/training/job_manager.py`; fixed the
-Chroma deep-health check (`_get_chroma_client().heartbeat()`); added missing `psutil` dep.
-- [x] Fix/delete the stale `brain/core/` legacy modules so `import brain.api.app` and `python -m brain.worker.main` succeed — verified: app + worker run healthy, protected `inference.py`/`model_manager.py`/`trainer.py` internals untouched.
-- [ ] Add a **boot smoke test** to CI: `docker compose up -d` → poll `GET /health` until 200 (or fail after N s) → assert `worker` stays `Up` for ≥15 s. Wire into `.github/workflows/ci.yml` full gate.
-- [ ] *Acceptance:* a regression that imports a non-existent setting fails CI at the smoke stage, not in production. **(Still open — the fix is in, the automated guard that prevents recurrence is not.)**
-
-### 4.2 Image size & build efficiency (P0)
-Both images are **~6.3–6.7 GB**; `site-packages` alone is **5.5 GB**. The app (CPU-only RAG per the
-product definition) ships **torch 2.12 + the full CUDA stack** pulled transitively by `sentence-transformers`,
-plus the entire build toolchain (gcc/g++/cmake/build-essential ≈ 466 MB) in the runtime layer.
-- [ ] **CPU-only torch in the app image**: install from the CPU wheel index (`pip install torch --index-url https://download.pytorch.org/whl/cpu`) so no NVIDIA CUDA libs land in the RAG-serving image. Keep full CUDA torch only in `Dockerfile.worker` (`[training]`).
-- [ ] **Multi-stage builds**: compile wheels (llama-cpp-python, etc.) in a `builder` stage with the toolchain; `COPY --from=builder` only the installed packages into a slim runtime stage. Drop `build-essential/cmake/gcc/g++` from the final image.
-- [ ] Order layers cheap→expensive and keep `--no-cache-dir`; confirm the editable install still resolves.
-- [ ] *Acceptance:* app image **< 2 GB** and contains **no** `nvidia-*`/CUDA packages; worker remains GPU-capable. Record both sizes here.
+### 4.2 Image size & CPU-only torch (P0)
+**Context.** Images are still **~6.4–6.7 GB**. The `app` (CPU-only RAG per the product definition) pulls **torch + the full CUDA stack** transitively via `sentence-transformers`. The multi-stage split already removes the build toolchain from runtime; the dominant remaining cost is CUDA torch in the app image.
+**Scope.** App image carries CPU-only torch; worker keeps full CUDA torch. No behavior change.
+**Steps.**
+1. In `pyproject.toml`, keep base deps CPU-only; ensure the app build resolves torch from the CPU wheel index (`--index-url https://download.pytorch.org/whl/cpu`) — likely a pip config/constraint in the `builder` stage for the non-`[training]` install.
+2. Confirm `[training]` (worker) still pulls CUDA torch.
+3. Rebuild; measure both target images (`docker images`).
+**Files.** `Dockerfile` (builder/worker stages), `pyproject.toml`.
+**Acceptance.** `production` app image **< 2 GB** with **no** `nvidia-*`/CUDA packages (`docker run … pip list | grep -i nvidia` empty); worker remains GPU-capable. Record both measured sizes here.
 
 ### 4.3 Security hardening (P1)
-- [ ] **Run as non-root**: add a dedicated `appuser` (`USER appuser`) in both Dockerfiles; `chown` `/app/data`. Containers currently run as **root**.
-- [ ] **Secrets, not weak defaults**: `BRAIN_SECRET_KEY` defaults to `change_me_in_production` and Postgres password to `brain`. Require them via `.env` (fail fast if unset in prod) or Docker/Compose secrets; never bake into the image or commit `.env`.
-- [ ] **Don't publish data-store ports by default**: `5432`/`6379`/`8001` are bound to the host. For a self-hosted appliance, keep them on the internal `brain-network` only; expose via an override file for local debugging.
-- [ ] Add `no-new-privileges:true` and a read-only root FS (with `tmpfs` for scratch) where feasible.
-- [ ] *Acceptance:* `docker inspect` shows non-root user; no secret literals in image history (`docker history`); only `app:8000` is host-published in the prod profile.
+**Context.** Non-root is done (§4.0). Remaining: secrets and host network exposure.
+- [x] Run containers as non-root (production + worker).
+- [ ] **Secrets, not weak defaults.** `BRAIN_SECRET_KEY` defaults to `change_me_in_production` and Postgres password to `brain`. Require them via `.env`/Compose secrets and **fail fast if unset** in the prod profile; never bake into the image or commit `.env`.
+- [ ] **Don't publish data-store ports by default.** `5432`/`6379`/`8001` are still host-bound in `docker-compose.yml`. Move them to the internal `brain-network` only; expose via `docker-compose.override.yml` (dev) for local debugging.
+- [ ] Add `security_opt: [no-new-privileges:true]` and a read-only root FS (with `tmpfs` scratch) where feasible.
+- [ ] *Acceptance:* `docker inspect` shows non-root; `docker history` has no secret literals; only `app:8000` is host-published in the prod profile.
 
 ### 4.4 Runtime robustness (P1)
-- [ ] **Resource limits** on every service (`deploy.resources.limits` mem/cpu) so a runaway inference or training job can't OOM the host.
-- [ ] **Worker liveness**: add a healthcheck/heartbeat (e.g. a Redis liveness key or a `--healthcheck` subcommand) — a silently dead worker currently looks "Up".
-- [ ] **Log rotation**: set the `json-file` logging driver with `max-size`/`max-file` (or ship to a driver) — default logs grow unbounded.
-- [ ] **Graceful worker shutdown** (already tracked in §3.3): requeue the in-flight job on SIGTERM; set a sane `stop_grace_period`.
-- [ ] *Acceptance:* `docker stats` shows enforced limits; killing a worker mid-job requeues it; container logs are capped.
+- [ ] **Resource limits** on every service (`deploy.resources.limits` mem/cpu) so a runaway inference/training job can't OOM the host.
+- [ ] **Worker liveness**: a healthcheck/heartbeat (Redis liveness key or a `--healthcheck` subcommand) — a silently dead worker currently looks `Up`.
+- [ ] **Log rotation**: `json-file` driver with `max-size`/`max-file` — default logs grow unbounded.
+- [ ] **Graceful worker shutdown** (also §3.3): requeue the in-flight job on SIGTERM; set a sane `stop_grace_period`.
+- [ ] *Acceptance:* `docker stats` shows enforced limits; killing a worker mid-job requeues it; logs are capped.
 
-### 4.5 Environment separation & scale (P2)
-- [ ] Split concerns: `docker-compose.yml` (prod-safe: no host port exposure for data stores, no bind-mounted source) + `docker-compose.override.yml` (dev: source bind mounts, exposed ports, `--reload`).
+### 4.5 Scale, registry & GPU profile (P2)
+- [x] Dev/prod compose separation (done in §4.0).
 - [ ] **Stateless app → horizontal scale**: confirm `app` holds no local state (sessions, queue, vectors all external) so `docker compose up --scale app=N` behind a reverse proxy works; document it.
-- [ ] **Image tag & registry strategy**: tag by version/git-SHA (not just `latest`); build+push in CI; document the customer pull/upgrade flow (ties to the backup/restore + migration-ordering runbook in §3.3).
-- [ ] **GPU profile**: move the worker's GPU `deploy.reservations` behind a compose `profile` (e.g. `--profile gpu`) so CPU-only hosts start cleanly and GPU hosts opt in.
-- [ ] Remove the stale orphan image `brainfromcero-brain:latest` and standardize the compose project name.
+- [ ] **Image tag & registry strategy**: tag by version/git-SHA (not just `latest`); build+push in CI; document the customer pull/upgrade flow (ties to §3.3 backup/restore + migration ordering).
+- [ ] **GPU profile**: move the worker's GPU `deploy.reservations` behind a compose `profile` (`--profile gpu`) so CPU-only hosts start cleanly. **Note:** the `worker` stage builds CPU torch on `python-slim`; real GPU training needs an `nvidia/cuda:*-runtime` base for that stage (flagged in `Dockerfile`).
+- [ ] Remove the stale orphan image `brainfromcero-brain:latest`; standardize the compose project name.
 - [ ] **VRAM/CPU sizing table** (ties to §3.3/§3.4): minimum host resources per supported base-model size.
 
 ---
 
-## 5. Operator console — thin web UI (P1 — chosen 2026-06-08)
+## 5. Operator console — thin web UI (PROPOSED — not yet committed scope)
+
+> **Status: PROPOSED.** This section is a *fully-specified proposal*, not approved work. It **contradicts**
+> the locked product definition, which says "Web dashboard UI — out of scope; the API surface is the
+> product" ([PRODUCT_DEFINITION.md](docs/PRODUCT_DEFINITION.md) §3). **Do not start §5.1+ until §5.0 amends
+> the product definition.** Until then, treat the console as out of scope; the CLI + API are the only surfaces.
+
+A small, bundled, **operator-facing** web console so a technical user can run the whole product
+lifecycle in a browser instead of hand-writing `curl`. It is **not** a second product surface: it is a
+thin client over the **existing** API — every screen maps 1:1 to an endpoint already in
+`specs/openapi.yaml`. No new server capability, no new external protocol. The OpenAI-compatible API
+remains the only thing customers' *applications* call; this console is how a *human operator* drives setup.
+
+> **Scope guard:** if a screen needs data the API doesn't expose, the API contract changes **first**
+> (Pillar 1), not the UI. The console never reaches into services or the DB directly.
+
+**The product framing rule is mandatory UX** ([PRODUCT_DEFINITION.md](docs/PRODUCT_DEFINITION.md)):
+the console **never** calls RAG "training." The project-creation step asks
+**"How do you want to specialize your model?"** → **Give it knowledge** (RAG) vs **Change how it behaves**
+(fine-tuning), and the two project types render different flows (§5.4 vs §5.5).
+
+### 5.0 Decide & reconcile the product definition first (P1 — GATE for all of §5)
+Building this console **reverses** [PRODUCT_DEFINITION.md](docs/PRODUCT_DEFINITION.md) §3
+("Web dashboard UI — out of scope; the API surface is the product"). Per the SDD rule that the product
+definition is authoritative, this is a **product decision** that must be made and written down **before** any code.
+- [ ] **Get an explicit decision**: is a thin operator console in scope? If no, delete §5 and stop. If yes, continue.
+- [ ] Update `docs/PRODUCT_DEFINITION.md`: scope **in** a thin operator console; keep the OpenAI-compatible API as the **only external/application protocol** and the console as an **operator convenience** over it.
+- [ ] Update the README/CLAUDE.md "Dashboard UI — cut" lines to "thin operator console (operator-only)".
+- [ ] *Acceptance:* no doc still says "no web UI"; the console's scope boundary (operator convenience, not an API) is written down, and this section is no longer marked PROPOSED.
+
+### 5.1 Stack & scaffolding decision (P1)
+Pick the **lowest-maintenance** option that fits a self-hosted Python appliance. **Recommendation:
+no-build static assets** (vanilla JS modules + `fetch`) served by FastAPI `StaticFiles` from the same
+origin — zero Node toolchain, zero CORS, one container, trivial to ship. Choose a small reactive lib
+(Vite + Svelte/React) only if screen complexity later justifies a build step.
 
 A small, bundled, **operator-facing** web console so a technical user can run the whole product
 lifecycle in a browser instead of hand-writing `curl`. It is **not** a second product surface: it is a

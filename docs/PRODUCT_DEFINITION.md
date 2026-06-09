@@ -1,11 +1,13 @@
 # Product Definition — Self-Hosted Model Customization Platform
 
+> 📖 **Reference document (the locked "what").** Defines scope. It is not a task list — open work lives in [TODO.md](../TODO.md).
+
 **Status:** Locked (north-star)
 **Decision date:** 2026-06-08
 **Implementation status:** Phases 0–5 complete as of 2026-06-08
 **One-liner:** A platform technical teams deploy **on their own servers** to customize and serve private language models two ways — **Knowledge (RAG)** or **Fine-tuning (LoRA)** — each exposed as an OpenAI-compatible API.
 
-> This document supersedes the sprawling "AI platform" framing. The corrective engineering roadmap lives in [API_EVOLUTION_PLAN.md](API_EVOLUTION_PLAN.md); the spec process in [SDD_WORKFLOW.md](SDD_WORKFLOW.md).
+> This document supersedes the sprawling "AI platform" framing. The engineering origin record (audit + error architecture) is [API_EVOLUTION_PLAN.md](API_EVOLUTION_PLAN.md); the spec process is [SDD_WORKFLOW.md](SDD_WORKFLOW.md); the roadmap/open work is [TODO.md](../TODO.md).
 
 ---
 
@@ -145,7 +147,7 @@ All six phases shipped as of 2026-06-08. Each leaves `main` green.
 - **Phase 2 — Training infrastructure.** Redis queue; dedicated GPU `worker`; TrainingJob lifecycle; GPU detection/guards.
 - **Phase 3 — LoRA service.** JSONL dataset upload + validation; QLoRA training; adapter registry + eval gate; endpoint serving.
 - **Phase 4 — Dataset synthesis.** Documents → chunk → LLM-synthesized instruction pairs → dedup → JSONL dataset. `POST /v1/projects/{id}/datasets/synthesize`.
-- **Phase 5 — Hardening.** DomainError taxonomy; `make check-leaks` + `make ci`; usage metering; real health checks (Postgres/Redis/Chroma); 22 unit tests.
+- **Phase 5 — Hardening.** DomainError taxonomy; `make check-leaks` + `make ci`; usage metering; real health checks (Postgres/Redis/Chroma); 65 in-process tests + an enforced API contract gate (schemathesis, Pillar 1).
 
 ## 8. Open decisions (track, don't block)
 

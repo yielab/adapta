@@ -31,7 +31,8 @@ datamodel-codegen \
   --use-field-description \
   --reuse-model \
   --collapse-root-models \
-  --wrap-string-literal
+  --wrap-string-literal \
+  --disable-timestamp
 
 # Stamp an __init__.py so the package is importable
 if [ ! -f "$OUT_DIR/__init__.py" ]; then

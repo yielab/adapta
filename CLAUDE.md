@@ -65,7 +65,9 @@ Contract-driven: change the contract before the code. Full doc: [docs/SDD_WORKFL
 
 Why three: it's **self-hosted** (you upgrade customer DBs → migrations are mandatory) with a **training core** (an unverified fine-tune must never auto-serve → eval gate).
 
-**Makefile targets** (in container): `make generate`, `make validate-spec`, `make test-contracts`, `make migrate`, `make test`, `make lint`, `make fmt`, `make check-leaks`, `make ci`.
+**Makefile targets** (in container): `make generate`, `make validate-spec`, `make check-models`, `make test-contracts`, `make migrate`, `make test`, `make lint`, `make fmt`, `make check-leaks`, `make ci`.
+
+> **Pillar 1 is enforced as of 2026-06-08.** `make test-contracts` passes `--checks all` against the live server (1260/1260, zero 5xx); `brain/models/generated/models.py` is committed and kept in sync by `make check-models` (in `make ci`). Auth uses **direct bcrypt** (SHA-256 pre-hash) — `passlib` was removed (incompatible with bcrypt 5.x). ORM enums are `native_enum=False` to match the `String(16)` migration columns.
 
 ---
 
@@ -148,7 +150,7 @@ The flaws found in the June 2026 audit are fixed. Do not reintroduce them.
 | Dummy auth key | Hard-coded `"dummy"` string | bcrypt + JWT in `brain/services/auth.py` |
 | Triple build config | `setup.py` + `requirements*.txt` + `pyproject.toml` | Single-source `pyproject.toml` |
 | Dead code (288 KB) | `archive/` in working tree | Deleted (in git history) |
-| No test infrastructure | No `conftest.py`, no pytest config | `tests/conftest.py` + asyncio config + 22 unit tests |
+| No test infrastructure | No `conftest.py`, no pytest config | `tests/conftest.py` + asyncio config + 65 in-process tests (unit, eval-gate, error-boundary) + green contract gate |
 | No async job queue | Redis declared but unused | Redis BLPOP queue + dedicated worker |
 | Dataset synthesis | Not implemented | `brain/services/synthesis.py` + `POST /v1/projects/{id}/datasets/synthesize` |
 
@@ -163,7 +165,7 @@ Phases 0–5 shipped as of 2026-06-08.
 2. **Training infra** — Redis BLPOP queue, GPU worker, job lifecycle.
 3. **LoRA service** — dataset upload, QLoRA training, adapter registry + eval gate, endpoint serving.
 4. **Dataset synthesis** — indexed docs → LLM Q/A pairs → JSONL dataset.
-5. **Hardening** — DomainError taxonomy, `make check-leaks` + `make ci`, usage metering, real health checks, 22 unit tests.
+5. **Hardening** — DomainError taxonomy, `make check-leaks` + `make ci`, usage metering, real health checks, 65 in-process tests + enforced contract gate (Pillar 1).
 
 Open backlog: integration tests, coverage ratchet to 50%, usage metering to DB, team invitation flow, backup/restore runbook, optional Prometheus/Grafana. See [TODO.md](TODO.md).
 
@@ -171,7 +173,14 @@ Open backlog: integration tests, coverage ratchet to 50%, usage metering to DB, 
 
 ## Docs index
 
-- [docs/PRODUCT_DEFINITION.md](docs/PRODUCT_DEFINITION.md) — **what we're building** (authoritative scope)
-- [docs/SDD_WORKFLOW.md](docs/SDD_WORKFLOW.md) — **how we work** (Extended SDD, 3 contracts)
-- [docs/API_EVOLUTION_PLAN.md](docs/API_EVOLUTION_PLAN.md) — audit (resolved), error architecture, cleanup mechanics
-- [TODO.md](TODO.md) — build checklist (phases 0–5 done) + open backlog
+Two kinds of document, kept strictly separate: **📖 Reference** describes what *is* / how we work (no tasks); **🗺 Roadmap** is the only place with open work.
+
+| File | Kind | Purpose |
+|---|---|---|
+| [docs/PRODUCT_DEFINITION.md](docs/PRODUCT_DEFINITION.md) | 📖 Reference | **What** we're building (locked scope) |
+| [docs/SDD_WORKFLOW.md](docs/SDD_WORKFLOW.md) | 📖 Reference | **How** we work (Extended SDD, 3 contracts) |
+| [docs/API_EVOLUTION_PLAN.md](docs/API_EVOLUTION_PLAN.md) | 📖 Reference | **Origin record** — resolved audit, error architecture, cleanup history |
+| [README.md](README.md) | 📖 Reference | How to run/operate the stack |
+| [TODO.md](TODO.md) | 🗺 **Roadmap** | **The only place with open tasks**, priorities, acceptance criteria |
+
+Rule: never add open tasks to a 📖 Reference doc, and never let the roadmap re-describe architecture — link to the reference instead. Status of the build lives in TODO.md's "Status snapshot."

@@ -47,8 +47,10 @@ paths:
           application/json:
             schema: {$ref: '#/components/schemas/RegisterRequest'}
       responses:
+        '422': {$ref: '#/components/responses/Error'}
         '201': {description: User created, content: {application/json: {schema: {$ref: '#/components/schemas/UserResponse'}}}}
         '400': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Error'}
 
   /auth/login:
     post:
@@ -61,6 +63,8 @@ paths:
           application/json:
             schema: {$ref: '#/components/schemas/LoginRequest'}
       responses:
+        '400': {$ref: '#/components/responses/Error'}
+        '422': {$ref: '#/components/responses/Error'}
         '200': {description: Token, content: {application/json: {schema: {$ref: '#/components/schemas/TokenResponse'}}}}
         '401': {$ref: '#/components/responses/Error'}
 
@@ -89,6 +93,8 @@ paths:
           required: true
           schema: {type: string}
       responses:
+        '401': {$ref: '#/components/responses/Error'}
+        '422': {$ref: '#/components/responses/Error'}
         '200': {description: Projects, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/ProjectResponse'}}}}}
 
     post:
@@ -102,6 +108,9 @@ paths:
           application/json:
             schema: {$ref: '#/components/schemas/ProjectCreate'}
       responses:
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '422': {$ref: '#/components/responses/Error'}
         '201': {description: Created, content: {application/json: {schema: {$ref: '#/components/schemas/ProjectResponse'}}}}
 
   /projects/{project_id}:
@@ -112,6 +121,8 @@ paths:
       security: [{BearerAuth: []}]
       parameters: [{$ref: '#/components/parameters/ProjectId'}]
       responses:
+        '401': {$ref: '#/components/responses/Error'}
+        '422': {$ref: '#/components/responses/Error'}
         '200': {description: Project, content: {application/json: {schema: {$ref: '#/components/schemas/ProjectResponse'}}}}
         '404': {$ref: '#/components/responses/Error'}
 
@@ -122,6 +133,9 @@ paths:
       security: [{BearerAuth: []}]
       parameters: [{$ref: '#/components/parameters/ProjectId'}]
       responses:
+        '401': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '422': {$ref: '#/components/responses/Error'}
         '204': {description: Deleted}
         '403': {$ref: '#/components/responses/Error'}
 
@@ -145,6 +159,10 @@ paths:
                 file: {type: string, format: binary}
               required: [file]
       responses:
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '422': {$ref: '#/components/responses/Error'}
         '202': {description: Accepted — indexing in background}
 
     get:
@@ -154,6 +172,9 @@ paths:
       security: [{BearerAuth: []}]
       parameters: [{$ref: '#/components/parameters/ProjectId'}]
       responses:
+        '401': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '422': {$ref: '#/components/responses/Error'}
         '200': {description: Files, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/FileResponse'}}}}}
 
   /projects/{project_id}/files/{file_id}:
@@ -166,6 +187,9 @@ paths:
         - {$ref: '#/components/parameters/ProjectId'}
         - {name: file_id, in: path, required: true, schema: {type: string}}
       responses:
+        '401': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '422': {$ref: '#/components/responses/Error'}
         '204': {description: Deleted}
 
   # ──────────────────────────────────────────────────────────────────────────
@@ -188,6 +212,10 @@ paths:
                 file: {type: string, format: binary}
               required: [file]
       responses:
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '422': {$ref: '#/components/responses/Error'}
         '202': {description: Accepted — validation in background}
 
     get:
@@ -197,6 +225,9 @@ paths:
       security: [{BearerAuth: []}]
       parameters: [{$ref: '#/components/parameters/ProjectId'}]
       responses:
+        '401': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '422': {$ref: '#/components/responses/Error'}
         '200': {description: Datasets, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/DatasetResponse'}}}}}
 
   /projects/{project_id}/datasets/{dataset_id}:
@@ -209,6 +240,9 @@ paths:
         - {$ref: '#/components/parameters/ProjectId'}
         - {name: dataset_id, in: path, required: true, schema: {type: string}}
       responses:
+        '401': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '422': {$ref: '#/components/responses/Error'}
         '200': {description: Dataset, content: {application/json: {schema: {$ref: '#/components/schemas/DatasetResponse'}}}}
 
   # ──────────────────────────────────────────────────────────────────────────
@@ -227,6 +261,10 @@ paths:
           application/json:
             schema: {$ref: '#/components/schemas/JobCreateRequest'}
       responses:
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '422': {$ref: '#/components/responses/Error'}
         '202': {description: Queued, content: {application/json: {schema: {$ref: '#/components/schemas/JobResponse'}}}}
 
     get:
@@ -236,6 +274,9 @@ paths:
       security: [{BearerAuth: []}]
       parameters: [{$ref: '#/components/parameters/ProjectId'}]
       responses:
+        '401': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '422': {$ref: '#/components/responses/Error'}
         '200': {description: Jobs, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/JobResponse'}}}}}
 
   /projects/{project_id}/jobs/{job_id}:
@@ -248,6 +289,9 @@ paths:
         - {$ref: '#/components/parameters/ProjectId'}
         - {name: job_id, in: path, required: true, schema: {type: string}}
       responses:
+        '401': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '422': {$ref: '#/components/responses/Error'}
         '200': {description: Job, content: {application/json: {schema: {$ref: '#/components/schemas/JobResponse'}}}}
 
   # ──────────────────────────────────────────────────────────────────────────
@@ -261,6 +305,8 @@ paths:
       security: [{BearerAuth: []}]
       parameters: [{$ref: '#/components/parameters/ProjectId'}]
       responses:
+        '401': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
         '201': {description: Endpoint created, content: {application/json: {schema: {$ref: '#/components/schemas/EndpointResponse'}}}}
         '422': {$ref: '#/components/responses/Error'}
 
@@ -271,6 +317,9 @@ paths:
       security: [{BearerAuth: []}]
       parameters: [{$ref: '#/components/parameters/ProjectId'}]
       responses:
+        '401': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '422': {$ref: '#/components/responses/Error'}
         '200': {description: Endpoint, content: {application/json: {schema: {$ref: '#/components/schemas/EndpointResponse'}}}}
 
   # ──────────────────────────────────────────────────────────────────────────
@@ -289,6 +338,10 @@ paths:
           application/json:
             schema: {$ref: '#/components/schemas/KeyCreateRequest'}
       responses:
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '422': {$ref: '#/components/responses/Error'}
         '201': {description: Key (shown once), content: {application/json: {schema: {$ref: '#/components/schemas/KeyCreatedResponse'}}}}
 
     get:
@@ -298,6 +351,9 @@ paths:
       security: [{BearerAuth: []}]
       parameters: [{$ref: '#/components/parameters/ProjectId'}]
       responses:
+        '401': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '422': {$ref: '#/components/responses/Error'}
         '200': {description: Keys, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/KeyResponse'}}}}}
 
   /projects/{project_id}/keys/{key_id}:
@@ -310,6 +366,9 @@ paths:
         - {$ref: '#/components/parameters/ProjectId'}
         - {name: key_id, in: path, required: true, schema: {type: string}}
       responses:
+        '401': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '422': {$ref: '#/components/responses/Error'}
         '204': {description: Revoked}
 
   # ──────────────────────────────────────────────────────────────────────────
@@ -335,6 +394,8 @@ paths:
           application/json:
             schema: {$ref: '#/components/schemas/SynthesizeRequest'}
       responses:
+        '404': {$ref: '#/components/responses/Error'}
+        '422': {$ref: '#/components/responses/Error'}
         '202': {description: Synthesis started, content: {application/json: {schema: {$ref: '#/components/schemas/SynthesizeResponse'}}}}
         '400': {$ref: '#/components/responses/Error'}
         '401': {$ref: '#/components/responses/Error'}
@@ -358,6 +419,8 @@ paths:
           application/json:
             schema: {$ref: '#/components/schemas/ChatCompletionRequest'}
       responses:
+        '400': {$ref: '#/components/responses/Error'}
+        '422': {$ref: '#/components/responses/Error'}
         '200':
           description: Chat completion or SSE stream
           content:

@@ -5,33 +5,42 @@ Replaces the dummy "dummy" key from brain/api/auth.py.
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
+import bcrypt
 from jose import JWTError, jwt
-from passlib.context import CryptContext
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from brain.config import settings
 from brain.db.models import Role, TeamMember, User
-from brain.domain.errors import InvalidRequest, NotFound, Unauthorized
-
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
+from brain.domain.errors import Conflict, NotFound, Unauthorized
 
 # ---------------------------------------------------------------------------
-# Password helpers
+# Password helpers — bcrypt directly (passlib is unmaintained and breaks on
+# bcrypt >= 4.1). We SHA-256 + base64 pre-hash so any-length password collapses
+# to a fixed 44-byte input, sidestepping bcrypt's hard 72-byte limit without
+# silent truncation. Same construction as Django's BCryptSHA256 hasher.
 # ---------------------------------------------------------------------------
+
+def _prehash(plain: str) -> bytes:
+    digest = hashlib.sha256(plain.encode("utf-8")).digest()
+    return base64.b64encode(digest)
+
 
 def hash_password(plain: str) -> str:
-    return pwd_context.hash(plain)  # type: ignore[no-any-return]
+    return bcrypt.hashpw(_prehash(plain), bcrypt.gensalt()).decode("utf-8")
 
 
 def verify_password(plain: str, hashed: str) -> bool:
-    return pwd_context.verify(plain, hashed)  # type: ignore[no-any-return]
+    try:
+        return bcrypt.checkpw(_prehash(plain), hashed.encode("utf-8"))
+    except (ValueError, TypeError):
+        return False
 
 
 # ---------------------------------------------------------------------------
@@ -79,7 +88,7 @@ async def authenticate_user(db: AsyncSession, email: str, password: str) -> User
 
 async def create_user(db: AsyncSession, org_id: str, email: str, password: str) -> User:
     if await get_user_by_email(db, email):
-        raise InvalidRequest(message=f"Email already registered: {email}")
+        raise Conflict(message=f"Email already registered: {email}")
     user = User(org_id=org_id, email=email, hashed_password=hash_password(password))
     db.add(user)
     await db.flush()

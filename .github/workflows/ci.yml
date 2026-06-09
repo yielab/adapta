@@ -36,6 +36,9 @@ jobs:
       - name: validate-spec
         run: make validate-spec
 
+      - name: check-models (generated Pydantic in sync with spec)
+        run: make check-models
+
   # -------------------------------------------------------------------------
   # Full gate — runs on PRs to main only; requires live stack.
   # Runs: migrate-test → boot smoke → contract tests → integration tests

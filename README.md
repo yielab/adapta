@@ -176,11 +176,13 @@ Phases 0–5 are implemented. This is **early-stage, pre-first-customer software
 | LoRA training pipeline | ✅ Real | QLoRA training in `brain/training/trainer.py`; eval gate enforced |
 | RAG retrieval with citations | ✅ Real | Real sentence-transformers embeddings; PDF/DOCX/MD/TXT/HTML parsing; per-project ChromaDB collections |
 | Dataset synthesis (docs → pairs) | ✅ Done | `POST /v1/projects/{id}/datasets/synthesize`; LLM generates Q/A pairs from indexed chunks |
-| PostgreSQL data model + auth/teams | ✅ Done | Full schema (Orgs/Teams/Users/Projects/Files/Datasets/Jobs/Endpoints/ApiKeys); bcrypt + JWT |
+| PostgreSQL data model + auth/teams | ✅ Done | Full schema (Orgs/Teams/Users/Projects/Files/Datasets/Jobs/Endpoints/ApiKeys); **direct bcrypt** (SHA-256 pre-hash) + JWT |
 | Async training jobs (Redis + worker) | ✅ Done | Redis BLPOP queue; dedicated worker process; job lifecycle with status/progress |
 | Adapter eval gate | ✅ Done | Score ≥ 0.6 required; `EvalGateFailed(422)` if below threshold |
-| Error handling | ✅ Done | `DomainError` taxonomy; 0 `detail=str(e)` sites; correlation IDs; `make check-leaks` CI gate |
-| Test coverage | 🚧 Partial | 22 unit tests covering errors, chunking, dataset validation, synthesis helpers; contract + integration tests require running infra |
+| Error handling | ✅ Done | `DomainError` taxonomy; one error envelope for all paths (incl. 422/404/405); 0 `detail=str(e)` sites; correlation IDs |
+| API contract (Pillar 1) | ✅ Done | `make test-contracts` green (1260/1260, schemathesis `--checks all`, zero 5xx); generated models committed + drift-gated by `make check-models` |
+| Test coverage | 🚧 Partial | 65 in-process tests (errors, chunking, validation, eval gate, error boundary); ~28% line coverage with an enforced floor; integration tests still to come |
+| Docker dev/prod workflow | ✅ Done | One multi-stage `Dockerfile` (dev/production/worker); `docker compose up` = dev with tooling baked in (no manual pip); non-root production |
 | Images / vision | 🗑️ Cut | Removed from scope |
 | Dashboard UI | 🗑️ Cut | Product UI is the OpenAI-compatible API, not a web dashboard |
 
@@ -222,11 +224,12 @@ Contract-driven (Extended SDD): change the contract before the code. Three contr
 
 make generate        # API spec → Pydantic models
 make validate-spec   # lint the OpenAPI spec
+make check-models    # fail if generated models drift from the spec
 make migrate         # apply DB migrations (alembic upgrade head)
 make test            # pytest
 make check-leaks     # fail if detail=str(e) reappears
-make ci              # check-leaks + lint + test + validate-spec
-make test-contracts  # schemathesis vs a live server
+make ci              # check-leaks + lint + coverage + validate-spec + check-models
+make test-contracts  # schemathesis vs a live server (BRAIN_BEARER_TOKEN)
 ```
 
 Full doc: [docs/SDD_WORKFLOW.md](docs/SDD_WORKFLOW.md).

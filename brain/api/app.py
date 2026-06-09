@@ -20,8 +20,10 @@ import uuid
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from brain import __version__
 from brain.api.v1 import auth, chat, datasets, endpoints, files, jobs, keys, projects, synthesis
@@ -97,6 +99,45 @@ def create_app() -> FastAPI:
             status_code=exc.status,
             headers={"X-Correlation-ID": cid} if cid else {},
             content={"error": {"code": exc.code, "message": exc.message, "correlation_id": cid}},
+        )
+
+    @app.exception_handler(RequestValidationError)
+    async def validation_error_handler(request: Request, exc: RequestValidationError):
+        # FastAPI's default 422 body is {"detail": [...]}, which does NOT match the
+        # documented ErrorResponse envelope. Normalize it so the API has exactly one
+        # error shape (Pillar 1: spec conformance).
+        cid = getattr(request.state, "cid", None)
+        errors = exc.errors()
+        message = "Request validation failed"
+        if errors:
+            loc = ".".join(str(p) for p in errors[0].get("loc", []) if p not in ("body", "query", "path"))
+            message = f"Request validation failed: {loc or errors[0].get('msg', '')}".strip()
+        return JSONResponse(
+            status_code=422,
+            headers={"X-Correlation-ID": cid} if cid else {},
+            content={"error": {"code": "invalid_request", "message": message, "correlation_id": cid}},
+        )
+
+    @app.exception_handler(StarletteHTTPException)
+    async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+        # Routing-level errors (404 unknown path, 405 wrong method) and any raw
+        # HTTPException also get the standard envelope rather than {"detail": ...}.
+        cid = getattr(request.state, "cid", None)
+        code_map = {
+            400: "invalid_request", 401: "unauthorized", 403: "forbidden",
+            404: "not_found", 405: "method_not_allowed", 409: "conflict",
+        }
+        code = code_map.get(exc.status_code, "http_error")
+        message = exc.detail if isinstance(exc.detail, str) else "Request failed"
+        # Preserve framework headers (e.g. the RFC 9110 `Allow` header on a 405)
+        # that the default routing attaches to the exception.
+        headers = dict(getattr(exc, "headers", None) or {})
+        if cid:
+            headers["X-Correlation-ID"] = cid
+        return JSONResponse(
+            status_code=exc.status_code,
+            headers=headers,
+            content={"error": {"code": code, "message": message, "correlation_id": cid}},
         )
 
     # ---------------------------------------------------------------------------

@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from brain.db.models import Org, Role, Team, TeamMember
 from brain.db.session import get_db
-from brain.domain.errors import InvalidRequest
+from brain.domain.errors import Conflict
 from brain.services.auth import (
     authenticate_user,
     create_access_token,
@@ -56,7 +56,7 @@ async def register(body: RegisterRequest, db: AsyncSession = Depends(get_db)):
     existing_orgs = await db.execute(select(func.count()).select_from(Org))
     count = existing_orgs.scalar()
     if count and count > 0:
-        raise InvalidRequest(
+        raise Conflict(
             message="Organization already exists. Contact your admin to add new users."
         )
 

@@ -1,10 +1,14 @@
-# API Evolution Plan — Audit, Error Architecture, and Cleanup Mechanics
+# Origin Record — Audit, Error Architecture, and Cleanup History
 
-**Status:** Implemented (phases 0–5 complete as of 2026-06-08)
-**Audience:** Senior engineers and autonomous coding agents
+> 📖 **This is a REFERENCE document, not a roadmap.** It records what was found in the June 2026 audit,
+> how it was resolved, and the resulting error architecture. **It contains no open tasks.** All
+> forward-looking work — including any remaining gaps in the SDD gates — lives in [TODO.md](../TODO.md).
+
+**Status:** Historical record (audit resolved; phases 0–5 code-complete as of 2026-06-08)
+**Audience:** Senior engineers and autonomous coding agents who need the "why" behind the current shape.
 **Philosophy:** This product is in **initial development**. There are no external users to protect and no legacy contract to honor. Therefore: **fix flaws at their origin, do not wrap them.**
 
-> **Scope authority:** the product is defined in [PRODUCT_DEFINITION.md](PRODUCT_DEFINITION.md) (self-hosted RAG + LoRA platform). This document is the **engineering-cleanup companion** — audit, error architecture, and the mechanics of cutting to that scope. Where the two overlap, the product definition wins. The workflow is [SDD_WORKFLOW.md](SDD_WORKFLOW.md) (Extended SDD, three contracts).
+> **Scope authority:** the product is defined in [PRODUCT_DEFINITION.md](PRODUCT_DEFINITION.md) (self-hosted RAG + LoRA platform). This document is its **engineering-history companion**. Where they overlap, the product definition wins. The workflow is [SDD_WORKFLOW.md](SDD_WORKFLOW.md) (Extended SDD, three contracts).
 
 ---
 
@@ -220,64 +224,21 @@ Contract SSOT: `specs/openapi.yaml`.
 
 ## 6. Testing system
 
-### 6.1 Current state
+The architecture is described here; the **state of each test/gate and the open work** is tracked only in
+[TODO.md](../TODO.md) — this document deliberately keeps no task list, to avoid two competing roadmaps.
 
 - `tests/conftest.py` — async client fixture via `httpx.AsyncClient` + `ASGITransport`.
-- `pyproject.toml` — `asyncio_mode = "auto"`, `testpaths = ["tests"]`.
-- `tests/test_basic.py` — 22 unit tests (error taxonomy, chunking, dataset validation, synthesis helpers, error boundary).
-- `tests/test_api_contracts.py` — schemathesis contract sweep (requires running server on :8000).
+- `pyproject.toml` — `asyncio_mode = "auto"`, `testpaths = ["tests"]`, markers `contract`/`integration`/`slow` registered and default-deselected.
+- In-process suites: `tests/test_basic.py`, `tests/test_error_boundary.py`, `tests/test_eval_gate.py`.
+- Live-stack suite: `tests/test_api_contracts.py` (schemathesis, `@pytest.mark.contract`).
+- Gates: `make ci` (offline: check-leaks + lint + coverage floor + validate-spec + check-models) and the `full` gate (migrate-test + boot smoke + contract + integration), wired in `.github/workflows/ci.yml`.
+- Generated DTOs: `brain/models/generated/models.py` is committed and kept in sync with the spec by `make check-models` (regenerate-and-diff). As of 2026-06-08 the contract gate passes `--checks all` against the live server (1260/1260, zero 5xx).
 
-### 6.2 Test pyramid — current vs target
-
-| Layer | Scope | Status (verified 2026-06-08) |
-|---|---|---|
-| Unit | Domain errors, chunking, validation, synthesis helpers | 23 tests in `test_basic.py` — done |
-| Error-path | Every `DomainError` → correct status + envelope, no leak | Two boundary tests done; **not yet parametrized over all subclasses** |
-| Eval gate (Pillar 3) | `EvalGateFailed(422)`, non-servable adapter can't bind endpoint | **No test** — the moat is unguarded |
-| Contract (Pillar 1) | Spec vs live app (schemathesis) | 4 tests exist; **require a live server, run by no gate** |
-| Migration (Pillar 2) | `alembic up → down → up` | `make migrate-test` exists; **never executed in CI** |
-| Integration | Real Postgres/Redis/Chroma | None; marker not even registered |
-| Slow | Real llama-cpp on a tiny model | None |
-
-### 6.3 CI gates — defined but not automated
-
-- `make check-leaks` — grep gate for `detail=str(e)`. **Verified clean (0 sites).**
-- `make ci` — `check-leaks + lint + test + validate-spec`. **Currently cannot pass offline**: `test` collects `tests/test_api_contracts.py`, which targets `http://localhost:8000` at run time. Must isolate contract tests behind a `contract` marker and default-deselect them.
-- `make migrate-test` — alembic up/down; exists but not wired to any runner.
-- `make test-contracts` — schemathesis against a live server; manual only.
-- **No `.github/workflows/`** — none of the above runs automatically. The SDD merge gates are aspirational until a CI runner exists.
-
-> The concrete, prioritized fixes for all of the above live in [TODO.md](../TODO.md) §1 (Test system & SDD gates) and §0 (audit defects).
+> For what's done vs open across the three SDD pillars, see [TODO.md](../TODO.md) "Status snapshot" and §A.
 
 ---
 
-## 7. Unfinished-parts register
-
-Items that remain open after phases 0–5. **P0 defects** were found by auditing the repo on 2026-06-08 — the SDD gates are defined but not enforced.
-
-| Item | Priority | State | Required action |
-|---|---|---|---|
-| `make ci` not offline-clean | **P0** | `test` collects contract suite → needs live server | Isolate behind `contract` marker; default-deselect |
-| No CI runner | **P0** | `.github/workflows/` absent | Add fast gate (push) + full gate (PR) |
-| Eval-gate test (Pillar 3) | **P0** | Moat unguarded | Test `EvalGateFailed(422)` + non-servable adapter can't bind |
-| Stale `brain.cli` entry | **P0** | `[project.scripts]` points at missing module | Create `brain/cli.py` or remove entry |
-| `integration` marker unregistered | **P0** | Warns; not deselectable | Register `contract`/`integration`/`slow` markers |
-| Coverage measurement | P1 | `pytest-cov` unused | Baseline + `--cov-fail-under` ratchet to 50% |
-| Contract gate automation (Pillar 1) | P1 | Manual only | CI job boots stack + runs `make test-contracts` |
-| Migration gate automation (Pillar 2) | P1 | `migrate-test` never runs | CI job runs up/down on seeded DB |
-| Integration tests | P1 | None | `tests/integration/`; real Postgres/Redis/Chroma |
-| `import-linter` domain contracts | P2 | Not configured | Add to `make ci` |
-| Usage metering to DB | P1 | Token counts in API responses only | Persist to a `usage_events` table |
-| Team invitation flow | P1 | Admin creates users, no invite | Implement `POST /v1/auth/invite` |
-| Backup/restore runbook | P1 | No documented procedure | Document Postgres dump + adapter artifacts |
-| Optional Prometheus/Grafana | P2 | Removed from compose | Add as optional compose profile |
-| VRAM requirements table | P1 | Not documented | Document per base model size |
-
-> Full task breakdown with acceptance criteria: [TODO.md](../TODO.md) §0–§3.
-
----
-
-## 8. Workflow — Extended SDD (three contracts)
+## 7. Workflow — Extended SDD (three contracts)
 
 Change the contract before the code. Full reference: [SDD_WORKFLOW.md](SDD_WORKFLOW.md).
 
