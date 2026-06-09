@@ -7,16 +7,14 @@
 ## Table of contents
 
 - [What it is](#what-it-is)
-- [Who it's for](#who-its-for)
 - [The two services](#the-two-services)
-- [How it works](#how-it-works)
-- [Architecture](#architecture)
+- [Quick start](#quick-start)
+- [Verify the GPU works](#verify-the-gpu-works-fine-tuning-only)
 - [API consumption](#api-consumption)
+- [Architecture](#architecture)
 - [Tech stack](#tech-stack)
 - [Current status](#current-status)
-- [Development path & roadmap](#development-path--roadmap)
 - [Development workflow](#development-workflow)
-- [Quick start](#quick-start)
 - [Documentation](#documentation)
 
 ---
@@ -31,13 +29,7 @@ The product exists because two real needs have no good private answer today:
 
 Brain From Cero does both, behind one OpenAI-compatible API, entirely on infrastructure you control.
 
-> **Important framing:** RAG and fine-tuning are *different mechanisms*, not two kinds of "training." The platform's job is to guide you to the right one. The UI asks **"How do you want to specialize your model?"** → *Give it knowledge* (RAG) vs *Change how it behaves* (fine-tuning).
-
-## Who it's for
-
-Technical teams and companies that want **private model customization** — data privacy, on-prem control, no per-token cloud bills. It sits between raw `llama.cpp`/Ollama (too low-level, no training/serving lifecycle) and cloud fine-tuning (your data leaves, you don't own it).
-
-It is **single-tenant** (one organization per deployment) and **multi-user** (teams, roles) within that org.
+> **Framing:** RAG and fine-tuning are *different mechanisms*, not two kinds of "training." The UI asks **"How do you want to specialize your model?"** → *Give it knowledge* (RAG) vs *Change how it behaves* (fine-tuning).
 
 ---
 
@@ -46,82 +38,169 @@ It is **single-tenant** (one organization per deployment) and **multi-user** (te
 ### Knowledge (RAG)
 Make a model answer **from your documents**.
 
-- **Input:** documents — PDF, DOCX, TXT, MD, HTML.
-- **How:** parse → chunk → embed (real sentence-transformers) → store in a private, per-project ChromaDB collection. The base model's weights never change.
+- **Input:** PDF, DOCX, TXT, MD, HTML.
+- **How:** parse → chunk → embed → store in a per-project vector collection. The base model's weights never change.
 - **Serving:** a query retrieves the most relevant chunks, injects them as context, and the model answers **grounded in your docs, with citations**.
-- **Cost:** seconds to index, **CPU-only**, cheap. Update by adding or removing a file.
-- **Use it for:** internal Q&A, support knowledge bases, doc search, "answer from these policies."
+- **Hardware:** CPU-only — runs anywhere, no GPU needed.
+- **Use it for:** internal Q&A, support knowledge bases, doc search.
 
 ### Fine-tuning (LoRA)
-Change **how a model behaves** — its tone, format, or a specific skill.
+Change **how a model behaves** — tone, format, or a specific skill.
 
-- **Input:** an instruction dataset (prompt/response pairs) — uploaded as JSONL, or **synthesized by the platform from your documents**.
-- **How:** validate → train a LoRA adapter (QLoRA, 4-bit) on a GPU worker → evaluate against a threshold gate → register.
-- **Serving:** the base model + your adapter, served once it passes the **evaluation gate** (score ≥ 0.6).
-- **Cost:** minutes–hours, **requires a GPU**. Update by re-training.
-- **Use it for:** house style/voice, structured-output formats, domain tasks the base model does poorly.
+- **Input:** instruction dataset (prompt/response pairs as JSONL) — uploaded, or **synthesized by the platform from your indexed documents**.
+- **How:** validate → train a LoRA adapter (QLoRA, 4-bit) on a GPU worker → evaluate → register if score ≥ 0.6.
+- **Serving:** base model + your adapter, served once it passes the **evaluation gate**.
+- **Hardware:** requires a CUDA GPU (8 GB+ VRAM recommended for a 3B model).
+- **Use it for:** house style, structured output, domain tasks the base model does poorly.
 
 | | Knowledge (RAG) | Fine-tuning (LoRA) |
-|---|---|---|
-| Changes the model? | No — external vector store | Yes — a trained adapter |
-| Needs | Documents | Instruction pairs (or docs → synthesized) |
-| Hardware | CPU | **GPU** |
-| Speed | Seconds | Minutes–hours |
-| Best for | Facts, freshness, "answer from my docs" | Behavior, style, skills, format |
+| --- | --- | --- |
+| Changes the model weights? | No | Yes — a trained adapter |
+| Input | Documents | Instruction pairs |
+| Hardware | CPU | GPU |
+| Speed | Seconds to index | Minutes–hours to train |
 
 ---
 
-## How it works
+## Quick start
 
-**RAG project:**
-```
-create project (type=rag) → upload documents → parse + chunk + embed →
-per-project vector collection → endpoint + API key → query (retrieve → cited answer)
+### Prerequisites
+
+**GPU host (required for fine-tuning):** if you want to train LoRA adapters, the host needs NVIDIA drivers and the NVIDIA Container Toolkit installed before you run `docker compose up`. RAG serving works without a GPU.
+
+```bash
+# 1. Install the NVIDIA Container Toolkit
+sudo apt-get install -y nvidia-container-toolkit
+# Register the nvidia runtime WITHOUT making it the daemon default
+sudo nvidia-ctk runtime configure --runtime=docker
+sudo systemctl restart docker
+# Verify Docker can see the GPU (should print your GPU name):
+docker run --rm --device nvidia.com/gpu=all ubuntu nvidia-smi -L
 ```
 
-**Fine-tune project:**
-```
-create project (type=finetune) → provide dataset (JSONL upload) OR
-  upload docs → synthesize instruction pairs →
-validate → enqueue training job → GPU worker trains LoRA → evaluate (gate) →
-register adapter → endpoint + API key → serve (base + adapter)
-```
+> Docker 25+ resolves GPUs via **CDI** (`--device nvidia.com/gpu=all`). The older `--gpus all` flag may print "CDI spec not found" on recent Docker versions — use the CDI form above.
 
-Both end at the same place: an OpenAI-compatible endpoint you call with a scoped key.
+**CPU-only host:** skip the toolkit. Use the CPU opt-out compose file (step 2 below) — RAG still works; LoRA jobs are rejected with a clear "GPU required" message.
 
 ---
 
-## Architecture
+### 1. Clone and configure
 
-Deployed as a small set of containers on the customer's server.
+```bash
+git clone https://github.com/yourusername/brainFromCero
+cd brainFromCero
 
-```
-              Company's own server  (docker compose up)
-   ┌─────────────────────────────────────────────────────────┐
-   │                                                          │
-   │   app (FastAPI) ───────────────────────────►  PostgreSQL │  users, teams,
-   │     │   control plane + data plane                       │  projects, datasets,
-   │     │                                                    │  jobs, endpoints, keys
-   │     ├─── RAG pipeline ──► ChromaDB (per-project vectors) │
-   │     │                                                    │
-   │     └─── Fine-tune pipeline ──► Redis queue ──► worker   │
-   │                                                  │(GPU)  │
-   │                                          adapter registry│
-   │                                          + eval gate     │
-   │     │                                                    │
-   │   Inference (llama-cpp): base model + adapter, OpenAI API│
-   └─────────────────────────────────────────────────────────┘
+cp .env.example .env
+# Generate a random JWT secret and write it in:
+sed -i "s|^BRAIN_SECRET_KEY=.*|BRAIN_SECRET_KEY=$(openssl rand -hex 32)|" .env
 ```
 
-| Container | Role |
-|---|---|
-| `app` | Control plane (projects, datasets, jobs, keys, users) + data plane (RAG retrieval + serving) |
-| `worker` | Consumes training jobs from Redis, runs LoRA on GPU, registers adapters |
-| `postgres` | All metadata (system of record) |
-| `redis` | Training job queue |
-| `chroma` | Per-project RAG vector collections |
+Review `.env` and set a strong `POSTGRES_PASSWORD` before any non-local deployment.
 
-**GPU strategy** (hardware is customer-provided): RAG runs **CPU-only** and works anywhere; LoRA **requires a GPU** — QLoRA 4-bit fits a 3B base in ~8–12 GB VRAM — and fails fast with a clear message if none is present.
+---
+
+### 2. Start the stack
+
+**GPU host (default):**
+
+```bash
+docker compose up -d
+```
+
+**CPU-only host:**
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.cpu.yml up -d
+```
+
+The `app` container runs `alembic upgrade head` automatically on startup — no manual migration step is needed. Postgres, Redis, and Chroma are healthchecked before the app starts.
+
+---
+
+### 3. Verify the stack is up
+
+```bash
+docker compose ps                          # every service should show "healthy"
+curl http://localhost:8000/health          # → {"status":"ok"}
+curl http://localhost:8000/health/deep     # → Postgres + Redis + Chroma + disk + memory
+```
+
+If `app` is restarting, check the logs: `docker compose logs app`.
+
+---
+
+### 4. Download a base model
+
+The platform serves GGUF models via llama-cpp. Download one into the `data/models/` volume before creating projects:
+
+```bash
+# Option A — huggingface-cli (recommended):
+huggingface-cli download Qwen/Qwen2.5-3B-Instruct-GGUF \
+  qwen2.5-3b-instruct-q4_k_m.gguf \
+  --local-dir ./data/models/qwen2.5-3b-instruct
+
+# Option B — wget:
+mkdir -p ./data/models/qwen2.5-3b-instruct
+wget -O ./data/models/qwen2.5-3b-instruct/qwen2.5-3b-instruct-q4_k_m.gguf \
+  "https://huggingface.co/Qwen/Qwen2.5-3B-Instruct-GGUF/resolve/main/qwen2.5-3b-instruct-q4_k_m.gguf"
+```
+
+Supported base models (see [docs/OPERATIONS.md §6](docs/OPERATIONS.md) for VRAM requirements):
+
+| Model | HF repo | VRAM (Q4) |
+| --- | --- | --- |
+| Qwen2.5-0.5B-Instruct | `Qwen/Qwen2.5-0.5B-Instruct-GGUF` | ~2 GB |
+| Qwen2.5-3B-Instruct | `Qwen/Qwen2.5-3B-Instruct-GGUF` | ~4 GB |
+| Qwen2.5-Coder-3B | `Qwen/Qwen2.5-Coder-3B-Instruct-GGUF` | ~4 GB |
+| Qwen2.5-7B-Instruct | `Qwen/Qwen2.5-7B-Instruct-GGUF` | ~8 GB |
+
+---
+
+### 5. Open the operator console
+
+**Go to: [http://localhost:8000/console/](http://localhost:8000/console/)**
+
+The first screen is a Register form. Fill it in — the first registered user becomes the org admin. After that you land on the Projects page.
+
+From the console you can:
+
+- **Create a RAG project** → upload documents → create an endpoint + API key → use the playground or the OpenAI-compatible API
+- **Create a fine-tune project** → upload (or synthesize) a dataset → start a training job → watch the eval gate → create an endpoint once it passes
+
+The console hands you a copy-paste **OpenAI SDK snippet** with your endpoint slug and key at the end of every flow.
+
+---
+
+### 6. (Optional) Bootstrap via API instead
+
+```bash
+curl -X POST http://localhost:8000/v1/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"org_name": "Acme", "email": "admin@acme.com", "password": "changeme"}'
+```
+
+Full interactive API docs: [http://localhost:8000/docs](http://localhost:8000/docs)
+
+---
+
+## Verify the GPU works (fine-tuning only)
+
+After the stack is running, confirm the worker sees the GPU:
+
+```bash
+docker compose logs worker | grep "GPU ready"
+# → GPU ready: NVIDIA GeForce RTX 3050 | torch 2.12.0+cu130 (CUDA 13.0)
+```
+
+To run the full fine-tune pipeline end-to-end (trains a real LoRA, checks the eval gate, confirms the adapter is registered):
+
+```bash
+# Runs from the app container (which has pytest); the worker processes the job in the background.
+docker compose exec -e BRAIN_RUN_LORA_E2E=1 app \
+  python -m pytest -m "integration and slow" tests/integration/test_lora_e2e.py -s
+```
+
+This test downloads ~1 GB (the base model's HuggingFace weights for training), trains for a few minutes on the GPU, and passes if `eval_score >= 0.6`. Expected output ends with `1 passed`.
 
 ---
 
@@ -133,233 +212,128 @@ Point any OpenAI SDK at your server; use the project endpoint slug as the model 
 from openai import OpenAI
 
 client = OpenAI(
-    base_url="https://your-server.internal/v1",
-    api_key="brn_xxxx…",                   # scoped to one project endpoint
+    base_url="http://localhost:8000/v1",
+    api_key="brn_xxxx…",            # scoped to one project endpoint
 )
 
 resp = client.chat.completions.create(
-    model="support-kb",                    # your endpoint slug
+    model="support-kb-a1b2c3d4",    # your endpoint slug (shown in the console)
     messages=[{"role": "user", "content": "What is our refund window?"}],
 )
-print(resp.choices[0].message.content)    # RAG answers include citations
+print(resp.choices[0].message.content)  # RAG answers include citations
 ```
 
-OpenAI-compatible serving is the **only** external protocol.
+OpenAI-compatible serving (`POST /v1/chat/completions`) is the only external protocol customer applications call.
+
+---
+
+## Architecture
+
+```text
+              Company's own server  (docker compose up)
+   ┌─────────────────────────────────────────────────────────┐
+   │                                                          │
+   │   browser → /console/   ←── Vite+Svelte operator UI     │
+   │                                                          │
+   │   app (FastAPI) ──────────────────────────► PostgreSQL   │
+   │     │   control plane + RAG data plane                   │
+   │     ├─── RAG pipeline ──► ChromaDB (per-project vectors) │
+   │     └─── Fine-tune pipeline ──► Redis queue ──► worker   │
+   │                                                  │(GPU)  │
+   │                                          adapter registry│
+   │                                          + eval gate     │
+   │                                                          │
+   │   Inference (llama-cpp): base GGUF + GGUF LoRA adapter   │
+   └─────────────────────────────────────────────────────────┘
+```
+
+| Container | Role |
+| --- | --- |
+| `app` | Control plane + RAG serving + operator console (static SPA at `/console/`) |
+| `worker` | Consumes training jobs from Redis, runs QLoRA on GPU, registers adapters |
+| `postgres` | All metadata (system of record) |
+| `redis` | Training job queue |
+| `chroma` | Per-project RAG vector collections |
 
 ---
 
 ## Tech stack
 
 | Layer | Technology |
-|---|---|
+| --- | --- |
 | HTTP framework | FastAPI + Uvicorn |
 | API validation | Pydantic v2 (generated from the OpenAPI spec) |
 | Inference | llama-cpp-python (GGUF models) |
-| Fine-tuning | PEFT / TRL (QLoRA), PyTorch — in a separate worker |
+| Fine-tuning | PEFT / TRL (QLoRA), PyTorch — in a separate GPU worker |
 | Vector store | ChromaDB (per-project collections) |
 | Embeddings | sentence-transformers |
 | Metadata DB | PostgreSQL + SQLAlchemy 2.x (async) + Alembic migrations |
 | Job queue | Redis + `redis.asyncio` (BLPOP worker) |
+| Operator console | Vite + Svelte 5 + TypeScript — static SPA, served same-origin via FastAPI |
 | Config | pydantic-settings |
-| Contract tooling | datamodel-code-generator, schemathesis, openapi-spec-validator |
 | Deploy | Docker Compose, customer-operated |
 
 ---
 
 ## Current status
 
-Phases 0–5 are implemented. This is **early-stage, pre-first-customer software** — the core platform is built but not yet operated in production.
+Phases 0–5 are complete. Pre-first-customer software: the core platform is built and the full lifecycle works end-to-end.
 
 | Capability | Status | Notes |
-|---|---|---|
-| OpenAI-compatible serving | ✅ Real | Single `ChatService` path; base model + adapter hot-swap |
-| LoRA training pipeline | ✅ Real | QLoRA training in `brain/training/trainer.py`; eval gate enforced |
-| RAG retrieval with citations | ✅ Real | Real sentence-transformers embeddings; PDF/DOCX/MD/TXT/HTML parsing; per-project ChromaDB collections |
-| Dataset synthesis (docs → pairs) | ✅ Done | `POST /v1/projects/{id}/datasets/synthesize`; LLM generates Q/A pairs from indexed chunks |
-| PostgreSQL data model + auth/teams | ✅ Done | Full schema (Orgs/Teams/Users/Projects/Files/Datasets/Jobs/Endpoints/ApiKeys); **direct bcrypt** (SHA-256 pre-hash) + JWT |
-| Async training jobs (Redis + worker) | ✅ Done | Redis BLPOP queue; dedicated worker process; job lifecycle with status/progress |
-| Adapter eval gate | ✅ Done | Score ≥ 0.6 required; `EvalGateFailed(422)` if below threshold |
-| Error handling | ✅ Done | `DomainError` taxonomy; one error envelope for all paths (incl. 422/404/405); 0 `detail=str(e)` sites; correlation IDs |
-| API contract (Pillar 1) | ✅ Done | `make test-contracts` green (1260/1260, schemathesis `--checks all`, zero 5xx); generated models committed + drift-gated by `make check-models` |
-| Test coverage | 🚧 Partial | 65 in-process tests (errors, chunking, validation, eval gate, error boundary); ~28% line coverage with an enforced floor; integration tests still to come |
-| Docker dev/prod workflow | ✅ Done | One multi-stage `Dockerfile` (dev/production/worker); `docker compose up` = dev with tooling baked in (no manual pip); non-root production |
-| Images / vision | 🗑️ Cut | Removed from scope |
-| Operator console (thin web UI) | 🚧 In progress | Operator-facing console served same-origin from `app`; thin client over the existing API (the OpenAI-compatible API stays the only protocol customer *apps* call). See [TODO.md §5](TODO.md) |
-
----
-
-## Development path & roadmap
-
-| Phase | Goal | Status |
-|---|---|---|
-| **0 — Foundation** | Delete cut-list, Postgres + Alembic, real auth + teams, Project entity | ✅ Complete |
-| **1 — RAG MVP** | Real embeddings, document parse+chunk, per-project collection, cited endpoint | ✅ Complete |
-| **2 — Training infra** | Redis queue + GPU worker, job lifecycle + progress | ✅ Complete |
-| **3 — LoRA service** | Dataset upload + validation, QLoRA training, adapter registry + eval gate | ✅ Complete |
-| **4 — Dataset synthesis** | Documents → synthesized instruction pairs → JSONL dataset | ✅ Complete |
-| **5 — Hardening** | Error architecture, test pyramid, `make ci` gate, usage metering | ✅ Complete |
-| **Future** | RBAC polish, backup/restore docs, optional Prometheus/Grafana, test coverage ratchet to 50% | Backlog |
-
-**Explicitly deferred (not promised):**
-- Multimodal RAG (images) — descoped; possible later via CLIP + vision model.
-- Hosted/multi-tenant SaaS — the current product is single-tenant self-hosted by design.
-- Heavy MLOps (MLflow, DVC) — added only if customers need it.
-- Additional API protocols (Anthropic/MCP) — not planned; OpenAI-compatible is the only surface.
+| --- | --- | --- |
+| Operator console | ✅ Done | Browser UI at `/console/` — full RAG + fine-tune lifecycle, endpoint+keys, playground, usage |
+| OpenAI-compatible serving | ✅ Done | `POST /v1/chat/completions`; base model + GGUF LoRA adapter; key-scoped |
+| RAG retrieval with citations | ✅ Done | Real sentence-transformers embeddings; PDF/DOCX/MD/TXT/HTML; per-project ChromaDB |
+| LoRA training pipeline | ✅ Done | QLoRA (4-bit) on GPU worker; eval gate ≥ 0.6; PEFT→GGUF conversion after gate passes |
+| Eval gate | ✅ Done | Held-out split, response-only loss, base-vs-adapter delta; `EvalGateFailed(422)` if below threshold |
+| Dataset synthesis | ✅ Done | `POST /datasets/synthesize` — indexed docs → LLM Q/A pairs → JSONL |
+| Auth / teams / RBAC | ✅ Done | bcrypt + JWT; orgs/teams/roles; invite flow; viewer read-only role |
+| Usage metering | ✅ Done | Per-endpoint daily token rollup; `GET /usage` |
+| API contract (Pillar 1) | ✅ Done | schemathesis 1260/1260, `--checks all`, zero 5xx; generated models drift-gated |
+| Error handling | ✅ Done | `DomainError` taxonomy; one error envelope; 0 `detail=str(e)` sites; correlation IDs |
+| Docker dev/prod/worker | ✅ Done | One multi-stage Dockerfile; non-root production; CPU-only app image (1.87 GB) |
+| Test coverage | 🚧 Partial | 132 in-process tests; ~30% line coverage floor enforced; integration tests green |
+| Multimodal RAG / vision | 🗑️ Cut | Not in scope |
 
 ---
 
 ## Development workflow
 
-Contract-driven (Extended SDD): change the contract before the code. Three contracts:
+Contract-driven (Extended SDD). Three contracts — change the contract before the code:
 
 | Contract | Source of truth | Merge gate |
-|---|---|---|
+| --- | --- | --- |
 | **API** | `specs/openapi.yaml` | `make test-contracts` (schemathesis) |
 | **DB schema** | Alembic migrations | `make migrate-test` (up/down) |
-| **Model/training** | dataset JSON Schema + pinned training config | eval threshold gate |
+| **Model/training** | dataset JSON Schema + eval threshold | eval gate (score ≥ 0.6) |
+
+All `make` targets run **inside the app container** (`docker compose exec app make <target>`):
 
 ```bash
-# All targets run inside the Docker container:
-#   docker compose exec app make <target>
-
+make ci              # check-leaks + lint + lint-imports + coverage + validate-spec + check-models
+make test            # pytest (in-process only — no infra needed)
+make coverage        # pytest + coverage report + enforced floor
 make generate        # API spec → Pydantic models
+make check-models    # fail if generated models drift from spec
 make validate-spec   # lint the OpenAPI spec
-make check-models    # fail if generated models drift from the spec
-make migrate         # apply DB migrations (alembic upgrade head)
-make test            # pytest
 make check-leaks     # fail if detail=str(e) reappears
-make ci              # check-leaks + lint + coverage + validate-spec + check-models
-make test-contracts  # schemathesis vs a live server (BRAIN_BEARER_TOKEN)
+make migrate         # alembic upgrade head
+make migrate-test    # up → down → up round-trip (Pillar 2 gate)
+make test-contracts  # schemathesis vs a live server (set BRAIN_BEARER_TOKEN first)
 ```
 
 Full doc: [docs/SDD_WORKFLOW.md](docs/SDD_WORKFLOW.md).
 
 ---
 
-## Quick start
-
-> All Python/pip operations run **inside the Docker container** — never on the host.
-
-### 1. Clone and configure
-
-```bash
-git clone https://github.com/yourusername/brainFromCero
-cd brainFromCero
-
-# Create your environment file from the template
-cp .env.example .env
-
-# Generate a real JWT secret and write it into .env
-sed -i "s|^BRAIN_SECRET_KEY=.*|BRAIN_SECRET_KEY=$(openssl rand -hex 32)|" .env
-```
-
-Review `.env` and set a strong `POSTGRES_PASSWORD` before any non-local deployment.
-
-### 2. Start the stack
-
-```bash
-docker compose up -d            # builds + starts: app, worker, postgres, redis, chroma
-```
-
-The `app` container **runs database migrations automatically on startup** (`alembic upgrade head`
-in [entrypoint.sh](entrypoint.sh)) — no manual migration step is needed. Data services (Postgres,
-Redis, Chroma) are gated by healthchecks, so the app waits until they are ready.
-
-Convenience wrapper (optional): `./start.sh up` does the same and then waits for `/health` to pass.
-Other helpers: `./start.sh logs`, `./start.sh ps`, `./start.sh down`.
-
-**GPU is the default.** This is a GPU product — the `worker` reserves the host GPU for QLoRA training,
-so a plain `docker compose up` expects a CUDA GPU + the NVIDIA Container Toolkit on the host. RAG serving
-itself is CPU-only, but the default stack assumes the training worker has its card.
-
-#### Host prerequisites for the GPU (one-time, Linux)
-
-The worker image already ships CUDA PyTorch; you only wire the host GPU into Docker:
-
-1. NVIDIA driver — verify with `nvidia-smi` (shows your GPU, driver, CUDA version).
-2. [`nvidia-container-toolkit`](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html):
-   ```bash
-   sudo apt-get install -y nvidia-container-toolkit
-   # Registers the `nvidia` runtime WITHOUT making it the daemon default
-   # (omit --set-as-default so other containers/projects are unaffected):
-   sudo nvidia-ctk runtime configure --runtime=docker
-   sudo systemctl restart docker
-   # sanity check (should print your GPU):
-   docker run --rm --device nvidia.com/gpu=all ubuntu nvidia-smi -L
-   ```
-   > Docker 25+ resolves GPUs through **CDI** (Container Device Interface). Use the
-   > `--device nvidia.com/gpu=all` form above — on recent Docker, `--gpus all` may
-   > misdetect the vendor ("CDI spec not found"). The compose stack uses the CDI
-   > device form; the enabled `nvidia-cdi-refresh.service` keeps the spec current.
-
-Then start normally — the worker picks up the GPU automatically:
-
-```bash
-docker compose up -d
-# confirm torch sees the card inside the worker:
-docker compose logs worker | grep "GPU ready"
-```
-
-GPU access stays scoped to `brain-worker` only (it's the single service with a device reservation);
-`app`, `postgres`, `redis`, `chroma` — and every other container on the host — get no GPU.
-
-#### Special case: CPU-only host
-
-On a host with no GPU (or no toolkit), layer the CPU opt-out so the stack still starts:
-
-```bash
-docker compose -f docker-compose.yml -f docker-compose.cpu.yml up -d
-```
-
-This `!reset`s the worker's GPU reservation. The worker still runs but rejects LoRA jobs with a clear
-*"GPU required"* message; RAG serving is unaffected.
-
-### 3. Verify it's up
-
-```bash
-docker compose ps                         # every service should be "healthy"
-curl -fsS http://localhost:8000/health    # -> {"status":"ok", ...}
-curl -fsS http://localhost:8000/health/deep   # Postgres + Redis + Chroma + disk + memory
-```
-
-If `app` is restarting, inspect the cause: `docker compose logs app`.
-
-### 4. Add a base model (required to serve)
-
-```bash
-# Download a GGUF base model into the mounted volume (host: ./data/models)
-huggingface-cli download Qwen/Qwen2.5-3B-Instruct-GGUF \
-  qwen2.5-3b-instruct-q4_k_m.gguf \
-  --local-dir ./data/models/qwen2.5-3b-instruct
-```
-
-### 5. Bootstrap your organization
-
-```bash
-# First registered user becomes the org admin
-curl -X POST http://localhost:8000/v1/auth/register \
-  -H "Content-Type: application/json" \
-  -d '{"org_name": "Acme", "email": "admin@acme.com", "password": "changeme"}'
-```
-
-**Endpoints**
-- API: `http://localhost:8000/v1`
-- Health: `http://localhost:8000/health`
-- Deep health: `http://localhost:8000/health/deep`
-- Interactive docs: `http://localhost:8000/docs`
-
-**Requirements:** Docker + Docker Compose; 16 GB RAM recommended; a CUDA GPU (8 GB+ VRAM) only if you use fine-tuning — RAG runs on CPU.
-
----
-
 ## Documentation
 
-- **[docs/PRODUCT_DEFINITION.md](docs/PRODUCT_DEFINITION.md)** — what we're building (authoritative scope, full phase plan)
-- **[docs/SDD_WORKFLOW.md](docs/SDD_WORKFLOW.md)** — how we work (Extended SDD, the three contracts)
-- **[docs/API_EVOLUTION_PLAN.md](docs/API_EVOLUTION_PLAN.md)** — original audit and engineering architecture decisions
-- **[docs/OPERATIONS.md](docs/OPERATIONS.md)** — backup/restore, upgrades, scaling, registry strategy, host sizing (VRAM)
+- **[docs/PRODUCT_DEFINITION.md](docs/PRODUCT_DEFINITION.md)** — authoritative scope: what this is and isn't
+- **[docs/SDD_WORKFLOW.md](docs/SDD_WORKFLOW.md)** — how we work (Extended SDD, three contracts)
+- **[docs/OPERATIONS.md](docs/OPERATIONS.md)** — backup/restore, upgrades, scaling, VRAM sizing, model catalog
+- **[docs/API_EVOLUTION_PLAN.md](docs/API_EVOLUTION_PLAN.md)** — engineering audit and architecture decisions
 - **[CLAUDE.md](CLAUDE.md)** — AI-assisted development guide and hard constraints
-- **[TODO.md](TODO.md)** — build checklist by phase
+- **[TODO.md](TODO.md)** — open backlog
 
 ---
 
