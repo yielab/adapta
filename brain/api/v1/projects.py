@@ -65,7 +65,7 @@ async def create_project(
         status=ProjectStatus.created,
     )
     db.add(project)
-    await db.flush()
+    await db.commit()
     return _proj_resp(project)
 
 
@@ -110,6 +110,7 @@ async def delete_project(
             pass
 
     await db.delete(project)
+    await db.commit()  # durable before response so an immediate re-list reflects it (§4.4)
 
 
 async def _get_project(db: AsyncSession, project_id: str) -> Project:

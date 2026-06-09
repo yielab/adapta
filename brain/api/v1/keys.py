@@ -71,7 +71,7 @@ async def create_key(
         is_active=True,
     )
     db.add(api_key)
-    await db.flush()
+    await db.commit()  # durable before response so the key works immediately (§4.4)
 
     return KeyCreatedResponse(id=api_key.id, name=api_key.name, key=raw_key, prefix=prefix)
 
@@ -116,3 +116,4 @@ async def revoke_key(
     if not key:
         raise NotFound(message="Key not found")
     key.is_active = False
+    await db.commit()  # revocation must take effect immediately (§4.4)

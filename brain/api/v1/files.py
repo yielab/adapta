@@ -210,3 +210,4 @@ async def delete_file(
         pass
 
     await db.delete(pfile)
+    await db.commit()  # durable before response so an immediate re-list reflects it (§4.4)

@@ -182,6 +182,23 @@ async def test_dataset_invalid_reaches_invalid_state(client, admin):
     assert got.json()["validation_error"]
 
 
+async def test_create_then_immediate_get_no_retry(client, admin):
+    # Regression guard for the read-your-write window (§4.4): a create followed by
+    # an IMMEDIATE get (no retry/sleep) must succeed now that write handlers commit
+    # before returning. Repeat to make a residual race statistically visible.
+    h, team_id = admin["headers"], admin["team_id"]
+    for i in range(25):
+        created = await client.post(
+            "/v1/projects",
+            headers=h,
+            json={"name": f"rw{i}", "type": "rag", "base_model": "x", "team_id": team_id},
+        )
+        assert created.status_code == 201, created.text
+        pid = created.json()["id"]
+        got = await client.get(f"/v1/projects/{pid}", headers=h)
+        assert got.status_code == 200, f"immediate read missed just-created {pid}: {got.status_code}"
+
+
 # --- Scoped key auth on the serving endpoint -------------------------------
 
 async def test_chat_completions_rejects_missing_and_bad_key(client):

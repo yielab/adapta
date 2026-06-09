@@ -100,7 +100,7 @@ async def create_endpoint(
         adapter_path=adapter_path,
     )
     db.add(endpoint)
-    await db.flush()
+    await db.commit()  # durable before response so an immediate GET sees it (§4.4)
     return _ep_resp(endpoint, project.type.value)
 
 

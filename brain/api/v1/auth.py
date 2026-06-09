@@ -72,7 +72,9 @@ async def register(body: RegisterRequest, db: AsyncSession = Depends(get_db)):
 
     membership = TeamMember(team_id=team.id, user_id=user.id, role=Role.admin)
     db.add(membership)
-    await db.flush()
+    # Commit before returning so an immediate follow-up login sees the new user
+    # (the get_db finalizer commits only after the response is sent — §4.4).
+    await db.commit()
 
     return UserResponse(id=user.id, email=user.email, org_id=user.org_id)
 
