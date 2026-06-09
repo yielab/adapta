@@ -162,9 +162,12 @@ serving:
 | 7–8B | ~12–16 GB | RTX 3080 / 4070 Ti / A4000 |
 | 13B | ~24 GB | RTX 3090 / 4090 / A5000 |
 
-A GPU-less host serves RAG fine; LoRA jobs are rejected fast with a clear
-"GPU required" message (see [docker-compose.gpu.yml](../docker-compose.gpu.yml)
-and TODO §4.2b for enabling the GPU worker).
+The GPU is the default: the worker reserves the host GPU, so the standard
+`docker compose up` expects a CUDA GPU + the NVIDIA Container Toolkit. A GPU-less
+host serves RAG fine — layer [docker-compose.cpu.yml](../docker-compose.cpu.yml)
+(`-f docker-compose.yml -f docker-compose.cpu.yml`) to drop the reservation; LoRA
+jobs are then rejected fast with a clear "GPU required" message. See the README
+"GPU" section and TODO §4.2b.
 
 ### 6.3 Base-model catalog (§3.4)
 

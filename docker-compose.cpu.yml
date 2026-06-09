@@ -1,0 +1,23 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# CPU-only opt-out — the rare special case.
+#
+# GPU is the DEFAULT: the worker reserves the host GPU in docker-compose.yml for
+# QLoRA training, so the normal `docker compose up` needs the NVIDIA Container
+# Toolkit. On a host with no NVIDIA GPU / toolkit, layer this file to drop that
+# reservation so the stack still starts:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.cpu.yml up -d
+#
+# The worker then starts but rejects LoRA jobs fast with a clear "GPU required"
+# message (its runtime guard — brain/core/gpu.py:torch_cuda_status). RAG serving
+# is unaffected; it never needed a GPU.
+#
+# `!reset` is required: a plain override can't subtract a list item — Docker
+# Compose merges and keeps the base device — so we explicitly reset it to empty.
+# ──────────────────────────────────────────────────────────────────────────────
+services:
+  worker:
+    deploy:
+      resources:
+        reservations:
+          devices: !reset []

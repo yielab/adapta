@@ -268,36 +268,47 @@ Redis, Chroma) are gated by healthchecks, so the app waits until they are ready.
 Convenience wrapper (optional): `./start.sh up` does the same and then waits for `/health` to pass.
 Other helpers: `./start.sh logs`, `./start.sh ps`, `./start.sh down`.
 
-The default `up` starts **CPU-only** — RAG serving needs no GPU, and the training worker starts but
-rejects LoRA jobs with a clear *"GPU required"* message. To train, enable GPU pass-through (below).
+**GPU is the default.** This is a GPU product — the `worker` reserves the host GPU for QLoRA training,
+so a plain `docker compose up` expects a CUDA GPU + the NVIDIA Container Toolkit on the host. RAG serving
+itself is CPU-only, but the default stack assumes the training worker has its card.
 
-#### Enabling the GPU (fine-tuning only)
+#### Host prerequisites for the GPU (one-time, Linux)
 
-LoRA fine-tuning runs as QLoRA 4-bit on the `worker` container and **requires a CUDA GPU**. The worker
-image already ships CUDA PyTorch; you just pass the host GPU into the container.
-
-**One-time host prerequisites** (Linux):
+The worker image already ships CUDA PyTorch; you only wire the host GPU into Docker:
 
 1. NVIDIA driver — verify with `nvidia-smi` (shows your GPU, driver, CUDA version).
 2. [`nvidia-container-toolkit`](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html):
    ```bash
    sudo apt-get install -y nvidia-container-toolkit
+   # Registers the `nvidia` runtime WITHOUT making it the daemon default
+   # (omit --set-as-default so other containers/projects are unaffected):
    sudo nvidia-ctk runtime configure --runtime=docker
    sudo systemctl restart docker
    # sanity check (should print your GPU):
    docker run --rm --gpus all ubuntu nvidia-smi -L
    ```
 
-**Start with GPU pass-through** via the opt-in overlay:
+Then start normally — the worker picks up the GPU automatically:
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+docker compose up -d
 # confirm torch sees the card inside the worker:
 docker compose logs worker | grep "GPU ready"
 ```
 
-A host **without** a GPU (or without the toolkit) keeps using the plain `docker compose up` — everything
-starts cleanly and only LoRA jobs are refused. The overlay is never required for RAG.
+GPU access stays scoped to `brain-worker` only (it's the single service with a device reservation);
+`app`, `postgres`, `redis`, `chroma` — and every other container on the host — get no GPU.
+
+#### Special case: CPU-only host
+
+On a host with no GPU (or no toolkit), layer the CPU opt-out so the stack still starts:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.cpu.yml up -d
+```
+
+This `!reset`s the worker's GPU reservation. The worker still runs but rejects LoRA jobs with a clear
+*"GPU required"* message; RAG serving is unaffected.
 
 ### 3. Verify it's up
 

@@ -66,9 +66,11 @@ services:
       - brain-network
 
   # ──────────────────────────────────────────────
-  # Training worker: consumes Redis queue, runs QLoRA.
-  # Requires the [training] extras and a CUDA GPU for real training.
-  # On CPU-only hosts it starts but jobs will be slow / rejected by GPU guard.
+  # Training worker: consumes Redis queue, runs QLoRA on the GPU (the default).
+  # The worker reserves the host GPU (deploy.resources.reservations below), so the
+  # default stack requires the NVIDIA Container Toolkit on the host (see README
+  # "GPU"). For a rare CPU-only host, layer docker-compose.cpu.yml to drop the
+  # reservation — the worker then starts but rejects LoRA jobs fast (GPU guard).
   # ──────────────────────────────────────────────
   worker:
     build:
@@ -106,6 +108,14 @@ services:
       resources:
         limits:
           memory: 8g
+        # GPU is the default — the worker reserves the host GPU for QLoRA training.
+        # This requires the NVIDIA Container Toolkit on the host; on a CPU-only host,
+        # opt out with `-f docker-compose.cpu.yml` (which !resets this reservation).
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     logging: *default-logging
     depends_on:
       postgres:
@@ -114,10 +124,6 @@ services:
         condition: service_healthy
     networks:
       - brain-network
-    # GPU pass-through is opt-in via the overlay file (keeps CPU-only hosts
-    # starting cleanly). Enable with:
-    #   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
-    # See docker-compose.gpu.yml and TODO §4.2b for host prerequisites.
 
   # ──────────────────────────────────────────────
   # PostgreSQL: metadata store
