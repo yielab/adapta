@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from brain.db.models import ApiKey, Endpoint, EndpointStatus, Project
 from brain.db.session import get_db
-from brain.domain.errors import InvalidRequest, NotFound, Unauthorized
+from brain.domain.errors import Forbidden, InvalidRequest, NotFound, Unauthorized
 from brain.services.auth import verify_api_key
 from brain.services.chat import chat, chat_stream
 from brain.services.usage import record_usage
@@ -99,6 +99,15 @@ async def chat_completions(
     db: AsyncSession = Depends(get_db),
 ):
     endpoint, project = auth
+
+    # Key-scoping: the `model` field must match the endpoint's slug. This makes
+    # the scoping explicit — a key for endpoint A cannot drive endpoint B, even if
+    # the caller sends B's slug. (Without this, the key would silently serve A.)
+    if request_body.model != endpoint.slug:
+        raise Forbidden(
+            message=f"API key is not authorized for model '{request_body.model}'",
+            internal_detail=f"key for endpoint slug={endpoint.slug!r} but model={request_body.model!r}",
+        )
 
     messages = [{"role": m.role, "content": m.content} for m in request_body.messages]
 

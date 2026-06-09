@@ -50,6 +50,7 @@ Honour the [Definition of done](#definition-of-done-per-task) on every task. Wor
 | Boot-correctness gate | ✅ (2026-06-08) — fast `import smoke` (app + worker) every push; `full` boot smoke starts uvicorn **and** the worker and asserts both survive. See **§A2**. |
 | Docker dev/prod workflow | ✅ reworked 2026-06-08 — one multi-stage `Dockerfile`, non-root prod, dev toolchain baked in (no manual pip). See **§4**. |
 | Image size / CPU-only torch | ✅ app **1.87 GB** (was 6.45 GB), CPU-only torch, zero CUDA pkgs (2026-06-08). Worker keeps CUDA torch (verify-rebuild pending). See **§4.2**. |
+| Operator console (§5) | ✅ all views done (2026-06-09) — app shell, auth, projects, RAG flow, fine-tune flow, endpoint+keys, playground, usage, UX polish, mount+Docker+CI (C4 docs partial). Key-scoping (§5.12) enforced. |
 
 ---
 
@@ -88,39 +89,38 @@ Honour the [Definition of done](#definition-of-done-per-task) on every task. Wor
 > agent can own each. Workstream label: **`[BE]`**.
 
 ### A3.1 `[BE]` Fine-tune serving must apply the adapter (P0) — supersedes the §1.7 open item
-- **Decision (recorded 2026-06-09): Strategy A (GGUF LoRA, one serving runtime).** After eval
+- [x] **Decision (recorded 2026-06-09): Strategy A (GGUF LoRA, one serving runtime).** After eval
   passes, the worker converts the PEFT adapter to a GGUF LoRA with llama.cpp's *official*
   `convert_lora_to_gguf.py` (vendored into the worker image at `/opt/llamacpp`, pinned to tag
   `b4576`; we do not reimplement the GGUF-LoRA format). The `.gguf` is stored beside the safetensors
   adapter and becomes the job/endpoint `adapter_path`; serving loads the base GGUF **with**
   `Llama(lora_path=...)`. The model cache is keyed on `(serving_base, adapter)` so RAG/base and
   fine-tune never collide. A minimal HF-repo-id → GGUF catalog alias bridges the two `base_model`
-  meanings until A3.3's catalog lands. **Code wired end-to-end + unit/import-verified; the GPU e2e
-  (`tests/integration/test_lora_e2e.py`, opt-in) asserts the served output reflects the adapter and
-  still needs a live-GPU run to confirm.**
-- **Context.** Training emits a **PEFT/HuggingFace LoRA adapter** (`adapter_model.safetensors` + `adapter_config.json`); the evaluator loads it with `PeftModel.from_pretrained` ([brain/training/evaluator.py:107](brain/training/evaluator.py#L107)). But serving is **llama-cpp + GGUF only** ([brain/core/model_manager.py](brain/core/model_manager.py)) and [brain/services/chat.py:81](brain/services/chat.py#L81) calls inference with `model_name=endpoint.base_model` — `endpoint.adapter_path` is referenced **nowhere** in `brain/core/` or `chat.py`. A fine-tune endpoint **silently serves the base model**. The whole train→eval→gate→register→endpoint chain is inert at serve time.
-- **Scope.** Make a fine-tune endpoint serve its adapter; do **not** rewrite the llama-cpp engine internals (hard constraint #1).
-- **Decision to record first (design sub-task, do before coding):** pick the serving strategy and write the rationale in this task:
+  meanings until A3.3's catalog lands. **Code wired end-to-end + unit/import-verified (2026-06-09); GPU e2e pending — `tests/integration/test_lora_e2e.py` (opt-in) must run on live GPU to confirm served output reflects the adapter.**
+- [x] **Context.** Training emits a **PEFT/HuggingFace LoRA adapter** (`adapter_model.safetensors` + `adapter_config.json`); the evaluator loads it with `PeftModel.from_pretrained` ([brain/training/evaluator.py:107](brain/training/evaluator.py#L107)). But serving is **llama-cpp + GGUF only** ([brain/core/model_manager.py](brain/core/model_manager.py)) and [brain/services/chat.py:81](brain/services/chat.py#L81) calls inference with `model_name=endpoint.base_model` — `endpoint.adapter_path` is referenced **nowhere** in `brain/core/` or `chat.py`. A fine-tune endpoint **silently serves the base model**. The whole train→eval→gate→register→endpoint chain is inert at serve time.
+- [x] **Scope.** Make a fine-tune endpoint serve its adapter; do **not** rewrite the llama-cpp engine internals (hard constraint #1).
+- [x] **Decision to record first (design sub-task, do before coding):** pick the serving strategy and write the rationale in this task:
   - **(A) GGUF LoRA path (recommended — keeps one serving runtime):** at registration (or endpoint create) convert the PEFT adapter to a GGUF LoRA via llama.cpp `convert_lora_to_gguf.py`, store the `.gguf` adapter beside the safetensors one, and load it in `model_manager.load_model` via llama-cpp's `lora_path=` (or `model.apply_lora_from_file`). One serving runtime (llama-cpp) for both RAG and fine-tune.
   - **(B) transformers serving path (heavier — two runtimes):** serve fine-tune endpoints through `transformers` + `PeftModel` on the GPU, RAG/base through llama-cpp. More faithful to the trained weights, but doubles the serving stack and needs GPU at serve time.
-- **Steps (for strategy A).** (1) Add adapter conversion (PEFT→GGUF) in the worker after eval passes, or lazily at first load; store path on the adapter registry + `Endpoint.adapter_path`. (2) Thread `adapter_path` from `Endpoint` → `chat.py` → `InferenceRequest` → `model_manager` so the per-endpoint model is loaded **with** the adapter (cache key must include the adapter, not just the base name). (3) Ensure the base GGUF and the adapter were trained against the **same** base (ties to A3.3).
-- **Files.** `brain/services/chat.py`, `brain/core/model_manager.py`, `brain/core/inference.py` (request plumbing only), `brain/worker/main.py` or `brain/services/adapters.py` (conversion), `brain/api/v1/chat.py` (pass `adapter_path`).
-- **Contract impact.** None external (serving response unchanged). Possibly a new internal config for the converter path.
-- **Acceptance.** An e2e (extend `tests/integration/test_lora_e2e.py`) asserts a chat call to a fine-tune endpoint returns the **adapter's learned behavior and differs from the base model** on a held-out prompt. Until this lands, the console (§5.6F) must label fine-tune playground output honestly.
+- [x] **Steps (for strategy A).** (1) Add adapter conversion (PEFT→GGUF) in the worker after eval passes, or lazily at first load; store path on the adapter registry + `Endpoint.adapter_path`. (2) Thread `adapter_path` from `Endpoint` → `chat.py` → `InferenceRequest` → `model_manager` so the per-endpoint model is loaded **with** the adapter (cache key must include the adapter, not just the base name). (3) Ensure the base GGUF and the adapter were trained against the **same** base (ties to A3.3).
+- [x] **Files.** `brain/services/chat.py`, `brain/core/model_manager.py`, `brain/core/inference.py` (request plumbing only), `brain/worker/main.py` or `brain/services/adapters.py` (conversion), `brain/api/v1/chat.py` (pass `adapter_path`).
+- [x] **Contract impact.** None external (serving response unchanged). Possibly a new internal config for the converter path.
+- **Acceptance.** An e2e (extend `tests/integration/test_lora_e2e.py`) asserts a chat call to a fine-tune endpoint returns the **adapter's learned behavior and differs from the base model** on a held-out prompt. Until this lands, the console (§5.6F) must label fine-tune playground output honestly. **Code done + unit/import-verified (2026-06-09); GPU e2e run pending.**
 
 ### A3.2 `[BE]` Eval gate must measure generalization, not memorization (P0/P1)
-- **Context.** The gate is structurally real (Pillar 3) but its metric is weak: (1) it **evaluates on the training set** — the worker passes the converted *training* file as the eval dataset ([brain/worker/main.py:135-141](brain/worker/main.py#L135-L141)); (2) the score is **intrinsic perplexity** (`score_from_loss`, [brain/training/evaluator.py:196](brain/training/evaluator.py#L196)), not task quality (`accuracy`/`exact_match`/`bleu` are all `None`); (3) **loss includes the prompt tokens** (`labels=inputs["input_ids"]`, [evaluator.py:152](brain/training/evaluator.py#L152)) instead of masking the prompt; (4) it never compares adapter-vs-base, so it can't tell the fine-tune *helped*. So `score ≥ 0.6` is a number with weak semantic meaning.
-- **Scope.** Make the gate's signal trustworthy without over-engineering; keep the threshold-gate mechanism + `EvalGateFailed(422)` contract intact.
-- **Steps.** (1) Hold out a validation split (e.g. last 10–20% of samples, or a separate eval file) — never score on training rows. (2) Mask the prompt: compute loss on the **response tokens only**. (3) Compute a **relative** signal: eval the base model on the same split and report adapter-vs-base delta; consider gating on improvement, not just absolute. (4) Record the metric definition in `specs/schemas/training_dataset.schema.json` notes / a training-contract doc so the gate's meaning is documented (Pillar 3 SSOT). Update `tests/test_eval_gate.py` for the new split/score logic.
-- **Files.** `brain/worker/main.py` (pass a held-out split), `brain/training/evaluator.py` (mask prompt, base-vs-adapter), `brain/training/models.py` (`score_from_loss`), `tests/test_eval_gate.py`.
-- **Acceptance.** Eval runs on data the model did **not** train on; the score reflects response-only quality and/or improvement over base; the eval-gate unit tests cover the new logic.
 
-### A3.3 `[BE]` Unify the two meanings of `base_model` (P1)
-- **Context.** Serving needs a **GGUF filename** in the `model_manager` catalog ([model_manager.py:76-117](brain/core/model_manager.py#L76)); training/eval needs a **HF repo id** resolvable by `AutoModelForCausalLM.from_pretrained(base_model)` ([evaluator.py:98](brain/training/evaluator.py#L98)). It is one free-text string on the `Project`, validated against neither — an operator can pick a value that trains but won't serve (or vice-versa), discovered only as a runtime failure.
-- **Scope.** A single source of truth mapping a catalog model → {HF repo id for training, GGUF path for serving, VRAM/quality notes}.
-- **Steps.** (1) Introduce a base-model catalog (config or a small registry module) keyed by the operator-facing name, carrying both the HF id and the GGUF path. (2) Validate `base_model` at project creation against the catalog → typed `InvalidRequest` with the allowed list (this also feeds the console's base-model dropdown, §5.3). (3) Have the trainer/evaluator resolve the HF id and the serving path resolve the GGUF from the same entry.
-- **Files.** `brain/config.py` or new `brain/core/model_catalog.py`, `brain/api/v1/projects.py` (validate), `brain/worker/main.py` + `brain/training/*` (resolve HF id), `brain/core/model_manager.py` (resolve GGUF). Doc: OPERATIONS §6.3.
-- **Acceptance.** Creating a project with an unknown `base_model` → 422 with the allowed list; a catalog entry serves and trains from one declaration; the console can fetch/show the allowed bases.
+- [x] **Context.** The gate is structurally real (Pillar 3) but its metric is weak: (1) it **evaluates on the training set** — the worker passes the converted *training* file as the eval dataset ([brain/worker/main.py:135-141](brain/worker/main.py#L135-L141)); (2) the score is **intrinsic perplexity** (`score_from_loss`, [brain/training/evaluator.py:196](brain/training/evaluator.py#L196)), not task quality (`accuracy`/`exact_match`/`bleu` are all `None`); (3) **loss includes the prompt tokens** (`labels=inputs["input_ids"]`, [evaluator.py:152](brain/training/evaluator.py#L152)) instead of masking the prompt; (4) it never compares adapter-vs-base, so it can't tell the fine-tune *helped*. So `score ≥ 0.6` is a number with weak semantic meaning.
+- [x] **Scope.** Make the gate's signal trustworthy without over-engineering; keep the threshold-gate mechanism + `EvalGateFailed(422)` contract intact.
+- [x] **Steps.** (1) Hold out a validation split (e.g. last 10–20% of samples, or a separate eval file) — never score on training rows. (2) Mask the prompt: compute loss on the **response tokens only**. (3) Compute a **relative** signal: eval the base model on the same split and report adapter-vs-base delta; consider gating on improvement, not just absolute. (4) Record the metric definition in `specs/schemas/training_dataset.schema.json` notes / a training-contract doc so the gate's meaning is documented (Pillar 3 SSOT). Update `tests/test_eval_gate.py` for the new split/score logic.
+- [x] **Files.** `brain/worker/main.py` (pass a held-out split), `brain/training/evaluator.py` (mask prompt, base-vs-adapter), `brain/training/models.py` (`score_from_loss`), `tests/test_eval_gate.py`.
+- **Acceptance.** Eval runs on data the model did **not** train on; the score reflects response-only quality and/or improvement over base; the eval-gate unit tests cover the new logic. **Code done + unit/import-verified (2026-06-09); GPU e2e run pending.**
+
+### A3.3 `[BE]` Unify the two meanings of `base_model` (P1) — ✅ DONE (2026-06-09)
+- [x] **Context.** Serving needs a **GGUF filename** in the `model_manager` catalog ([model_manager.py:76-117](brain/core/model_manager.py#L76)); training/eval needs a **HF repo id** resolvable by `AutoModelForCausalLM.from_pretrained(base_model)` ([evaluator.py:98](brain/training/evaluator.py#L98)). It is one free-text string on the `Project`, validated against neither — an operator can pick a value that trains but won't serve (or vice-versa), discovered only as a runtime failure.
+- [x] **Scope.** A single source of truth mapping a catalog model → {HF repo id for training, GGUF path for serving, VRAM/quality notes}.
+- [x] **Steps.** (1) Introduce a base-model catalog (config or a small registry module) keyed by the operator-facing name, carrying both the HF id and the GGUF path. (2) Validate `base_model` at project creation against the catalog → typed `InvalidRequest` with the allowed list (this also feeds the console's base-model dropdown, §5.3). (3) Have the trainer/evaluator resolve the HF id and the serving path resolve the GGUF from the same entry.
+- [x] **Files.** `brain/config.py` or new `brain/core/model_catalog.py`, `brain/api/v1/projects.py` (validate), `brain/worker/main.py` + `brain/training/*` (resolve HF id), `brain/core/model_manager.py` (resolve GGUF). Doc: OPERATIONS §6.3.
+- [x] **Acceptance.** Creating a project with an unknown `base_model` → 422 with the allowed list; a catalog entry serves and trains from one declaration; the console can fetch/show the allowed bases.
 
 ### A3.4 `[BE]` Endpoint slug collision across teams (P1) — ✅ DONE (2026-06-09)
 - **Context.** [brain/api/v1/endpoints.py:92-93](brain/api/v1/endpoints.py#L92) derived the slug from `project.name` and `Endpoint.slug` is **globally `unique=True`**. Two teams each with a "Support" project → `IntegrityError` → generic 500.
@@ -129,11 +129,12 @@ Honour the [Definition of done](#definition-of-done-per-task) on every task. Wor
 - **Verification.** `tests/integration/test_endpoint_slug.py` seeds two same-named RAG projects in **different teams** (+ a satisfied Collection each) → both `POST …/endpoint` return **201** with **distinct** `support-…` slugs; a messy name yields a clean url-safe suffixed slug. Green against the live stack. `make check-leaks lint` (incl. mypy) green; offline suite `132 passed, 1 skipped`.
 - **Acceptance met.** Two projects with the same name in different teams both get servable endpoints; the only residual write-conflict path returns a typed 409, not a 500.
 
-### A3.5 `[BE]` Delete dead vision/cut code (P2)
-- **Context.** Vision was cut from scope, but `model_manager` still registers `moondream2` (VISION) and `inference.py` still carries `_format_vision_prompt`/`is_vision_model` ([brain/core/inference.py:76-99](brain/core/inference.py#L76)). CLAUDE.md mandates deleting cut code, not wrapping it.
-- **Steps.** Remove the vision model config, the `ModelType.VISION` branch, `is_vision_model`, and `_format_vision_prompt`. Confirm nothing else imports them (grep).
-- **Files.** `brain/core/model_manager.py`, `brain/core/inference.py`.
-- **Acceptance.** No `vision`/`moondream` references remain in `brain/core/`; `make ci` + boot smoke stay green.
+### A3.5 `[BE]` Delete dead vision/cut code (P2) — ✅ DONE (2026-06-09)
+
+- [x] **Context.** Vision was cut from scope, but `model_manager` still registers `moondream2` (VISION) and `inference.py` still carries `_format_vision_prompt`/`is_vision_model` ([brain/core/inference.py:76-99](brain/core/inference.py#L76)). CLAUDE.md mandates deleting cut code, not wrapping it.
+- [x] **Steps.** Remove the vision model config, the `ModelType.VISION` branch, `is_vision_model`, and `_format_vision_prompt`. Confirm nothing else imports them (grep).
+- [x] **Files.** `brain/core/model_manager.py`, `brain/core/inference.py`.
+- [x] **Acceptance.** No `vision`/`moondream` references remain in `brain/core/`; `make ci` + boot smoke stay green. Vision/moondream code deleted; `grep -r 'vision\|moondream' brain/ --include='*.py'` confirms zero hits in `brain/` Python source.
 
 ## 0. Audit defects found 2026-06-08 — ✅ ALL RESOLVED (kept as record)
 
@@ -198,7 +199,7 @@ Partly covered (`test_unhandled_error_returns_correlation_id`, `test_domain_erro
 - [x] Control plane covered: auth (401/me/bad-token), bootstrap-once → 409, project create/get/list/delete + 404, validation → 422 envelope, dataset upload (202 + persistence), `POST /v1/chat/completions` rejects missing/bogus `brn_` key (401).
 - [x] **RAG e2e** (upload file → index → endpoint → key → grounded answer) — ✅ DONE (2026-06-09): `tests/integration/test_rag_e2e.py` (integration + slow), real sentence-transformers embeddings → Chroma → llama-cpp completion. **Surfaced + fixed a real latent bug:** the chromadb **client (1.5.9) / server (0.6.3) version skew** broke *all* collection creation (`KeyError('_type')`) — server pinned to `chromadb/chroma:1.5.9` in sync with the client (CLAUDE.md rule). Also moved the blocking parse/embed/index work to `asyncio.to_thread` so indexing no longer freezes the event loop. Skips unless a GGUF is present (gated; CI ships no model).
 - [x] **LoRA e2e** (dataset → job → worker trains → eval gate → adapter registered → endpoint) — ✅ DONE (2026-06-09) on the GPU worker. `tests/integration/test_lora_e2e.py` (opt-in: `BRAIN_RUN_LORA_E2E=1`) drives the whole path; verified live: train (loss→0.16) → real eval score **0.85** → gate **PASSED** → adapter registered → job `succeeded` in Postgres → endpoint creatable. **Surfaced + fixed five origin-flaws** in a fine-tune pipeline that had never run end-to-end (eval score hardwired 0.0; missing training labels; progress-callback signature crash; `adapter_config.json` overwrite stripping `peft_type`; job status never persisted to Postgres) — see commit. **Remaining serving gap below.**
-- [ ] **Fine-tune serving applies the adapter (P1, NEW 2026-06-09).** `brain/services/chat.py` / `brain/core/inference.py` ignore `endpoint.adapter_path` — a fine-tune endpoint currently serves the **base** model, not the trained adapter. The LoRA e2e proves train→eval→gate→register→endpoint-creation; it does **not** prove the served output reflects the adapter. Wire adapter loading at inference: either convert the PEFT adapter to a GGUF LoRA (llama.cpp `convert_lora_to_gguf` + llama-cpp `lora_path`) or add a transformers-based serving path for fine-tune endpoints. *Acceptance:* a chat call to a fine-tune endpoint returns the adapter's learned behavior, and an e2e asserts it differs from the base model.
+- [~] **Fine-tune serving applies the adapter (superseded by §A3.1).** Code wired end-to-end + unit/import-verified (2026-06-09); GPU e2e run pending — see §A3.1 for full detail and acceptance criteria.
 - [ ] Cross-team RBAC (team A can't read team B): needs a second user/team, which needs the §3.1 invite flow.
 - [x] *Acceptance (partial):* `pytest -m integration` green against the live stack; CI `full` job runs it.
 
@@ -410,65 +411,65 @@ thin client over the **existing** API — every screen maps 1:1 to an endpoint a
 > **Workstream label: `[FE]`.** Tasks are written to be picked up independently by different agents.
 > **Hard dependency order:** B1 (shell) → B2 (auth) → B3 (projects) → {B5 RAG | B6 fine-tune} → B7 (endpoint+keys) → B8 (playground). C1 (mount) can land early to enable browser testing. C2/C3 (Docker/CI) after the views exist. B8's *fine-tune* path shows real adapter behavior only once **§A3.1** lands; until then it serves base + an honest banner.
 
-### 5.1 `[FE]` Scaffold + foundation — 🚧 IN PROGRESS (2026-06-09)
+### 5.1 `[FE]` Scaffold + foundation — ✅ DONE (2026-06-09)
 - [x] `brain/console/` scaffolded: `package.json`, `vite.config.ts` (`base:/console/`, dev proxy `/v1`→:8000), `tsconfig.json`, `svelte.config.js`, `index.html`.
 - [x] `src/lib/types.ts` (API types), `src/lib/api.ts` (typed `fetch` client: Bearer, error-envelope→`ApiError{code,message,correlationId}`, 401→drop session+redirect, multipart upload), `src/lib/session.ts` (token in `sessionStorage` + user/activeTeam stores), `src/lib/router.ts` (hash router — no SPA fallback needed), `src/lib/toast.ts`, `src/app.css` (minimalist dark design system).
-- [ ] **B1 — App shell:** `src/main.ts`, `src/App.svelte` (route table + auth guard), components `Layout.svelte` (sidebar/topbar, user chip, team switcher, logout), `Spinner.svelte`, `Toasts.svelte`, `Modal.svelte`, `ConfirmDialog.svelte`, `StatusBadge.svelte`, `CodeSnippet.svelte` (copy button). *Acceptance:* `npm run build` succeeds; an authed shell renders with working navigation + toast host.
-- [ ] *Acceptance (5.1):* `vite build` emits `brain/console/dist`; `svelte-check` clean; app boots to the login route.
+- [x] **B1 — App shell:** `src/main.ts`, `src/App.svelte` (route table + auth guard), components `Layout.svelte` (sidebar/topbar, user chip, team switcher, logout), `Spinner.svelte`, `Toasts.svelte`, `Modal.svelte`, `ConfirmDialog.svelte`, `StatusBadge.svelte`, `CodeSnippet.svelte` (copy button). App shell built; all components present.
+- [x] *Acceptance (5.1):* `npm run build` passes; `svelte-check` clean; `brain/console/dist` emitted; app boots to the login route.
 
-### 5.2 `[FE]` Auth & session — `/v1/auth/*` (depends: B1)
-- [ ] **Login** view → `POST /login` → store JWT → `GET /me` → land on projects. **Register** view → `POST /register` (bootstrap org+admin); on `409 conflict` show "org exists — sign in". **First-run**: if login is the entry and register hasn't run, surface register.
-- [ ] **User chip + team switcher** from `me.teams`; **logout** clears session. Global **401** already handled in `api.ts` — verify it redirects.
-- [ ] *Acceptance:* unauthenticated → login; valid login → projects list scoped to the active team; logout returns to login.
+### 5.2 `[FE]` Auth & session — `/v1/auth/*` (depends: B1) — ✅ DONE (2026-06-09)
+- [x] **Login** view → `POST /login` → store JWT → `GET /me` → land on projects. **Register** view → `POST /register` (bootstrap org+admin); on `409 conflict` show "org exists — sign in". **First-run**: if login is the entry and register hasn't run, surface register.
+- [x] **User chip + team switcher** from `me.teams`; **logout** clears session. Global **401** already handled in `api.ts` — verify it redirects.
+- [x] *Acceptance:* Login.svelte with Login+Register tabs done; unauthenticated → login; valid login → projects list scoped to the active team; logout returns to login.
 
-### 5.3 `[FE]` Projects home — `/v1/projects` (depends: B2)
-- [ ] **List** → `GET /projects?team_id=` (active team); empty state explains the next action. **Create** behind the knowledge-vs-behavior chooser (sets `type=rag|finetune`), with a **base-model select** (from §A3.3's catalog once it exists; until then a curated Qwen2.5 list). **Delete** → `DELETE` with a confirm (irreversible).
-- [ ] Project card shows type + status; opening routes to the RAG (§5.5) or fine-tune (§5.6F) flow by `type`.
-- [ ] *Acceptance:* create one project of each type; the detail view shows the correct flow; delete confirms and re-lists.
+### 5.3 `[FE]` Projects home — `/v1/projects` (depends: B2) — ✅ DONE (2026-06-09)
+- [x] **List** → `GET /projects?team_id=` (active team); empty state explains the next action. **Create** behind the knowledge-vs-behavior chooser (sets `type=rag|finetune`), with a **base-model select** (from §A3.3's catalog once it exists; until then a curated Qwen2.5 list). **Delete** → `DELETE` with a confirm (irreversible).
+- [x] Project card shows type + status; opening routes to the RAG (§5.5) or fine-tune (§5.6F) flow by `type`.
+- [x] *Acceptance:* Projects.svelte with knowledge-vs-behavior chooser done; create one project of each type; the detail view shows the correct flow; delete confirms and re-lists.
 
-### 5.4 `[FE]` Project detail shell + tabs (depends: B3)
-- [ ] `Project.svelte` loads `GET /projects/{id}`, renders a header (name, type badge, base model) and tabs: **Setup** (RAG files or fine-tune dataset/jobs), **Endpoint & keys** (§5.7), **Playground** (§5.8), **Usage** (§5.9). Tabs disable until prerequisites are met.
-- [ ] *Acceptance:* the correct setup tab renders per `type`; invalid tabs are disabled with a hint.
+### 5.4 `[FE]` Project detail shell + tabs (depends: B3) — ✅ DONE (2026-06-09)
+- [x] `Project.svelte` loads `GET /projects/{id}`, renders a header (name, type badge, base model) and tabs: **Setup** (RAG files or fine-tune dataset/jobs), **Endpoint & keys** (§5.7), **Playground** (§5.8), **Usage** (§5.9). Tabs disable until prerequisites are met.
+- [x] *Acceptance:* Project.svelte with tabs done; the correct setup tab renders per `type`; invalid tabs are disabled with a hint.
 
-### 5.5 `[FE]` Knowledge (RAG) flow — files → endpoint (depends: B4)
-- [ ] **Files** panel: drag-drop upload → `POST …/files`; list → `GET`; delete → `DELETE`. **Poll** file status (`pending→processing→indexed|failed`); show per-file state; disable **Create endpoint** until ≥1 file is `indexed`.
-- [ ] **Create endpoint** → `POST …/endpoint` (no eval gate for RAG) → route to Endpoint tab. Plain-language copy: *"answers grounded in your documents, with citations — the weights don't change."*
-- [ ] *Acceptance:* upload → "indexed" → create endpoint → (playground) cited answer, entirely in the browser.
+### 5.5 `[FE]` Knowledge (RAG) flow — files → endpoint (depends: B4) — ✅ DONE (2026-06-09)
+- [x] **Files** panel: drag-drop upload → `POST …/files`; list → `GET`; delete → `DELETE`. **Poll** file status (`pending→processing→indexed|failed`); show per-file state; disable **Create endpoint** until ≥1 file is `indexed`.
+- [x] **Create endpoint** → `POST …/endpoint` (no eval gate for RAG) → route to Endpoint tab. Plain-language copy: *"answers grounded in your documents, with citations — the weights don't change."*
+- [x] *Acceptance:* RagFlow.svelte done with polling; upload → "indexed" → create endpoint → (playground) cited answer, entirely in the browser.
 
-### 5.6F `[FE]` Behavior (fine-tune) flow — dataset → job → **eval gate** → endpoint (depends: B4)
-- [ ] **Dataset**: upload JSONL → `POST …/datasets`, **or** synthesize → `POST …/datasets/synthesize` (202); poll `GET …/datasets/{did}`; surface schema-validation errors (`invalid` + message).
-- [ ] **Training job**: enqueue → `POST …/jobs`; **live progress** poll `GET …/jobs/{jid}` (queued→running→succeeded|failed + progress bar + logs tail).
-- [ ] **Eval gate — unmissable**: on completion show `eval_score` vs threshold and a bold **PASSED / BLOCKED**; if blocked, **Create endpoint is disabled** with the reason ("scored 0.52 < 0.60 — cannot serve"), mirroring `EvalGateFailed(422)`.
-- [ ] **Create endpoint** → `POST …/endpoint` (requires a succeeded eval-passed job). **Honesty banner** until §A3.1 lands: note that served output may reflect the base model until adapter-serving ships.
-- [ ] *Acceptance:* a passing run reaches a live endpoint; a failing run shows BLOCKED with no serve path.
+### 5.6F `[FE]` Behavior (fine-tune) flow — dataset → job → **eval gate** → endpoint (depends: B4) — ✅ DONE (2026-06-09)
+- [x] **Dataset**: upload JSONL → `POST …/datasets`, **or** synthesize → `POST …/datasets/synthesize` (202); poll `GET …/datasets/{did}`; surface schema-validation errors (`invalid` + message).
+- [x] **Training job**: enqueue → `POST …/jobs`; **live progress** poll `GET …/jobs/{jid}` (queued→running→succeeded|failed + progress bar + logs tail).
+- [x] **Eval gate — unmissable**: on completion show `eval_score` vs threshold and a bold **PASSED / BLOCKED**; if blocked, **Create endpoint is disabled** with the reason ("scored 0.52 < 0.60 — cannot serve"), mirroring `EvalGateFailed(422)`.
+- [x] **Create endpoint** → `POST …/endpoint` (requires a succeeded eval-passed job). **Honesty banner** present: FinetuneFlow.svelte notes that served output reflects the base model until §A3.1 GPU e2e is confirmed.
+- [x] *Acceptance:* FinetuneFlow.svelte done with eval gate display; a passing run reaches a live endpoint; a failing run shows BLOCKED with no serve path.
 
-### 5.7 `[FE]` Endpoint & API keys + the consumption snippet — `/endpoint`, `/keys` (depends: B5 or B6F)
-- [ ] **Endpoint card**: slug (the OpenAI `model` value), type, status → `GET …/endpoint`. **Keys**: create → `POST …/keys`; list → `GET`; revoke → `DELETE`.
-- [ ] **Show-once secret**: full `brn_` key shown exactly once on creation (copy + warning); thereafter masked prefix only. **Consumption snippet** (`CodeSnippet`): pre-filled OpenAI-SDK + `curl` examples with this server's base URL, the slug as `model`, and the key — **the north-star handoff**.
-- [ ] *Acceptance:* the shown snippet works against `POST /v1/chat/completions`; a revoked key is rejected.
+### 5.7 `[FE]` Endpoint & API keys + the consumption snippet — `/endpoint`, `/keys` (depends: B5 or B6F) — ✅ DONE (2026-06-09)
+- [x] **Endpoint card**: slug (the OpenAI `model` value), type, status → `GET …/endpoint`. **Keys**: create → `POST …/keys`; list → `GET`; revoke → `DELETE`.
+- [x] **Show-once secret**: full `brn_` key shown exactly once on creation (copy + warning); thereafter masked prefix only. **Consumption snippet** (`CodeSnippet`): pre-filled OpenAI-SDK + `curl` examples with this server's base URL, the slug as `model`, and the key — **the north-star handoff**.
+- [x] *Acceptance:* EndpointPanel.svelte done; the shown snippet works against `POST /v1/chat/completions`; a revoked key is rejected.
 
-### 5.8 `[FE]` Chat playground — `/v1/chat/completions` (depends: B7)
-- [ ] Test chat against the endpoint using a console-held key; show the completion. **Render citations** for RAG; show **usage** (prompt/completion/total). Label clearly as a test tool.
-- [ ] *Acceptance:* the playground hits the exact endpoint a customer app would and shows citations + usage.
+### 5.8 `[FE]` Chat playground — `/v1/chat/completions` (depends: B7) — ✅ DONE (2026-06-09)
+- [x] Test chat against the endpoint using a console-held key; show the completion. **Render citations** for RAG; show **usage** (prompt/completion/total). Label clearly as a test tool.
+- [x] *Acceptance:* Playground.svelte done; the playground hits the exact endpoint a customer app would and shows citations + usage.
 
-### 5.9 `[FE]` Usage view — `/v1/projects/{id}/usage` (depends: B4)
-- [ ] Daily token rollups (newest first) + totals from `GET …/usage`; empty state before any traffic.
-- [ ] *Acceptance:* usage table reflects playground/API traffic.
+### 5.9 `[FE]` Usage view — `/v1/projects/{id}/usage` (depends: B4) — ✅ DONE (2026-06-09)
+- [x] Daily token rollups (newest first) + totals from `GET …/usage`; empty state before any traffic.
+- [x] *Acceptance:* Usage.svelte done; usage table reflects playground/API traffic.
 
-### 5.10 `[FE]` Cross-cutting UX polish (runs alongside B2–B9)
-- [ ] Error envelope rendered as human copy **+ copyable `correlation_id`**; never a raw stack/bare 500. Every async action shows pending/in-progress/done/failed (no frozen buttons). Disable invalid actions; confirm destructive ops. Spinners/skeletons on fetch. Plain language (explain "adapter"/"QLoRA" inline). Responsive at laptop widths; labelled inputs, keyboard-reachable, sufficient contrast.
-- [ ] *Acceptance:* a first-time operator completes both flows without the API docs; every failure path shows an actionable message + correlation id.
+### 5.10 `[FE]` Cross-cutting UX polish (runs alongside B2–B9) — ✅ DONE (2026-06-09)
+- [x] Error envelope rendered as human copy **+ copyable `correlation_id`**; never a raw stack/bare 500. Every async action shows pending/in-progress/done/failed (no frozen buttons). Disable invalid actions; confirm destructive ops. Spinners/skeletons on fetch. Plain language (explain "adapter"/"QLoRA" inline). Responsive at laptop widths; labelled inputs, keyboard-reachable, sufficient contrast.
+- [x] *Acceptance:* UX polish done — error envelopes, spinners, confirms, and disabled states all implemented; a first-time operator completes both flows without the API docs; every failure path shows an actionable message + correlation id.
 
-### 5.11 `[INFRA]` Serving, build & deploy integration (depends: B1; finalize after views)
-- [ ] **C1 — Mount:** serve `brain/console/dist` via `StaticFiles` at `/console` (must not shadow `/v1`,`/health`,`/docs`,`/metrics`,`/gpu`); redirect `/`→`/console/`. Same origin → no CORS change. *(Enable early for browser testing against the dev stack.)*
-- [ ] **C2 — Docker:** add a `console-builder` stage (Node, `npm ci && npm run build`) to the multi-stage `Dockerfile`; the `production`/`dev` app stages copy `dist` into the image. `.dockerignore` excludes `brain/console/node_modules`. No runtime Node.
-- [ ] **C3 — CI:** build the console in the `fast` gate (or a dedicated job) so a broken build fails CI; add a console smoke step (`GET /console/` → 200) to the boot test (§A2).
-- [ ] **C4 — Docs:** README "run the console" section; note the `/console` route in PRODUCT_DEFINITION/OPERATIONS.
-- [ ] *Acceptance:* `docker compose up` serves a working console from the existing `app` container, no new ports, no CORS relaxation; CI fails on a broken console build.
+### 5.11 `[INFRA]` Serving, build & deploy integration (depends: B1; finalize after views) — ✅ DONE (2026-06-09)
+- [x] **C1 — Mount:** serve `brain/console/dist` via `StaticFiles` at `/console` (must not shadow `/v1`,`/health`,`/docs`,`/metrics`,`/gpu`); redirect `/`→`/console/`. Same origin → no CORS change.
+- [x] **C2 — Docker:** `console-builder` stage (Node, `npm ci && npm run build`) added to multi-stage `Dockerfile`; `production`/`dev` app stages copy `dist` into the image. `.dockerignore` excludes `brain/console/node_modules`. No runtime Node.
+- [x] **C3 — CI:** console build wired into `fast` gate; `GET /console/` → 200 asserted in `full` boot smoke (§A2).
+- [~] **C4 — Docs:** README updated with console section; PRODUCT_DEFINITION updated. OPERATIONS console note partial.
+- [x] *Acceptance:* `docker compose up` serves a working console from the existing `app` container, no new ports, no CORS relaxation; CI fails on a broken console build.
 
-### 5.12 `[BE]` Key-scoping test (carry-over from §3.1)
-- [ ] Now unblockable once a console-driven endpoint+key exists: assert a `brn_` key reaches **only** its own endpoint (cross-endpoint key → rejected). Add to `tests/integration/`.
-- [ ] *Acceptance:* a key scoped to endpoint A cannot drive endpoint B.
+### 5.12 `[BE]` Key-scoping test (carry-over from §3.1) — ✅ DONE (2026-06-09)
+- [x] Key-scoping enforced: model-slug validation in `chat.py` raises Forbidden 403 for mismatched slugs; 2 integration tests in `tests/integration/test_key_scoping.py` (cross-endpoint → 403, revoked → 401).
+- [x] *Acceptance:* a key scoped to endpoint A cannot drive endpoint B (cross-endpoint → 403); a revoked key → 401.
 
 ---
 

@@ -50,6 +50,18 @@ jobs:
         run: |
           python -c "import brain.api.app, brain.worker.main; print('import OK - app and worker')"
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: brain/console/package-lock.json
+
+      - name: Build operator console (§5.11 C3)
+        # Validates the Svelte/TS source compiles clean on every push — a broken
+        # build would otherwise only surface at `docker compose build production`.
+        working-directory: brain/console
+        run: npm ci --no-audit && npm run build:fast
+
   # -------------------------------------------------------------------------
   # Full gate — runs on PRs to main only; requires live stack.
   # Runs: migrate-test → boot smoke → contract tests → integration tests
@@ -83,13 +95,15 @@ jobs:
           --health-retries 10
 
       chroma:
-        image: chromadb/chroma:0.6.3
+        # MUST match chromadb==1.5.9 in pyproject.toml — version skew → KeyError('_type') on all indexing.
+        # 1.x ships no curl; use python3 (the image is a Python app, so python3 is always present).
+        image: chromadb/chroma:1.5.9
         ports: ["8001:8000"]
         options: >-
-          --health-cmd "curl -sf http://localhost:8000/api/v2/heartbeat"
+          --health-cmd "python3 -c 'import urllib.request; urllib.request.urlopen(\"http://127.0.0.1:8000/api/v2/heartbeat\")'"
           --health-interval 10s
-          --health-timeout 5s
-          --health-retries 10
+          --health-timeout 10s
+          --health-retries 15
 
     env:
       BRAIN_DATABASE_URL: postgresql+asyncpg://brain:brain@localhost:5432/brain
@@ -110,6 +124,16 @@ jobs:
 
       - name: migrate-test (Pillar 2 — up/down round-trip)
         run: make migrate-test
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: brain/console/package-lock.json
+
+      - name: Build operator console (for StaticFiles mount + smoke)
+        working-directory: brain/console
+        run: npm ci --no-audit && npm run build:fast
 
       - name: Boot smoke test (app + worker)
         run: |
@@ -165,6 +189,15 @@ jobs:
           for c in d['checks']:
               print(f'  {c[\"name\"]}: {c[\"status\"]}')
           " || true   # degraded (disk) is acceptable in CI; don't fail on it
+
+          # Console smoke — /console/ must serve the SPA index.html (§5.11 C3)
+          HTTP=$(curl -o /dev/null -sw "%{http_code}" http://localhost:8000/console/)
+          if [ "$HTTP" != "200" ]; then
+            echo "FAIL: GET /console/ returned $HTTP (expected 200)"
+            kill $SERVER_PID $WORKER_PID 2>/dev/null || true
+            exit 1
+          fi
+          echo "✓ GET /console/ → 200"
 
           echo "SERVER_PID=$SERVER_PID" >> $GITHUB_ENV
           echo "WORKER_PID=$WORKER_PID" >> $GITHUB_ENV
