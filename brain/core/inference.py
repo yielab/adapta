@@ -257,6 +257,23 @@ class InferenceEngine:
             # Rough estimate: 1 token ≈ 4 characters
             return len(text) // 4
 
+    def count_prompt_tokens(
+        self, model: Llama, messages: List[Message], system_prompt: Optional[str] = None
+    ) -> int:
+        """Token count of the FINAL formatted prompt, via the model's real tokenizer.
+
+        This is the exact text the model will be conditioned on, so it's the number
+        to budget against ``n_ctx`` (A4.3) — not a char/4 estimate."""
+        req = InferenceRequest(messages=messages, model_name="", system_prompt=system_prompt)
+        return self.count_tokens(model, self._format_chat_prompt(req))
+
+    def context_size(self, model: Llama) -> int:
+        """The model's context window (n_ctx); falls back to the configured max."""
+        try:
+            return int(model.n_ctx())
+        except Exception:  # pragma: no cover - defensive
+            return settings.max_context_length
+
 
 # Global inference engine instance
 inference_engine = InferenceEngine()

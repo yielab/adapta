@@ -52,7 +52,7 @@ Honour the [Definition of done](#definition-of-done-per-task) on every task. Wor
 | Docker dev/prod workflow | ✅ reworked 2026-06-08 — one multi-stage `Dockerfile`, non-root prod, dev toolchain baked in (no manual pip). See **§4**. |
 | Image size / CPU-only torch | ✅ app **1.87 GB** (was 6.45 GB), CPU-only torch, zero CUDA pkgs (2026-06-08). Worker keeps CUDA torch (verify-rebuild pending). See **§4.2**. |
 | Operator console (§5) | ✅ all views done (2026-06-09) — app shell, auth, projects, RAG flow, fine-tune flow, endpoint+keys, playground, usage, UX polish, mount+Docker+CI (C4 docs partial). Key-scoping (§5.12) enforced. |
-| **Staff audit (§A4)** | 🟡 **in progress** — done: A4.1 (concurrency-safe serving), A4.2 (crashed-job recovery), A4.5 (prod-by-default compose), A4.6 (auditable eval gate). Remaining P1: A4.3 (context-window guard), A4.4 (key-prefix index), A4.7 (provenance), A4.8 (model-cache bounds), A4.9 (auth rate-limit). Plus the P2 batch (A4.10–A4.12). |
+| **Staff audit (§A4)** | 🟡 **in progress** — done: A4.1 (concurrency-safe serving), A4.2 (crashed-job recovery), A4.3 (context-window guard + max_tokens cap), A4.4 (key-prefix index), A4.5 (prod-by-default compose), A4.6 (auditable eval gate). Remaining P1: A4.7 (provenance), A4.8 (model-cache bounds), A4.9 (auth rate-limit). Plus the P2 batch (A4.10–A4.12). |
 
 ---
 
@@ -200,18 +200,26 @@ Honour the [Definition of done](#definition-of-done-per-task) on every task. Wor
   use an isolated queue key so the live worker can't steal the jobs. `make ci` green (offline);
   migration down/up round-trip clean.
 
-### A4.3 `[BE]` Context-window overflow guard + `max_tokens` cap (P1)
-- **Context.** Nothing checks prompt + RAG context + `max_tokens` against the model's `n_ctx`.
-  llama-cpp silently truncates an oversized prompt — for RAG the chunks are injected **before**
-  the question, so the user's question is what gets cut. Client `max_tokens` is also uncapped
-  ([brain/api/v1/chat.py:41](brain/api/v1/chat.py#L41)) — `max_tokens=999999` is accepted.
-- **Steps.** (1) Token-count the assembled prompt before dispatch (the llama tokenizer is already
-  loaded — don't use the ±50% char/4 fallback). (2) If over budget: drop lowest-relevance RAG
-  chunks first; if still over, typed 422. (3) Clamp `max_tokens` to
-  `min(request, settings.max_tokens, n_ctx − prompt_tokens)`.
-- **Files.** `brain/services/chat.py`, `brain/core/inference.py`, `brain/config.py`, tests.
-- **Acceptance.** An oversized prompt → typed 422, never silent truncation; a long-context RAG
-  call keeps the question + the top chunks; an absurd `max_tokens` is clamped, not honored.
+### A4.3 `[BE]` Context-window overflow guard + `max_tokens` cap (P1) — ✅ DONE (2026-06-10)
+- [x] **Context.** Nothing checked prompt + RAG context + `max_tokens` against the model's `n_ctx`.
+  llama-cpp silently truncated an oversized prompt — and since RAG injects chunks **before** the
+  question, the question is what got cut. Client `max_tokens` was uncapped (`max_tokens=999999`
+  accepted).
+- [x] **Done.** New `_fit_context` in `brain/services/chat.py` runs after the model is loaded and
+  before dispatch: it counts the **real** tokenized prompt (`inference_engine.count_prompt_tokens`,
+  using the model's tokenizer — no char/4 estimate) against `n_ctx`
+  (`inference_engine.context_size`), **drops the lowest-relevance RAG chunks first** (retrieval
+  returns them most-relevant-first; citations then reflect the kept chunks), and raises a typed
+  `InvalidRequest` (422) if the prompt can't leave room to answer even with zero chunks — never a
+  silent truncation. `max_tokens` is capped to `min(request, settings.max_tokens, n_ctx − prompt)`.
+  Both the streaming and non-streaming paths share the logic (and a new `_build_system` helper that
+  de-dupes the RAG-context wording).
+- [x] **Files.** `brain/core/inference.py` (`count_prompt_tokens`, `context_size`),
+  `brain/services/chat.py` (`_build_system`, `_fit_context`, both paths reordered), `tests/test_context_fit.py`.
+- **Acceptance met.** `tests/test_context_fit.py` (4 pure tests): fits-without-dropping clamps
+  max_tokens; over-budget drops the lowest-relevance chunk(s) until it fits; an unfittable prompt
+  raises 422. Verified end-to-end against a real GGUF (`tests/test_inference_slow.py`, 2 passed —
+  streaming + non-streaming through the refactored path). `make ci` green.
 
 ### A4.4 `[BE]` API-key auth hot path: index the lookup (P1)
 - **Context.** `api_keys.key_prefix` is `String(8)` with **no index**

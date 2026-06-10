@@ -15,10 +15,15 @@ from typing import AsyncIterator, List, Optional
 from brain.config import settings
 from brain.core import inference_engine, model_manager
 from brain.core.inference import InferenceRequest, InferenceResponse, Message
-from brain.domain.errors import DomainError, InferenceFailed, ModelNotFound
+from brain.domain.errors import DomainError, InferenceFailed, InvalidRequest, ModelNotFound
 from brain.services.rag import get_rag_service
 
 logger = logging.getLogger(__name__)
+
+# Minimum tokens reserved for the answer when fitting a prompt to the context
+# window (A4.3): we never let the prompt consume so much of n_ctx that there's no
+# room left to generate.
+_MIN_GEN_RESERVE = 16
 
 
 async def _load_model(model_name: str, adapter_path: Optional[str] = None):
@@ -29,6 +34,52 @@ async def _load_model(model_name: str, adapter_path: Optional[str] = None):
             message=f"Model '{model_name}' could not be loaded",
             internal_detail=str(exc),
         ) from exc
+
+
+def _build_system(base_system: Optional[str], rag_service, rag_chunks: list) -> Optional[str]:
+    """Assemble the system prompt, injecting the RAG context block when present.
+    Centralizes the wording shared by the streaming and non-streaming paths."""
+    base = base_system or ""
+    if not rag_chunks or rag_service is None:
+        return base or None
+    context_block = rag_service.build_context_block(rag_chunks)
+    combined = (
+        f"{base}\n\nUse the following context to answer. "
+        f"Cite sources by their [N] number.\n\n{context_block}"
+    ).strip()
+    return combined or None
+
+
+def _fit_context(*, count_fn, n_ctx: int, base_system: Optional[str], rag_service,
+                 rag_chunks: list, max_tokens: int):
+    """Fit the prompt into the model's context window (A4.3).
+
+    llama-cpp silently truncates an over-long prompt — and since RAG context is
+    injected BEFORE the user's question, the question is what gets cut. So instead
+    we: drop the lowest-relevance RAG chunks first (retrieval returns them
+    most-relevant-first), then, if the prompt still doesn't leave room for an
+    answer even with zero chunks, reject with a typed 422 rather than truncate
+    silently. Finally clamp ``max_tokens`` to what's left of n_ctx.
+
+    ``count_fn(system_prompt) -> int`` returns the real tokenized prompt length.
+    Returns ``(system_prompt, kept_chunks, capped_max_tokens)``.
+    """
+    chunks = list(rag_chunks)
+    while True:
+        system_prompt = _build_system(base_system, rag_service, chunks)
+        n_prompt = count_fn(system_prompt)
+        if n_prompt + min(_MIN_GEN_RESERVE, max_tokens) <= n_ctx:
+            return system_prompt, chunks, max(1, min(max_tokens, n_ctx - n_prompt))
+        if chunks:
+            chunks.pop()  # drop the least-relevant retrieved chunk and retry
+            continue
+        raise InvalidRequest(
+            message=(
+                f"Prompt is too long ({n_prompt} tokens) for the model's {n_ctx}-token "
+                "context window — even with no retrieved context there's no room to "
+                "answer. Shorten your input."
+            )
+        )
 
 
 async def chat(
@@ -51,24 +102,32 @@ async def chat(
     Returns an OpenAI-compatible response dict with optional citations.
     """
     temperature = temperature if temperature is not None else settings.temperature
-    max_tokens = max_tokens or settings.max_tokens
+    # Cap the client's max_tokens at the configured ceiling (A4.3) — an uncapped
+    # request (e.g. max_tokens=999999) could OOM or hang the engine.
+    max_tokens = min(max_tokens or settings.max_tokens, settings.max_tokens)
     top_p = top_p or settings.top_p
 
-    rag_chunks = []
-    full_system = system_prompt or ""
-
+    rag_chunks: list = []
+    rag_service = None
     if project_id:
         rag_service = get_rag_service()
         query = messages[-1].get("content", "") if messages else ""
         rag_chunks = rag_service.retrieve(project_id, query, top_k=top_k_rag or settings.rag_top_k)
-        if rag_chunks:
-            context_block = rag_service.build_context_block(rag_chunks)
-            full_system = (
-                f"{full_system}\n\nUse the following context to answer. "
-                f"Cite sources by their [N] number.\n\n{context_block}"
-            ).strip()
 
     inference_messages = [Message(role=m["role"], content=m["content"]) for m in messages]
+
+    model_obj = await _load_model(model_name, adapter_path=adapter_path)
+    lock = model_manager.get_inference_lock(model_name, adapter_path)
+
+    # Fit prompt + answer into the model's context window before dispatch.
+    full_system, rag_chunks, max_tokens = _fit_context(
+        count_fn=lambda sp: inference_engine.count_prompt_tokens(model_obj, inference_messages, sp),
+        n_ctx=inference_engine.context_size(model_obj),
+        base_system=system_prompt,
+        rag_service=rag_service,
+        rag_chunks=rag_chunks,
+        max_tokens=max_tokens,
+    )
 
     req = InferenceRequest(
         messages=inference_messages,
@@ -77,12 +136,9 @@ async def chat(
         top_p=top_p,
         max_tokens=max_tokens,
         stream=False,
-        system_prompt=full_system or None,
+        system_prompt=full_system,
         adapter_path=adapter_path,
     )
-
-    model_obj = await _load_model(model_name, adapter_path=adapter_path)
-    lock = model_manager.get_inference_lock(model_name, adapter_path)
     try:
         response: InferenceResponse = await inference_engine.generate(model_obj, req, lock=lock)
     except DomainError:
@@ -138,33 +194,39 @@ async def chat_stream(
     import json
 
     temperature = temperature if temperature is not None else settings.temperature
-    max_tokens = max_tokens or settings.max_tokens
+    max_tokens = min(max_tokens or settings.max_tokens, settings.max_tokens)  # cap (A4.3)
 
-    full_system = system_prompt or ""
+    rag_chunks: list = []
+    rag_service = None
     if project_id:
         rag_service = get_rag_service()
         query = messages[-1].get("content", "") if messages else ""
         rag_chunks = rag_service.retrieve(project_id, query, top_k=top_k_rag or settings.rag_top_k)
-        if rag_chunks:
-            context_block = rag_service.build_context_block(rag_chunks)
-            full_system = (
-                f"{full_system}\n\nUse the following context to answer. "
-                f"Cite sources by their [N] number.\n\n{context_block}"
-            ).strip()
 
     inference_messages = [Message(role=m["role"], content=m["content"]) for m in messages]
+
+    model_obj = await _load_model(model_name, adapter_path=adapter_path)
+    lock = model_manager.get_inference_lock(model_name, adapter_path)
+
+    # Fit prompt + answer into the context window before streaming (A4.3).
+    full_system, rag_chunks, max_tokens = _fit_context(
+        count_fn=lambda sp: inference_engine.count_prompt_tokens(model_obj, inference_messages, sp),
+        n_ctx=inference_engine.context_size(model_obj),
+        base_system=system_prompt,
+        rag_service=rag_service,
+        rag_chunks=rag_chunks,
+        max_tokens=max_tokens,
+    )
+
     req = InferenceRequest(
         messages=inference_messages,
         model_name=model_name,
         temperature=temperature,
         max_tokens=max_tokens,
         stream=True,
-        system_prompt=full_system or None,
+        system_prompt=full_system,
         adapter_path=adapter_path,
     )
-
-    model_obj = await _load_model(model_name, adapter_path=adapter_path)
-    lock = model_manager.get_inference_lock(model_name, adapter_path)
     chunk_id = f"chatcmpl-{uuid.uuid4().hex[:8]}"
     created = int(time.time())
 
