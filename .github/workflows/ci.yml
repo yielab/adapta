@@ -137,6 +137,9 @@ jobs:
       BRAIN_CHROMA_HOST: localhost
       BRAIN_CHROMA_PORT: "8001"
       BRAIN_SECRET_KEY: ci-secret-key-not-for-production
+      # Point all data dirs at a writable tmp path — the CI runner has no /app.
+      # Subdirs (models, uploads, adapters, datasets) derive automatically from this.
+      BRAIN_DATA_DIR: /tmp/brain-ci-data
 
     steps:
       - uses: actions/checkout@v4

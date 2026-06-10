@@ -3,8 +3,9 @@ All env vars are prefixed BRAIN_ (e.g. BRAIN_DATABASE_URL).
 """
 
 from pathlib import Path
+from typing import Optional
 
-from pydantic import model_validator
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _DEFAULT_SECRET = "CHANGE_ME_IN_PRODUCTION_use_openssl_rand_hex_32"
@@ -23,12 +24,13 @@ class Settings(BaseSettings):
     workers: int = 1
     reload: bool = False
 
-    # Paths
+    # Paths — set BRAIN_DATA_DIR to override the root; subdirs default to
+    # data_dir/{models,uploads,adapters,datasets} but can be overridden individually.
     data_dir: Path = Path("/app/data")
-    models_dir: Path = Path("/app/data/models")
-    uploads_dir: Path = Path("/app/data/uploads")
-    adapters_dir: Path = Path("/app/data/adapters")
-    datasets_dir: Path = Path("/app/data/datasets")
+    models_dir: Optional[Path] = Field(default=None)
+    uploads_dir: Optional[Path] = Field(default=None)
+    adapters_dir: Optional[Path] = Field(default=None)
+    datasets_dir: Optional[Path] = Field(default=None)
 
     # Database (Postgres via asyncpg)
     database_url: str = "postgresql+asyncpg://brain:brain@postgres:5432/brain"
@@ -121,6 +123,18 @@ class Settings(BaseSettings):
     metrics_enabled: bool = True  # expose GET /metrics (Prometheus text format)
 
     @model_validator(mode="after")
+    def _derive_subdirs(self) -> "Settings":
+        if self.models_dir is None:
+            self.models_dir = self.data_dir / "models"
+        if self.uploads_dir is None:
+            self.uploads_dir = self.data_dir / "uploads"
+        if self.adapters_dir is None:
+            self.adapters_dir = self.data_dir / "adapters"
+        if self.datasets_dir is None:
+            self.datasets_dir = self.data_dir / "datasets"
+        return self
+
+    @model_validator(mode="after")
     def _enforce_production_security(self) -> "Settings":
         """Fail fast at startup if a production deploy still carries weak defaults.
 
@@ -153,6 +167,7 @@ class Settings(BaseSettings):
 
     def ensure_dirs(self) -> None:
         for d in [self.data_dir, self.models_dir, self.uploads_dir, self.adapters_dir, self.datasets_dir]:
+            assert d is not None
             d.mkdir(parents=True, exist_ok=True)
 
 
