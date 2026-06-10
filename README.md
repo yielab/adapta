@@ -1,5 +1,12 @@
 # Brain From Cero
 
+[![CI](https://github.com/santiagoyie/brainFromCero/actions/workflows/ci.yml/badge.svg)](https://github.com/santiagoyie/brainFromCero/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Python 3.11](https://img.shields.io/badge/python-3.11-blue.svg)](https://www.python.org/downloads/release/python-3110/)
+[![Docker](https://img.shields.io/badge/docker-compose-2496ED?logo=docker&logoColor=white)](docker-compose.yml)
+[![Self-hosted](https://img.shields.io/badge/deployment-self--hosted-green.svg)](#architecture)
+[![OpenAI-compatible](https://img.shields.io/badge/API-OpenAI--compatible-412991?logo=openai&logoColor=white)](#api-consumption)
+
 **A self-hosted platform for customizing and serving private language models. Deploy it on your own servers, specialize a model two ways — Knowledge (RAG) or Fine-tuning (LoRA) — and consume each as an OpenAI-compatible API. Your data never leaves your infrastructure.**
 
 ---

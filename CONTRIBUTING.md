@@ -9,15 +9,12 @@ Brain From Cero is a self-hosted RAG + LoRA model-customization platform in earl
 > **All Python/pip operations run inside the Docker container — never on the host.**
 
 ```bash
-git clone https://github.com/yourusername/brainFromCero
+git clone https://github.com/santiagoyie/brainFromCero
 cd brainFromCero
 
 # Start the full stack
 export BRAIN_SECRET_KEY="$(openssl rand -hex 32)"
 docker compose up -d
-
-# Apply the schema
-docker compose exec app alembic upgrade head
 
 # Run tests (inside container)
 docker compose exec app pytest tests/ -v
@@ -112,21 +109,18 @@ Steps for a schema change:
 
 ### High priority
 
-- **Integration tests** — tests that hit real Postgres, Redis, and Chroma (requires the full Docker stack). Currently there are only 22 in-process unit tests.
-- **Test coverage ratchet** — target 50%; currently baseline is being established.
-- **VRAM requirements table** — document minimum VRAM per base model size in `docs/`.
-- **Team invitation flow** — `POST /v1/auth/invite` to add a user to a team without re-bootstrapping.
+- **Test coverage ratchet** — floor is enforced at 30%; target is 50%. More integration tests (tests that hit real Postgres, Redis, and Chroma) are the highest-value additions. The full stack is needed for these; the CI `full` job provides the pattern.
+- **Additional base models** — test with GGUF models beyond the Qwen2.5 family; document VRAM requirements and quality trade-offs in `docs/OPERATIONS.md`.
 
 ### Medium priority
 
-- **Usage metering persistence** — token counts are returned in API responses but not stored in DB. Needs a `usage_events` table and migration.
-- **Optional Prometheus/Grafana** — add as an optional Docker Compose profile (already removed from default stack).
-- **Backup/restore runbook** — document `pg_dump` + adapter artifact backup procedure.
+- **Optional Prometheus/Grafana** — add as an optional Docker Compose profile (already removed from the default stack to keep it lean).
+- **Backup/restore runbook** — document `pg_dump` + adapter artifact backup procedure in `docs/OPERATIONS.md`.
 
 ### Lower priority
 
-- **`import-linter` contract** — enforce that `brain/domain/` imports nothing from `brain/api/` or FastAPI.
-- **Additional base models** — test with GGUF models beyond the Qwen2.5 family; document VRAM + quality tradeoffs.
+- **Cross-team RBAC e2e test** — seeding a second user/team to test viewer isolation end-to-end.
+- **Additional dataset synthesis strategies** — the current synthesizer produces Q/A pairs; other instruction formats (summarization, classification) are possible extensions.
 
 ---
 

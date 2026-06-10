@@ -1,107 +1,87 @@
 # Security Policy
 
-## Disclaimer
+## Supported versions
 
-Brain is an experimental R&D project for local AI infrastructure. It is **NOT** intended for production use with sensitive data. This project is designed for:
+Brain From Cero is pre-1.0 software. Security fixes are applied to the `main` branch only.
 
-- Local development and testing
-- Learning AI infrastructure patterns
-- Research and experimentation
+---
 
-**DO NOT** use Brain in production environments or with sensitive/confidential data.
+## Reporting a vulnerability
 
-## Security Considerations
+**Do not open a public GitHub issue for security vulnerabilities.**
 
-### Local-First Design
+Report privately via the [GitHub Security Advisory](https://github.com/santiagoyie/brainFromCero/security/advisories/new) feature. Include:
 
-Brain is designed to run locally on your hardware:
-- All inference happens on your machine
-- No data is sent to external services by default
-- Models are stored and run locally
-- API endpoints are meant for local access only
-
-### Known Security Limitations
-
-1. **No Authentication**: The API server has no built-in authentication
-2. **No Encryption**: Local API communication is unencrypted
-3. **File Access**: Tool functions can read/write local files (sandboxed to data directory)
-4. **Low Test Coverage**: ~14% test coverage may hide security issues
-5. **Experimental Code**: Many features are partially implemented
-
-### Deployment Recommendations
-
-If you choose to deploy Brain despite the warnings:
-
-1. **Never expose to public internet** without proper authentication/authorization
-2. **Use reverse proxy** (nginx, Caddy) with TLS and authentication
-3. **Restrict file system access** via Docker or system permissions
-4. **Monitor resource usage** as inference can be resource-intensive
-5. **Validate all inputs** especially for tool calling features
-6. **Run in isolated environment** (container, VM)
-
-## Reporting Security Issues
-
-If you discover a security vulnerability:
-
-1. **DO NOT** create a public GitHub issue
-2. Instead, please report it privately via:
-   - GitHub Security Advisory feature (once repository is public)
-   - Or create a private issue with details
-
-Include in your report:
-- Description of the vulnerability
+- A description of the vulnerability and its impact
 - Steps to reproduce
-- Potential impact
-- Suggested fix (if any)
+- Affected versions / components
+- Suggested fix if you have one
 
-## Security Best Practices for Contributors
+You can expect an initial response within 5 business days.
 
-When contributing code:
+---
 
-1. **Never commit secrets** (API keys, passwords, tokens)
-2. **Validate inputs** for all user-facing functions
-3. **Use parameterized queries** for any database operations
-4. **Limit file operations** to designated directories
-5. **Add input size limits** to prevent DoS
-6. **Document security implications** of new features
+## Security model
 
-## Third-Party Dependencies
+Brain From Cero is **single-tenant, on-premises software**. Your organization operates the server; no data leaves your infrastructure.
 
-Brain uses several third-party libraries. Security considerations:
+### Authentication
 
-- **llama-cpp-python**: Handles model inference
-- **FastAPI**: Web framework with built-in security features
-- **ChromaDB**: Vector database for embeddings
-- **Transformers**: Hugging Face models
+- **Operators** (the console and control-plane API) authenticate via **JWT** issued at `POST /v1/auth/login`. Tokens expire; the secret is set in `.env` (`BRAIN_SECRET_KEY`).
+- **Passwords** are hashed with **bcrypt** (direct bcrypt, SHA-256 pre-hash to handle long inputs). No plaintext passwords are stored.
+- **Client applications** authenticate with **scoped `brn_*` API keys**, each bound to a single project endpoint. Keys are bcrypt-hashed in the database; the raw key is shown once at generation time.
 
-Keep dependencies updated for security patches:
+### Authorization
+
+- RBAC with two roles: **admin** (full project and team management) and **viewer** (read-only).
+- A `brn_*` key cannot drive any endpoint other than the one it was issued for — the auth layer enforces this before any inference runs.
+
+### Network exposure
+
+- By default the stack binds to `localhost:8000` and is not TLS-terminated by the application itself.
+- **For any deployment beyond a single developer's laptop:** put Caddy or nginx in front with TLS. A reference `Caddyfile` and `Caddyfile.local` are included.
+- Never expose port 8000 directly to the internet.
+
+### Secrets management
+
+Generate a strong JWT secret before first run:
+
 ```bash
-pip install --upgrade -r requirements.txt
+sed -i "s|^BRAIN_SECRET_KEY=.*|BRAIN_SECRET_KEY=$(openssl rand -hex 32)|" .env
 ```
 
-## Data Privacy
+Set a strong `POSTGRES_PASSWORD` in `.env`. The `.env` file is gitignored — never commit it.
 
-Brain processes data locally:
+### Data privacy
 
-- **Models**: Downloaded models stay on your machine
-- **Conversations**: Stored locally in PostgreSQL/SQLite
-- **Embeddings**: Cached locally in ChromaDB
-- **Logs**: Written to local filesystem
+Everything is on-premises by design:
 
-No telemetry or analytics are collected by Brain itself.
+- Documents, embeddings (ChromaDB), and training datasets stay on your server.
+- Inference (llama-cpp-python) runs locally — no call to any external API.
+- No telemetry or analytics are collected.
 
-## Responsible AI Use
+---
 
-When using Brain:
+## Security best practices for contributors
 
-- Be aware of model biases and limitations
-- Don't use for critical decision-making
-- Validate all AI-generated content
-- Consider ethical implications of your use case
-- Follow model licenses and terms of use
+1. **Never commit secrets** — API keys, passwords, tokens, or `.env` files.
+2. **Never write `raise HTTPException(detail=str(e))`** — use the typed `DomainError` taxonomy in `brain/domain/errors.py`. The `make check-leaks` CI gate enforces this.
+3. **Use parameterized queries** — SQLAlchemy ORM is the only way to touch the database; raw SQL is prohibited.
+4. **Validate at system boundaries** — all external inputs are validated by Pydantic models generated from `specs/openapi.yaml`.
+5. Run `make check-leaks` before every PR.
 
-## Contact
+---
 
-For security concerns or questions about this policy, please open a GitHub issue (for non-sensitive topics) or contact via security advisory (for vulnerabilities).
+## Third-party dependencies
 
-Remember: Brain is an experimental project for learning and research. Use at your own risk.
+Key security-relevant libraries:
+
+| Library | Role |
+| --- | --- |
+| `bcrypt` | Password hashing |
+| `python-jose` | JWT signing / verification |
+| `fastapi` | HTTP framework with Pydantic input validation |
+| `sqlalchemy` | ORM (parameterized queries) |
+| `llama-cpp-python` | Local GGUF inference — no outbound network calls |
+
+Dependency versions are pinned in `pyproject.toml`. To update, edit `pyproject.toml` and rebuild the container — never `pip install` on the host.

@@ -83,7 +83,6 @@ async def test_key_cannot_drive_foreign_endpoint(client, admin):
     ep_a = await client.post(f"/v1/projects/{pid_a}/endpoint", headers=admin["headers"])
     ep_b = await client.post(f"/v1/projects/{pid_b}/endpoint", headers=admin["headers"])
     assert ep_a.status_code == 201 and ep_b.status_code == 201
-    slug_a = ep_a.json()["slug"]
     slug_b = ep_b.json()["slug"]
 
     # Key for endpoint A only
