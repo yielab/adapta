@@ -55,7 +55,7 @@ Make a model answer **from your documents**.
 Change **how a model behaves** — tone, format, or a specific skill.
 
 - **Input:** instruction dataset (prompt/response pairs as JSONL) — uploaded, or **synthesized by the platform from your indexed documents**.
-- **How:** validate → train a LoRA adapter (QLoRA, 4-bit) on a GPU worker → evaluate → register if score ≥ 0.6.
+- **How:** validate → train a LoRA adapter (QLoRA, 4-bit) on a GPU worker → evaluate on a held-out split → register if it passes the eval gate (score ≥ 0.6, **or** a clear improvement over the base model).
 - **Serving:** base model + your adapter, served once it passes the **evaluation gate**.
 - **Hardware:** requires a CUDA GPU (8 GB+ VRAM recommended for a 3B model).
 - **Use it for:** house style, structured output, domain tasks the base model does poorly.
@@ -211,7 +211,7 @@ docker compose exec -e BRAIN_RUN_LORA_E2E=1 app \
   python -m pytest -m "integration and slow" tests/integration/test_lora_e2e.py -s
 ```
 
-This test downloads ~1 GB (the base model's HuggingFace weights for training), trains for a few minutes on the GPU, and passes if `eval_score >= 0.6`. Expected output ends with `1 passed`.
+This test downloads the base model's HuggingFace weights for training, trains for a few minutes on the GPU, and passes when the adapter clears the eval gate (absolute score ≥ 0.6, or a clear improvement over base) and then **serves the adapter** — the served answer contains an invented word the base model can't know, proving the LoRA is applied at serve time. Expected output ends with `1 passed`.
 
 ---
 
@@ -295,7 +295,7 @@ Phases 0–5 are complete. Pre-first-customer software: the core platform is bui
 | Operator console | ✅ Done | Browser UI at `/console/` — full RAG + fine-tune lifecycle, endpoint+keys, playground, usage |
 | OpenAI-compatible serving | ✅ Done | `POST /v1/chat/completions`; base model + GGUF LoRA adapter; key-scoped |
 | RAG retrieval with citations | ✅ Done | Real sentence-transformers embeddings; PDF/DOCX/MD/TXT/HTML; per-project ChromaDB |
-| LoRA training pipeline | ✅ Done | QLoRA (4-bit) on GPU worker; eval gate ≥ 0.6; PEFT→GGUF conversion after gate passes |
+| LoRA training pipeline | ✅ Done | QLoRA (4-bit) on GPU worker; eval gate (≥ 0.6 or beats base); PEFT→GGUF conversion after gate passes; served adapter verified end-to-end |
 | Eval gate | ✅ Done | Held-out split, response-only loss, base-vs-adapter delta; `EvalGateFailed(422)` if below threshold |
 | Dataset synthesis | ✅ Done | `POST /datasets/synthesize` — indexed docs → LLM Q/A pairs → JSONL |
 | Auth / teams / RBAC | ✅ Done | bcrypt + JWT; orgs/teams/roles; invite flow; viewer read-only role |
@@ -316,7 +316,7 @@ Contract-driven (Extended SDD). Three contracts — change the contract before t
 | --- | --- | --- |
 | **API** | `specs/openapi.yaml` | `make test-contracts` (schemathesis) |
 | **DB schema** | Alembic migrations | `make migrate-test` (up/down) |
-| **Model/training** | dataset JSON Schema + eval threshold | eval gate (score ≥ 0.6) |
+| **Model/training** | dataset JSON Schema + eval threshold | eval gate (score ≥ 0.6, or improvement over base) |
 
 All `make` targets run **inside the app container** (`docker compose exec app make <target>`):
 

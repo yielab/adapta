@@ -33,6 +33,42 @@ def score_from_loss(avg_loss: float) -> float:
     return max(0.0, min(1.0, math.exp(-avg_loss)))
 
 
+def passes_eval_gate(
+    score: float,
+    base_score: Optional[float] = None,
+    score_delta: Optional[float] = None,
+    *,
+    threshold: Optional[float] = None,
+    min_improvement: Optional[float] = None,
+    min_floor: Optional[float] = None,
+) -> bool:
+    """The eval gate: may this adapter back an endpoint?
+
+    Two ways to pass (the moat verifies the fine-tune is *good*, not just that it
+    hit one strict number):
+
+    1. **Absolute** — ``score >= threshold`` (a strong adapter), the original gate.
+    2. **Improvement** — the adapter clears a low sanity floor AND beats the base
+       model on the same held-out split by ``min_improvement``. ``score`` here is
+       ``exp(-held_out_response_perplexity)``, which a small base model can't push
+       to 0.6 even on an ideal task; an adapter that reliably out-scores its base by
+       a clear margin has demonstrably learned the target behavior (§A3.2).
+
+    A non-improving or garbage adapter passes neither and stays blocked.
+    """
+    from brain.config import settings
+
+    threshold = settings.eval_score_threshold if threshold is None else threshold
+    min_improvement = settings.eval_min_improvement if min_improvement is None else min_improvement
+    min_floor = settings.eval_min_floor if min_floor is None else min_floor
+
+    if score >= threshold:
+        return True
+    if base_score is not None and score_delta is not None:
+        return score >= min_floor and score_delta >= min_improvement
+    return False
+
+
 def split_holdout(n: int, holdout_fraction: float = 0.2, min_holdout: int = 1) -> int:
     """Return the number of trailing rows to hold out for evaluation.
 

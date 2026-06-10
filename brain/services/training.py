@@ -129,7 +129,7 @@ async def update_job_record(
 # these a run would OOM, diverge, or never finish — reject at enqueue, not after
 # a GPU has been tied up. (min, max), inclusive.
 _HYPERPARAM_BOUNDS: dict = {
-    "num_epochs": (1, 50),
+    "num_epochs": (1, 100),
     "batch_size": (1, 128),
     "learning_rate": (1e-6, 1e-1),
     "lora_r": (1, 256),

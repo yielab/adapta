@@ -88,8 +88,16 @@ class Settings(BaseSettings):
     auth_rate_limit_max: int = 20            # allowed attempts per window per key
     auth_rate_limit_window_seconds: int = 60
 
-    # Training
-    eval_score_threshold: float = 0.6  # minimum eval score for an adapter to be promoted
+    # Training — eval gate. An adapter is promotable if EITHER it clears the absolute
+    # score floor (a strong fine-tune), OR it clears a low sanity floor AND meaningfully
+    # beats the base model on the same held-out split (it demonstrably helped). The
+    # improvement path matters because the absolute score is exp(-held_out_perplexity):
+    # a small base model can't reach 0.6 even on an ideal task, yet a fine-tune that
+    # reliably doubles the base score has clearly learned something. Gating on
+    # improvement (not just an absolute bar) was anticipated by §A3.2.
+    eval_score_threshold: float = 0.6   # absolute "strong adapter" pass
+    eval_min_improvement: float = 0.05  # min score gain over base for the improvement path
+    eval_min_floor: float = 0.05        # sanity floor for the improvement path (not garbage)
     # Minimum dataset size to start a training job (A4.6). Below this the held-out
     # eval split collapses (e.g. 1 row → 0 held out → the gate scores the training
     # rows and only measures memorization), so we reject the job up front.

@@ -63,6 +63,53 @@ def test_register_above_threshold_succeeds(registry):
     assert entry["adapter_id"] == "a3"
 
 
+# ---------------------------------------------------------------------------
+# Improvement pass path (§A3.2 / A4.7-followup) — a sub-0.6 adapter that clearly
+# beats the base on the held-out split is promotable; a marginal/garbage one is not.
+# ---------------------------------------------------------------------------
+
+def test_register_improvement_path_succeeds(registry):
+    # Below the absolute 0.6, but more than doubles base and clears the floor.
+    entry = registry.register(
+        adapter_id="imp1", project_id="p1", job_id="ji1",
+        adapter_path="/data/adapters/imp1", eval_score=0.30,
+        base_model="qwen2.5-0.5b-instruct", base_score=0.10, score_delta=0.20,
+    )
+    assert entry["adapter_id"] == "imp1"
+    assert entry["base_score"] == 0.10 and entry["score_delta"] == 0.20
+
+
+def test_register_marginal_improvement_blocked(registry):
+    # Beats base, but by less than the min improvement margin → blocked.
+    with pytest.raises(EvalGateFailed):
+        registry.register(
+            adapter_id="imp2", project_id="p1", job_id="ji2",
+            adapter_path="/data/adapters/imp2", eval_score=0.30,
+            base_model="qwen2.5-0.5b-instruct", base_score=0.28, score_delta=0.02,
+        )
+
+
+def test_register_below_floor_blocked(registry):
+    # Big relative gain but the absolute score is still essentially garbage → blocked.
+    with pytest.raises(EvalGateFailed):
+        registry.register(
+            adapter_id="imp3", project_id="p1", job_id="ji3",
+            adapter_path="/data/adapters/imp3", eval_score=0.04,
+            base_model="qwen2.5-0.5b-instruct", base_score=0.001, score_delta=0.039,
+        )
+
+
+def test_passes_eval_gate_logic():
+    from brain.training.models import passes_eval_gate
+
+    assert passes_eval_gate(0.6) is True                       # absolute
+    assert passes_eval_gate(0.95) is True
+    assert passes_eval_gate(0.3) is False                      # sub-floor, no base info
+    assert passes_eval_gate(0.3, base_score=0.1, score_delta=0.2) is True   # improvement
+    assert passes_eval_gate(0.3, base_score=0.28, score_delta=0.02) is False  # marginal
+    assert passes_eval_gate(0.04, base_score=0.0, score_delta=0.04) is False  # below floor
+
+
 def test_register_zero_score_raises(registry):
     with pytest.raises(EvalGateFailed):
         registry.register(

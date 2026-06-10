@@ -46,22 +46,33 @@ class AdapterRegistry:
         eval_score: float,
         base_model: str,
         adapter_gguf_path: Optional[str] = None,
+        base_score: Optional[float] = None,
+        score_delta: Optional[float] = None,
     ) -> dict:
         """
         Register an adapter after it passes the eval gate.
-        Raises EvalGateFailed if score < threshold.
+        Raises EvalGateFailed if it passes neither the absolute nor the improvement
+        path (see ``passes_eval_gate``).
 
         ``adapter_path`` is the PEFT directory (safetensors); ``adapter_gguf_path``
         is the converted GGUF LoRA the llama-cpp serving runtime loads (A3.1).
+        ``base_score``/``score_delta`` (adapter-vs-base on the held-out split) enable
+        the improvement pass path.
         """
-        threshold = settings.eval_score_threshold
-        if eval_score < threshold:
+        from brain.training.models import passes_eval_gate
+
+        if not passes_eval_gate(eval_score, base_score, score_delta):
+            threshold = settings.eval_score_threshold
             raise EvalGateFailed(
                 message=(
-                    f"Adapter eval score {eval_score:.3f} is below threshold {threshold:.3f}. "
-                    "Adapter not registered."
+                    f"Adapter eval score {eval_score:.3f} did not pass the gate "
+                    f"(needs score ≥ {threshold:.3f}, or a clear improvement over the "
+                    "base model). Adapter not registered."
                 ),
-                internal_detail=f"job_id={job_id}, score={eval_score}, threshold={threshold}",
+                internal_detail=(
+                    f"job_id={job_id}, score={eval_score}, base_score={base_score}, "
+                    f"score_delta={score_delta}, threshold={threshold}"
+                ),
             )
 
         entry = {
@@ -71,6 +82,8 @@ class AdapterRegistry:
             "path": adapter_path,
             "adapter_gguf_path": adapter_gguf_path,
             "eval_score": eval_score,
+            "base_score": base_score,
+            "score_delta": score_delta,
             "base_model": base_model,
         }
         data = self._load()

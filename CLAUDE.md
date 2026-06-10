@@ -5,7 +5,7 @@
 **Brain From Cero is a self-hosted model-customization platform.** Technical teams deploy it on **their own servers** (data never leaves their infrastructure) to specialize and serve private language models two ways, each exposed as an OpenAI-compatible API:
 
 - **Knowledge (RAG):** upload documents → embed (sentence-transformers) → per-project ChromaDB collection → cited answers. CPU-only.
-- **Fine-tuning (LoRA):** instruction dataset (or documents synthesized into pairs via `POST /v1/projects/{id}/datasets/synthesize`) → QLoRA training on a GPU worker → adapter → served once it passes the eval gate (score ≥ 0.6).
+- **Fine-tuning (LoRA):** instruction dataset (or documents synthesized into pairs via `POST /v1/projects/{id}/datasets/synthesize`) → QLoRA training on a GPU worker → adapter → served once it passes the eval gate (held-out score ≥ 0.6, **or** a clear improvement over the base model — §A3.2/A4).
 
 Single-tenant, multi-user within one organization. **Authoritative scope:** [docs/PRODUCT_DEFINITION.md](docs/PRODUCT_DEFINITION.md). The UI never calls RAG "training" — it asks *"give it knowledge"* (RAG) vs *"change how it behaves"* (fine-tuning).
 
@@ -61,7 +61,7 @@ Contract-driven: change the contract before the code. Full doc: [docs/SDD_WORKFL
 |---|---|---|---|
 | **API** | `specs/openapi.yaml` | `make generate` → Pydantic | `make test-contracts` (schemathesis) |
 | **DB schema** | `migrations/versions/*` (Alembic) | `alembic upgrade head` | up/down migration test |
-| **Model/training** | `specs/schemas/training_dataset.schema.json` + pinned `training_config` | training run → registered adapter | **eval threshold gate** (score ≥ 0.6) |
+| **Model/training** | `specs/schemas/training_dataset.schema.json` + pinned `training_config` | training run → registered adapter | **eval gate** (score ≥ 0.6, or a clear improvement over base) |
 
 Why three: it's **self-hosted** (you upgrade customer DBs → migrations are mandatory) with a **training core** (an unverified fine-tune must never auto-serve → eval gate).
 

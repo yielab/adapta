@@ -55,7 +55,7 @@ A **single-tenant, self-hosted** application. A company runs it on their own inf
 - **Serving:** base model + adapter, hot-swappable, OpenAI-compatible.
 - **Cost:** minutes–hours, **requires a GPU**, heavier.
 - **Updates:** re-train the adapter.
-- **Eval gate:** score ≥ 0.6 required. An adapter that does not pass cannot back an endpoint.
+- **Eval gate:** an adapter must clear the held-out eval gate to back an endpoint — either an absolute score ≥ 0.6, **or** a clear improvement over the base model on the same held-out split (a small base can't reach 0.6 perplexity even on an ideal task, so "beats base by a margin" is the meaningful signal). An adapter that does neither cannot serve.
 
 > **Product rule:** the UI never calls RAG "training." It asks *"How do you want to specialize your model?"* → **Give it knowledge** (RAG) vs **Change how it behaves** (fine-tuning).
 

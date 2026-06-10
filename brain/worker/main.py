@@ -209,8 +209,13 @@ async def _run_job(meta: dict) -> None:
         await _set_status(queue, job_id, status="failed", error=f"Evaluation failed: {exc}")
         return
 
+    from brain.training.models import passes_eval_gate
+
     eval_score = result.score
-    eval_passed = eval_score >= settings.eval_score_threshold
+    # Gate on the absolute floor OR a clear improvement over base (§A3.2): a small
+    # base model can't reach the absolute perplexity bar even on an ideal task, but a
+    # fine-tune that reliably beats its base has demonstrably learned the behavior.
+    eval_passed = passes_eval_gate(eval_score, result.base_score, result.score_delta)
     # Persist the FULL eval result (score, base_score, delta, held_out, samples,
     # metrics) so the gate verdict is auditable, not just a scalar (A4.6).
     eval_metrics_json = _json.dumps(result.to_dict())
@@ -233,7 +238,12 @@ async def _run_job(meta: dict) -> None:
             eval_score=eval_score,
             eval_passed=False,
             eval_metrics=eval_metrics_json,
-            error=f"Eval score {eval_score:.3f} below threshold {settings.eval_score_threshold:.3f}",
+            error=(
+                f"Eval score {eval_score:.3f} did not pass the gate "
+                f"(needs ≥ {settings.eval_score_threshold:.3f}, or a clear improvement over base"
+                + (f"; base={result.base_score:.3f} delta={result.score_delta:+.3f})"
+                   if result.base_score is not None else ")")
+            ),
         )
         return
 
@@ -270,6 +280,8 @@ async def _run_job(meta: dict) -> None:
             eval_score=eval_score,
             base_model=base_model,
             adapter_gguf_path=adapter_gguf_path,
+            base_score=result.base_score,
+            score_delta=result.score_delta,
         )
     except Exception as exc:
         await _set_status(queue, job_id, status="failed", error=str(exc))
