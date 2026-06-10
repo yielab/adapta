@@ -43,7 +43,28 @@ class ModelManager:
         self._models: Dict[str, Llama] = {}
         self._configs: Dict[str, ModelConfig] = {}
         self._load_lock = asyncio.Lock()
+        # Per-model-variant serialization locks (A4.1). Keyed on the same (base,
+        # adapter) cache key as `_models`; `_load_lock` only guards loading, not
+        # the (thread-unsafe) inference call on a shared Llama instance.
+        self._infer_locks: Dict[str, asyncio.Lock] = {}
         self._init_default_configs()
+
+    def get_inference_lock(
+        self, model_name: str, adapter_path: Optional[str] = None
+    ) -> asyncio.Lock:
+        """Return the serialization lock for a loaded model variant (A4.1).
+
+        llama-cpp's ``Llama`` object is not safe for concurrent calls on one
+        instance, so a caller MUST hold this lock for the *entire* duration of a
+        generation — and across a stream's *full* consumption (each token mutates
+        the same context). Keyed on the same (base, adapter) cache key as the
+        model, so base/RAG and a fine-tune (base+LoRA) serialize independently."""
+        cache_key = self._cache_key(self._resolve_serving_name(model_name), adapter_path)
+        lock = self._infer_locks.get(cache_key)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._infer_locks[cache_key] = lock
+        return lock
 
     def _resolve_serving_name(self, model_name: str) -> str:
         """Map an operator-facing base id (possibly a HF repo id from a fine-tune
@@ -242,6 +263,7 @@ class ModelManager:
         if model_name in self._models:
             logger.info(f"Unloading model {model_name}")
             del self._models[model_name]
+            self._infer_locks.pop(model_name, None)  # drop its serialization lock (A4.1)
             # The cache key may be a composite "name::lora::path"; only the base
             # catalog name has a config to flip back to unloaded.
             base = model_name.split("::lora::", 1)[0]

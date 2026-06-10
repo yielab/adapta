@@ -52,7 +52,7 @@ Honour the [Definition of done](#definition-of-done-per-task) on every task. Wor
 | Docker dev/prod workflow | ✅ reworked 2026-06-08 — one multi-stage `Dockerfile`, non-root prod, dev toolchain baked in (no manual pip). See **§4**. |
 | Image size / CPU-only torch | ✅ app **1.87 GB** (was 6.45 GB), CPU-only torch, zero CUDA pkgs (2026-06-08). Worker keeps CUDA torch (verify-rebuild pending). See **§4.2**. |
 | Operator console (§5) | ✅ all views done (2026-06-09) — app shell, auth, projects, RAG flow, fine-tune flow, endpoint+keys, playground, usage, UX polish, mount+Docker+CI (C4 docs partial). Key-scoping (§5.12) enforced. |
-| **Staff audit (§A4)** | 🔴 **open (2026-06-09)** — serving is not concurrency-safe (A4.1), crashed jobs stick at `running` (A4.2), no context-window guard (A4.3), quick-start lands in dev mode (A4.5), eval verdict not auditable (A4.6). 2×P0, 7×P1, batch of P2. |
+| **Staff audit (§A4)** | 🟡 **in progress (2026-06-09)** — A4.1 (concurrency-safe + time-bounded serving) ✅ DONE. Remaining: crashed jobs stick at `running` (A4.2, P0), no context-window guard (A4.3), quick-start lands in dev mode (A4.5), eval verdict not auditable (A4.6). 1×P0, 7×P1, batch of P2 left. |
 
 ---
 
@@ -146,25 +146,33 @@ Honour the [Definition of done](#definition-of-done-per-task) on every task. Wor
 > or crash conditions** — and the eval gate produces a verdict the operator cannot audit.
 > Each task is self-contained and agent-pickable. Workstream labels: **`[BE]`** / **`[OPS]`**.
 
-### A4.1 `[BE]` Serialize inference per model instance (P0)
-- **Context.** llama-cpp-python's `Llama` object is **not thread-safe for concurrent calls on one
-  instance**. [brain/core/inference.py:87](brain/core/inference.py#L87) and [:135](brain/core/inference.py#L135)
-  dispatch `run_in_executor` into the default (unbounded) thread pool with **no lock**;
-  `model_manager._load_lock` ([model_manager.py:45](brain/core/model_manager.py#L45)) only guards
-  *loading*. Two concurrent chat requests to the same endpoint race on the model's KV cache →
-  garbage output or a segfault that kills the whole app. Nothing serializes them today.
-- **Scope.** Make concurrent serving safe without rewriting the engine (hard constraint #1) —
-  wrap, don't modify, the llama-cpp call sites.
-- **Steps.** (1) Per-model `asyncio.Lock` keyed by the model-cache key, held across the executor
-  call — and across the **entire stream consumption** for streaming (the generator touches the
-  same context). (2) Replace the default executor with a bounded `ThreadPoolExecutor`
-  (`settings.inference_max_workers`). (3) Add `asyncio.wait_for` around generation
-  (`settings.inference_timeout_seconds`, default ~300) → typed `DomainError` (504-style), so one
-  hung generation can't pin a thread forever.
-- **Files.** `brain/core/inference.py`, `brain/core/model_manager.py`, `brain/config.py`, tests.
-- **Acceptance.** A test fires N concurrent completions at one endpoint; all return valid,
-  non-interleaved output (slow but correct). A simulated hang aborts at the timeout with a typed
-  error envelope, not a stuck thread.
+### A4.1 `[BE]` Serialize inference per model instance (P0) — ✅ DONE (2026-06-09)
+- [x] **Context.** llama-cpp-python's `Llama` object is **not thread-safe for concurrent calls on one
+  instance**. `inference.py` dispatched `run_in_executor` into the default (unbounded) thread pool
+  with **no lock**; `model_manager._load_lock` only guarded *loading*. Two concurrent chat requests
+  to one endpoint raced the KV cache → garbage output or a segfault that kills the app. The
+  streaming path was additionally iterating the llama-cpp generator **synchronously in the event
+  loop**, blocking the whole server per token.
+- [x] **Done (Strategy: wrap, don't rewrite — hard constraint #1 respected).**
+  (1) Per-model-variant `asyncio.Lock` in `model_manager.get_inference_lock(model_name, adapter_path)`,
+  keyed on the same `(base, adapter)` cache key as `_models`; `chat.py` fetches it and the engine
+  holds it for the **whole** generation and across a stream's **entire** drain.
+  (2) Bounded `ThreadPoolExecutor(settings.inference_max_workers, default 2)` replaces the default
+  unbounded pool for all generation calls. Streaming now pulls each token **on the pool** (not in
+  the event loop), so a stream no longer blocks the server.
+  (3) `settings.inference_timeout_seconds` (default 300) caps each generation → typed `Timeout`
+  (504). Non-stream: `wait_for(shield(fut))` + a done-callback releases the model lock only when
+  the uncancellable C call actually returns (never mid-call → no race). Stream: a between-token
+  wall-clock deadline (race-free: no in-flight call when we stop) closes the generator + releases
+  the lock. `chat.py` re-raises `DomainError` so the 504 isn't masked as a 500.
+- [x] **Files.** `brain/core/inference.py` (bounded pool, `_run_locked`, async stream bridge +
+  deadline), `brain/core/model_manager.py` (`get_inference_lock`, lock cleanup on unload),
+  `brain/config.py` (`inference_max_workers`, `inference_timeout_seconds`), `brain/services/chat.py`
+  (fetch+pass lock, propagate `DomainError`), `tests/test_inference_concurrency.py`.
+- **Acceptance met.** `tests/test_inference_concurrency.py` (4 tests, in-process, no GGUF): 8
+  concurrent `generate` + 5 concurrent `generate_stream` calls sharing one lock **never overlap**
+  on the model (a fake Llama raises if entered twice); a generation that outlasts the deadline
+  raises `Timeout` in both paths and the lock is freed. `make ci` green (136 passed).
 
 ### A4.2 `[BE]` Crashed-job recovery — no job stuck at `running` forever (P0)
 - **Context.** Graceful SIGTERM requeue works (§4.4, [worker/main.py:316](brain/worker/main.py#L316)),

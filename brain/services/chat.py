@@ -15,7 +15,7 @@ from typing import AsyncIterator, List, Optional
 from brain.config import settings
 from brain.core import inference_engine, model_manager
 from brain.core.inference import InferenceRequest, InferenceResponse, Message
-from brain.domain.errors import InferenceFailed, ModelNotFound
+from brain.domain.errors import DomainError, InferenceFailed, ModelNotFound
 from brain.services.rag import get_rag_service
 
 logger = logging.getLogger(__name__)
@@ -82,8 +82,11 @@ async def chat(
     )
 
     model_obj = await _load_model(model_name, adapter_path=adapter_path)
+    lock = model_manager.get_inference_lock(model_name, adapter_path)
     try:
-        response: InferenceResponse = await inference_engine.generate(model_obj, req)
+        response: InferenceResponse = await inference_engine.generate(model_obj, req, lock=lock)
+    except DomainError:
+        raise  # Timeout (504) and other typed errors keep their status — don't mask as 500.
     except Exception as exc:
         raise InferenceFailed(
             message="Inference failed",
@@ -161,6 +164,7 @@ async def chat_stream(
     )
 
     model_obj = await _load_model(model_name, adapter_path=adapter_path)
+    lock = model_manager.get_inference_lock(model_name, adapter_path)
     chunk_id = f"chatcmpl-{uuid.uuid4().hex[:8]}"
     created = int(time.time())
 
@@ -168,7 +172,7 @@ async def chat_stream(
     # real completion-token count — no need for the old ~4-chars/token estimate.
     completion_tokens = 0
     try:
-        async for token in inference_engine.generate_stream(model_obj, req):
+        async for token in inference_engine.generate_stream(model_obj, req, lock=lock):
             completion_tokens += 1
             chunk = {
                 "id": chunk_id,
@@ -196,5 +200,7 @@ async def chat_stream(
             from brain.services.usage import record_usage
             await record_usage(endpoint_id, 0, completion_tokens)
 
+    except DomainError:
+        raise  # Timeout (504) and other typed errors keep their status — don't mask as 500.
     except Exception as exc:
         raise InferenceFailed(message="Streaming inference failed", internal_detail=str(exc)) from exc

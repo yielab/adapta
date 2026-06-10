@@ -53,6 +53,15 @@ class Settings(BaseSettings):
     use_mmap: bool = True
     use_mlock: bool = False
 
+    # Inference concurrency & safety (A4.1). llama-cpp's Llama object is NOT safe
+    # for concurrent calls on one instance — two requests sharing it race the KV
+    # cache (garbage output or a segfault that kills the app). Serving therefore
+    # serializes per model (a lock in model_manager) and runs the blocking call on
+    # a bounded pool; a per-request wall-clock cap stops a runaway generation from
+    # pinning a worker forever.
+    inference_max_workers: int = 2
+    inference_timeout_seconds: int = 300
+
     # RAG / embeddings
     embedding_model: str = "all-MiniLM-L6-v2"
     chroma_host: str = "chroma"
