@@ -86,7 +86,12 @@ class LoRATrainer:
                 DataCollatorForLanguageModeling,
                 Trainer,
                 TrainingArguments,
+                set_seed,
             )
+
+            # Determinism (A4.7): seed python/numpy/torch before any randomness so the
+            # run is reproducible given the recorded seed + dataset hash + lib versions.
+            set_seed(config.seed)
 
             logger.info(f"Starting training for job {job_id}")
 
@@ -255,6 +260,11 @@ class LoRATrainer:
             # adapter_config.json — PEFT's save_pretrained already wrote it with the
             # `peft_type`/target_modules PeftModel.from_pretrained() needs; overwriting
             # it with this dict stripped `peft_type` and broke adapter loading at eval.
+            # Provenance (A4.7): seed + dataset hash + library versions so this
+            # adapter can be reproduced/audited months later. dataset_path is the
+            # exact train split the worker wrote.
+            from brain.training.provenance import build_provenance
+
             training_metadata = {
                 "base_model": base_model,
                 "lora_r": config.lora_r,
@@ -263,6 +273,7 @@ class LoRATrainer:
                 "target_modules": config.target_modules,
                 "trained_at": time.time(),
                 "job_id": job_id,
+                "provenance": build_provenance(base_model, dataset_path, config.seed),
             }
 
             with open(adapter_path / "training_metadata.json", "w") as f:

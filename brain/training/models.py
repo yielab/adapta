@@ -85,6 +85,9 @@ class TrainingConfig:
     gradient_accumulation_steps: int = 4
     max_seq_length: int = 2048
 
+    # Determinism / reproducibility (A4.7) — recorded into the training provenance.
+    seed: int = 42
+
     # Optimizer
     optimizer: str = "adamw_torch"
     weight_decay: float = 0.01

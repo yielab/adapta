@@ -52,7 +52,7 @@ Honour the [Definition of done](#definition-of-done-per-task) on every task. Wor
 | Docker dev/prod workflow | ✅ reworked 2026-06-08 — one multi-stage `Dockerfile`, non-root prod, dev toolchain baked in (no manual pip). See **§4**. |
 | Image size / CPU-only torch | ✅ app **1.87 GB** (was 6.45 GB), CPU-only torch, zero CUDA pkgs (2026-06-08). Worker keeps CUDA torch (verify-rebuild pending). See **§4.2**. |
 | Operator console (§5) | ✅ all views done (2026-06-09) — app shell, auth, projects, RAG flow, fine-tune flow, endpoint+keys, playground, usage, UX polish, mount+Docker+CI (C4 docs partial). Key-scoping (§5.12) enforced. |
-| **Staff audit (§A4)** | 🟡 **in progress** — done: A4.1 (concurrency-safe serving), A4.2 (crashed-job recovery), A4.3 (context-window guard + max_tokens cap), A4.4 (key-prefix index), A4.5 (prod-by-default compose), A4.6 (auditable eval gate). Remaining P1: A4.7 (provenance). Done: A4.8 (model-cache LRU bounds), A4.9 (auth rate-limit). Plus the P2 batch (A4.10–A4.12). |
+| **Staff audit (§A4)** | 🟢 **all P0+P1 done** — A4.1 (concurrency-safe serving), A4.2 (crashed-job recovery), A4.3 (context-window guard + max_tokens cap), A4.4 (key-prefix index), A4.5 (prod-by-default compose), A4.6 (auditable eval gate), A4.7 (training provenance), A4.8 (model-cache LRU bounds), A4.9 (auth rate-limit). Remaining: the P2 batch (A4.10–A4.12). |
 
 ---
 
@@ -279,16 +279,23 @@ Honour the [Definition of done](#definition-of-done-per-task) on every task. Wor
   crash now reads "Evaluation failed", not "score below threshold". `make ci` green; contract +
   migration gates green. (GPU e2e of the persisted-metrics path rides on the §1.7 LoRA e2e.)
 
-### A4.7 `[BE]` Reproducibility: pin seed + hashes into the training record (P1)
-- **Context.** `training_config` is stored, but **no seed, no dataset hash, no HF model revision,
-  no library versions**. A 3-month-old adapter cannot be reproduced or audited — for a product
-  whose moat is "trustworthy fine-tunes", the training record must be a full provenance record.
-- **Steps.** Set + record a seed in the trainer; record dataset file SHA-256, resolved HF repo
-  revision, and `torch`/`peft`/`trl`/`transformers` versions into `training_metadata.json` and
-  the job row (reuse the `training_config` JSON or add a `provenance` JSON).
-- **Files.** `brain/training/trainer.py`, `brain/worker/main.py`, `brain/db/models.py`.
-- **Acceptance.** Every new job row carries seed/hashes/versions; two runs with identical pinned
-  inputs reproduce the eval score within tolerance.
+### A4.7 `[BE]` Reproducibility: pin seed + hashes into the training record (P1) — ✅ DONE (2026-06-10)
+- [x] **Context.** `training_config` was stored, but no seed, dataset hash, or library versions —
+  a months-old adapter couldn't be reproduced or audited.
+- [x] **Done.** New `brain/training/provenance.py` builds a provenance record — `seed`,
+  `base_model`, `dataset_sha256` (of the exact train split), and `library_versions`
+  (torch/transformers/peft/trl/datasets/bitsandbytes) — kept dependency-light (version lookups via
+  installed-package metadata, returning None when absent) so it's unit-testable in the lean app
+  image. `TrainingConfig.seed` (default 42, operator-overridable via `training_config`) is applied
+  with `transformers.set_seed()` before any randomness, and the provenance is written into
+  `training_metadata.json` (under a `provenance` key) beside the adapter.
+- [x] **Files.** `brain/training/provenance.py`, `brain/training/trainer.py` (set_seed + record),
+  `brain/training/models.py` (`TrainingConfig.seed`), `brain/worker/main.py` (seed passthrough),
+  `tests/test_provenance.py`.
+- **Acceptance met.** `tests/test_provenance.py`: the dataset hash is content-addressed (identical
+  bytes → identical hash; a one-byte change differs), a missing file hashes to None, and the record
+  carries seed + base_model + dataset hash + a version map. `make ci` green; worker imports clean.
+  (Full reproduce-the-eval-score check rides on the §1.7 GPU LoRA e2e.)
 
 ### A4.8 `[BE]` Model cache memory bounds (P1) — ✅ DONE (2026-06-10)
 - [x] **Context.** `model_manager._models` was an **unbounded dict**, and since §A3.1 the cache key

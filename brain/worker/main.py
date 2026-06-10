@@ -100,6 +100,7 @@ async def _run_job(meta: dict) -> None:
         lora_alpha=tc_raw.get("lora_alpha", 32),
         lora_dropout=tc_raw.get("lora_dropout", 0.1),
         max_seq_length=tc_raw.get("max_seq_length", 512),
+        seed=tc_raw.get("seed", 42),  # recorded into provenance (A4.7)
     )
 
     # The trainer expects {"messages": [...]} format; our schema uses {"prompt":..., "response":...}.
