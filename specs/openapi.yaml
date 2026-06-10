@@ -40,7 +40,7 @@ paths:
     post:
       operationId: register
       tags: [auth]
-      summary: Bootstrap — create org + first admin user
+      summary: Create an organization + its admin user (open registration)
       requestBody:
         required: true
         content:

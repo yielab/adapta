@@ -19,7 +19,7 @@
   let regEmail = $state("");
   let regPassword = $state("");
 
-  // Inline notice (e.g. "org already exists — sign in").
+  // Inline notice (e.g. "email already registered — sign in").
   let notice = $state("");
 
   const loginValid = $derived(loginEmail.trim() !== "" && loginPassword !== "");
@@ -67,9 +67,9 @@
     } catch (e) {
       if (e instanceof ApiError) {
         if (e.code === "conflict") {
-          // An org already exists — registration is a one-time bootstrap.
-          notice = "An organization already exists — sign in instead.";
-          // Carry the email over so the operator just types their password.
+          // Registration is open — the only conflict is an email that already
+          // has an account. Send the operator to sign-in with it prefilled.
+          notice = "That email is already registered — sign in instead.";
           loginEmail = regEmail.trim();
           tab = "login";
         } else {
@@ -179,7 +179,8 @@
           {#if pending}<Spinner label="Creating…" />{:else}Create organization{/if}
         </button>
         <p class="muted" style="margin: 12px 0 0; font-size: 12.5px;">
-          Registration bootstraps your organization and its first admin. It runs once.
+          Creates your organization with you as its admin. Teammates join an
+          existing organization through an admin invite.
         </p>
       </form>
     {/if}

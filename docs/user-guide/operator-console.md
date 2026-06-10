@@ -12,14 +12,17 @@ calls — the console is a convenience over the same API your applications use.
 
 ---
 
-## 1. First run: register
+## 1. First run: sign in or register
 
-The first screen is a **Register** form. The **first account you register
-becomes the organization admin.** Fill in an org name, email, and password.
+The first screen offers **Sign in** and **Register**. On a development stack a
+default admin is already seeded (`admin@example.com` / `admin12345` — disable
+with `BRAIN_SEED_DEFAULT_ADMIN=0`), so you can sign in immediately.
 
-After that, you land on the **Projects** page. Additional team members join
-later via invitations (an admin issues a one-time invite token; the new user
-redeems it to set a password and join the team).
+Registering creates a **new organization with you as its admin** — fill in an
+org name, email, and password. After that, you land on the **Projects** page.
+Additional team members join an existing organization via invitations (an admin
+issues a one-time invite token; the new user redeems it to set a password and
+join the team).
 
 The top bar shows your user and a **team switcher** — projects are always scoped
 to the active team.

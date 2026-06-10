@@ -1,3 +1,11 @@
+# Brain From Cero — local stack. One way to run it: `docker compose up -d --build`
+# (or `make up`). The repo is bind-mounted into app and worker, so host edits are
+# live (uvicorn hot-reloads); the toolchain is baked into the app image, so
+# `docker compose exec app make ci` works with zero setup.
+#
+# GPU is the DEFAULT: the worker reserves the host GPU for QLoRA training. On a
+# host without the NVIDIA Container Toolkit, layer docker-compose.cpu.yml.
+
 # Shared log-rotation policy — keeps container logs from growing unbounded (§4.4).
 x-logging: &default-logging
   driver: json-file
@@ -13,37 +21,25 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-      target: production
+      target: app
     container_name: brain-app
     ports:
       - "8000:8000"
     volumes:
-      - ./data/models:/app/data/models
-      - ./data/uploads:/app/data/uploads
-      - ./data/adapters:/app/data/adapters
-      - ./data/datasets:/app/data/datasets
+      # Live source: host edits restart the server (BRAIN_RELOAD). /app/data
+      # rides along — uploads/models/adapters/datasets live in ./data on the host.
+      - .:/app
     environment:
-      # Defaults to production for the prod baseline; the dev override forces
-      # development. In production the config validator fails fast on weak
-      # secrets / default DB password (§4.3).
-      - BRAIN_ENVIRONMENT=${BRAIN_ENVIRONMENT:-production}
       - BRAIN_DATABASE_URL=postgresql+asyncpg://brain:${POSTGRES_PASSWORD:-brain}@postgres:5432/brain
       - BRAIN_REDIS_URL=redis://redis:6379/0
-      # Falls back to the known-default, which the production config validator
-      # REJECTS — a prod boot without a real BRAIN_SECRET_KEY crashes fast with a
-      # clear message; dev (BRAIN_ENVIRONMENT=development) is unaffected.
       - BRAIN_SECRET_KEY=${BRAIN_SECRET_KEY:-CHANGE_ME_IN_PRODUCTION_use_openssl_rand_hex_32}
-      - BRAIN_MODELS_DIR=/app/data/models
-      - BRAIN_UPLOADS_DIR=/app/data/uploads
-      - BRAIN_ADAPTERS_DIR=/app/data/adapters
-      - BRAIN_DATASETS_DIR=/app/data/datasets
-      - BRAIN_CHROMA_HOST=chroma
-      - BRAIN_CHROMA_PORT=8000
+      - BRAIN_RELOAD=1
+      # Seed a default admin (admin@example.com / admin12345) on an empty DB so
+      # the console works on first boot. Set 0 to use the register flow instead.
+      - BRAIN_SEED_DEFAULT_ADMIN=${BRAIN_SEED_DEFAULT_ADMIN:-1}
       - BRAIN_N_GPU_LAYERS=${BRAIN_N_GPU_LAYERS:-0}
       - BRAIN_N_THREADS=${BRAIN_N_THREADS:-8}
     restart: unless-stopped
-    security_opt:
-      - no-new-privileges:true
     deploy:
       resources:
         limits:
@@ -67,10 +63,8 @@ services:
 
   # ──────────────────────────────────────────────
   # Training worker: consumes Redis queue, runs QLoRA on the GPU (the default).
-  # The worker reserves the host GPU (deploy.resources.reservations below), so the
-  # default stack requires the NVIDIA Container Toolkit on the host (see README
-  # "GPU"). For a rare CPU-only host, layer docker-compose.cpu.yml to drop the
-  # reservation — the worker then starts but rejects LoRA jobs fast (GPU guard).
+  # On a CPU-only host, layer docker-compose.cpu.yml to drop the reservation —
+  # the worker then starts but rejects LoRA jobs fast (GPU guard).
   # ──────────────────────────────────────────────
   worker:
     build:
@@ -79,20 +73,12 @@ services:
       target: worker
     container_name: brain-worker
     volumes:
-      - ./data/models:/app/data/models
-      - ./data/adapters:/app/data/adapters
-      - ./data/datasets:/app/data/datasets
+      - .:/app  # live source for worker code too
     environment:
-      - BRAIN_ENVIRONMENT=${BRAIN_ENVIRONMENT:-production}
       - BRAIN_DATABASE_URL=postgresql+asyncpg://brain:${POSTGRES_PASSWORD:-brain}@postgres:5432/brain
       - BRAIN_REDIS_URL=redis://redis:6379/0
       - BRAIN_SECRET_KEY=${BRAIN_SECRET_KEY:-CHANGE_ME_IN_PRODUCTION_use_openssl_rand_hex_32}
-      - BRAIN_MODELS_DIR=/app/data/models
-      - BRAIN_ADAPTERS_DIR=/app/data/adapters
-      - BRAIN_DATASETS_DIR=/app/data/datasets
     restart: unless-stopped
-    security_opt:
-      - no-new-privileges:true
     # Graceful shutdown: the worker requeues its in-flight job on SIGTERM, so give
     # it time to cancel cleanly before Docker SIGKILLs it (§4.4).
     stop_grace_period: 60s
@@ -130,7 +116,7 @@ services:
   # PostgreSQL: metadata store
   # ──────────────────────────────────────────────
   postgres:
-    # Pinned to a specific minor for reproducible customer installs (A4.12);
+    # Pinned to a specific minor for reproducible installs (A4.12);
     # patch upgrades within 15.x are data-compatible.
     image: postgres:15.17-alpine
     container_name: brain-postgres
@@ -140,12 +126,10 @@ services:
       POSTGRES_DB: brain
     volumes:
       - postgres-data:/var/lib/postgresql/data
-    # Not host-published in the prod baseline (internal network only). The dev
-    # override re-publishes 5432 for local debugging (§4.3).
+    ports:
+      - "5432:5432"  # published for local debugging (psql from the host)
     networks:
       - brain-network
-    security_opt:
-      - no-new-privileges:true
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U brain"]
       interval: 10s
@@ -163,10 +147,10 @@ services:
     command: redis-server --appendonly yes
     volumes:
       - redis-data:/data
+    ports:
+      - "6379:6379"  # published for local debugging (redis-cli from the host)
     networks:
       - brain-network
-    security_opt:
-      - no-new-privileges:true
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -191,10 +175,10 @@ services:
       ANONYMIZED_TELEMETRY: "FALSE"
     volumes:
       - chroma-data:/chroma/data
+    ports:
+      - "8001:8000"  # published for local debugging (Chroma API from the host)
     networks:
       - brain-network
-    security_opt:
-      - no-new-privileges:true
     # No container healthcheck: the chroma 1.x image ships only the `chroma`
     # binary (no curl/wget/python), so it can't self-probe its own HTTP heartbeat.
     # Dependents gate on `service_started` instead; the app connects to Chroma
@@ -217,8 +201,6 @@ services:
       - "9090:9090"
     networks:
       - brain-network
-    security_opt:
-      - no-new-privileges:true
     restart: unless-stopped
     logging: *default-logging
 
@@ -238,8 +220,6 @@ services:
       - prometheus
     networks:
       - brain-network
-    security_opt:
-      - no-new-privileges:true
     restart: unless-stopped
     logging: *default-logging
 

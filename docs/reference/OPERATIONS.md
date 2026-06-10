@@ -75,16 +75,12 @@ The `app` container runs `alembic upgrade head` on startup (in
 `depends_on: postgres (healthy)`. So the upgrade flow is:
 
 ```bash
-git pull && docker compose -f docker-compose.yml up -d --build
+git pull && docker compose up -d --build
 ```
 
-> A bare `docker compose up` is equivalent (production by default — the dev
-> overrides in `docker-compose.dev.yml` are opt-in, not auto-merged, §A4.5). The
-> explicit `-f docker-compose.yml` form above is just self-documenting.
-
-- Migrations are forward-only in production; the down-migrations exist and are
-  CI-tested (`make migrate-test`, incl. a seeded round-trip) but are a
-  development/rollback aid, not a routine production step.
+- Migrations are forward-only in routine operation; the down-migrations exist and
+  are CI-tested (`make migrate-test`, incl. a seeded round-trip) but are a
+  rollback aid, not a routine step.
 - **Back up Postgres before upgrading** (§2) — a migration is the one step that
   can't be undone by redeploying the previous image.
 - Run a single `app` instance through the migration, then scale out (§4): two
@@ -122,13 +118,14 @@ heartbeat expiring (the container healthcheck goes unhealthy).
 
 ## 5. Image tagging & registry strategy
 
-The multi-stage `Dockerfile` builds `production` (app, CPU-only, ~1.9 GB) and
-`worker` (CUDA, ~6.3 GB) targets. For a customer-operated deploy:
+The multi-stage `Dockerfile` builds `app` (CPU-only, ~2.1 GB) and `worker`
+(CUDA, ~6.4 GB) targets. To distribute via a registry instead of building on
+the host:
 
 - **Tag by version + git SHA**, not just `latest`, so a rollback is a tag change:
   ```bash
-  docker build --target production -t registry.example.com/brain-app:1.4.0-$(git rev-parse --short HEAD) .
-  docker build --target worker     -t registry.example.com/brain-worker:1.4.0-$(git rev-parse --short HEAD) .
+  docker build --target app    -t registry.example.com/brain-app:1.4.0-$(git rev-parse --short HEAD) .
+  docker build --target worker -t registry.example.com/brain-worker:1.4.0-$(git rev-parse --short HEAD) .
   docker push registry.example.com/brain-app:1.4.0-...
   docker push registry.example.com/brain-worker:1.4.0-...
   ```
@@ -170,9 +167,10 @@ serving:
 | 7–8B | ~12–16 GB | RTX 3080 / 4070 Ti / A4000 |
 | 13B | ~24 GB | RTX 3090 / 4090 / A5000 |
 
-The GPU is the default: the worker reserves the host GPU, so the standard
+The GPU is the default: the worker reserves the host GPU, so a bare
 `docker compose up` expects a CUDA GPU + the NVIDIA Container Toolkit. A GPU-less
-host serves RAG fine — layer [docker-compose.cpu.yml](https://github.com/santiagoyie/brainFromCero/blob/main/docker-compose.cpu.yml)
+host serves RAG fine — `make up` detects the missing GPU and automatically layers
+[docker-compose.cpu.yml](https://github.com/santiagoyie/brainFromCero/blob/main/docker-compose.cpu.yml)
 (`-f docker-compose.yml -f docker-compose.cpu.yml`) to drop the reservation; LoRA
 jobs are then rejected fast with a clear "GPU required" message. See the README
 "GPU" section and TODO §4.2b.
@@ -231,9 +229,11 @@ extra host port, no runtime Node. It is static SPA assets (built in a Docker
 builder stage) served same-origin via FastAPI `StaticFiles`.
 
 - **URL:** `http://<host>:8000/console/` (the bare `/` redirects there).
-- **First-run:** the first account registered through the console (or
-  `POST /v1/auth/register`) becomes the org admin; subsequent users join via the
-  invite flow (`POST /v1/auth/invite` → `accept-invite`).
+- **First-run:** sign in with the seeded development admin (`admin@example.com`
+  / `admin12345`, gated by `BRAIN_SEED_DEFAULT_ADMIN`), or register — each
+  registration creates a new organization with that account as its admin;
+  teammates join an existing org via the invite flow (`POST /v1/auth/invite` →
+  `accept-invite`).
 - **What it's for:** an operator drives the whole lifecycle — projects, file/
   dataset upload, training + the eval gate, endpoints + `brn_` keys, a test
   playground, usage — in the browser. It is a thin client over the existing API;

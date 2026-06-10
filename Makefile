@@ -1,36 +1,39 @@
 # Brain From Cero – Extended SDD build targets (three contracts)
 #
 # Two kinds of target:
-#   • HOST targets (dev / dev-cpu / up / down) — run on the host; they bring the
-#     stack up/down. A bare `docker compose up` is PRODUCTION (secure by default);
-#     `make dev` layers docker-compose.dev.yml for the toolchain + bind-mount +
-#     hot reload (§A4.5).
-#   • IN-CONTAINER targets (everything else) — run inside the dev container, which
+#   • HOST targets (up / up-cpu / down) — run on the host; they bring the stack
+#     up/down. There is ONE stack: toolchain + bind-mounted source + hot reload.
+#   • IN-CONTAINER targets (everything else) — run inside the app container, which
 #     ships the full toolchain (ruff, mypy, pytest, schemathesis, codegen) baked
-#     into the `dev` image stage, so there is NEVER a manual pip step:
-#       make dev                              # bring up the dev stack (host)
+#     into the image, so there is NEVER a manual pip step:
+#       make up                               # bring up the stack (host)
 #       docker compose exec app make <target> # run a build target (in container)
 #
-# To change dependencies: edit pyproject.toml, then `make dev` rebuilds (or
-# `docker compose -f docker-compose.yml -f docker-compose.dev.yml build`).
+# To change dependencies: edit pyproject.toml, then `make up` rebuilds.
 #
 # Contracts:
 #   API      -> specs/openapi.yaml   (generate, validate-spec, test-contracts)
 #   DB schema-> Alembic migrations   (migrate, migration, migrate-test)
 #   Model    -> dataset schema + eval gate (training pipeline)
 
-DEV_COMPOSE := docker compose -f docker-compose.yml -f docker-compose.dev.yml
-DEV_COMPOSE_CPU := docker compose -f docker-compose.yml -f docker-compose.cpu.yml -f docker-compose.dev.yml
+CPU_COMPOSE := docker compose -f docker-compose.yml -f docker-compose.cpu.yml
 
-.PHONY: help dev dev-cpu up down generate validate-spec test-contracts migrate migration migrate-test \
+# GPU auto-detection: the worker reserves the host GPU by default (QLoRA training).
+# On a host without a usable NVIDIA GPU / Container Toolkit, `make up` layers the
+# CPU opt-out automatically so the stack still starts (the worker then rejects
+# LoRA jobs fast with a clear message). `make up-cpu` forces the opt-out.
+GPU_AVAILABLE := $(shell command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi >/dev/null 2>&1 && echo 1)
+COMPOSE := $(if $(GPU_AVAILABLE),docker compose,$(CPU_COMPOSE))
+
+.PHONY: help up up-cpu status down generate validate-spec test-contracts migrate migration migrate-test \
         test coverage lint fmt check-leaks check-chroma docs-install docs-build docs-serve ci ci-full
 
 help:
 	@echo "Available targets:"
 	@echo "  -- stack (run on the HOST) --"
-	@echo "  dev             Bring up the DEV stack (toolchain + bind-mount + reload, GPU)"
-	@echo "  dev-cpu         Bring up the DEV stack on a CPU-only host"
-	@echo "  up              Bring up the PRODUCTION stack (lean, secure defaults)"
+	@echo "  up              Build + bring up the stack (GPU auto-detected; live source, reload)"
+	@echo "  up-cpu          Force the CPU opt-out (no GPU reservation for the worker)"
+	@echo "  status          Wait for health + print all service URLs/ports"
 	@echo "  down            Stop the stack"
 	@echo "  -- API contract --"
 	@echo "  generate        Re-generate Pydantic models from specs/openapi.yaml"
@@ -54,16 +57,44 @@ help:
 	@echo "  docs-build      Build the docs site (--strict; fails on broken links)"
 
 # ── HOST targets — bring the stack up/down (run these on the host, not in a container) ──
-# Bare `docker compose up` is PRODUCTION (secure by default, §A4.5). `make dev`
-# layers docker-compose.dev.yml for the dev image + bind-mount + hot reload.
-dev:
-	$(DEV_COMPOSE) up -d --build
-
-dev-cpu:
-	$(DEV_COMPOSE_CPU) up -d --build
-
 up:
-	docker compose up -d --build
+	$(if $(GPU_AVAILABLE),,@echo "No usable NVIDIA GPU detected — starting with the CPU opt-out (training jobs will be rejected).")
+	$(COMPOSE) up -d --build
+	@$(MAKE) --no-print-directory status
+
+up-cpu:
+	$(CPU_COMPOSE) up -d --build
+	@$(MAKE) --no-print-directory status
+
+# Wait for the API to come up, then print where everything is. Safe to run any
+# time (`make status`) to re-print the URLs of a running stack.
+status:
+	@printf "Waiting for the API to become healthy"
+	@ok=0; for i in $$(seq 1 45); do \
+	  if curl -sf http://localhost:8000/health >/dev/null 2>&1; then ok=1; break; fi; \
+	  printf "."; sleep 2; \
+	done; echo ""; \
+	if [ "$$ok" != "1" ]; then \
+	  echo "✗ App is not healthy yet — inspect with: docker compose logs app"; exit 1; \
+	fi
+	@echo ""
+	@echo "  Brain From Cero is up ✓"
+	@echo "  ──────────────────────────────────────────────────"
+	@echo "  Console (web UI)   http://localhost:8000/console/"
+	@echo "  Default login      admin@example.com / admin12345   (seeded on an empty DB;"
+	@echo "                     disable with BRAIN_SEED_DEFAULT_ADMIN=0)"
+	@echo "  API base           http://localhost:8000"
+	@echo "  API docs (Swagger) http://localhost:8000/docs"
+	@echo "  Health             http://localhost:8000/health   (deep: /health/deep)"
+	@echo "  ── data stores (for local debugging) ─────────────"
+	@echo "  Postgres           localhost:5432   (db: brain, user: brain)"
+	@echo "  Redis              localhost:6379"
+	@echo "  ChromaDB           localhost:8001"
+	@echo "  ──────────────────────────────────────────────────"
+	@echo "  Logs:  docker compose logs -f app     Stop:  make down"
+	@echo "  Optional observability profile (Prometheus :9090, Grafana :3000):"
+	@echo "         docker compose --profile observability up -d"
+	@echo ""
 
 down:
 	docker compose down

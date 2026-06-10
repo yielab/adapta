@@ -12,10 +12,9 @@ Brain From Cero is a self-hosted RAG + LoRA model-customization platform in earl
 git clone https://github.com/santiagoyie/brainFromCero
 cd brainFromCero
 
-# Start the DEV stack: dev image (ruff/mypy/pytest/codegen baked in), source
-# bind-mounted, hot reload, weak-secret checks relaxed for local work.
-make dev            # = docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
-# CPU-only host:  make dev-cpu
+# Start the stack: one image with the toolchain (ruff/mypy/pytest/codegen) baked
+# in, source bind-mounted, hot reload. There is no separate dev/prod mode.
+make up             # = docker compose up -d --build (GPU auto-detected)
 
 # Run tests (inside container)
 docker compose exec app pytest tests/ -v
@@ -31,15 +30,10 @@ docker compose exec app make check-leaks
 docker compose exec app make ci
 ```
 
-> **Why `make dev`, not bare `docker compose up`?** A bare `docker compose up` runs the
-> **production** images by design (secure by default — §A4.5): lean, no test toolchain, and it
-> rejects weak secrets at startup. The dev overrides live in `docker-compose.dev.yml`, which is
-> *not* auto-merged, so you opt into them explicitly via `make dev`.
-
-To install a new dependency, add it to `pyproject.toml` then rebuild the dev stack:
+To install a new dependency, add it to `pyproject.toml` then rebuild the stack:
 
 ```bash
-make dev            # rebuilds with --build
+make up             # rebuilds with --build
 ```
 
 Never run `pip install` on the host or add `requirements*.txt` files — `pyproject.toml` is the single dependency source.
@@ -51,7 +45,7 @@ Never run `pip install` on the host or add `requirements*.txt` files — `pyproj
 **Change the contract before the code.** Three contracts:
 
 | Contract | Source of truth | Gate |
-|---|---|---|
+| --- | --- | --- |
 | API | `specs/openapi.yaml` | `make test-contracts` (schemathesis) |
 | DB schema | `migrations/versions/*.py` (Alembic) | `make migrate-test` (up + down) |
 | Training | `specs/schemas/training_dataset.schema.json` + eval config | eval threshold gate (score ≥ 0.6) |
@@ -120,8 +114,7 @@ Steps for a schema change:
 
 ### Medium priority
 
-- **Optional Prometheus/Grafana** — add as an optional Docker Compose profile (already removed from the default stack to keep it lean).
-- **Backup/restore runbook** — document `pg_dump` + adapter artifact backup procedure in `docs/reference/OPERATIONS.md`.
+- **Grafana dashboards** — the `observability` compose profile (Prometheus + Grafana) exists; pre-built dashboards for the app's `/metrics` are welcome.
 
 ### Lower priority
 

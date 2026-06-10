@@ -235,7 +235,12 @@ Honour the [Definition of done](#definition-of-done-per-task) on every task. Wor
 - **Acceptance met.** The index exists and is exercised by the key-lookup path; `make migrate-test`
   round-trips it clean.
 
-### A4.5 `[OPS]` Customer quick-start must not land in dev mode (P1) — ✅ DONE (2026-06-10)
+### A4.5 `[OPS]` Customer quick-start must not land in dev mode (P1) — ✅ DONE (2026-06-10) — ⚠ SUPERSEDED (2026-06-10)
+
+> **Superseded:** the dev/production split was removed the same day — the product runs locally as a
+> single stack. `docker-compose.dev.yml` and `BRAIN_ENVIRONMENT` (with its production fail-fast
+> validator) were deleted; `make up` is the one entry point (GPU auto-detected). The record below
+> is kept as history.
 - [x] **Context.** `docker-compose.override.yml` was **committed and auto-merged**, so the README
   quick start (`docker compose up -d`) gave a customer the **dev** stack: `BRAIN_ENVIRONMENT=development`
   (bypassing the §4.3 production fail-fast on weak secrets), Postgres/Redis/Chroma published to the
@@ -613,6 +618,10 @@ workflow is now coherent; the remaining items are image slimming, secret/network
 runtime robustness. See [docs/reference/API_EVOLUTION_PLAN.md](docs/reference/API_EVOLUTION_PLAN.md) for the architecture record.
 
 ### 4.0 Done — Docker architecture rework (this session) ✅
+
+> **Partially superseded 2026-06-10:** the dev/production split described below was later removed —
+> the stack runs locally one way (`app` + `worker` targets, toolchain baked in, repo bind-mounted,
+> hot reload). The multi-stage Dockerfile, migrate-on-boot, `libgomp1`, and worker design all stand.
 - [x] **One multi-stage `Dockerfile`** with targets `base` / `builder` / `dev` / `production` / `worker`; deleted the drifting `Dockerfile.worker` (folded into the `worker` target).
 - [x] **Dev/prod parity, no manual pip.** The `dev` stage bakes the `[dev]` toolchain → `docker compose up` (auto-merges `docker-compose.override.yml`, builds `dev`, bind-mounts `.:/app`) gives a container where `make ci` runs immediately. `production` is lean (compilers dropped, no dev tools/tests). Verified: `make ci` green in a fresh container with zero setup.
 - [x] **Non-root production & worker** (`USER brain`, uid 10001) — verified `import brain.api.app` works as non-root. `dev` stays root for friction-free bind-mount writes.
@@ -640,6 +649,12 @@ runtime robustness. See [docs/reference/API_EVOLUTION_PLAN.md](docs/reference/AP
 **Acceptance.** On this CUDA host (after the toolkit install), the default `docker compose up worker` → `torch.cuda.is_available()` True and a tiny LoRA job trains on the GPU and clears the eval gate; on a CPU-only host, `docker compose -f docker-compose.yml -f docker-compose.cpu.yml up` starts cleanly and a LoRA job is rejected with a clear "GPU required" error. The app image stays CPU-only/no-CUDA.
 
 ### 4.3 Security hardening (P1)
+
+> **Superseded 2026-06-10:** the product runs locally as a single stack — `BRAIN_ENVIRONMENT`, the
+> production fail-fast validator (+ its tests), non-root images, `no-new-privileges`, and the
+> unpublished data-store ports were all removed with the dev/production split. The record below is
+> kept as history.
+
 **Context.** Non-root is done (§4.0). Remaining: secrets and host network exposure.
 - [x] Run containers as non-root (production + worker).
 - [x] **Secrets, not weak defaults** (FIXED 2026-06-09). Added `BRAIN_ENVIRONMENT` (default `development`); a `model_validator` in `brain/config.py` **fails fast in production** if `BRAIN_SECRET_KEY` is the default/short, `BRAIN_DATABASE_URL` still uses `brain:brain`, or CORS is `*`. Prod compose baseline defaults `BRAIN_ENVIRONMENT=production` + threads `POSTGRES_PASSWORD` into the DB URL; the dev override forces `development` so zero-setup dev still works. *Verified:* prod boot with defaults crashes with a clear multi-line reason; strong config passes. Unit-guarded by `tests/test_config_security.py` (6 tests). `.env.example` updated.

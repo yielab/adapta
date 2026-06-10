@@ -91,44 +91,49 @@ docker run --rm --device nvidia.com/gpu=all ubuntu nvidia-smi -L
 
 ---
 
-### 1. Clone and configure
+### 1. Clone
 
 ```bash
 git clone https://github.com/santiagoyie/brainFromCero
 cd brainFromCero
-
-cp .env.example .env
-# Generate a random JWT secret and write it in:
-sed -i "s|^BRAIN_SECRET_KEY=.*|BRAIN_SECRET_KEY=$(openssl rand -hex 32)|" .env
 ```
 
-Review `.env` and set a strong `POSTGRES_PASSWORD` before any non-local deployment.
+Everything has a working local default. To override anything (JWT secret, Postgres password, model settings), copy `.env.example` to `.env` and edit it — set a real `BRAIN_SECRET_KEY` (`openssl rand -hex 32`) and a strong `POSTGRES_PASSWORD` if the stack is ever reachable beyond localhost.
 
 ---
 
 ### 2. Start the stack
 
-A bare `docker compose up` runs the **production** images: lean, non-root, and it **fails fast on startup** if `BRAIN_SECRET_KEY` or the Postgres password are left at their defaults (so make sure step 1 is done).
-
-**GPU host (default):**
+There is one stack — no dev/production modes:
 
 ```bash
-docker compose up -d
+make up        # = docker compose up -d --build, with GPU auto-detection
 ```
 
-**CPU-only host:**
+On a host without an NVIDIA GPU/toolkit, `make up` automatically layers the CPU opt-out (`docker-compose.cpu.yml`) so the stack still starts — RAG works; LoRA jobs are rejected with a clear "GPU required" message. The equivalent raw commands:
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.cpu.yml up -d
+docker compose up -d --build                                            # GPU host
+docker compose -f docker-compose.yml -f docker-compose.cpu.yml up -d    # CPU-only host
 ```
 
-The `app` container runs `alembic upgrade head` automatically on startup — no manual migration step is needed. Postgres, Redis, and Chroma are healthchecked before the app starts.
-
-> **Contributors:** for a hot-reload dev stack with the test toolchain baked in (and weak-secret checks relaxed for local work), use `make dev` instead — see [CONTRIBUTING.md](CONTRIBUTING.md). The data-store ports are only exposed in dev mode; production keeps them on the internal network.
+The `app` container runs `alembic upgrade head` automatically on startup — no manual migration step is needed. Postgres, Redis, and Chroma are healthchecked before the app starts. The repo is bind-mounted into the containers, so code edits hot-reload; the test/SDD toolchain is baked into the image (`docker compose exec app make ci` — see [CONTRIBUTING.md](CONTRIBUTING.md)).
 
 ---
 
 ### 3. Verify the stack is up
+
+`make up` already waits for health and prints this map; re-print it any time with `make status`:
+
+| Service | URL / port |
+| --- | --- |
+| **Console (web UI)** | <http://localhost:8000/console/> — default login `admin@example.com` / `admin12345` (seeded on an empty DB; disable with `BRAIN_SEED_DEFAULT_ADMIN=0`) |
+| API base | <http://localhost:8000> |
+| API docs (Swagger) | <http://localhost:8000/docs> |
+| Health | <http://localhost:8000/health> (deep: `/health/deep`) |
+| Postgres | `localhost:5432` (db `brain`, user `brain`) |
+| Redis | `localhost:6379` |
+| ChromaDB | `localhost:8001` |
 
 ```bash
 docker compose ps                          # every service should show "healthy"
@@ -171,7 +176,7 @@ Supported base models (see [docs/reference/OPERATIONS.md §6](docs/reference/OPE
 
 **Go to: [http://localhost:8000/console/](http://localhost:8000/console/)**
 
-The first screen is a Register form. Fill it in — the first registered user becomes the org admin. After that you land on the Projects page.
+Sign in with the seeded development admin (`admin@example.com` / `admin12345`), or register — each registration creates a new organization with that account as its admin. After that you land on the Projects page.
 
 From the console you can:
 
@@ -182,12 +187,12 @@ The console hands you a copy-paste **OpenAI SDK snippet** with your endpoint slu
 
 ---
 
-### 6. (Optional) Bootstrap via API instead
+### 6. (Optional) Register via API instead
 
 ```bash
 curl -X POST http://localhost:8000/v1/auth/register \
   -H "Content-Type: application/json" \
-  -d '{"org_name": "Acme", "email": "admin@acme.com", "password": "changeme"}'
+  -d '{"org_name": "Acme", "email": "admin@acme.com", "password": "changeme123"}'
 ```
 
 Full interactive API docs: [http://localhost:8000/docs](http://localhost:8000/docs)
@@ -302,7 +307,7 @@ Phases 0–5 are complete. Pre-first-customer software: the core platform is bui
 | Usage metering | ✅ Done | Per-endpoint daily token rollup; `GET /usage` |
 | API contract (Pillar 1) | ✅ Done | schemathesis 1260/1260, `--checks all`, zero 5xx; generated models drift-gated |
 | Error handling | ✅ Done | `DomainError` taxonomy; one error envelope; 0 `detail=str(e)` sites; correlation IDs |
-| Docker dev/prod/worker | ✅ Done | One multi-stage Dockerfile; non-root production; CPU-only app image (1.87 GB) |
+| Docker app/worker | ✅ Done | One multi-stage Dockerfile, single local stack; CPU-only app image; CUDA worker |
 | Test coverage | 🚧 Partial | 132 in-process tests; ~30% line coverage floor enforced; integration tests green |
 | Multimodal RAG / vision | 🗑️ Cut | Not in scope |
 

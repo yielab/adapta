@@ -5,20 +5,19 @@ before the code.** This is Extended Spec-Driven Development (SDD). The full
 reference is [SDD workflow](../reference/SDD_WORKFLOW.md); this page is the practical
 day-to-day.
 
-## The dev environment
+## The environment
 
-Work inside the dev container — it ships the full toolchain (you never
-`pip install` by hand):
+There is one stack — no dev/production split. The app image ships the full
+toolchain and the repo is bind-mounted, so host edits hot-reload and you never
+`pip install` by hand:
 
 ```bash
-make dev                              # build + start the dev stack (hot-reload, tools baked in)
-make dev-cpu                          # same, on a CPU-only host
+make up                               # build + start the stack (GPU auto-detected)
 docker compose exec app make ci       # run the offline gate inside the container
 ```
 
-`make dev` uses `docker-compose.dev.yml`; a bare `docker compose up` is
-**production** (lean, non-root, fails fast on weak secrets). Don't develop
-against the production stack.
+On a host without an NVIDIA GPU/toolkit, `make up` automatically layers
+`docker-compose.cpu.yml` so the stack still starts (`make up-cpu` forces it).
 
 ## The three contracts
 

@@ -2,12 +2,19 @@
 # ──────────────────────────────────────────────────────────────────────────────
 # Brain From Cero — single multi-stage image (one source of truth).
 #
-#   base           OS + curl; venv on PATH (shared by every stage)
-#   builder        + compilers; runtime venv with CPU-only torch (app/dev)
-#   dev            builder + [dev] toolchain; source via bind-mount (compose)
-#   production     base + copied CPU venv + baked source; non-root, no compilers
-#   worker-builder + compilers; separate venv with [training] + CUDA torch
-#   worker         base + copied CUDA venv + baked source; runs the QLoRA worker
+#   base            OS + curl; venv on PATH (shared by every stage)
+#   builder         + compilers; venv with CPU-only torch + runtime deps + the
+#                   full [dev] toolchain (ruff / mypy / pytest / SDD codegen)
+#   console-builder Vite+Svelte build of the operator console (static SPA)
+#   app             base + copied venv + baked source + console dist. THE image —
+#                   compose bind-mounts the repo over /app for live code, so the
+#                   baked copy only matters when running the image standalone.
+#   worker-builder  + compilers; separate venv with [training] + CUDA torch
+#   worker          base + copied CUDA venv + baked source; runs the QLoRA worker
+#
+# There is no dev/production split: this stack runs locally, one way. The app
+# image ships the whole toolchain so `docker compose exec app make ci` always
+# works, and the entrypoint runs migrations then uvicorn with hot reload.
 #
 # Build one stage:    docker build --target <stage> .
 # Compose picks it:   build.target in docker-compose*.yml
@@ -28,12 +35,13 @@ WORKDIR /app
 # Runtime-only OS deps:
 #   curl     — backs the container HEALTHCHECK
 #   libgomp1 — OpenMP runtime required by llama-cpp (and torch) at import time
+#   make     — the SDD build targets (`make ci` etc.) run inside the app container
 # These must be in EVERY runtime stage; the compilers in `builder` are dropped.
-RUN apt-get update && apt-get install -y --no-install-recommends curl libgomp1 \
+RUN apt-get update && apt-get install -y --no-install-recommends curl libgomp1 make \
     && rm -rf /var/lib/apt/lists/*
 
-# ===== builder (app/dev: CPU-only torch) =====================================
-# Compilers live ONLY here. They never reach the production / worker images.
+# ===== builder (app: CPU-only torch + full toolchain) ========================
+# Compilers live ONLY here. They never reach the app / worker images.
 FROM base AS builder
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential cmake gcc g++ git \
@@ -47,26 +55,15 @@ RUN python -m venv /opt/venv
 # and never fetches the CUDA build. (GPU torch lives only in the worker image.)
 RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
 
-# Install runtime dependencies — cached until pyproject.toml changes.
+# Runtime deps + the full [dev] toolchain — cached until pyproject.toml changes.
 # editable_mode=compat puts /app on sys.path, so the source is importable whether
-# it is baked in (production) or bind-mounted at runtime (dev) — no re-running pip.
+# it is baked in (standalone) or bind-mounted at runtime (compose) — no re-running pip.
 COPY pyproject.toml ./
-RUN pip install --no-cache-dir -e . --config-settings editable_mode=compat
-
-# ===== dev ====================================================================
-# Adds the full quality/SDD toolchain. NO source is copied: compose bind-mounts
-# the repo at /app, so pytest / ruff / mypy / make ci all run against live host
-# files with zero manual setup. Runs as root for friction-free bind-mount writes.
-FROM builder AS dev
 RUN pip install --no-cache-dir -e ".[dev]" --config-settings editable_mode=compat
-ENV BRAIN_HOST=0.0.0.0 BRAIN_PORT=8000
-EXPOSE 8000
-ENTRYPOINT ["/app/entrypoint.sh"]
 
 # ===== console-builder (thin operator console — Vite + Svelte) ================
-# Builds the static SPA to brain/console/dist/. Copied into the production image
-# so the app can mount it at /console/. The dev image skips this stage: the
-# bind-mounted host tree already has the dist if the developer ran `npm run build`.
+# Builds the static SPA to dist/, baked into the app image below. With the repo
+# bind-mounted, the host's brain/console/dist (from `npm run build`) wins instead.
 FROM node:22-slim AS console-builder
 WORKDIR /build
 COPY brain/console/package.json brain/console/package-lock.json ./
@@ -74,20 +71,19 @@ RUN npm ci --no-audit --prefer-offline
 COPY brain/console/ ./
 RUN npm run build:fast
 
-# ===== production =============================================================
-FROM base AS production
+# ===== app ====================================================================
+# The one application image: copied venv (deps + toolchain, no compilers) plus a
+# baked copy of source/specs/migrations so it also runs standalone. Under compose
+# the repo bind-mount shadows /app and uvicorn hot-reloads on edits.
+FROM base AS app
 COPY --from=builder /opt/venv /opt/venv
 COPY brain/ ./brain/
-# Bake the pre-built console assets into the image (built above by console-builder).
 COPY --from=console-builder /build/dist ./brain/console/dist/
 COPY specs/ ./specs/
 COPY migrations/ ./migrations/
-COPY alembic.ini entrypoint.sh ./
+COPY alembic.ini entrypoint.sh Makefile pyproject.toml ./
 RUN chmod +x /app/entrypoint.sh \
-    && mkdir -p /app/data/models /app/data/uploads /app/data/adapters /app/data/datasets \
-    && useradd --create-home --uid 10001 brain \
-    && chown -R brain:brain /app
-USER brain
+    && mkdir -p /app/data/models /app/data/uploads /app/data/adapters /app/data/datasets
 ENV BRAIN_HOST=0.0.0.0 BRAIN_PORT=8000
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
@@ -123,8 +119,5 @@ COPY --from=worker-builder /opt/llamacpp /opt/llamacpp
 COPY brain/ ./brain/
 COPY migrations/ ./migrations/
 COPY alembic.ini ./
-RUN mkdir -p /app/data/models /app/data/adapters /app/data/datasets \
-    && useradd --create-home --uid 10001 brain \
-    && chown -R brain:brain /app
-USER brain
+RUN mkdir -p /app/data/models /app/data/adapters /app/data/datasets
 CMD ["python", "-m", "brain.worker.main"]

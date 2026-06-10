@@ -7,6 +7,11 @@ echo "[entrypoint] Running database migrations..."
 alembic upgrade head
 echo "[entrypoint] Migrations complete."
 
+# Development convenience: seed a default admin on an EMPTY database so the
+# console is usable immediately. Gated by BRAIN_SEED_DEFAULT_ADMIN; a no-op if
+# any organization already exists (never clobbers a real bootstrap).
+python -m brain.db.seed
+
 if [ "${BRAIN_RELOAD:-0}" = "1" ]; then
     echo "[entrypoint] Starting API server (reload mode)..."
     exec uvicorn brain.api.app:app \

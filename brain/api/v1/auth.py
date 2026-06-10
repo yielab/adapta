@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from brain.db.models import Invitation, Org, Role, Team, TeamMember
 from brain.db.session import get_db
-from brain.domain.errors import Conflict, InvalidRequest
+from brain.domain.errors import InvalidRequest
 from brain.services.auth import (
     authenticate_user,
     create_access_token,
@@ -74,17 +74,15 @@ async def login(body: LoginRequest, request: Request, db: AsyncSession = Depends
 @router.post("/register", response_model=UserResponse, status_code=201)
 async def register(body: RegisterRequest, request: Request, db: AsyncSession = Depends(get_db)):
     """
-    Bootstrap: creates the org, a default team, and the first admin user.
-    Subsequent users are added by an admin via team management.
+    Creates an organization, its default team, and its admin user. Anyone can
+    register a new org at any time; additional users join an EXISTING org via
+    the invite flow. The only conflict is a duplicate email (create_user → 409).
     """
     await enforce_auth(request, body.email)
-    from sqlalchemy import func, select
-    existing_orgs = await db.execute(select(func.count()).select_from(Org))
-    count = existing_orgs.scalar()
-    if count and count > 0:
-        raise Conflict(
-            message="Organization already exists. Contact your admin to add new users."
-        )
+    if not body.password or len(body.password) < 8:
+        raise InvalidRequest(message="Password must be at least 8 characters")
+    if not body.org_name.strip():
+        raise InvalidRequest(message="Organization name must not be empty")
 
     org = Org(name=body.org_name)
     db.add(org)

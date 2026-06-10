@@ -77,6 +77,35 @@ async def _first_team_id() -> str:
         await conn.close()
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _restore_db_after_suite():
+    """Leave the DB as a fresh boot would: truncate the suite's leftovers, then
+    re-run the development seed (a no-op if BRAIN_SEED_DEFAULT_ADMIN is off).
+    Without this, the last test's org lingers and shadows the seeded dev admin —
+    the console login then fails after every integration run."""
+    yield
+    import asyncio
+
+    async def _cleanup() -> None:
+        await _truncate()
+        if not settings.seed_default_admin:
+            return
+        # Fresh engine on THIS loop — the app's shared pooled engine must not be
+        # reused across event loops (see module docstring).
+        from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+        from brain.db.seed import seed_default_admin
+
+        engine = create_async_engine(settings.database_url)
+        try:
+            factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+            await seed_default_admin(session_factory=factory)
+        finally:
+            await engine.dispose()
+
+    asyncio.run(_cleanup())
+
+
 @pytest.fixture
 async def client():
     """Async client against the live server (background tasks run for real)."""

@@ -49,14 +49,44 @@ async def test_me_returns_current_user(client, admin):
     assert r.json()["email"] == "admin@itest.dev"
 
 
-async def test_register_is_bootstrap_once(client, admin):
-    # Org already exists → second register is a 409 Conflict (not 400/500).
+async def test_register_is_open_per_org(client, admin):
+    # Registration is open: a new email creates a NEW org with its own admin.
     r = await client.post(
         "/v1/auth/register",
-        json={"email": "second@itest.dev", "password": "another-pass-123", "org_name": "X"},
+        json={"email": "second@itest.dev", "password": "another-pass-123", "org_name": "SecondOrg"},
+    )
+    assert r.status_code == 201, r.text
+    body = r.json()
+    assert body["teams"][0]["role"] == "admin"
+    # The new admin can sign in and sees their own org, isolated from the first.
+    login = await client.post(
+        "/v1/auth/login", json={"email": "second@itest.dev", "password": "another-pass-123"}
+    )
+    assert login.status_code == 200, login.text
+    me = await client.get(
+        "/v1/auth/me", headers={"Authorization": f"Bearer {login.json()['access_token']}"}
+    )
+    assert me.status_code == 200
+    assert me.json()["org_id"] == body["org_id"]
+
+
+async def test_register_duplicate_email_is_409(client, admin):
+    # The only register conflict: an email that already has an account.
+    r = await client.post(
+        "/v1/auth/register",
+        json={"email": "admin@itest.dev", "password": "another-pass-123", "org_name": "X"},
     )
     assert r.status_code == 409
     assert r.json()["error"]["code"] == "conflict"
+
+
+async def test_register_short_password_is_400(client, admin):
+    r = await client.post(
+        "/v1/auth/register",
+        json={"email": "short@itest.dev", "password": "short", "org_name": "X"},
+    )
+    assert r.status_code == 400
+    assert r.json()["error"]["code"] == "invalid_request"
 
 
 # --- Projects (persistence + team scoping) ---------------------------------
