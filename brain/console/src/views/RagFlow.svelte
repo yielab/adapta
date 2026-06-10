@@ -10,6 +10,9 @@
 
   let { project }: { project: Project } = $props();
 
+  const DOCS_URL =
+    "https://github.com/santiagoyie/brainFromCero/blob/main/docs/user-guide/operator-console.md";
+
   let files = $state<ProjectFile[]>([]);
   let loading = $state(true);
   let loadErr = $state(false);
@@ -167,9 +170,41 @@
       <span class="row" style="gap: 6px;"><span class="spinner"></span><small class="muted">indexing…</small></span>
     {/if}
   </div>
-  <p class="muted" style="margin: 0 0 14px;">
+  <p class="muted" style="margin: 0 0 12px;">
     Answers grounded in your documents, with citations — the model's weights don't change.
   </p>
+
+  <!-- Collapsible: what to upload + best practices. Keeps the surface minimal. -->
+  <details class="help" style="margin-bottom: 14px;">
+    <summary>What to upload &amp; how to get good answers</summary>
+    <div class="help-body">
+      <h4>What this needs</h4>
+      <p style="margin: 0;">
+        Just your source material — no examples or labels. Each file is split into
+        small chunks and embedded; at query time the closest chunks are retrieved
+        and quoted back as citations.
+      </p>
+
+      <h4>Accepted files</h4>
+      <ul>
+        <li><strong>PDF, DOCX, Markdown, TXT, HTML.</strong> Text must be selectable —
+          scanned image-only PDFs extract nothing, so OCR them first.</li>
+        <li>Good fits: manuals, FAQs, policies, wikis, specs, support transcripts.</li>
+      </ul>
+
+      <h4>Best practices</h4>
+      <ul>
+        <li>Prefer several focused documents over one giant dump — retrieval stays sharper.</li>
+        <li>Use clear headings and strip boilerplate (nav, repeated headers/footers) — it survives chunking and cuts noise.</li>
+        <li>When content changes, remove the old file and re-upload — the index is not auto-refreshed.</li>
+        <li>RAG teaches <em>facts</em>, not behavior. To change tone or format, use the
+          fine-tuning path instead.</li>
+      </ul>
+      <p style="margin: 10px 0 0;">
+        <a href={DOCS_URL} target="_blank" rel="noopener">Full guide →</a>
+      </p>
+    </div>
+  </details>
 
   <!-- Drop zone / picker -->
   <div

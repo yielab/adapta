@@ -16,6 +16,11 @@
   const EVAL_THRESHOLD = 0.6;
   const POLL_MS = 2000;
 
+  // Minimum valid rows the backend accepts before a dataset can train.
+  const MIN_SAMPLES = 10;
+  const DOCS_URL =
+    "https://github.com/santiagoyie/brainFromCero/blob/main/docs/user-guide/operator-console.md";
+
   // ---- Datasets -----------------------------------------------------------
   let datasets = $state<Dataset[]>([]);
   let dsLoading = $state(false);
@@ -306,6 +311,47 @@
       Provide instruction examples as a <span class="mono">.jsonl</span> file, or
       generate Q/A pairs automatically from documents you've already indexed.
     </p>
+
+    <!-- Collapsible: what a dataset is, its exact format, and where to get one. -->
+    <details class="help" style="margin-bottom: 14px;">
+      <summary>What a dataset is, the format, and where to get one</summary>
+      <div class="help-body">
+        <h4>What a dataset is</h4>
+        <p style="margin: 0;">
+          A set of example <strong>prompt → response</strong> pairs that show the
+          model the behavior you want — a tone, a format, a way of answering. It
+          learns the <em>pattern</em>, not the facts; for facts use the Knowledge
+          (RAG) path instead.
+        </p>
+
+        <h4>Format — JSONL (one JSON object per line)</h4>
+        <pre class="code" style="margin: 4px 0 8px; white-space: pre-wrap;">{`{"prompt": "Summarize this support ticket", "response": "Customer can't log in after the 2.3 update; cause is the expired token cache.", "system": "You are a concise support assistant."}`}</pre>
+        <ul>
+          <li><code>prompt</code> <strong>(required)</strong> — the instruction or question.</li>
+          <li><code>response</code> <strong>(required)</strong> — the ideal answer.</li>
+          <li><code>system</code> (optional) — persona / context for the turn.</li>
+          <li><code>metadata</code> (optional) — free-form (source, quality score…).</li>
+        </ul>
+
+        <h4>Requirements</h4>
+        <ul>
+          <li>At least <strong>{MIN_SAMPLES} valid rows</strong>; aim for 50–500+ for a real effect.</li>
+          <li>Every <code>prompt</code> and <code>response</code> non-empty; keep the style consistent across rows.</li>
+          <li>The last ~20% is held out to score the result and is never trained on (the eval gate below).</li>
+        </ul>
+
+        <h4>Where to get one</h4>
+        <ol>
+          <li><strong>Synthesize from your documents</strong> — the button above turns indexed chunks into Q/A pairs. Fastest start.</li>
+          <li><strong>Export from your own systems</strong> — support tickets, chat logs, past Q/A, reshaped into prompt/response pairs.</li>
+          <li><strong>Hand-write</strong> a few dozen gold examples of exactly the behavior you want.</li>
+          <li><strong>Public datasets</strong> — e.g. instruction sets on Hugging Face (Dolly, OpenAssistant); convert each row to the shape above.</li>
+        </ol>
+        <p style="margin: 10px 0 0;">
+          <a href={DOCS_URL} target="_blank" rel="noopener">Full guide →</a>
+        </p>
+      </div>
+    </details>
 
     {#if showSynth}
       <div class="muted-box" style="margin-bottom: 14px;">
