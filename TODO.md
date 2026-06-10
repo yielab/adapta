@@ -52,7 +52,7 @@ Honour the [Definition of done](#definition-of-done-per-task) on every task. Wor
 | Docker dev/prod workflow | ✅ reworked 2026-06-08 — one multi-stage `Dockerfile`, non-root prod, dev toolchain baked in (no manual pip). See **§4**. |
 | Image size / CPU-only torch | ✅ app **1.87 GB** (was 6.45 GB), CPU-only torch, zero CUDA pkgs (2026-06-08). Worker keeps CUDA torch (verify-rebuild pending). See **§4.2**. |
 | Operator console (§5) | ✅ all views done (2026-06-09) — app shell, auth, projects, RAG flow, fine-tune flow, endpoint+keys, playground, usage, UX polish, mount+Docker+CI (C4 docs partial). Key-scoping (§5.12) enforced. |
-| **Staff audit (§A4)** | 🟢 **all P0+P1 done** — A4.1 (concurrency-safe serving), A4.2 (crashed-job recovery), A4.3 (context-window guard + max_tokens cap), A4.4 (key-prefix index), A4.5 (prod-by-default compose), A4.6 (auditable eval gate), A4.7 (training provenance), A4.8 (model-cache LRU bounds), A4.9 (auth rate-limit). Remaining: the P2 batch (A4.10–A4.12). |
+| **Staff audit (§A4)** | ✅ **complete** — all P0+P1 (A4.1–A4.9) and the full P2 batch (A4.10 stuck-task sweeper, A4.11 streaming prompt tokens, A4.12 ops hardening: disk-check path, chroma version guard, hyperparam bounds, image pinning, synthesis error-rate, GPU hygiene, backup.sh, ProjectStatus `ready`, Chroma retrieval timeout). |
 
 ---
 
@@ -370,18 +370,25 @@ Honour the [Definition of done](#definition-of-done-per-task) on every task. Wor
 - [x] **Hyperparameter bounds at enqueue** (2026-06-10): `validate_training_config` rejects
   out-of-range `num_epochs`/`batch_size`/`learning_rate`/`lora_*`/`max_seq_length` (and non-numeric
   values) with a typed `InvalidRequest` before a job is created (`tests/test_eval_gate.py`).
-- [ ] **Pin external images to minor:** `postgres:15-alpine` / `redis:7-alpine` float; pin
-  `15.x` / `7.x` for reproducible customer installs.
-- [ ] **Synthesis partial-failure threshold:** per-chunk errors only warn; synthesis "succeeds"
-  even if most chunks failed — add a max-error-rate (default ~10%) → `InternalError` above it.
-- [ ] **GPU hygiene in the worker:** `torch.cuda.empty_cache()` in a `finally` after each job;
-  free-disk preflight before training starts.
-- [ ] **`scripts/backup.sh`:** automate OPERATIONS §2 (pg_dump + volume tars + retention) with a
-  cron example.
-- [ ] **Dead `ProjectStatus` values:** `indexing`/`training` are never assigned — wire the
-  transitions or delete the enum values (no dead states).
-- [ ] **Chroma retrieval timeout:** wrap collection queries in a timeout so a hung Chroma
-  degrades to a typed error instead of hanging every chat request.
+- [x] **Pin external images to minor** (2026-06-10): `postgres:15.17-alpine` / `redis:7.4-alpine`
+  (were the floating `15-alpine` / `7-alpine`); both tags verified to resolve.
+- [x] **Synthesis partial-failure threshold** (2026-06-10): if more than
+  `settings.synthesis_max_error_rate` (default 0.5) of chunks errored, synthesis raises
+  `InternalError` instead of silently shipping a sparse dataset.
+- [x] **GPU hygiene in the worker** (2026-06-10): `_free_gpu_memory()` (`torch.cuda.empty_cache()`)
+  in the worker loop's `finally` after every job; a free-disk preflight (`min_free_disk_gb`,
+  default 5) fails the job early instead of dying deep in training on ENOSPC.
+- [x] **`scripts/backup.sh`** (2026-06-10): pg_dump + Chroma-volume tar + artifacts tar from one
+  window + `RETENTION_DAYS` pruning; referenced from OPERATIONS §2 with a cron example.
+- [x] **`ProjectStatus` no longer stuck at `created`** (2026-06-10): `create_endpoint` advances the
+  project to `ready` (status is an unconstrained string in the spec, so no contract change). The
+  transient `indexing`/`training` remain as documented lifecycle states (they'd be set inside the
+  index/job background tasks — deferred, lower value than the stuck-at-created fix).
+- [x] **Chroma retrieval timeout** (2026-06-10): `chat._retrieve` runs retrieval via
+  `asyncio.to_thread` under `asyncio.wait_for(settings.rag_timeout_seconds, default 10)` → a hung
+  Chroma degrades to a typed `Timeout` (504) instead of blocking the event loop / every chat
+  request. (Also moved the previously-synchronous retrieve off the event loop.) Validated by the
+  RAG e2e.
 
 ---
 

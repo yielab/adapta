@@ -27,6 +27,10 @@ Redis is a transient queue; a graceful worker shutdown requeues in-flight jobs
 
 ## 2. Backup & restore (§3.3)
 
+> **Scripted:** [`scripts/backup.sh`](../scripts/backup.sh) runs all three backups
+> below from one window and prunes old files (`RETENTION_DAYS`, default 14). Cron it:
+> `0 3 * * * cd /opt/brainFromCero && scripts/backup.sh >> backup/backup.log 2>&1`.
+
 **Backup** (stop nothing — `pg_dump` and file copies are online-safe):
 
 ```bash

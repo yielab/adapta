@@ -130,7 +130,9 @@ services:
   # PostgreSQL: metadata store
   # ──────────────────────────────────────────────
   postgres:
-    image: postgres:15-alpine
+    # Pinned to a specific minor for reproducible customer installs (A4.12);
+    # patch upgrades within 15.x are data-compatible.
+    image: postgres:15.17-alpine
     container_name: brain-postgres
     environment:
       POSTGRES_USER: brain
@@ -156,7 +158,7 @@ services:
   # Redis: job queue
   # ──────────────────────────────────────────────
   redis:
-    image: redis:7-alpine
+    image: redis:7.4-alpine  # pinned minor for reproducible installs (A4.12)
     container_name: brain-redis
     command: redis-server --appendonly yes
     volumes:

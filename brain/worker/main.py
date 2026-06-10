@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import shutil
 import signal
 import sys
 import uuid
@@ -78,6 +79,18 @@ async def _run_job(meta: dict) -> None:
     cuda = torch_cuda_status()
     if not cuda.usable:
         err = f"GPU required for LoRA training — {cuda.reason}"
+        logger.error(err)
+        await _set_status(queue, job_id, status="failed", error=err)
+        return
+
+    # Free-disk preflight (A4.12): a run writes checkpoints + the adapter; bail
+    # early with a clear message rather than dying deep in training on ENOSPC.
+    try:
+        free_gb = shutil.disk_usage(settings.adapters_dir).free / 1e9
+    except Exception:
+        free_gb = float("inf")  # can't measure → don't block
+    if free_gb < settings.min_free_disk_gb:
+        err = f"Insufficient disk for training: {free_gb:.1f} GB free, need >= {settings.min_free_disk_gb} GB"
         logger.error(err)
         await _set_status(queue, job_id, status="failed", error=err)
         return
@@ -279,6 +292,18 @@ async def _run_job(meta: dict) -> None:
     logger.info("Job %s complete — adapter %s registered", job_id, adapter_id)
 
 
+def _free_gpu_memory() -> None:
+    """Release cached CUDA memory after a job (A4.12) so a failed/finished run
+    doesn't leave VRAM pinned for the next one. No-op if torch/CUDA isn't present."""
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    except Exception:  # pragma: no cover - best-effort cleanup
+        pass
+
+
 def _log_gpu_banner() -> None:
     """Log torch/CUDA readiness once at startup so operators see GPU state in logs."""
     cuda = torch_cuda_status()
@@ -352,6 +377,7 @@ async def worker_loop() -> None:
             await _set_status(queue, job_id, status="failed", error=str(exc))
         finally:
             in_flight["task"] = None
+            _free_gpu_memory()  # release VRAM between jobs (A4.12)
 
     await queue.close()
     logger.info("Worker stopped.")

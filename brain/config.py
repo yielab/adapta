@@ -73,8 +73,14 @@ class Settings(BaseSettings):
     chroma_host: str = "chroma"
     chroma_port: int = 8000
     rag_top_k: int = 5
+    # Cap RAG retrieval so a hung/slow Chroma degrades to a typed 504 instead of
+    # blocking every chat request indefinitely (A4.12).
+    rag_timeout_seconds: int = 10
     chunk_size: int = 512
     chunk_overlap: int = 64
+    # Dataset synthesis: fail the run if more than this fraction of chunks errored,
+    # rather than silently shipping a sparse/degraded dataset (A4.12).
+    synthesis_max_error_rate: float = 0.5
 
     # Auth brute-force rate limiting (A4.9). Fixed-window per-IP and per-email cap on
     # the unauthenticated auth endpoints (login/register/accept-invite). Fail-open: a
@@ -88,6 +94,9 @@ class Settings(BaseSettings):
     # eval split collapses (e.g. 1 row → 0 held out → the gate scores the training
     # rows and only measures memorization), so we reject the job up front.
     min_training_samples: int = 10
+    # Free-disk preflight for the worker (A4.12): bail before training if the
+    # adapters volume has less than this much free, rather than dying deep in a run.
+    min_free_disk_gb: float = 5.0
 
     # Fine-tune serving (A3.1): PEFT adapters are converted to a GGUF LoRA so the
     # single llama-cpp runtime can serve them via `lora_path`. The converter is

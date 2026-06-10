@@ -8,7 +8,15 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from brain.db.models import Endpoint, EndpointStatus, JobStatus, Project, ProjectType, TrainingJob
+from brain.db.models import (
+    Endpoint,
+    EndpointStatus,
+    JobStatus,
+    Project,
+    ProjectStatus,
+    ProjectType,
+    TrainingJob,
+)
 from brain.db.session import get_db
 from brain.domain.errors import Conflict, InvalidRequest, NotFound
 from brain.services.auth import get_current_user, require_team_member, require_team_writer
@@ -107,6 +115,9 @@ async def create_endpoint(
         adapter_path=adapter_path,
     )
     db.add(endpoint)
+    # The project now has a servable endpoint — advance it past `created` so its
+    # status reflects reality (A4.12; previously it sat at `created` forever).
+    project.status = ProjectStatus.ready
     try:
         await db.commit()  # durable before response so an immediate GET sees it (§4.4)
     except IntegrityError as exc:

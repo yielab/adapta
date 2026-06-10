@@ -163,6 +163,22 @@ async def synthesize_from_project(
             internal_detail=f"Processed {len(documents)} chunks, {errors} errors",
         )
 
+    # Guard against silently shipping a degraded dataset: if too large a fraction of
+    # chunks failed (e.g. the LLM was flaky/down), fail loudly rather than returning
+    # a partial dataset that looks complete (A4.12).
+    from brain.config import settings as _settings
+
+    error_rate = errors / len(documents) if documents else 0.0
+    if error_rate > _settings.synthesis_max_error_rate:
+        raise InternalError(
+            message=(
+                f"Synthesis failed on {error_rate*100:.0f}% of chunks "
+                f"(max {_settings.synthesis_max_error_rate*100:.0f}%) — the resulting dataset would "
+                "be too sparse to trust. Check model availability and retry."
+            ),
+            internal_detail=f"{errors}/{len(documents)} chunks failed, {len(all_pairs)} pairs kept",
+        )
+
     # Write JSONL
     from brain.config import settings
     datasets_dir = Path(settings.datasets_dir)

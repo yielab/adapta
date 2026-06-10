@@ -7,6 +7,7 @@ Does NOT touch brain/core/inference.py or brain/core/model_manager.py internals.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 import uuid
@@ -15,8 +16,21 @@ from typing import AsyncIterator, List, Optional
 from brain.config import settings
 from brain.core import inference_engine, model_manager
 from brain.core.inference import InferenceRequest, InferenceResponse, Message
-from brain.domain.errors import DomainError, InferenceFailed, InvalidRequest, ModelNotFound
+from brain.domain.errors import DomainError, InferenceFailed, InvalidRequest, ModelNotFound, Timeout
 from brain.services.rag import get_rag_service
+
+
+async def _retrieve(rag_service, project_id: str, query: str, top_k: int) -> list:
+    """RAG retrieval off the event loop with a timeout (A4.12). A hung Chroma must
+    degrade to a typed 504, not block every chat request — and the blocking client
+    call must not run on the event loop thread."""
+    try:
+        return await asyncio.wait_for(
+            asyncio.to_thread(rag_service.retrieve, project_id, query, top_k=top_k),
+            timeout=settings.rag_timeout_seconds,
+        )
+    except asyncio.TimeoutError as exc:
+        raise Timeout(message="Document retrieval timed out", internal_detail=str(exc)) from exc
 
 logger = logging.getLogger(__name__)
 
@@ -112,7 +126,7 @@ async def chat(
     if project_id:
         rag_service = get_rag_service()
         query = messages[-1].get("content", "") if messages else ""
-        rag_chunks = rag_service.retrieve(project_id, query, top_k=top_k_rag or settings.rag_top_k)
+        rag_chunks = await _retrieve(rag_service, project_id, query, top_k_rag or settings.rag_top_k)
 
     inference_messages = [Message(role=m["role"], content=m["content"]) for m in messages]
 
@@ -201,7 +215,7 @@ async def chat_stream(
     if project_id:
         rag_service = get_rag_service()
         query = messages[-1].get("content", "") if messages else ""
-        rag_chunks = rag_service.retrieve(project_id, query, top_k=top_k_rag or settings.rag_top_k)
+        rag_chunks = await _retrieve(rag_service, project_id, query, top_k_rag or settings.rag_top_k)
 
     inference_messages = [Message(role=m["role"], content=m["content"]) for m in messages]
 
