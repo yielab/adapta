@@ -115,4 +115,7 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
-settings.ensure_dirs()
+# NB: directory creation is deliberately NOT done here. Importing this module must
+# stay free of filesystem side effects so the package can be imported under tests/CI
+# (where the default /app paths aren't writable). Runtime entry points that actually
+# need the data dirs call settings.ensure_dirs() at startup (API lifespan, worker loop).

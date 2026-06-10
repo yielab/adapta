@@ -54,6 +54,11 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Create data directories now (not at config-import time, which would give the
+    # module a filesystem side effect and break imports under tests/CI).
+    from brain.config import settings
+    settings.ensure_dirs()
+
     # Connect job queue on startup
     from brain.services.jobs import get_job_queue
     queue = get_job_queue()

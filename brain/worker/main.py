@@ -275,6 +275,7 @@ def _log_gpu_banner() -> None:
 
 async def worker_loop() -> None:
     _log_gpu_banner()
+    settings.ensure_dirs()  # adapters/datasets dirs must exist before any job runs
     queue = get_job_queue()
     await queue.connect()
 
