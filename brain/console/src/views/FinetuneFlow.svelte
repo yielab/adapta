@@ -276,7 +276,11 @@
       Fine-tuning teaches the model a style, format, or skill from examples. The
       result is a small <strong>adapter</strong> — a lightweight patch layered on
       the base model, rather than a whole new model. It only goes live after it
-      passes the eval gate below.
+      passes the <strong>eval gate</strong> (an automatic quality check, below).
+    </p>
+    <p class="muted" style="margin: 8px 0 0;">
+      The path is three steps: <strong>1</strong> give it a dataset, <strong>2</strong>
+      run the fine-tune job, <strong>3</strong> serve it once the check passes.
     </p>
   </aside>
 
@@ -356,8 +360,14 @@
     {#if showSynth}
       <div class="muted-box" style="margin-bottom: 14px;">
         <h3>Synthesize a dataset</h3>
-        <p class="muted" style="margin: 0 0 12px;">
-          Turns your indexed document chunks into instruction/response pairs.
+        <p class="muted" style="margin: 0 0 4px;">
+          Reads passages from documents you've already indexed and asks the base
+          model to draft example question/answer pairs from them — a quick way to
+          bootstrap a dataset. Review the result before training on it.
+        </p>
+        <p class="muted" style="margin: 0 0 12px; font-size: 12px;">
+          <strong>Pairs per chunk</strong>: how many examples to draft from each passage.
+          <strong>Max chunks</strong>: how many passages to use — higher means more data, but slower.
         </p>
         <div class="row wrap" style="gap: 14px; align-items: flex-end;">
           <div class="field" style="margin: 0; max-width: 180px;">

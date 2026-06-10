@@ -165,7 +165,7 @@
 
 <div class="card">
   <div class="row between" style="margin-bottom: 4px;">
-    <h2 style="margin: 0; font-size: 16px;">Documents</h2>
+    <h2 style="margin: 0; font-size: 16px;">1 · Documents</h2>
     {#if anyInFlight}
       <span class="row" style="gap: 6px;"><span class="spinner"></span><small class="muted">indexing…</small></span>
     {/if}
@@ -269,7 +269,11 @@
               <td>
                 <StatusBadge status={f.status} />
                 {#if f.status === "indexed" && f.num_chunks != null}
-                  <small class="muted" style="margin-left: 8px;">{f.num_chunks} chunk{f.num_chunks === 1 ? "" : "s"}</small>
+                  <small
+                    class="muted hint"
+                    style="margin-left: 8px;"
+                    title="A chunk is a short passage the document was split into so it can be searched. Answers quote the passages they used."
+                  >{f.num_chunks} chunk{f.num_chunks === 1 ? "" : "s"}</small>
                 {/if}
               </td>
               <td class="mono">{fmtSize(f.size_bytes)}</td>
@@ -286,7 +290,7 @@
 
 <!-- Endpoint creation -->
 <div class="card">
-  <h2 style="margin: 0 0 6px; font-size: 16px;">Serve answers</h2>
+  <h2 style="margin: 0 0 6px; font-size: 16px;">2 · Serve answers</h2>
   <p class="muted" style="margin: 0 0 14px;">
     {#if canCreateEndpoint}
       {indexedCount} document{indexedCount === 1 ? "" : "s"} indexed. Create an endpoint to query your knowledge base over an OpenAI-compatible API.
@@ -322,4 +326,5 @@
   .dropzone.over { border-color: var(--accent); background: var(--panel); }
   .dropzone.busy { cursor: default; opacity: .8; }
   .dropzone .link { color: var(--accent); text-decoration: underline; }
+  .hint { cursor: help; border-bottom: 1px dotted var(--muted); }
 </style>
