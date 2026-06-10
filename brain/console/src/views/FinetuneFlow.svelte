@@ -275,12 +275,6 @@
     </p>
   </aside>
 
-  <!-- Honesty banner — until backend §A3.1 wires adapter serving. -->
-  <div class="muted-box honesty">
-    <strong>Heads up:</strong> served output may currently reflect the base
-    model — live adapter serving is shipping separately.
-  </div>
-
   <!-- ============================ DATASET ============================ -->
   <div class="card">
     <div class="row between" style="margin-bottom: 12px;">
@@ -556,8 +550,6 @@
 
 <style>
   .explainer { background: var(--panel-2); }
-  .honesty { border-color: var(--amber); }
-  .honesty strong { color: var(--amber); }
 
   .ds-err {
     margin-top: 6px;
