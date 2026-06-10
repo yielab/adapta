@@ -153,8 +153,14 @@ async def main() -> None:
     _alembic("downgrade", "-1")  # exercise the down-migration WITH data present
     _alembic("upgrade", "head")
     await _seed("post-roundtrip")  # schema is functional again
+
+    # Reset to a clean migrated-but-empty DB so subsequent CI steps (contract
+    # tests) start with no rows and can bootstrap a fresh org via /v1/auth/register.
+    _alembic("downgrade", "base")
+    _alembic("upgrade", "head")
+
     await engine.dispose()
-    print("✓ seeded migration round-trip verified")
+    print("✓ seeded migration round-trip verified (DB left clean)")
 
 
 if __name__ == "__main__":

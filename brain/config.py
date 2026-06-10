@@ -3,9 +3,8 @@ All env vars are prefixed BRAIN_ (e.g. BRAIN_DATABASE_URL).
 """
 
 from pathlib import Path
-from typing import Optional
 
-from pydantic import Field, model_validator
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _DEFAULT_SECRET = "CHANGE_ME_IN_PRODUCTION_use_openssl_rand_hex_32"
@@ -27,10 +26,10 @@ class Settings(BaseSettings):
     # Paths — set BRAIN_DATA_DIR to override the root; subdirs default to
     # data_dir/{models,uploads,adapters,datasets} but can be overridden individually.
     data_dir: Path = Path("/app/data")
-    models_dir: Optional[Path] = Field(default=None)
-    uploads_dir: Optional[Path] = Field(default=None)
-    adapters_dir: Optional[Path] = Field(default=None)
-    datasets_dir: Optional[Path] = Field(default=None)
+    models_dir: Path = Path("/app/data/models")
+    uploads_dir: Path = Path("/app/data/uploads")
+    adapters_dir: Path = Path("/app/data/adapters")
+    datasets_dir: Path = Path("/app/data/datasets")
 
     # Database (Postgres via asyncpg)
     database_url: str = "postgresql+asyncpg://brain:brain@postgres:5432/brain"
@@ -122,17 +121,24 @@ class Settings(BaseSettings):
     log_format: str = "text"  # "text" (default) or "json" for structured logs
     metrics_enabled: bool = True  # expose GET /metrics (Prometheus text format)
 
-    @model_validator(mode="after")
-    def _derive_subdirs(self) -> "Settings":
-        if self.models_dir is None:
-            self.models_dir = self.data_dir / "models"
-        if self.uploads_dir is None:
-            self.uploads_dir = self.data_dir / "uploads"
-        if self.adapters_dir is None:
-            self.adapters_dir = self.data_dir / "adapters"
-        if self.datasets_dir is None:
-            self.datasets_dir = self.data_dir / "datasets"
-        return self
+    @model_validator(mode="before")
+    @classmethod
+    def _derive_subdirs(cls, values: dict) -> dict:
+        # If BRAIN_DATA_DIR is set, re-base any subdir that wasn't explicitly
+        # overridden. This runs before field parsing, so all annotations stay Path.
+        data_dir = values.get("data_dir")
+        if data_dir is None:
+            return values
+        base = Path(str(data_dir))
+        for name, child in (
+            ("models_dir", "models"),
+            ("uploads_dir", "uploads"),
+            ("adapters_dir", "adapters"),
+            ("datasets_dir", "datasets"),
+        ):
+            if name not in values:
+                values[name] = base / child
+        return values
 
     @model_validator(mode="after")
     def _enforce_production_security(self) -> "Settings":
@@ -167,7 +173,6 @@ class Settings(BaseSettings):
 
     def ensure_dirs(self) -> None:
         for d in [self.data_dir, self.models_dir, self.uploads_dir, self.adapters_dir, self.datasets_dir]:
-            assert d is not None
             d.mkdir(parents=True, exist_ok=True)
 
 
