@@ -74,6 +74,10 @@ The `app` container runs `alembic upgrade head` on startup (in
 git pull && docker compose -f docker-compose.yml up -d --build
 ```
 
+> A bare `docker compose up` is equivalent (production by default — the dev
+> overrides in `docker-compose.dev.yml` are opt-in, not auto-merged, §A4.5). The
+> explicit `-f docker-compose.yml` form above is just self-documenting.
+
 - Migrations are forward-only in production; the down-migrations exist and are
   CI-tested (`make migrate-test`, incl. a seeded round-trip) but are a
   development/rollback aid, not a routine production step.

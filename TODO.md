@@ -52,7 +52,7 @@ Honour the [Definition of done](#definition-of-done-per-task) on every task. Wor
 | Docker dev/prod workflow | ✅ reworked 2026-06-08 — one multi-stage `Dockerfile`, non-root prod, dev toolchain baked in (no manual pip). See **§4**. |
 | Image size / CPU-only torch | ✅ app **1.87 GB** (was 6.45 GB), CPU-only torch, zero CUDA pkgs (2026-06-08). Worker keeps CUDA torch (verify-rebuild pending). See **§4.2**. |
 | Operator console (§5) | ✅ all views done (2026-06-09) — app shell, auth, projects, RAG flow, fine-tune flow, endpoint+keys, playground, usage, UX polish, mount+Docker+CI (C4 docs partial). Key-scoping (§5.12) enforced. |
-| **Staff audit (§A4)** | 🟡 **in progress (2026-06-09)** — both P0s done: A4.1 (concurrency-safe + time-bounded serving) ✅, A4.2 (crashed-job recovery + `attempts`) ✅. Remaining: no context-window guard (A4.3), quick-start lands in dev mode (A4.5), eval verdict not auditable (A4.6). 7×P1, batch of P2 left. |
+| **Staff audit (§A4)** | 🟡 **in progress** — both P0s done: A4.1 (concurrency-safe serving) ✅, A4.2 (crashed-job recovery) ✅. A4.5 (prod-by-default compose) ✅. Remaining P1: A4.3 (context-window guard), A4.4 (key-prefix index), A4.6 (auditable eval gate), A4.7 (provenance), A4.8 (model-cache bounds), A4.9 (auth rate-limit). Plus the P2 batch (A4.10–A4.12). |
 
 ---
 
@@ -223,22 +223,25 @@ Honour the [Definition of done](#definition-of-done-per-task) on every task. Wor
 - **Files.** `brain/db/models.py` + migration, `brain/api/v1/chat.py`, seeded migrate-test.
 - **Acceptance.** `EXPLAIN` shows an index scan for the key lookup; `make migrate-test` green.
 
-### A4.5 `[OPS]` Customer quick-start must not land in dev mode (P1)
-- **Context.** `docker-compose.override.yml` is **committed and auto-merged**, so the README
-  quick start (`docker compose up -d`) gives a customer the **dev** stack: `BRAIN_ENVIRONMENT=development`
-  (which bypasses the §4.3 production fail-fast on weak secrets), Postgres/Redis/Chroma published
-  to the host, bind-mounted source. The prod-safe invocation (`-f docker-compose.yml`) is only in
-  OPERATIONS. Secure-by-default is inverted.
-- **Steps.** Decide and apply one: **(a) recommended** — rename the override to
-  `docker-compose.dev.yml`; dev becomes the explicit `docker compose -f docker-compose.yml -f docker-compose.dev.yml up`
-  (or a `make dev` wrapper), and bare `docker compose up` is prod-safe; **(b)** keep the override
-  but rewrite README/quick-start to use `-f docker-compose.yml` everywhere with a loud warning.
-  Note: (a) changes the documented dev workflow (CLAUDE.md "docker compose up = dev") — update
-  CLAUDE.md, CONTRIBUTING.md, OPERATIONS.md in the same PR.
-- **Files.** `docker-compose.override.yml` (rename), `README.md`, `CONTRIBUTING.md`,
-  `docs/OPERATIONS.md`, `CLAUDE.md`, `Makefile` (optional `dev` target).
-- **Acceptance.** A fresh clone following the README boots with production semantics: weak
-  secrets fail fast, only `app:8000` host-published. Dev remains a one-command workflow.
+### A4.5 `[OPS]` Customer quick-start must not land in dev mode (P1) — ✅ DONE (2026-06-10)
+- [x] **Context.** `docker-compose.override.yml` was **committed and auto-merged**, so the README
+  quick start (`docker compose up -d`) gave a customer the **dev** stack: `BRAIN_ENVIRONMENT=development`
+  (bypassing the §4.3 production fail-fast on weak secrets), Postgres/Redis/Chroma published to the
+  host, bind-mounted source. Secure-by-default was inverted.
+- [x] **Done — option (a).** Renamed `docker-compose.override.yml` → `docker-compose.dev.yml`, so
+  Compose no longer auto-merges it: **bare `docker compose up` is now production** (env=production,
+  lean non-root images, only `app:8000` host-published, weak-secret fail-fast active). Dev is an
+  explicit opt-in via `make dev` (= `-f docker-compose.yml -f docker-compose.dev.yml up -d --build`)
+  with `make dev-cpu` for CPU hosts; added `make up`/`make down` host targets. Verified all three
+  merges with `docker compose config` (bare=prod, dev=dev image+reload+DB ports, dev-cpu=GPU
+  devices reset).
+- [x] **Files.** `docker-compose.override.yml`→`docker-compose.dev.yml` (renamed + header rewritten),
+  `Makefile` (host `dev`/`dev-cpu`/`up`/`down` targets + header), `README.md` (quick-start now
+  states prod-by-default + a contributor `make dev` note), `CONTRIBUTING.md` (dev setup uses
+  `make dev` with the why), `CLAUDE.md` (constraint #2), `docs/OPERATIONS.md` (upgrade note).
+- **Acceptance met.** A fresh clone following the README boots with production semantics (weak
+  secrets fail fast, only `app:8000` host-published); `make dev` restores the one-command dev
+  workflow. CI is unaffected (it installs via pip, not compose). `make ci` green.
 
 ### A4.6 `[BE]` Eval gate the operator can trust: min dataset size, persisted artifacts, distinct eval-crash (P1)
 - **Context.** Three gaps weaken Pillar 3's verdict: (1) a 1-row dataset makes the holdout split

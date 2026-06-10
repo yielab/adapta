@@ -1,15 +1,24 @@
 # ──────────────────────────────────────────────────────────────────────────────
-# Development overrides — auto-merged by `docker compose up` (no flags needed).
+# Development overrides — EXPLICIT opt-in (NOT auto-merged), so a bare
+# `docker compose up` is production-safe by default (§A4.5). Enable dev with:
 #
-# What this gives you:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d   # or: make dev
+#
+# (Named docker-compose.dev.yml on purpose: Compose only auto-merges a file
+# literally named docker-compose.override.yml. Renaming it means the default
+# `docker compose up` runs the lean, secure production images instead of silently
+# dropping into development mode.)
+#
+# What dev mode gives you:
 #   • app builds the `dev` image stage → ruff / mypy / pytest / SDD toolchain are
 #     ALREADY installed. `docker compose exec app make ci` works with zero setup.
-#   • the repo is bind-mounted at /app → host edits are live in the container,
-#     and tools run against your real working tree (no docker cp, no rebuilds).
+#   • the repo is bind-mounted at /app → host edits are live in the container.
 #   • uvicorn runs with --reload so API code changes restart the server.
+#   • BRAIN_ENVIRONMENT=development → the production security validator is skipped,
+#     so the default secret / DB password are fine for local work.
 #
-# Production deploys IGNORE this file — they use the lean, non-root images:
-#   docker compose -f docker-compose.yml up -d --build
+# Production deploys IGNORE this file — bare `docker compose up -d` uses the lean,
+# non-root images and fails fast on weak secrets (§4.3).
 # ──────────────────────────────────────────────────────────────────────────────
 services:
   app:

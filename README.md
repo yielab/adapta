@@ -108,6 +108,8 @@ Review `.env` and set a strong `POSTGRES_PASSWORD` before any non-local deployme
 
 ### 2. Start the stack
 
+A bare `docker compose up` runs the **production** images: lean, non-root, and it **fails fast on startup** if `BRAIN_SECRET_KEY` or the Postgres password are left at their defaults (so make sure step 1 is done).
+
 **GPU host (default):**
 
 ```bash
@@ -121,6 +123,8 @@ docker compose -f docker-compose.yml -f docker-compose.cpu.yml up -d
 ```
 
 The `app` container runs `alembic upgrade head` automatically on startup — no manual migration step is needed. Postgres, Redis, and Chroma are healthchecked before the app starts.
+
+> **Contributors:** for a hot-reload dev stack with the test toolchain baked in (and weak-secret checks relaxed for local work), use `make dev` instead — see [CONTRIBUTING.md](CONTRIBUTING.md). The data-store ports are only exposed in dev mode; production keeps them on the internal network.
 
 ---
 

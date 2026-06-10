@@ -12,9 +12,10 @@ Brain From Cero is a self-hosted RAG + LoRA model-customization platform in earl
 git clone https://github.com/santiagoyie/brainFromCero
 cd brainFromCero
 
-# Start the full stack
-export BRAIN_SECRET_KEY="$(openssl rand -hex 32)"
-docker compose up -d
+# Start the DEV stack: dev image (ruff/mypy/pytest/codegen baked in), source
+# bind-mounted, hot reload, weak-secret checks relaxed for local work.
+make dev            # = docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
+# CPU-only host:  make dev-cpu
 
 # Run tests (inside container)
 docker compose exec app pytest tests/ -v
@@ -30,10 +31,15 @@ docker compose exec app make check-leaks
 docker compose exec app make ci
 ```
 
-To install a new dependency, add it to `pyproject.toml` then rebuild:
+> **Why `make dev`, not bare `docker compose up`?** A bare `docker compose up` runs the
+> **production** images by design (secure by default — §A4.5): lean, no test toolchain, and it
+> rejects weak secrets at startup. The dev overrides live in `docker-compose.dev.yml`, which is
+> *not* auto-merged, so you opt into them explicitly via `make dev`.
+
+To install a new dependency, add it to `pyproject.toml` then rebuild the dev stack:
 
 ```bash
-docker compose build app
+make dev            # rebuilds with --build
 ```
 
 Never run `pip install` on the host or add `requirements*.txt` files — `pyproject.toml` is the single dependency source.

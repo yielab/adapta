@@ -1,23 +1,37 @@
 # Brain From Cero – Extended SDD build targets (three contracts)
 #
-# Run every target inside the dev container — it ships the full toolchain
-# (ruff, mypy, pytest, schemathesis, datamodel-code-generator) baked into the
-# `dev` image stage, so there is NEVER a manual pip step:
-#   docker compose up -d                 # builds the dev stage, bind-mounts source
-#   docker compose exec app make <target>
+# Two kinds of target:
+#   • HOST targets (dev / dev-cpu / up / down) — run on the host; they bring the
+#     stack up/down. A bare `docker compose up` is PRODUCTION (secure by default);
+#     `make dev` layers docker-compose.dev.yml for the toolchain + bind-mount +
+#     hot reload (§A4.5).
+#   • IN-CONTAINER targets (everything else) — run inside the dev container, which
+#     ships the full toolchain (ruff, mypy, pytest, schemathesis, codegen) baked
+#     into the `dev` image stage, so there is NEVER a manual pip step:
+#       make dev                              # bring up the dev stack (host)
+#       docker compose exec app make <target> # run a build target (in container)
 #
-# To change dependencies: edit pyproject.toml, then `docker compose build`.
+# To change dependencies: edit pyproject.toml, then `make dev` rebuilds (or
+# `docker compose -f docker-compose.yml -f docker-compose.dev.yml build`).
 #
 # Contracts:
 #   API      -> specs/openapi.yaml   (generate, validate-spec, test-contracts)
 #   DB schema-> Alembic migrations   (migrate, migration, migrate-test)
 #   Model    -> dataset schema + eval gate (training pipeline)
 
-.PHONY: help generate validate-spec test-contracts migrate migration migrate-test \
+DEV_COMPOSE := docker compose -f docker-compose.yml -f docker-compose.dev.yml
+DEV_COMPOSE_CPU := docker compose -f docker-compose.yml -f docker-compose.cpu.yml -f docker-compose.dev.yml
+
+.PHONY: help dev dev-cpu up down generate validate-spec test-contracts migrate migration migrate-test \
         test coverage lint fmt check-leaks ci ci-full
 
 help:
 	@echo "Available targets:"
+	@echo "  -- stack (run on the HOST) --"
+	@echo "  dev             Bring up the DEV stack (toolchain + bind-mount + reload, GPU)"
+	@echo "  dev-cpu         Bring up the DEV stack on a CPU-only host"
+	@echo "  up              Bring up the PRODUCTION stack (lean, secure defaults)"
+	@echo "  down            Stop the stack"
 	@echo "  -- API contract --"
 	@echo "  generate        Re-generate Pydantic models from specs/openapi.yaml"
 	@echo "  validate-spec   Lint the OpenAPI spec with openapi-spec-validator"
@@ -35,6 +49,21 @@ help:
 	@echo "  coverage        Run in-process tests with coverage report"
 	@echo "  lint            Run ruff + mypy"
 	@echo "  fmt             Run black formatter"
+
+# ── HOST targets — bring the stack up/down (run these on the host, not in a container) ──
+# Bare `docker compose up` is PRODUCTION (secure by default, §A4.5). `make dev`
+# layers docker-compose.dev.yml for the dev image + bind-mount + hot reload.
+dev:
+	$(DEV_COMPOSE) up -d --build
+
+dev-cpu:
+	$(DEV_COMPOSE_CPU) up -d --build
+
+up:
+	docker compose up -d --build
+
+down:
+	docker compose down
 
 generate:
 	@bash scripts/generate_models.sh
