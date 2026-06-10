@@ -7,6 +7,8 @@
 - **Knowledge (RAG):** upload documents → embed (sentence-transformers) → per-project ChromaDB collection → cited answers. CPU-only.
 - **Fine-tuning (LoRA):** instruction dataset (or documents synthesized into pairs via `POST /v1/projects/{id}/datasets/synthesize`) → QLoRA training on a GPU worker → adapter → served once it passes the eval gate (held-out score ≥ 0.6, **or** a clear improvement over the base model — §A3.2/A4).
 
+Serving **composes the project's artifacts**: a fine-tune project can also upload/index documents, and its endpoint then injects retrieved context (with citations) **and** applies the adapter in one call — facts from RAG, tone/format from the fine-tune. Those documents are also what synthesis reads.
+
 Self-hosted, multi-user: registering creates an organization with you as its admin; teammates join an existing org via invites. A development admin (`admin@example.com` / `admin12345`) is seeded on an empty DB (`BRAIN_SEED_DEFAULT_ADMIN`, on by default in compose). **Authoritative scope:** [docs/reference/PRODUCT_DEFINITION.md](docs/reference/PRODUCT_DEFINITION.md). The UI never calls RAG "training" — it asks *"give it knowledge"* (RAG) vs *"change how it behaves"* (fine-tuning).
 
 > Phases 0–5 are complete. The codebase is the real implementation — there is no mock, no dummy key, no placeholder embedding. When in doubt, the product definition wins over any stale comment in code.

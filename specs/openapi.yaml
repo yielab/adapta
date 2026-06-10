@@ -20,7 +20,7 @@ tags:
   - name: projects
     description: Project lifecycle (rag | finetune)
   - name: files
-    description: Document upload + indexing (RAG projects)
+    description: Document upload + indexing (knowledge for RAG answers and/or dataset synthesis)
   - name: datasets
     description: JSONL dataset upload + validation (finetune projects)
   - name: jobs
@@ -202,7 +202,7 @@ paths:
     post:
       operationId: uploadFile
       tags: [files]
-      summary: Upload a document for indexing (RAG projects)
+      summary: Upload a document for indexing (both project types)
       security: [{BearerAuth: []}]
       parameters: [{$ref: '#/components/parameters/ProjectId'}]
       requestBody:
@@ -485,7 +485,11 @@ paths:
       description: |
         Authenticate with a scoped project API key (Authorization: Bearer brn_...).
         The `model` field is the endpoint slug.
-        RAG projects inject retrieved context and return `citations`.
+        Serving composes the project's artifacts: if the project has indexed
+        documents, retrieved context is injected and `citations` returned; if the
+        endpoint has a trained adapter (fine-tune), it is applied. A fine-tune
+        project with indexed documents gets both — knowledge from its documents,
+        behavior from its adapter.
       security: [{ApiKeyAuth: []}]
       requestBody:
         required: true
@@ -538,7 +542,9 @@ components:
       type: object
       required: [org_name, email, password]
       properties:
-        org_name: {type: string}
+        # Must contain at least one non-whitespace character — the server
+        # rejects blank names (auth.py strips before checking).
+        org_name: {type: string, minLength: 1, pattern: "\\S"}
         email: {type: string, format: email}
         password: {type: string, minLength: 8}
 
@@ -794,7 +800,7 @@ components:
         citations:
           type: array
           nullable: true
-          description: "RAG citations — present only for RAG endpoints"
+          description: "Document citations — present when the project has indexed documents"
           items:
             type: object
             properties:

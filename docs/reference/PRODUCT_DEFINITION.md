@@ -57,7 +57,11 @@ A **single-tenant, self-hosted** application. A company runs it on their own inf
 - **Updates:** re-train the adapter.
 - **Eval gate:** an adapter must clear the held-out eval gate to back an endpoint — either an absolute score ≥ 0.6, **or** a clear improvement over the base model on the same held-out split (a small base can't reach 0.6 perplexity even on an ideal task, so "beats base by a margin" is the meaningful signal). An adapter that does neither cannot serve.
 
-> **Product rule:** the UI never calls RAG "training." It asks *"How do you want to specialize your model?"* → **Give it knowledge** (RAG) vs **Change how it behaves** (fine-tuning).
+### Combining A + B — knowledge and behavior on one endpoint
+
+Serving **composes the project's artifacts** rather than switching on its type. A fine-tune project may also index documents (the same upload/index pipeline as Service A); its served endpoint then injects retrieved context **and** applies the adapter in the same call — facts from the documents (with citations), tone/format from the fine-tune. The same indexed documents are what dataset **synthesis** reads. This is the recommended production pattern: RAG carries the facts (live-updatable, cited), the LoRA carries the voice and structure (trained, gated).
+
+> **Product rule:** the UI never calls RAG "training." It asks *"How do you want to specialize your model?"* → **Give it knowledge** (RAG) vs **Change how it behaves** (fine-tuning) — and a fine-tune project can take documents too, for both at once.
 
 ## 3. Scope
 

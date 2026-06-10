@@ -6,7 +6,7 @@
   import { api, ApiError } from "../lib/api";
   import { navigate } from "../lib/router";
   import { toastError, toastSuccess } from "../lib/toast";
-  import type { Project, Dataset, TrainingJob } from "../lib/types";
+  import type { Project, ProjectFile, Dataset, TrainingJob } from "../lib/types";
 
   import StatusBadge from "../components/StatusBadge.svelte";
 
@@ -20,6 +20,11 @@
   const MIN_SAMPLES = 10;
   const DOCS_URL =
     "https://github.com/santiagoyie/brainFromCero/blob/main/docs/user-guide/operator-console.md";
+
+  // ---- Documents (optional knowledge + synthesis source) -------------------
+  let files = $state<ProjectFile[]>([]);
+  let filesLoading = $state(false);
+  let filesLoadErr = $state(false);
 
   // ---- Datasets -----------------------------------------------------------
   let datasets = $state<Dataset[]>([]);
@@ -39,6 +44,7 @@
   $effect(() => {
     if (project.id === loadedId) return;
     loadedId = project.id;
+    void loadFiles();
     void loadDatasets();
     void loadJobs();
     void checkEndpoint();
@@ -51,15 +57,19 @@
   const hasPendingDataset = $derived(
     datasets.some((d) => d.status === "uploaded" || d.status === "validating"),
   );
+  const hasPendingFile = $derived(
+    files.some((f) => f.status === "pending" || f.status === "processing"),
+  );
   const activeJob = $derived(
     jobs.find((j) => j.status === "queued" || j.status === "running") ?? null,
   );
 
   $effect(() => {
-    const needPoll = hasPendingDataset || activeJob !== null;
+    const needPoll = hasPendingDataset || hasPendingFile || activeJob !== null;
     if (needPoll && poller === null) {
       poller = setInterval(() => {
         if (hasPendingDataset) void refreshPendingDatasets();
+        if (hasPendingFile) void loadFiles(true);
         if (activeJob) void refreshActiveJob(activeJob.id);
       }, POLL_MS);
     } else if (!needPoll && poller !== null) {
@@ -73,6 +83,23 @@
       }
     };
   });
+
+  async function loadFiles(quiet = false) {
+    if (!quiet) {
+      filesLoading = true;
+      filesLoadErr = false;
+    }
+    try {
+      files = await api.listFiles(project.id);
+    } catch (e) {
+      if (!quiet) {
+        filesLoadErr = true;
+        reportErr(e, "Could not load documents.");
+      }
+    } finally {
+      if (!quiet) filesLoading = false;
+    }
+  }
 
   async function loadDatasets() {
     dsLoading = true;
@@ -138,6 +165,49 @@
   function reportErr(e: unknown, fallback: string) {
     if (e instanceof ApiError) toastError(e.message, e.correlationId);
     else toastError(fallback);
+  }
+
+  // ---- Upload documents (knowledge + synthesis source) --------------------
+  let docUploading = $state(false);
+  let docInput = $state<HTMLInputElement | null>(null);
+  const indexedDocs = $derived(files.filter((f) => f.status === "indexed").length);
+
+  async function onDocPicked(ev: Event) {
+    const input = ev.target as HTMLInputElement;
+    const picked = input.files ? Array.from(input.files) : [];
+    if (picked.length === 0) return;
+    docUploading = true;
+    try {
+      for (const f of picked) {
+        await api.uploadFile(project.id, f);
+      }
+      toastSuccess(
+        picked.length === 1
+          ? "Document uploaded — indexing started."
+          : `${picked.length} documents uploaded — indexing started.`,
+      );
+      await loadFiles();
+    } catch (e) {
+      reportErr(e, "Could not upload the document.");
+    } finally {
+      docUploading = false;
+      if (docInput) docInput.value = "";
+    }
+  }
+
+  async function removeDoc(f: ProjectFile) {
+    try {
+      await api.deleteFile(project.id, f.id);
+      files = files.filter((x) => x.id !== f.id);
+    } catch (e) {
+      reportErr(e, "Could not remove the document.");
+    }
+  }
+
+  function fmtSize(n: number) {
+    if (n >= 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+    if (n >= 1024) return `${Math.round(n / 1024)} KB`;
+    return `${n} B`;
   }
 
   // ---- Upload JSONL -------------------------------------------------------
@@ -279,15 +349,104 @@
       passes the <strong>eval gate</strong> (an automatic quality check, below).
     </p>
     <p class="muted" style="margin: 8px 0 0;">
-      The path is three steps: <strong>1</strong> give it a dataset, <strong>2</strong>
-      run the fine-tune job, <strong>3</strong> serve it once the check passes.
+      The path: <strong>1</strong> optionally index documents (knowledge + a
+      source to synthesize examples from), <strong>2</strong> give it a dataset,
+      <strong>3</strong> run the fine-tune job, <strong>4</strong> serve it once
+      the check passes. A served fine-tune endpoint <strong>also answers from any
+      documents you index here</strong> — facts from your documents (with
+      citations), tone and format from the fine-tune.
     </p>
   </aside>
+
+  <!-- ====================== DOCUMENTS (optional) ====================== -->
+  <div class="card">
+    <div class="row between" style="margin-bottom: 12px;">
+      <h2 style="margin: 0;">1 · Documents <span class="muted" style="font-weight: 400;">(optional)</span></h2>
+      <div class="row" style="gap: 8px;">
+        <input
+          bind:this={docInput}
+          type="file"
+          multiple
+          accept=".pdf,.docx,.txt,.md,.html"
+          onchange={onDocPicked}
+          style="display: none;"
+          id="ft-doc-file"
+        />
+        <button class="sm" onclick={() => docInput?.click()} disabled={docUploading}>
+          {#if docUploading}<span class="spinner"></span>{/if}
+          Upload documents
+        </button>
+      </div>
+    </div>
+
+    <p class="muted" style="margin: 0 0 12px;">
+      Documents indexed here do two jobs: they are the source for
+      <strong>“Synthesize from documents”</strong> below, and once your endpoint
+      is live the model <strong>answers from them with citations</strong> —
+      knowledge from the documents, behavior from the fine-tune. PDF, DOCX, TXT,
+      MD or HTML.
+    </p>
+
+    {#if filesLoading}
+      <div class="row" style="gap: 8px;">
+        <span class="spinner"></span><small>Loading documents…</small>
+      </div>
+    {:else if filesLoadErr}
+      <div class="empty">
+        <p>Could not load documents.</p>
+        <button class="ghost sm" onclick={() => loadFiles()}>Retry</button>
+      </div>
+    {:else if files.length === 0}
+      <div class="empty">
+        No documents yet — optional. Upload some to ground answers in your own
+        material, or skip straight to the dataset.
+      </div>
+    {:else}
+      <table>
+        <thead>
+          <tr>
+            <th>File</th>
+            <th>Status</th>
+            <th>Size</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {#each files as f (f.id)}
+            <tr>
+              <td class="mono">{f.filename}</td>
+              <td>
+                <div class="row" style="gap: 8px;">
+                  {#if f.status === "pending" || f.status === "processing"}
+                    <span class="spinner"></span>
+                  {/if}
+                  <StatusBadge status={f.status} />
+                  {#if f.status === "indexed" && f.num_chunks != null}
+                    <small class="muted">{f.num_chunks} chunk{f.num_chunks === 1 ? "" : "s"}</small>
+                  {/if}
+                </div>
+              </td>
+              <td class="mono">{fmtSize(f.size_bytes)}</td>
+              <td style="text-align: right;">
+                <button class="danger ghost sm" onclick={() => removeDoc(f)}>Remove</button>
+              </td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+      {#if indexedDocs > 0}
+        <p class="muted" style="margin: 10px 0 0; font-size: 12px;">
+          {indexedDocs} document{indexedDocs === 1 ? "" : "s"} indexed — your served
+          endpoint will cite {indexedDocs === 1 ? "it" : "them"} when answering.
+        </p>
+      {/if}
+    {/if}
+  </div>
 
   <!-- ============================ DATASET ============================ -->
   <div class="card">
     <div class="row between" style="margin-bottom: 12px;">
-      <h2 style="margin: 0;">1 · Dataset</h2>
+      <h2 style="margin: 0;">2 · Dataset</h2>
       <div class="row" style="gap: 8px;">
         <input
           bind:this={fileInput}
@@ -313,7 +472,7 @@
 
     <p class="muted" style="margin: 0 0 12px;">
       Provide instruction examples as a <span class="mono">.jsonl</span> file, or
-      generate Q/A pairs automatically from documents you've already indexed.
+      generate Q/A pairs automatically from the documents you indexed in step 1.
     </p>
 
     <!-- Collapsible: what a dataset is, its exact format, and where to get one. -->
@@ -461,7 +620,7 @@
   <!-- ============================ JOB ============================ -->
   <div class="card">
     <div class="row between" style="margin-bottom: 12px;">
-      <h2 style="margin: 0;">2 · Fine-tune job</h2>
+      <h2 style="margin: 0;">3 · Fine-tune job</h2>
     </div>
 
     <div class="row wrap" style="gap: 12px; align-items: flex-end; margin-bottom: 14px;">
@@ -550,19 +709,26 @@
           <div class="bignum">{gateJob.eval_score !== null ? score2(gateJob.eval_score) : "—"}</div>
         </div>
         <div>
-          <div class="muted">Threshold to serve</div>
+          <div class="muted">Absolute bar</div>
           <div class="bignum threshold">{score2(EVAL_THRESHOLD)}</div>
         </div>
       </div>
 
+      <p class="muted" style="margin: 10px 0 0; font-size: 12px;">
+        An adapter serves if it clears the absolute bar <em>or</em> clearly
+        improves over the base model on the same held-out examples.
+      </p>
+
       {#if passed}
         <p style="margin: 14px 0 0;">
-          This adapter scored at or above the threshold and is cleared to serve.
+          This adapter passed — it cleared the bar or clearly beat the base
+          model — and is cleared to serve.
         </p>
       {:else}
         <p class="blocked-reason" style="margin: 14px 0 0;">
           {#if gateJob.eval_score !== null}
-            Scored {score2(gateJob.eval_score)} &lt; {score2(EVAL_THRESHOLD)} — cannot serve.
+            Scored {score2(gateJob.eval_score)} — neither above the absolute bar
+            nor a clear improvement over the base model. Cannot serve.
           {:else}
             This run did not pass the eval gate — cannot serve.
           {/if}
@@ -575,7 +741,7 @@
   <!-- ============================ ENDPOINT ============================ -->
   <div class="card">
     <div class="row between" style="margin-bottom: 10px;">
-      <h2 style="margin: 0;">3 · Serve</h2>
+      <h2 style="margin: 0;">4 · Serve</h2>
     </div>
 
     {#if endpointExists}

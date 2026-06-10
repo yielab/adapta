@@ -86,6 +86,7 @@ nav:
   - User Guide:
       - user-guide/index.md
       - Operator console: user-guide/operator-console.md
+      - Knowledge + behavior together: user-guide/knowledge-and-behavior.md
       - Consuming the API: user-guide/consuming-the-api.md
   - Developer Guide:
       - developer-guide/index.md

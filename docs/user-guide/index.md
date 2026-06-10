@@ -48,9 +48,18 @@ serve until it passes evaluation**. This is deliberate — it's the product's
 safety promise that an unverified fine-tune never reaches your users. See
 [the eval gate](operator-console.md#the-evaluation-gate) below.
 
+**Both together (the production pattern):** a fine-tune project can *also*
+index documents. Its endpoint then answers **from your documents, in your
+trained voice and format** — facts from retrieval (with citations), form from
+the adapter, in one call. See
+[Knowledge + behavior together](knowledge-and-behavior.md) for a worked
+real-life example.
+
 ## Where to go next
 
 - **[Operator console](operator-console.md)** — the browser walkthrough for both
   flows, from register to a live endpoint.
+- **[Knowledge + behavior together](knowledge-and-behavior.md)** — when to use
+  RAG vs fine-tuning (real-life cases) and the combined pattern end to end.
 - **[Consuming the API](consuming-the-api.md)** — how your applications actually
   call the endpoint with the OpenAI SDK, plus citations and usage.

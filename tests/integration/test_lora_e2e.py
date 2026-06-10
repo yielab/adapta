@@ -3,7 +3,9 @@
 Full path: create a fine-tune project → upload an instruction dataset →
 background-validate → enqueue a training job → the GPU worker runs real QLoRA
 (downloads a tiny base model, trains, evaluates) → the eval **gate** decides
-pass/block on a *real* score → on pass the serving endpoint becomes creatable.
+pass/block on a *real* score → on pass the serving endpoint becomes creatable —
+then index a document on the same project and prove COMBINED serving: one chat
+call returns citations (knowledge) and the adapter's learned behavior (form).
 
 This is the moat made real. It is heavy (needs a CUDA worker, downloads ~1 GB,
 trains for minutes), so it is **opt-in**: set BRAIN_RUN_LORA_E2E=1 to run it.
@@ -228,6 +230,55 @@ async def test_lora_train_eval_gate_and_serve(client, admin):
         assert "quoria" in ft_answer.lower(), (
             "fine-tune endpoint did not reflect the adapter's learned behavior — "
             f"adapter likely not applied at serve time (got {ft_answer!r})"
+        )
+
+        # 9. COMBINED serving: index a document on the SAME fine-tune project and
+        #    call again. The endpoint must now compose both artifacts — retrieved
+        #    context (citations present) AND the adapter (the learned fact still
+        #    served). This is the knowledge+behavior pattern made real.
+        doc = (
+            "Zorptania almanac.\n"
+            "The national bird of Zorptania is the silver heron.\n"
+            "Zorptania's currency is the zorp.\n"
+        )
+        up_doc = await client.post(
+            f"/v1/projects/{pid}/files",
+            headers=h,
+            files={"file": ("almanac.txt", io.BytesIO(doc.encode()), "text/plain")},
+        )
+        assert up_doc.status_code == 202, up_doc.text
+        doc_id = up_doc.json()["id"]
+        idx = await _poll(
+            lambda: client.get(f"/v1/projects/{pid}/files", headers=h),
+            lambda r: r.status_code == 200
+            and any(f["id"] == doc_id and f["status"] in ("indexed", "failed") for f in r.json()),
+            tries=120,
+            delay=1.0,
+        )
+        doc_rec = next(f for f in idx.json() if f["id"] == doc_id)
+        assert doc_rec["status"] == "indexed", f"doc indexing failed: {doc_rec}"
+
+        cc2 = await client.post(
+            "/v1/chat/completions",
+            headers=ah,
+            json={
+                "model": slug,
+                "messages": [{"role": "user", "content": held_out}],
+                "temperature": 0.0,
+                "max_tokens": 24,
+            },
+        )
+        assert cc2.status_code == 200, cc2.text
+        combined = cc2.json()
+        combined_answer = combined["choices"][0]["message"]["content"]
+        print(f"\n[lora-e2e] combined (adapter+RAG) answer: {combined_answer!r}")
+        assert combined.get("citations"), (
+            "combined call should retrieve from the project's indexed documents "
+            "and return citations alongside the adapter's behavior"
+        )
+        assert "quoria" in combined_answer.lower(), (
+            "adapter behavior was lost once retrieval was active — composition "
+            f"must apply BOTH artifacts (got {combined_answer!r})"
         )
     else:
         # Failed: the gate blocked it (didn't clear absolute OR improvement). It is

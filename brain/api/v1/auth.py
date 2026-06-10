@@ -5,11 +5,12 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, EmailStr
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from brain.db.models import Invitation, Org, Role, Team, TeamMember
 from brain.db.session import get_db
-from brain.domain.errors import InvalidRequest
+from brain.domain.errors import Conflict, InvalidRequest
 from brain.services.auth import (
     authenticate_user,
     create_access_token,
@@ -76,7 +77,8 @@ async def register(body: RegisterRequest, request: Request, db: AsyncSession = D
     """
     Creates an organization, its default team, and its admin user. Anyone can
     register a new org at any time; additional users join an EXISTING org via
-    the invite flow. The only conflict is a duplicate email (create_user → 409).
+    the invite flow. Conflicts: a duplicate email (create_user → 409) and a
+    duplicate org name (`orgs.name` is unique → 409, never a raw 500).
     """
     await enforce_auth(request, body.email)
     if not body.password or len(body.password) < 8:
@@ -84,21 +86,28 @@ async def register(body: RegisterRequest, request: Request, db: AsyncSession = D
     if not body.org_name.strip():
         raise InvalidRequest(message="Organization name must not be empty")
 
-    org = Org(name=body.org_name)
-    db.add(org)
-    await db.flush()
+    try:
+        org = Org(name=body.org_name)
+        db.add(org)
+        await db.flush()
 
-    team = Team(org_id=org.id, name="default")
-    db.add(team)
-    await db.flush()
+        team = Team(org_id=org.id, name="default")
+        db.add(team)
+        await db.flush()
 
-    user = await create_user(db, org.id, body.email, body.password)
+        user = await create_user(db, org.id, body.email, body.password)
 
-    membership = TeamMember(team_id=team.id, user_id=user.id, role=Role.admin)
-    db.add(membership)
-    # Commit before returning so an immediate follow-up login sees the new user
-    # (the get_db finalizer commits only after the response is sent — §4.4).
-    await db.commit()
+        membership = TeamMember(team_id=team.id, user_id=user.id, role=Role.admin)
+        db.add(membership)
+        # Commit before returning so an immediate follow-up login sees the new user
+        # (the get_db finalizer commits only after the response is sent — §4.4).
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        raise Conflict(
+            message="An organization with this name already exists",
+            internal_detail=f"IntegrityError registering org {body.org_name!r}: {exc}",
+        ) from exc
 
     return UserResponse(
         id=user.id,

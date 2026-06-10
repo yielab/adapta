@@ -1,4 +1,9 @@
-"""Document upload and indexing for RAG projects."""
+"""Document upload and indexing — both project types.
+
+RAG projects index documents to answer from them. Fine-tune projects index
+documents as the source for dataset synthesis AND as retrieved context at serve
+time (the served endpoint composes the adapter with retrieval — facts from the
+documents, behavior from the fine-tune)."""
 
 import asyncio
 import logging
@@ -12,7 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from brain.config import settings
-from brain.db.models import Collection, FileStatus, Project, ProjectFile, ProjectType
+from brain.db.models import Collection, FileStatus, Project, ProjectFile
 from brain.db.session import get_db
 from brain.domain.errors import InvalidRequest, NotFound
 from brain.services.auth import get_current_user, require_team_member, require_team_writer
@@ -139,9 +144,6 @@ async def upload_file(
 ):
     project = await _get_project(db, project_id)
     await require_team_writer(db, current_user.id, project.team_id)
-
-    if project.type != ProjectType.rag:
-        raise InvalidRequest(message="File uploads are for RAG projects. Use /datasets for fine-tuning.")
 
     filename = file.filename or "upload"
     content_type = file.content_type or "text/plain"

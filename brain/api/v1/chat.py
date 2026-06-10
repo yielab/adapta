@@ -1,7 +1,8 @@
 """
 OpenAI-compatible /v1/chat/completions endpoint.
 Authenticates via scoped project API key (Authorization: Bearer brn_...).
-Routes to RAG or base+adapter serving depending on the endpoint type.
+Serving composes the project's artifacts: retrieval when documents are indexed,
+the trained adapter when the endpoint has one — or both together.
 """
 
 from __future__ import annotations
@@ -15,7 +16,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from brain.db.models import ApiKey, Endpoint, EndpointStatus, Project
+from brain.db.models import ApiKey, Collection, Endpoint, EndpointStatus, Project
 from brain.db.session import get_db
 from brain.domain.errors import Forbidden, InvalidRequest, NotFound, Unauthorized
 from brain.services.auth import verify_api_key
@@ -111,12 +112,17 @@ async def chat_completions(
 
     messages = [{"role": m.role, "content": m.content} for m in request_body.messages]
 
-    # RAG projects: inject project_id so retrieval runs
-    project_id_for_rag = str(project.id) if project.type.value == "rag" else None
+    # Serving composes the project's artifacts rather than switching on its type:
+    # retrieval runs whenever the project has indexed chunks, and the adapter
+    # (set at endpoint creation only for fine-tune projects, A3.1) is applied
+    # whenever present. A fine-tune project with indexed documents gets both —
+    # facts from its documents (with citations), behavior from its adapter.
+    col_result = await db.execute(select(Collection).where(Collection.project_id == project.id))
+    collection = col_result.scalar_one_or_none()
+    has_knowledge = collection is not None and (collection.num_chunks or 0) > 0
+    project_id_for_rag = str(project.id) if has_knowledge else None
 
-    # Fine-tune endpoints serve the base GGUF WITH the trained GGUF LoRA adapter
-    # (A3.1). RAG/base endpoints have adapter_path=None and serve the base only.
-    adapter_path = endpoint.adapter_path if project.type.value == "finetune" else None
+    adapter_path = endpoint.adapter_path
 
     if request_body.stream:
         return StreamingResponse(

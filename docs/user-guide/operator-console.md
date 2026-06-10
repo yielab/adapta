@@ -70,27 +70,34 @@ citations** — the source chunks it used are returned alongside the answer.
 
 In the **Setup** tab:
 
-1. **Provide a dataset** — either:
+1. **Documents (optional)** — upload PDF/DOCX/TXT/MD/HTML, same as the RAG
+   flow. They do two jobs: they are the source the **Synthesize** button reads,
+   and once your endpoint is live the model **answers from them with
+   citations** — knowledge from the documents, behavior from the fine-tune.
+   See [Knowledge + behavior together](knowledge-and-behavior.md).
+
+2. **Provide a dataset** — either:
     - **Upload JSONL** — one instruction pair per line (`{"prompt": "...",
       "response": "..."}`, optional `system`). The file is validated against the
       dataset schema; rows that don't match are reported.
-    - **Synthesize** — generate a dataset automatically from documents you've
-      indexed. The platform turns your document chunks into Q/A pairs. This runs
-      in the background; poll until it's ready.
+    - **Synthesize** — generate a dataset automatically from the documents you
+      indexed in step 1. The platform turns your document chunks into Q/A pairs.
+      This runs in the background; poll until it's ready.
 
     A dataset must have at least a minimum number of samples (default 10) before
     you can train on it.
 
-2. **Start a training job** — enqueue it. A GPU worker picks it up. The job
+3. **Start a training job** — enqueue it. A GPU worker picks it up. The job
    moves `queued → running → succeeded | failed` with a live progress bar and a
    tail of the training log.
 
-3. **The evaluation gate** — see the dedicated section below. This is the step
+4. **The evaluation gate** — see the dedicated section below. This is the step
    that decides whether the fine-tune is allowed to serve.
 
-4. **Create endpoint** — enabled **only** once a job has succeeded **and** passed
+5. **Create endpoint** — enabled **only** once a job has succeeded **and** passed
    the eval gate. The endpoint serves the base model **with your trained
-   adapter** applied.
+   adapter** applied — and, if you indexed documents in step 1, it also injects
+   retrieved context and returns citations in the same call.
 
 ---
 

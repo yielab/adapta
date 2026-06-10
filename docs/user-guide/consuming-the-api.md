@@ -48,14 +48,18 @@ curl http://your-server:8000/v1/chat/completions \
   bound to exactly one endpoint. The `model` slug you pass must match the key's
   endpoint — a mismatched slug is rejected (`403`). This means a key can never
   reach an endpoint it wasn't issued for.
-- **RAG answers carry citations.** For a Knowledge project, the response is
-  grounded in your indexed documents and includes the source chunks it used.
+- **Answers carry citations when the project has documents.** If the project
+  has indexed documents (a Knowledge project, or a fine-tune project that also
+  uploaded documents), the response is grounded in them and includes the source
+  chunks it used.
 - **Usage is metered.** Every response includes `prompt_tokens`,
   `completion_tokens`, and `total_tokens`, and is rolled up per day (visible in
   the console's Usage tab).
 - **Fine-tune endpoints serve base + adapter.** A fine-tune project's endpoint
   applies your trained LoRA adapter on top of the base model transparently — the
-  request shape is identical.
+  request shape is identical. If that project also indexed documents, retrieval
+  and the adapter compose in the same call (see
+  [Knowledge + behavior together](knowledge-and-behavior.md)).
 
 ## Streaming
 

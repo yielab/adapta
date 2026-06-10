@@ -11,7 +11,7 @@ from pydantic import AwareDatetime, BaseModel, EmailStr, Field
 
 
 class RegisterRequest(BaseModel):
-    org_name: str
+    org_name: Annotated[str, Field(min_length=1, pattern="\\S")]
     email: EmailStr
     password: Annotated[str, Field(min_length=8)]
 
@@ -265,7 +265,7 @@ class ChatCompletionResponse(BaseModel):
     usage: Usage | None = None
     citations: list[Citation] | None = None
     """
-    RAG citations — present only for RAG endpoints
+    Document citations — present when the project has indexed documents
     """
 
 
