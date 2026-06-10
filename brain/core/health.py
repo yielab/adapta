@@ -69,7 +69,12 @@ class HealthMonitor:
     async def check_disk_space(self) -> HealthCheck:
         start = time.time()
         try:
-            usage = psutil.disk_usage(os.getcwd())
+            # Check the DATA mount (models/uploads/adapters/datasets live here), not
+            # the container's working dir — a full data volume is what actually breaks
+            # indexing/training, and it's a different filesystem from /app (A4.12).
+            from brain.config import settings
+            probe = settings.data_dir if settings.data_dir.exists() else os.getcwd()
+            usage = psutil.disk_usage(str(probe))
             pct = usage.percent / 100.0
             if pct >= self.disk_critical_threshold:
                 status, msg = HealthStatus.UNHEALTHY, f"Critical: disk {pct*100:.1f}% full"

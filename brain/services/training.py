@@ -125,6 +125,36 @@ async def update_job_record(
         await db.commit()
 
 
+# Safe bounds for operator-supplied training hyperparameters (A4.12). Outside
+# these a run would OOM, diverge, or never finish — reject at enqueue, not after
+# a GPU has been tied up. (min, max), inclusive.
+_HYPERPARAM_BOUNDS: dict = {
+    "num_epochs": (1, 50),
+    "batch_size": (1, 128),
+    "learning_rate": (1e-6, 1e-1),
+    "lora_r": (1, 256),
+    "lora_alpha": (1, 512),
+    "lora_dropout": (0.0, 0.9),
+    "max_seq_length": (16, 8192),
+}
+
+
+def validate_training_config(training_config: Optional[dict]) -> None:
+    """Reject out-of-range hyperparameters before a job is enqueued (A4.12)."""
+    if not training_config:
+        return
+    for key, (lo, hi) in _HYPERPARAM_BOUNDS.items():
+        if key not in training_config or training_config[key] is None:
+            continue
+        val = training_config[key]
+        if not isinstance(val, (int, float)) or isinstance(val, bool):
+            raise InvalidRequest(message=f"training_config.{key} must be a number")
+        if not (lo <= val <= hi):
+            raise InvalidRequest(
+                message=f"training_config.{key}={val} is out of range — must be between {lo} and {hi}."
+            )
+
+
 def check_min_training_samples(num_samples: Optional[int]) -> None:
     """Reject a too-small dataset before a job is created (A4.6).
 
@@ -252,6 +282,7 @@ async def enqueue_training_job(
     if dataset.status != DatasetStatus.valid:
         raise InvalidRequest(message="Dataset is not valid — cannot start training")
     check_min_training_samples(dataset.num_samples)
+    validate_training_config(training_config)
 
     job = TrainingJob(
         project_id=project_id,

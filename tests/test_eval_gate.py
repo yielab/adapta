@@ -208,6 +208,31 @@ def test_at_min_samples_allowed():
 
 
 # ---------------------------------------------------------------------------
+# Hyperparameter bounds (A4.12) — reject runaway configs before they tie up a GPU.
+# ---------------------------------------------------------------------------
+
+def test_training_config_bounds():
+    import pytest
+
+    from brain.domain.errors import InvalidRequest
+    from brain.services.training import validate_training_config
+
+    validate_training_config(None)            # no config → ok
+    validate_training_config({})              # empty → ok
+    validate_training_config({"num_epochs": 3, "learning_rate": 2e-4})  # in range → ok
+
+    for bad in (
+        {"num_epochs": 1000},                 # way over the cap
+        {"learning_rate": 1.0},               # divergent
+        {"batch_size": 100000},               # OOM
+        {"lora_dropout": 5},                  # nonsensical
+        {"num_epochs": "lots"},               # wrong type
+    ):
+        with pytest.raises(InvalidRequest):
+            validate_training_config(bad)
+
+
+# ---------------------------------------------------------------------------
 # Eval score computation — the value the gate actually tests (regression: the
 # worker used getattr(result, "score", 0.0), which was ALWAYS 0.0 because
 # EvaluationResult had no `score` — so no adapter could ever pass the gate).

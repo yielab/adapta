@@ -360,17 +360,20 @@ Honour the [Definition of done](#definition-of-done-per-task) on every task. Wor
   now carries a real prompt-token count instead of 0.
 
 ### A4.12 `[OPS]` Ops hardening batch (P2) — small, independent items
-- [ ] **Deep-health disk check measures the wrong disk:** `psutil.disk_usage(os.getcwd())` checks
-  the container FS, not the data mounts — check `data/models`, `data/uploads`, adapters dirs.
-- [ ] **Chroma version-sync CI guard:** one assert comparing the `chromadb` pin in `pyproject.toml`
-  to the `chromadb/chroma:` image tag in compose (skew silently breaks **all** indexing — already
-  bitten once).
+- [x] **Deep-health disk check measures the wrong disk** (2026-06-10): `check_disk_space` now
+  probes `settings.data_dir` (the models/uploads/adapters mount), not `os.getcwd()` (the container
+  FS) — verified live (`/health/deep` reports the 728 GB host data volume).
+- [x] **Chroma version-sync CI guard** (2026-06-10): `scripts/check_chroma_version.py` +
+  `make check-chroma` assert the `chromadb` pin in `pyproject.toml` equals the `chromadb/chroma:`
+  tag in compose; wired into `make ci` and the CI fast gate (skew silently breaks **all** indexing
+  — bitten once).
+- [x] **Hyperparameter bounds at enqueue** (2026-06-10): `validate_training_config` rejects
+  out-of-range `num_epochs`/`batch_size`/`learning_rate`/`lora_*`/`max_seq_length` (and non-numeric
+  values) with a typed `InvalidRequest` before a job is created (`tests/test_eval_gate.py`).
 - [ ] **Pin external images to minor:** `postgres:15-alpine` / `redis:7-alpine` float; pin
   `15.x` / `7.x` for reproducible customer installs.
 - [ ] **Synthesis partial-failure threshold:** per-chunk errors only warn; synthesis "succeeds"
   even if most chunks failed — add a max-error-rate (default ~10%) → `InternalError` above it.
-- [ ] **Hyperparameter bounds at enqueue:** `num_epochs=1000`/`learning_rate=1.0` are accepted
-  today; validate the training-config payload with min/max bounds before queueing.
 - [ ] **GPU hygiene in the worker:** `torch.cuda.empty_cache()` in a `finally` after each job;
   free-disk preflight before training starts.
 - [ ] **`scripts/backup.sh`:** automate OPERATIONS §2 (pg_dump + volume tars + retention) with a

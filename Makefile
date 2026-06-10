@@ -23,7 +23,7 @@ DEV_COMPOSE := docker compose -f docker-compose.yml -f docker-compose.dev.yml
 DEV_COMPOSE_CPU := docker compose -f docker-compose.yml -f docker-compose.cpu.yml -f docker-compose.dev.yml
 
 .PHONY: help dev dev-cpu up down generate validate-spec test-contracts migrate migration migrate-test \
-        test coverage lint fmt check-leaks ci ci-full
+        test coverage lint fmt check-leaks check-chroma ci ci-full
 
 help:
 	@echo "Available targets:"
@@ -136,7 +136,10 @@ check-leaks:
 	  echo "✓ No detail=str(e) leak sites found"; \
 	fi
 
-ci: check-leaks lint lint-imports coverage validate-spec check-models
+check-chroma:
+	@python scripts/check_chroma_version.py
+
+ci: check-leaks check-chroma lint lint-imports coverage validate-spec check-models
 	@echo "✓ Fast CI gate passed (offline)"
 
 ci-full: ci migrate-test test-contracts

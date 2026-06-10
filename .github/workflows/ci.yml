@@ -27,6 +27,9 @@ jobs:
       - name: check-leaks
         run: make check-leaks
 
+      - name: check-chroma (client/server version sync)
+        run: make check-chroma
+
       - name: lint
         run: make lint
 
