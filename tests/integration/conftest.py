@@ -55,6 +55,20 @@ async def _truncate() -> None:
         await conn.close()
 
 
+async def _flush_rate_limits() -> None:
+    """Clear auth rate-limit counters (A4.9) so the suite's many auth calls from
+    one IP don't accumulate across tests and start returning 429."""
+    import redis.asyncio as aioredis
+
+    r = aioredis.from_url(settings.redis_url, decode_responses=True)
+    try:
+        keys = await r.keys("ratelimit:*")
+        if keys:
+            await r.delete(*keys)
+    finally:
+        await r.aclose()
+
+
 async def _first_team_id() -> str:
     conn = await asyncpg.connect(_dsn())
     try:
@@ -67,6 +81,7 @@ async def _first_team_id() -> str:
 async def client():
     """Async client against the live server (background tasks run for real)."""
     _require_server()
+    await _flush_rate_limits()  # fresh auth rate-limit budget per test (A4.9)
     async with AsyncClient(base_url=BASE_URL) as ac:
         yield ac
 

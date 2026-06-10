@@ -52,7 +52,7 @@ Honour the [Definition of done](#definition-of-done-per-task) on every task. Wor
 | Docker dev/prod workflow | ✅ reworked 2026-06-08 — one multi-stage `Dockerfile`, non-root prod, dev toolchain baked in (no manual pip). See **§4**. |
 | Image size / CPU-only torch | ✅ app **1.87 GB** (was 6.45 GB), CPU-only torch, zero CUDA pkgs (2026-06-08). Worker keeps CUDA torch (verify-rebuild pending). See **§4.2**. |
 | Operator console (§5) | ✅ all views done (2026-06-09) — app shell, auth, projects, RAG flow, fine-tune flow, endpoint+keys, playground, usage, UX polish, mount+Docker+CI (C4 docs partial). Key-scoping (§5.12) enforced. |
-| **Staff audit (§A4)** | 🟡 **in progress** — done: A4.1 (concurrency-safe serving), A4.2 (crashed-job recovery), A4.3 (context-window guard + max_tokens cap), A4.4 (key-prefix index), A4.5 (prod-by-default compose), A4.6 (auditable eval gate). Remaining P1: A4.7 (provenance), A4.9 (auth rate-limit). A4.8 (model-cache LRU bounds) ✅. Plus the P2 batch (A4.10–A4.12). |
+| **Staff audit (§A4)** | 🟡 **in progress** — done: A4.1 (concurrency-safe serving), A4.2 (crashed-job recovery), A4.3 (context-window guard + max_tokens cap), A4.4 (key-prefix index), A4.5 (prod-by-default compose), A4.6 (auditable eval gate). Remaining P1: A4.7 (provenance). Done: A4.8 (model-cache LRU bounds), A4.9 (auth rate-limit). Plus the P2 batch (A4.10–A4.12). |
 
 ---
 
@@ -308,15 +308,26 @@ Honour the [Definition of done](#definition-of-done-per-task) on every task. Wor
   still green (`test_inference_slow.py`). `make ci` green. (Per-model RAM / app-limit tuning note
   for OPERATIONS folded into A4.12.)
 
-### A4.9 `[BE]` Auth brute-force rate limiting (P1)
-- **Context.** `/v1/auth/login`, `/register`, and `/accept-invite` have no throttling. Self-hosted
-  usually means LAN/VPN — but "usually" is not a control, and the console makes these endpoints
-  discoverable.
-- **Steps.** Fixed-window limiter in Redis (per-IP + per-email) on the three endpoints → typed
-  429 (`RateLimited` DomainError); document 429 in the spec (contract first).
-- **Files.** `brain/api/v1/auth.py`, `brain/domain/errors.py`, `specs/openapi.yaml` + regenerated
-  models, tests.
-- **Acceptance.** >N attempts/minute → 429 with the standard envelope; contract gate stays green.
+### A4.9 `[BE]` Auth brute-force rate limiting (P1) — ✅ DONE (2026-06-10)
+- [x] **Context.** `/v1/auth/login`, `/register`, and `/accept-invite` had no throttling.
+- [x] **Done.** `brain/services/rate_limit.py`: a fixed-window Redis counter (`enforce`) with an
+  `enforce_auth(request, email)` wrapper applied per-IP **and** per-email on the three endpoints →
+  typed `RateLimited` (429, the type already existed). **Fail-open** (a Redis outage must not lock
+  everyone out of auth) and **disable-able** (`auth_rate_limit_max <= 0`). Defaults
+  `auth_rate_limit_max=20`, `auth_rate_limit_window_seconds=60`. Spec documents 429 on the three
+  ops (regenerated models; `make check-models` green).
+- [x] **Contract-gate interaction (solved).** Schemathesis fuzzes auth heavily and trips the
+  limiter; a documented 429 is then a legitimate outcome for any payload. Added `schemathesis.toml`
+  adding `429` to the `positive_data_acceptance` / `negative_data_rejection` expected statuses, so
+  the limiter stays **on** during the contract run (realistic) and the gate stays green
+  (**1264/1264**). Integration tests get a fresh window via a per-test `ratelimit:*` flush in the
+  conftest `client` fixture.
+- [x] **Files.** `brain/services/rate_limit.py`, `brain/api/v1/auth.py` (wire login/register/
+  accept-invite), `brain/config.py`, `specs/openapi.yaml` + regenerated models, `schemathesis.toml`,
+  `tests/test_rate_limit.py` (unit), `tests/integration/{conftest.py,test_rate_limit.py}`.
+- **Acceptance met.** Unit tests cover the counter + fail-open + disable + noop paths; the
+  integration test hammers `/login` past the cap and gets a `rate_limited` 429; contract gate green
+  (429 tolerated); the auth-heavy integration suite stays green (no cross-test 429 flakiness).
 
 ### A4.10 `[BE]` Stuck background-task sweeper (P2)
 - **Context.** An app crash mid-index/mid-validate leaves files at `processing` and datasets at

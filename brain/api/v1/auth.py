@@ -2,7 +2,7 @@
 
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, EmailStr
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,6 +18,7 @@ from brain.services.auth import (
     require_team_admin,
 )
 from brain.services.invitations import accept_invitation, create_invitation
+from brain.services.rate_limit import enforce_auth
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -63,18 +64,20 @@ async def _load_teams(db: AsyncSession, user_id: str) -> List[TeamSummary]:
 
 
 @router.post("/login", response_model=TokenResponse)
-async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
+async def login(body: LoginRequest, request: Request, db: AsyncSession = Depends(get_db)):
+    await enforce_auth(request, body.email)
     user = await authenticate_user(db, body.email, body.password)
     token = create_access_token(user.id, user.org_id)
     return TokenResponse(access_token=token)
 
 
 @router.post("/register", response_model=UserResponse, status_code=201)
-async def register(body: RegisterRequest, db: AsyncSession = Depends(get_db)):
+async def register(body: RegisterRequest, request: Request, db: AsyncSession = Depends(get_db)):
     """
     Bootstrap: creates the org, a default team, and the first admin user.
     Subsequent users are added by an admin via team management.
     """
+    await enforce_auth(request, body.email)
     from sqlalchemy import func, select
     existing_orgs = await db.execute(select(func.count()).select_from(Org))
     count = existing_orgs.scalar()
@@ -173,8 +176,9 @@ async def invite(
 
 
 @router.post("/accept-invite", response_model=UserResponse, status_code=201)
-async def accept_invite(body: AcceptInviteRequest, db: AsyncSession = Depends(get_db)):
+async def accept_invite(body: AcceptInviteRequest, request: Request, db: AsyncSession = Depends(get_db)):
     """Redeem an invite token + set a password → user joins the team."""
+    await enforce_auth(request)
     if not body.password or len(body.password) < 8:
         raise InvalidRequest(message="Password must be at least 8 characters")
     user, _inv = await accept_invitation(db, token=body.token, password=body.password)

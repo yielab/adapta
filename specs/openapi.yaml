@@ -51,6 +51,7 @@ paths:
         '201': {description: User created, content: {application/json: {schema: {$ref: '#/components/schemas/UserResponse'}}}}
         '400': {$ref: '#/components/responses/Error'}
         '409': {$ref: '#/components/responses/Error'}
+        '429': {$ref: '#/components/responses/Error'}
 
   /auth/login:
     post:
@@ -67,6 +68,7 @@ paths:
         '422': {$ref: '#/components/responses/Error'}
         '200': {description: Token, content: {application/json: {schema: {$ref: '#/components/schemas/TokenResponse'}}}}
         '401': {$ref: '#/components/responses/Error'}
+        '429': {$ref: '#/components/responses/Error'}
 
   /auth/me:
     get:
@@ -113,6 +115,7 @@ paths:
         '404': {$ref: '#/components/responses/Error'}
         '422': {$ref: '#/components/responses/Error'}
         '201': {description: User created/joined, content: {application/json: {schema: {$ref: '#/components/schemas/UserResponse'}}}}
+        '429': {$ref: '#/components/responses/Error'}
 
   /auth/invitations:
     get:

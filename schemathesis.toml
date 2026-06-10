@@ -1,0 +1,13 @@
+# Schemathesis contract-test config (auto-discovered by `schemathesis run`).
+#
+# The auth endpoints are rate-limited (A4.9), so ANY request — valid or
+# schema-violating — may legitimately return a documented 429 once the fuzzer
+# crosses the limit. Add 429 to the expected statuses for the data-acceptance and
+# data-rejection checks so a documented rate-limit response isn't mistaken for a
+# contract defect. (429 is declared on login/register/accept-invite in the spec.)
+
+[checks.positive_data_acceptance]
+expected-statuses = ["2xx", "401", "403", "404", "409", "429", "5xx"]
+
+[checks.negative_data_rejection]
+expected-statuses = ["400", "401", "403", "404", "405", "406", "409", "422", "428", "429", "5xx"]

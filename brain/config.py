@@ -76,6 +76,12 @@ class Settings(BaseSettings):
     chunk_size: int = 512
     chunk_overlap: int = 64
 
+    # Auth brute-force rate limiting (A4.9). Fixed-window per-IP and per-email cap on
+    # the unauthenticated auth endpoints (login/register/accept-invite). Fail-open: a
+    # limiter (Redis) outage must never lock everyone out of auth.
+    auth_rate_limit_max: int = 20            # allowed attempts per window per key
+    auth_rate_limit_window_seconds: int = 60
+
     # Training
     eval_score_threshold: float = 0.6  # minimum eval score for an adapter to be promoted
     # Minimum dataset size to start a training job (A4.6). Below this the held-out
