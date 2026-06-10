@@ -23,14 +23,16 @@ class JobManager:
 
     def __init__(self):
         self.jobs_dir = settings.data_dir / "training_jobs"
-        self.jobs_dir.mkdir(parents=True, exist_ok=True)
 
         # In-memory job tracking
         self._jobs: Dict[str, TrainingJob] = {}
         self._job_lock = asyncio.Lock()
 
-        # Load existing jobs
-        self._load_jobs()
+        # Load existing jobs only if the directory already exists (avoids a
+        # PermissionError at import time in CI, where /app/data doesn't exist;
+        # the worker creates the dir on its first job via _get_job_dir).
+        if self.jobs_dir.exists():
+            self._load_jobs()
 
     def _load_jobs(self):
         """Load jobs from disk"""
