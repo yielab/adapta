@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+from collections import OrderedDict
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -40,7 +41,8 @@ class ModelManager:
     """Manages multiple models and their lifecycle"""
 
     def __init__(self):
-        self._models: Dict[str, Llama] = {}
+        # LRU-ordered (most-recently-used last) so the cache can be bounded (A4.8).
+        self._models: "OrderedDict[str, Llama]" = OrderedDict()
         self._configs: Dict[str, ModelConfig] = {}
         self._load_lock = asyncio.Lock()
         # Per-model-variant serialization locks (A4.1). Keyed on the same (base,
@@ -149,6 +151,25 @@ class ModelManager:
             description="Large model for complex reasoning",
         )
 
+    def _evict_lru_if_needed(self) -> None:
+        """Evict least-recently-used models until there's room for one more (A4.8).
+
+        Called under ``_load_lock`` right before inserting a NEW model. Dropping the
+        dict entry only releases THIS class's reference — an in-flight request still
+        holds its own reference to the Llama (chat.py keeps ``model_obj`` for the
+        call), so the native memory is freed by refcounting only once no request is
+        using it. The evicted endpoint transparently reloads on its next call."""
+        while len(self._models) >= settings.max_loaded_models:
+            old_key, _ = self._models.popitem(last=False)  # LRU = first
+            self._infer_locks.pop(old_key, None)
+            base = old_key.split("::lora::", 1)[0]
+            if base in self._configs:
+                self._configs[base].loaded = False
+            logger.info(
+                "Evicting LRU model %s (loaded-model cap=%d reached)",
+                old_key, settings.max_loaded_models,
+            )
+
     def _cache_key(self, model_name: str, adapter_path: Optional[str]) -> str:
         """Cache key for a loaded Llama. Includes the adapter so a fine-tune
         endpoint (base+LoRA) and base/RAG serving of the same base never collide
@@ -174,6 +195,7 @@ class ModelManager:
             # Check if already loaded
             if cache_key in self._models and not force_reload:
                 logger.info(f"Model {cache_key} already loaded")
+                self._models.move_to_end(cache_key)  # mark most-recently-used (A4.8)
                 return self._models[cache_key]
 
             # Get config
@@ -248,7 +270,12 @@ class ModelManager:
                 loop = asyncio.get_event_loop()
                 model = await loop.run_in_executor(None, lambda: Llama(**llama_kwargs))
 
+                # Bound the cache before adding a genuinely new entry (A4.8). A
+                # force_reload of an existing key just replaces it (no net growth).
+                if cache_key not in self._models:
+                    self._evict_lru_if_needed()
                 self._models[cache_key] = model
+                self._models.move_to_end(cache_key)
                 config.loaded = True
                 logger.info(f"Successfully loaded model {cache_key}")
                 return model
@@ -323,6 +350,7 @@ class ModelManager:
         cache_key = self._cache_key(self._resolve_serving_name(model_name), adapter_path)
         if cache_key not in self._models:
             return await self.load_model(model_name, adapter_path=adapter_path)
+        self._models.move_to_end(cache_key)  # mark most-recently-used (A4.8)
         return self._models[cache_key]
 
     def is_loaded(self, model_name: str, adapter_path: Optional[str] = None) -> bool:

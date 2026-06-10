@@ -52,7 +52,7 @@ Honour the [Definition of done](#definition-of-done-per-task) on every task. Wor
 | Docker dev/prod workflow | ✅ reworked 2026-06-08 — one multi-stage `Dockerfile`, non-root prod, dev toolchain baked in (no manual pip). See **§4**. |
 | Image size / CPU-only torch | ✅ app **1.87 GB** (was 6.45 GB), CPU-only torch, zero CUDA pkgs (2026-06-08). Worker keeps CUDA torch (verify-rebuild pending). See **§4.2**. |
 | Operator console (§5) | ✅ all views done (2026-06-09) — app shell, auth, projects, RAG flow, fine-tune flow, endpoint+keys, playground, usage, UX polish, mount+Docker+CI (C4 docs partial). Key-scoping (§5.12) enforced. |
-| **Staff audit (§A4)** | 🟡 **in progress** — done: A4.1 (concurrency-safe serving), A4.2 (crashed-job recovery), A4.3 (context-window guard + max_tokens cap), A4.4 (key-prefix index), A4.5 (prod-by-default compose), A4.6 (auditable eval gate). Remaining P1: A4.7 (provenance), A4.8 (model-cache bounds), A4.9 (auth rate-limit). Plus the P2 batch (A4.10–A4.12). |
+| **Staff audit (§A4)** | 🟡 **in progress** — done: A4.1 (concurrency-safe serving), A4.2 (crashed-job recovery), A4.3 (context-window guard + max_tokens cap), A4.4 (key-prefix index), A4.5 (prod-by-default compose), A4.6 (auditable eval gate). Remaining P1: A4.7 (provenance), A4.9 (auth rate-limit). A4.8 (model-cache LRU bounds) ✅. Plus the P2 batch (A4.10–A4.12). |
 
 ---
 
@@ -290,17 +290,23 @@ Honour the [Definition of done](#definition-of-done-per-task) on every task. Wor
 - **Acceptance.** Every new job row carries seed/hashes/versions; two runs with identical pinned
   inputs reproduce the eval score within tolerance.
 
-### A4.8 `[BE]` Model cache memory bounds (P1)
-- **Context.** `model_manager._models` is an **unbounded dict**, and since §A3.1 the cache key
-  includes the adapter — N fine-tune endpoints = N full model instances in RAM. The app container
-  is capped at 4 GB (compose); the second or third concurrently-loaded model OOM-kills the
-  container mid-request.
-- **Steps.** LRU eviction with `settings.max_loaded_models` (default 1–2); free the evicted
-  instance; log evictions; document per-model RAM in OPERATIONS §6 and revisit the 4 GB app limit.
-- **Files.** `brain/core/model_manager.py`, `brain/config.py`, `docker-compose.yml`,
-  `docs/OPERATIONS.md`.
-- **Acceptance.** Loading max+1 models evicts the LRU instead of growing; a chat to an evicted
-  endpoint transparently reloads it; the app stays under its memory limit.
+### A4.8 `[BE]` Model cache memory bounds (P1) — ✅ DONE (2026-06-10)
+- [x] **Context.** `model_manager._models` was an **unbounded dict**, and since §A3.1 the cache key
+  includes the adapter — N fine-tune endpoints = N full model instances in RAM, OOM-killing the
+  4 GB app container.
+- [x] **Done.** `_models` is now an `OrderedDict` (LRU order); `settings.max_loaded_models`
+  (default 2) bounds it. `load_model` reorders on a cache hit and calls `_evict_lru_if_needed()`
+  before inserting a genuinely new entry (a `force_reload` of an existing key just replaces it);
+  `ensure_model_loaded` reorders on a hit. Eviction drops the dict entry + its inference lock and
+  flips the config's `loaded` flag. **Safe under concurrency without a "is-it-in-use" check:**
+  `chat.py` holds its own reference to the Llama for the request, so eviction only drops the
+  cache's reference — native memory is freed by refcounting once no in-flight request uses it; the
+  evicted endpoint transparently reloads next call.
+- [x] **Files.** `brain/core/model_manager.py`, `brain/config.py`, `tests/test_model_cache_lru.py`.
+- **Acceptance met.** `tests/test_model_cache_lru.py`: inserting past the cap evicts the LRU (and
+  drops its lock), keeping the recently-used one; under the cap nothing is evicted. Real-model path
+  still green (`test_inference_slow.py`). `make ci` green. (Per-model RAM / app-limit tuning note
+  for OPERATIONS folded into A4.12.)
 
 ### A4.9 `[BE]` Auth brute-force rate limiting (P1)
 - **Context.** `/v1/auth/login`, `/register`, and `/accept-invite` have no throttling. Self-hosted

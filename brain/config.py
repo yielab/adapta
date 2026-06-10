@@ -61,6 +61,12 @@ class Settings(BaseSettings):
     # pinning a worker forever.
     inference_max_workers: int = 2
     inference_timeout_seconds: int = 300
+    # Max distinct models (base, or base+LoRA) kept loaded at once (A4.8). Since the
+    # cache key includes the adapter, N fine-tune endpoints would otherwise pin N full
+    # models in RAM and OOM the app container. The LRU is evicted past this bound; an
+    # evicted endpoint transparently reloads on its next call. Raise it only with RAM
+    # to spare (a 3B Q4 model is ~2 GB resident).
+    max_loaded_models: int = 2
 
     # RAG / embeddings
     embedding_model: str = "all-MiniLM-L6-v2"
