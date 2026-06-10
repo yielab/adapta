@@ -666,6 +666,9 @@ components:
         adapter_path: {type: string, nullable: true}
         eval_score: {type: number, nullable: true}
         eval_passed: {type: boolean, nullable: true}
+        # Full eval result for an auditable gate verdict (A4.6): score, base_score,
+        # score_delta, held_out, metrics, sample_predictions. Null until evaluation.
+        eval_metrics: {type: object, nullable: true, additionalProperties: true}
         error_message: {type: string, nullable: true}
         created_at: {type: string, format: date-time}
 

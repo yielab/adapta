@@ -12,6 +12,7 @@ from typing import Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from brain.config import settings
 from brain.db.models import Dataset, DatasetStatus, JobStatus, TrainingJob
 from brain.domain.errors import InvalidRequest, NotFound
 from brain.services.jobs import get_job_queue
@@ -78,6 +79,7 @@ async def update_job_record(
     adapter_path: Optional[str] = None,
     eval_score: Optional[float] = None,
     eval_passed: Optional[bool] = None,
+    eval_metrics: Optional[str] = None,
     error: Optional[str] = None,
 ) -> None:
     """Persist a training job's lifecycle to Postgres (the source of truth the API
@@ -116,9 +118,29 @@ async def update_job_record(
             row.eval_score = eval_score
         if eval_passed is not None:
             row.eval_passed = eval_passed
+        if eval_metrics is not None:
+            row.eval_metrics = eval_metrics
         if error is not None:
             row.error_message = error
         await db.commit()
+
+
+def check_min_training_samples(num_samples: Optional[int]) -> None:
+    """Reject a too-small dataset before a job is created (A4.6).
+
+    Below ``settings.min_training_samples`` the held-out eval split collapses
+    (e.g. 1 row → 0 held out → the gate scores the training rows), so the eval
+    gate would only measure memorization. Raising here keeps that signal honest.
+    """
+    n = num_samples or 0
+    if n < settings.min_training_samples:
+        raise InvalidRequest(
+            message=(
+                f"Dataset has {n} sample(s); at least {settings.min_training_samples} "
+                "are required to train. A smaller set can't be split into a held-out "
+                "eval set, so the gate would only measure memorization."
+            )
+        )
 
 
 async def recover_orphaned_jobs(max_attempts: int = 1) -> tuple[int, int]:
@@ -229,6 +251,7 @@ async def enqueue_training_job(
         raise NotFound(message="Dataset not found")
     if dataset.status != DatasetStatus.valid:
         raise InvalidRequest(message="Dataset is not valid — cannot start training")
+    check_min_training_samples(dataset.num_samples)
 
     job = TrainingJob(
         project_id=project_id,

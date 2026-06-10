@@ -1,5 +1,6 @@
 """Training job endpoints (enqueue, status, logs)."""
 
+import json
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends
@@ -30,11 +31,20 @@ class JobResponse(BaseModel):
     adapter_path: Optional[str]
     eval_score: Optional[float]
     eval_passed: Optional[bool]
+    # Full eval result (score, base_score, score_delta, held_out, metrics,
+    # sample_predictions) so the gate verdict is auditable — not just a scalar (A4.6).
+    eval_metrics: Optional[dict]
     error_message: Optional[str]
     created_at: str
 
 
 def _job_resp(j: TrainingJob) -> JobResponse:
+    eval_metrics: Optional[dict] = None
+    if j.eval_metrics:
+        try:
+            eval_metrics = json.loads(j.eval_metrics)
+        except (ValueError, TypeError):
+            eval_metrics = None  # never let a malformed blob 500 the job read
     return JobResponse(
         id=j.id,
         status=j.status.value,
@@ -43,6 +53,7 @@ def _job_resp(j: TrainingJob) -> JobResponse:
         adapter_path=j.adapter_path,
         eval_score=j.eval_score,
         eval_passed=j.eval_passed,
+        eval_metrics=eval_metrics,
         error_message=j.error_message,
         created_at=j.created_at.isoformat(),
     )

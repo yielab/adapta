@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from datetime import date
 from enum import Enum
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import AwareDatetime, BaseModel, EmailStr, Field
 
@@ -138,6 +138,7 @@ class JobResponse(BaseModel):
     adapter_path: str | None = None
     eval_score: float | None = None
     eval_passed: bool | None = None
+    eval_metrics: dict[str, Any] | None = None
     error_message: str | None = None
     created_at: AwareDatetime | None = None
 

@@ -243,6 +243,10 @@ class TrainingJob(Base):
     adapter_path: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
     eval_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     eval_passed: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
+    # Full EvaluationResult.to_dict() as JSON (A4.6): score, base_score, score_delta,
+    # held_out, sample_predictions, metrics — so a gate verdict is auditable, not just
+    # a bare scalar. NULL until the job reaches evaluation.
+    eval_metrics: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # JSON
     training_config: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # JSON
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     # Crash-recovery retry counter (A4.2): incremented when startup reconciliation

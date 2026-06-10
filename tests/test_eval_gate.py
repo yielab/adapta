@@ -178,6 +178,36 @@ def test_valid_dataset_passes_schema(tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# Minimum dataset size (A4.6) — a too-small set can't be split into a held-out
+# eval set, so the gate would only measure memorization. Reject before enqueue.
+# ---------------------------------------------------------------------------
+
+def test_below_min_samples_rejected():
+    import pytest
+
+    from brain.config import settings
+    from brain.domain.errors import InvalidRequest
+    from brain.services.training import check_min_training_samples
+
+    with pytest.raises(InvalidRequest) as exc:
+        check_min_training_samples(settings.min_training_samples - 1)
+    assert str(settings.min_training_samples) in exc.value.message
+
+
+def test_at_min_samples_allowed():
+    from brain.config import settings
+    from brain.services.training import check_min_training_samples
+
+    # exactly the floor (and None → 0) — floor passes, None rejected
+    check_min_training_samples(settings.min_training_samples)
+    import pytest
+
+    from brain.domain.errors import InvalidRequest
+    with pytest.raises(InvalidRequest):
+        check_min_training_samples(None)
+
+
+# ---------------------------------------------------------------------------
 # Eval score computation — the value the gate actually tests (regression: the
 # worker used getattr(result, "score", 0.0), which was ALWAYS 0.0 because
 # EvaluationResult had no `score` — so no adapter could ever pass the gate).

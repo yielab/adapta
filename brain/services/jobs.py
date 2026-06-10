@@ -113,6 +113,7 @@ class JobQueue:
         adapter_path: Optional[str] = None,
         eval_score: Optional[float] = None,
         eval_passed: Optional[bool] = None,
+        eval_metrics: Optional[str] = None,
         error: Optional[str] = None,
     ) -> None:
         raw = await self.redis.get(f"{JOB_KEY_PREFIX}{job_id}")
@@ -128,6 +129,8 @@ class JobQueue:
             meta["eval_score"] = eval_score
         if eval_passed is not None:
             meta["eval_passed"] = eval_passed
+        if eval_metrics is not None:
+            meta["eval_metrics"] = eval_metrics
         if error is not None:
             meta["error"] = error
         if status in ("succeeded", "failed", "cancelled"):

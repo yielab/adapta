@@ -72,6 +72,10 @@ class Settings(BaseSettings):
 
     # Training
     eval_score_threshold: float = 0.6  # minimum eval score for an adapter to be promoted
+    # Minimum dataset size to start a training job (A4.6). Below this the held-out
+    # eval split collapses (e.g. 1 row → 0 held out → the gate scores the training
+    # rows and only measures memorization), so we reject the job up front.
+    min_training_samples: int = 10
 
     # Fine-tune serving (A3.1): PEFT adapters are converted to a GGUF LoRA so the
     # single llama-cpp runtime can serve them via `lora_path`. The converter is

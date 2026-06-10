@@ -52,7 +52,7 @@ Honour the [Definition of done](#definition-of-done-per-task) on every task. Wor
 | Docker dev/prod workflow | ✅ reworked 2026-06-08 — one multi-stage `Dockerfile`, non-root prod, dev toolchain baked in (no manual pip). See **§4**. |
 | Image size / CPU-only torch | ✅ app **1.87 GB** (was 6.45 GB), CPU-only torch, zero CUDA pkgs (2026-06-08). Worker keeps CUDA torch (verify-rebuild pending). See **§4.2**. |
 | Operator console (§5) | ✅ all views done (2026-06-09) — app shell, auth, projects, RAG flow, fine-tune flow, endpoint+keys, playground, usage, UX polish, mount+Docker+CI (C4 docs partial). Key-scoping (§5.12) enforced. |
-| **Staff audit (§A4)** | 🟡 **in progress** — both P0s done: A4.1 (concurrency-safe serving) ✅, A4.2 (crashed-job recovery) ✅. A4.5 (prod-by-default compose) ✅. Remaining P1: A4.3 (context-window guard), A4.4 (key-prefix index), A4.6 (auditable eval gate), A4.7 (provenance), A4.8 (model-cache bounds), A4.9 (auth rate-limit). Plus the P2 batch (A4.10–A4.12). |
+| **Staff audit (§A4)** | 🟡 **in progress** — done: A4.1 (concurrency-safe serving), A4.2 (crashed-job recovery), A4.5 (prod-by-default compose), A4.6 (auditable eval gate). Remaining P1: A4.3 (context-window guard), A4.4 (key-prefix index), A4.7 (provenance), A4.8 (model-cache bounds), A4.9 (auth rate-limit). Plus the P2 batch (A4.10–A4.12). |
 
 ---
 
@@ -243,25 +243,33 @@ Honour the [Definition of done](#definition-of-done-per-task) on every task. Wor
   secrets fail fast, only `app:8000` host-published); `make dev` restores the one-command dev
   workflow. CI is unaffected (it installs via pip, not compose). `make ci` green.
 
-### A4.6 `[BE]` Eval gate the operator can trust: min dataset size, persisted artifacts, distinct eval-crash (P1)
-- **Context.** Three gaps weaken Pillar 3's verdict: (1) a 1-row dataset makes the holdout split
-  empty (`split_holdout` returns 0 → eval rows fall back to train rows,
-  [worker/main.py:118-126](brain/worker/main.py#L118)) — the gate then measures memorization;
-  there is no minimum dataset size at enqueue. (2) Only the scalar `score` is persisted — the
-  computed base-vs-adapter delta and sample predictions are **dropped**, so a marginal pass can't
-  be audited. (3) An evaluator **crash** falls through to `eval_score=0.0` and reads "below
-  threshold" instead of "evaluation failed" ([worker/main.py:192-193](brain/worker/main.py#L192)).
-- **Steps.** (1) Enforce `settings.min_training_samples` (default 10) at dataset validation →
-  typed `InvalidRequest` with the reason. (2) Persist the full `EvaluationResult` (JSON column on
-  `training_jobs` or a small `eval_runs` table) and expose it in the job GET (spec first).
-  (3) On evaluator exception, fail the job with a distinct message; never report a crash as a
-  gate verdict.
-- **Files.** `brain/services/training.py`, `brain/worker/main.py`, `brain/training/evaluator.py`,
-  `brain/db/models.py` + migration, `specs/openapi.yaml`, `tests/test_eval_gate.py`.
-- **Contract impact.** Pillars 1 (job response), 2 (migration), 3 (gate semantics — document).
-- **Acceptance.** A <10-sample dataset is rejected at upload with a clear message; a finished job
-  exposes score, base score, delta, and sample predictions; an eval crash reads "evaluation
-  failed", not "score below threshold".
+### A4.6 `[BE]` Eval gate the operator can trust: min dataset size, persisted artifacts, distinct eval-crash (P1) — ✅ DONE (2026-06-10)
+- [x] **Context.** Three gaps weakened Pillar 3's verdict: (1) a tiny dataset made the holdout
+  split collapse (1 row → 0 held out → the gate scored the training rows); no minimum size at
+  enqueue. (2) Only the scalar `score` was persisted — the base-vs-adapter delta and sample
+  predictions were dropped, so a marginal pass couldn't be audited. (3) An evaluator **crash** fell
+  through to `eval_score=0.0` and read "below threshold" instead of "evaluation failed".
+- [x] **Done.** (1) `settings.min_training_samples` (default 10) enforced in `enqueue_training_job`
+  via `check_min_training_samples()` → typed `InvalidRequest` with the reason (raised before a job
+  row is created; the schema-validity check is unchanged so per-row validation stays separate).
+  (2) Full `EvaluationResult.to_dict()` persisted as JSON in a new `training_jobs.eval_metrics`
+  column (migration `0005`), threaded through `queue.update_status` + `update_job_record`, and
+  exposed as `JobResponse.eval_metrics` (spec-first → regenerated models → `make check-models`
+  green; live server confirmed carrying the field). (3) The worker now fails the job distinctly on
+  an evaluator exception ("Evaluation failed: …") instead of reporting a crash as a gate verdict.
+- [x] **Files.** `brain/config.py` (`min_training_samples`), `brain/services/training.py`
+  (`check_min_training_samples` + enqueue guard + `eval_metrics` thread), `brain/services/jobs.py`
+  (`eval_metrics` in `update_status`), `brain/db/models.py` + `migrations/versions/0005_eval_metrics.py`,
+  `brain/worker/main.py` (distinct eval-crash + persist eval_metrics), `brain/api/v1/jobs.py`
+  (`JobResponse.eval_metrics` + parse), `specs/openapi.yaml` + regenerated models,
+  `tests/test_eval_gate.py`.
+- [x] **Contract impact.** Pillar 1 (JobResponse + `eval_metrics`; contract gate **1309/1309**,
+  zero 5xx), Pillar 2 (migration `0005`, down/up round-trip clean).
+- **Acceptance met.** A <10-sample dataset is rejected before enqueue with a clear message
+  (`test_below_min_samples_rejected` / `test_at_min_samples_allowed`); a finished job's response
+  carries the full eval result (score, base_score, delta, held_out, sample_predictions); an eval
+  crash now reads "Evaluation failed", not "score below threshold". `make ci` green; contract +
+  migration gates green. (GPU e2e of the persisted-metrics path rides on the §1.7 LoRA e2e.)
 
 ### A4.7 `[BE]` Reproducibility: pin seed + hashes into the training record (P1)
 - **Context.** `training_config` is stored, but **no seed, no dataset hash, no HF model revision,

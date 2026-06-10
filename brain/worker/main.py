@@ -176,8 +176,6 @@ async def _run_job(meta: dict) -> None:
 
     # Evaluate adapter
     await progress(0.95, "Running evaluation...")
-    eval_score = 0.0
-    eval_passed = False
     try:
         from brain.training.evaluator import evaluator
         # Score on the HELD-OUT split (eval_path), never the rows we trained on.
@@ -189,20 +187,29 @@ async def _run_job(meta: dict) -> None:
             dataset_path=eval_path,
             base_model=hf_base_model,
         )
-        eval_score = result.score
-        eval_passed = eval_score >= settings.eval_score_threshold
-        if result.base_score is not None:
-            logger.info(
-                "Eval score: %.4f (threshold=%.4f) | base=%.4f delta=%+.4f (held-out, response-only)",
-                eval_score, settings.eval_score_threshold, result.base_score, result.score_delta,
-            )
-        else:
-            logger.info(
-                "Eval score: %.4f (threshold=%.4f) (held-out, response-only)",
-                eval_score, settings.eval_score_threshold,
-            )
     except Exception as exc:
-        logger.warning("Evaluation failed: %s", exc)
+        # An evaluator CRASH is not a gate verdict (A4.6). Reporting it as
+        # "score below threshold" would mislead the operator into thinking the
+        # adapter is bad when really the eval step itself broke. Fail distinctly.
+        logger.exception("Evaluation crashed for job %s", job_id)
+        await _set_status(queue, job_id, status="failed", error=f"Evaluation failed: {exc}")
+        return
+
+    eval_score = result.score
+    eval_passed = eval_score >= settings.eval_score_threshold
+    # Persist the FULL eval result (score, base_score, delta, held_out, samples,
+    # metrics) so the gate verdict is auditable, not just a scalar (A4.6).
+    eval_metrics_json = _json.dumps(result.to_dict())
+    if result.base_score is not None:
+        logger.info(
+            "Eval score: %.4f (threshold=%.4f) | base=%.4f delta=%+.4f (held-out, response-only)",
+            eval_score, settings.eval_score_threshold, result.base_score, result.score_delta,
+        )
+    else:
+        logger.info(
+            "Eval score: %.4f (threshold=%.4f) (held-out, response-only)",
+            eval_score, settings.eval_score_threshold,
+        )
 
     if not eval_passed:
         await _set_status(
@@ -211,6 +218,7 @@ async def _run_job(meta: dict) -> None:
             status="failed",
             eval_score=eval_score,
             eval_passed=False,
+            eval_metrics=eval_metrics_json,
             error=f"Eval score {eval_score:.3f} below threshold {settings.eval_score_threshold:.3f}",
         )
         return
@@ -265,6 +273,7 @@ async def _run_job(meta: dict) -> None:
         adapter_path=adapter_gguf_path,
         eval_score=eval_score,
         eval_passed=True,
+        eval_metrics=eval_metrics_json,
     )
     logger.info("Job %s complete — adapter %s registered", job_id, adapter_id)
 
