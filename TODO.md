@@ -7,9 +7,9 @@
 >
 > | File | Kind | Purpose |
 > |---|---|---|
-> | [docs/PRODUCT_DEFINITION.md](docs/PRODUCT_DEFINITION.md) | 📖 Reference | **What** we're building (locked north-star scope) |
-> | [docs/SDD_WORKFLOW.md](docs/SDD_WORKFLOW.md) | 📖 Reference | **How** we work (Extended SDD, three contracts) |
-> | [docs/API_EVOLUTION_PLAN.md](docs/API_EVOLUTION_PLAN.md) | 📖 Reference | **Origin record** — resolved audit, error architecture, cleanup history (no open tasks) |
+> | [docs/reference/PRODUCT_DEFINITION.md](docs/reference/PRODUCT_DEFINITION.md) | 📖 Reference | **What** we're building (locked north-star scope) |
+> | [docs/reference/SDD_WORKFLOW.md](docs/reference/SDD_WORKFLOW.md) | 📖 Reference | **How** we work (Extended SDD, three contracts) |
+> | [docs/reference/API_EVOLUTION_PLAN.md](docs/reference/API_EVOLUTION_PLAN.md) | 📖 Reference | **Origin record** — resolved audit, error architecture, cleanup history (no open tasks) |
 > | [README.md](README.md) | 📖 Reference | How to run/operate the stack |
 > | [CLAUDE.md](CLAUDE.md) | 📖 Reference | AI/developer working agreement |
 > | **TODO.md** (this file) | 🗺 Roadmap | **The only place with open tasks, priorities, acceptance** |
@@ -31,7 +31,7 @@ Every open task is written so a developer or AI agent can execute it without pri
 - **Scope** — the boundary (what is and isn't included).
 - **Steps** — the concrete sequence of changes.
 - **Files** — where the work lands.
-- **Contract impact** — which SDD pillar(s) fire ([SDD_WORKFLOW.md](docs/SDD_WORKFLOW.md)); change the contract **first**.
+- **Contract impact** — which SDD pillar(s) fire ([SDD_WORKFLOW.md](docs/reference/SDD_WORKFLOW.md)); change the contract **first**.
 - **Acceptance** — the observable, testable condition that closes it.
 
 Honour the [Definition of done](#definition-of-done-per-task) on every task. Work inside the dev container
@@ -250,7 +250,7 @@ Honour the [Definition of done](#definition-of-done-per-task) on every task. Wor
 - [x] **Files.** `docker-compose.override.yml`→`docker-compose.dev.yml` (renamed + header rewritten),
   `Makefile` (host `dev`/`dev-cpu`/`up`/`down` targets + header), `README.md` (quick-start now
   states prod-by-default + a contributor `make dev` note), `CONTRIBUTING.md` (dev setup uses
-  `make dev` with the why), `CLAUDE.md` (constraint #2), `docs/OPERATIONS.md` (upgrade note).
+  `make dev` with the why), `CLAUDE.md` (constraint #2), `docs/reference/OPERATIONS.md` (upgrade note).
 - **Acceptance met.** A fresh clone following the README boots with production semantics (weak
   secrets fail fast, only `app:8000` host-published); `make dev` restores the one-command dev
   workflow. CI is unaffected (it installs via pip, not compose). `make ci` green.
@@ -434,7 +434,7 @@ These were real gaps discovered by reading the repo. All are fixed; this section
 
 ## 1. Test system & SDD gates (P0/P1 — the core of this milestone)
 
-The three contracts from [SDD_WORKFLOW.md](docs/SDD_WORKFLOW.md) each need a **real, automated merge gate**. Right now the gates exist as Makefile targets but nothing runs them. This section makes each gate trustworthy.
+The three contracts from [SDD_WORKFLOW.md](docs/reference/SDD_WORKFLOW.md) each need a **real, automated merge gate**. Right now the gates exist as Makefile targets but nothing runs them. This section makes each gate trustworthy.
 
 ### 1.1 Pytest configuration & markers (P0)
 
@@ -588,13 +588,13 @@ Partly covered (`test_unhandled_error_returns_correlation_id`, `test_domain_erro
 - [x] *Tests:* `record_usage` upsert verified (two calls → one incremented row); integration `test_usage_aggregation` (totals + per-day, newest-first) + `test_usage_requires_auth`.
 
 ### 3.3 Operability — ✅ DONE (2026-06-09)
-- [x] **Backup/restore runbook:** `pg_dump` + Chroma-volume + adapter/upload/dataset file backup & restore, with consistency notes — [docs/OPERATIONS.md](docs/OPERATIONS.md) §2.
+- [x] **Backup/restore runbook:** `pg_dump` + Chroma-volume + adapter/upload/dataset file backup & restore, with consistency notes — [docs/reference/OPERATIONS.md](docs/reference/OPERATIONS.md) §2.
 - [x] **Startup migration ordering:** app runs `alembic upgrade head` before serving (entrypoint + `depends_on: postgres healthy`) — documented OPERATIONS §3.
 - [x] **VRAM requirements table:** OPERATIONS §6.2 (training) + §6.1 (serving RAM).
 - [x] Graceful worker shutdown: in-flight job requeued on SIGTERM (done §4.4) — documented OPERATIONS §4.
 
 ### 3.4 Base model catalog — ✅ DONE (2026-06-09)
-- [x] Default supported GGUF base list (Qwen2.5 family confirmed) — [docs/OPERATIONS.md](docs/OPERATIONS.md) §6.3.
+- [x] Default supported GGUF base list (Qwen2.5 family confirmed) — [docs/reference/OPERATIONS.md](docs/reference/OPERATIONS.md) §6.3.
 - [x] Per-base VRAM + quality tradeoff for QLoRA 4-bit — OPERATIONS §6.2/§6.3.
 - [x] Artifact storage decision: filesystem volume now; object storage only if multi-host/HA demands it — OPERATIONS §6.3.
 
@@ -602,7 +602,7 @@ Partly covered (`test_unhandled_error_returns_correlation_id`, `test_domain_erro
 - [x] `GET /metrics` (Prometheus text format) exposing request latency/count/errors (recorded in the correlation middleware) + live queue depth (Redis `LLEN` on scrape), reusing the existing `brain/core/metrics.py` exporter. Toggle via `BRAIN_METRICS_ENABLED`.
 - [x] Optional Prometheus + Grafana **compose profile** (`profiles: [observability]`, off by default): `docker compose --profile observability up -d`. Scrape config + auto-provisioned datasource in `deploy/observability/`.
 - [x] Structured JSON logging behind `BRAIN_LOG_FORMAT=json` (`brain/core/logging_config.py`), used by both app and worker.
-- [x] *Tests:* `tests/test_observability.py` (/metrics exposes Prometheus; JSON formatter emits valid JSON). Documented in [docs/OPERATIONS.md](docs/OPERATIONS.md) §7.
+- [x] *Tests:* `tests/test_observability.py` (/metrics exposes Prometheus; JSON formatter emits valid JSON). Documented in [docs/reference/OPERATIONS.md](docs/reference/OPERATIONS.md) §7.
 
 ---
 
@@ -610,7 +610,7 @@ Partly covered (`test_unhandled_error_returns_correlation_id`, `test_domain_erro
 
 The Docker architecture was **reworked 2026-06-08** into one multi-stage `Dockerfile`. The dev/prod
 workflow is now coherent; the remaining items are image slimming, secret/network hardening, and
-runtime robustness. See [docs/API_EVOLUTION_PLAN.md](docs/API_EVOLUTION_PLAN.md) for the architecture record.
+runtime robustness. See [docs/reference/API_EVOLUTION_PLAN.md](docs/reference/API_EVOLUTION_PLAN.md) for the architecture record.
 
 ### 4.0 Done — Docker architecture rework (this session) ✅
 - [x] **One multi-stage `Dockerfile`** with targets `base` / `builder` / `dev` / `production` / `worker`; deleted the drifting `Dockerfile.worker` (folded into the `worker` target).
@@ -659,11 +659,11 @@ runtime robustness. See [docs/API_EVOLUTION_PLAN.md](docs/API_EVOLUTION_PLAN.md)
 
 ### 4.5 Scale, registry & GPU profile (P2)
 - [x] Dev/prod compose separation (done in §4.0).
-- [x] **Stateless app → horizontal scale** (2026-06-09): app holds no server-side state (JWT, Redis queue, Chroma vectors, Postgres metadata all external); `--scale app=N` works. Documented in [docs/OPERATIONS.md](docs/OPERATIONS.md) §4, **including the shared-artifact-storage caveat** (host bind-mounts need NFS/object store for multi-host scale).
-- [x] **Image tag & registry strategy** (2026-06-09): tag by version + git-SHA, pin in a host override, upgrade = tag change + `up -d` (re-runs migrations); no secrets baked. [docs/OPERATIONS.md](docs/OPERATIONS.md) §5.
+- [x] **Stateless app → horizontal scale** (2026-06-09): app holds no server-side state (JWT, Redis queue, Chroma vectors, Postgres metadata all external); `--scale app=N` works. Documented in [docs/reference/OPERATIONS.md](docs/reference/OPERATIONS.md) §4, **including the shared-artifact-storage caveat** (host bind-mounts need NFS/object store for multi-host scale).
+- [x] **Image tag & registry strategy** (2026-06-09): tag by version + git-SHA, pin in a host override, upgrade = tag change + `up -d` (re-runs migrations); no secrets baked. [docs/reference/OPERATIONS.md](docs/reference/OPERATIONS.md) §5.
 - [x] **GPU by default**: superseded by **§4.2b** — the worker reserves the GPU in the base `docker-compose.yml`; the CPU-only path is the opt-out `docker-compose.cpu.yml` (`!reset`). See §4.2b step 2. **Correction to an earlier note:** the `worker` stage does **not** build CPU torch — `worker-builder` derives from `base` (not `builder`) and `[training]` pulls the CUDA wheel, so `torch.version.cuda` is set. An `nvidia/cuda:*-runtime` base is only needed if the bundled wheel libs prove insufficient at runtime (still flagged in `Dockerfile`).
 - [x] Remove the stale orphan image `brainfromcero-brain:latest`; standardize the compose project name — orphan removed (gone in the disk reclaim); images are `brainfromcero-app` / `brainfromcero-worker` under the `brainfromcero` project.
-- [x] **VRAM/CPU sizing table** — [docs/OPERATIONS.md](docs/OPERATIONS.md) §6 (serving RAM + training VRAM).
+- [x] **VRAM/CPU sizing table** — [docs/reference/OPERATIONS.md](docs/reference/OPERATIONS.md) §6 (serving RAM + training VRAM).
 
 ---
 
@@ -671,8 +671,8 @@ runtime robustness. See [docs/API_EVOLUTION_PLAN.md](docs/API_EVOLUTION_PLAN.md)
 
 > **Status: APPROVED & IN PROGRESS (2026-06-09).** The product decision (§5.0) is made: a thin operator
 > console **is in scope**. The stale "Web dashboard UI — out of scope" rule has been **removed** from
-> [PRODUCT_DEFINITION.md](docs/PRODUCT_DEFINITION.md) §3, [README.md](README.md), and
-> [API_EVOLUTION_PLAN.md](docs/API_EVOLUTION_PLAN.md). The console is an **operator convenience** over the
+> [PRODUCT_DEFINITION.md](docs/reference/PRODUCT_DEFINITION.md) §3, [README.md](README.md), and
+> [API_EVOLUTION_PLAN.md](docs/reference/API_EVOLUTION_PLAN.md). The console is an **operator convenience** over the
 > existing API — the OpenAI-compatible API stays the only protocol customer *applications* call.
 
 A small, bundled, **operator-facing** web console so a technical user can run the whole product
@@ -775,6 +775,6 @@ A task is done only when: (1) its contract changed first if it touches API/schem
 <details>
 <summary>Historical roadmap (March 2026) — superseded, kept for record only</summary>
 
-The earlier roadmap claimed "production-ready, 99%+ tool calling, 500+ tests." Those numbers were never measured. The platform described there (multi-agent hub, LangChain adapters, Drupal scraper, Jaeger tracing, OpenClaw integration, moondream2 vision, multi-protocol API) was **cut** in favour of the focused self-hosted RAG + LoRA product in [docs/PRODUCT_DEFINITION.md](docs/PRODUCT_DEFINITION.md).
+The earlier roadmap claimed "production-ready, 99%+ tool calling, 500+ tests." Those numbers were never measured. The platform described there (multi-agent hub, LangChain adapters, Drupal scraper, Jaeger tracing, OpenClaw integration, moondream2 vision, multi-protocol API) was **cut** in favour of the focused self-hosted RAG + LoRA product in [docs/reference/PRODUCT_DEFINITION.md](docs/reference/PRODUCT_DEFINITION.md).
 
 </details>

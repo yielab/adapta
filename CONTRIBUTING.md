@@ -116,12 +116,12 @@ Steps for a schema change:
 ### High priority
 
 - **Test coverage ratchet** — floor is enforced at 30%; target is 50%. More integration tests (tests that hit real Postgres, Redis, and Chroma) are the highest-value additions. The full stack is needed for these; the CI `full` job provides the pattern.
-- **Additional base models** — test with GGUF models beyond the Qwen2.5 family; document VRAM requirements and quality trade-offs in `docs/OPERATIONS.md`.
+- **Additional base models** — test with GGUF models beyond the Qwen2.5 family; document VRAM requirements and quality trade-offs in `docs/reference/OPERATIONS.md`.
 
 ### Medium priority
 
 - **Optional Prometheus/Grafana** — add as an optional Docker Compose profile (already removed from the default stack to keep it lean).
-- **Backup/restore runbook** — document `pg_dump` + adapter artifact backup procedure in `docs/OPERATIONS.md`.
+- **Backup/restore runbook** — document `pg_dump` + adapter artifact backup procedure in `docs/reference/OPERATIONS.md`.
 
 ### Lower priority
 

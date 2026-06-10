@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Brain From Cero — backup (A4.12). Automates docs/OPERATIONS.md §2.
+# Brain From Cero — backup (A4.12). Automates docs/reference/OPERATIONS.md §2.
 #
 # Backs up, from the same window (so a registered adapter row always has its file):
 #   - Postgres (schema + data)         -> backup/brain-<date>.sql.gz
@@ -47,4 +47,4 @@ if [ "$RETENTION_DAYS" -gt 0 ]; then
     -mtime "+${RETENTION_DAYS}" -print -delete
 fi
 
-echo "[backup] Done. Restore steps: docs/OPERATIONS.md §2."
+echo "[backup] Done. Restore steps: docs/reference/OPERATIONS.md §2."

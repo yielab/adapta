@@ -156,7 +156,7 @@ wget -O ./data/models/qwen2.5-3b-instruct/qwen2.5-3b-instruct-q4_k_m.gguf \
   "https://huggingface.co/Qwen/Qwen2.5-3B-Instruct-GGUF/resolve/main/qwen2.5-3b-instruct-q4_k_m.gguf"
 ```
 
-Supported base models (see [docs/OPERATIONS.md §6](docs/OPERATIONS.md) for VRAM requirements):
+Supported base models (see [docs/reference/OPERATIONS.md §6](docs/reference/OPERATIONS.md) for VRAM requirements):
 
 | Model | HF repo | VRAM (Q4) |
 | --- | --- | --- |
@@ -333,7 +333,7 @@ make migrate-test    # up → down → up round-trip (Pillar 2 gate)
 make test-contracts  # schemathesis vs a live server (set BRAIN_BEARER_TOKEN first)
 ```
 
-Full doc: [docs/SDD_WORKFLOW.md](docs/SDD_WORKFLOW.md).
+Full doc: [docs/reference/SDD_WORKFLOW.md](docs/reference/SDD_WORKFLOW.md).
 
 ---
 
@@ -346,11 +346,11 @@ reload) or build it with `make docs-build`. It's organized into four audiences:
 - **User Guide** ([docs/user-guide/](docs/user-guide/index.md)) — for the operator: the console walkthrough and how applications consume the API.
 - **Developer Guide** ([docs/developer-guide/](docs/developer-guide/index.md)) — architecture, the contract-driven workflow, an auto-generated code reference, and a from-first-principles **[Learning the system](docs/developer-guide/learning-the-system.md)** deep-dive for developers new to ML infrastructure (RAG, embeddings, LoRA, GGUF, the eval gate — explained with analogies to ordinary backend concepts).
 - **Reference** — locked facts:
-  - **[docs/PRODUCT_DEFINITION.md](docs/PRODUCT_DEFINITION.md)** — authoritative scope: what this is and isn't
+  - **[docs/reference/PRODUCT_DEFINITION.md](docs/reference/PRODUCT_DEFINITION.md)** — authoritative scope: what this is and isn't
   - **[API reference](docs/reference/api.md)** — rendered from `specs/openapi.yaml`
-  - **[docs/SDD_WORKFLOW.md](docs/SDD_WORKFLOW.md)** — how we work (Extended SDD, three contracts)
-  - **[docs/OPERATIONS.md](docs/OPERATIONS.md)** — backup/restore, upgrades, scaling, VRAM sizing, model catalog
-  - **[docs/API_EVOLUTION_PLAN.md](docs/API_EVOLUTION_PLAN.md)** — engineering audit and architecture decisions
+  - **[docs/reference/SDD_WORKFLOW.md](docs/reference/SDD_WORKFLOW.md)** — how we work (Extended SDD, three contracts)
+  - **[docs/reference/OPERATIONS.md](docs/reference/OPERATIONS.md)** — backup/restore, upgrades, scaling, VRAM sizing, model catalog
+  - **[docs/reference/API_EVOLUTION_PLAN.md](docs/reference/API_EVOLUTION_PLAN.md)** — engineering audit and architecture decisions
 - **Roadmap** — **[TODO.md](TODO.md)** — the only place with open work.
 - **[CLAUDE.md](CLAUDE.md)** — AI-assisted development guide and hard constraints.
 

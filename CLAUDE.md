@@ -7,7 +7,7 @@
 - **Knowledge (RAG):** upload documents → embed (sentence-transformers) → per-project ChromaDB collection → cited answers. CPU-only.
 - **Fine-tuning (LoRA):** instruction dataset (or documents synthesized into pairs via `POST /v1/projects/{id}/datasets/synthesize`) → QLoRA training on a GPU worker → adapter → served once it passes the eval gate (held-out score ≥ 0.6, **or** a clear improvement over the base model — §A3.2/A4).
 
-Single-tenant, multi-user within one organization. **Authoritative scope:** [docs/PRODUCT_DEFINITION.md](docs/PRODUCT_DEFINITION.md). The UI never calls RAG "training" — it asks *"give it knowledge"* (RAG) vs *"change how it behaves"* (fine-tuning).
+Single-tenant, multi-user within one organization. **Authoritative scope:** [docs/reference/PRODUCT_DEFINITION.md](docs/reference/PRODUCT_DEFINITION.md). The UI never calls RAG "training" — it asks *"give it knowledge"* (RAG) vs *"change how it behaves"* (fine-tuning).
 
 > Phases 0–5 are complete. The codebase is the real implementation — there is no mock, no dummy key, no placeholder embedding. When in doubt, the product definition wins over any stale comment in code.
 
@@ -39,7 +39,7 @@ Initial development, no external users, no legacy to protect. Therefore:
 - Breaking changes are expected. The only protected artifacts are the **three contracts** (see Workflow), never any existing implementation.
 - Found a stub, dummy value, or mock? Surface it and remove or finish it — do not build around it.
 
-Corrective engineering roadmap (audit, error architecture, cleanup): [docs/API_EVOLUTION_PLAN.md](docs/API_EVOLUTION_PLAN.md).
+Corrective engineering roadmap (audit, error architecture, cleanup): [docs/reference/API_EVOLUTION_PLAN.md](docs/reference/API_EVOLUTION_PLAN.md).
 
 ---
 
@@ -55,7 +55,7 @@ Corrective engineering roadmap (audit, error architecture, cleanup): [docs/API_E
 
 ## Workflow — Extended SDD (three contracts)
 
-Contract-driven: change the contract before the code. Full doc: [docs/SDD_WORKFLOW.md](docs/SDD_WORKFLOW.md).
+Contract-driven: change the contract before the code. Full doc: [docs/reference/SDD_WORKFLOW.md](docs/reference/SDD_WORKFLOW.md).
 
 | Contract | SSOT | Apply / generate | Merge gate |
 |---|---|---|---|
@@ -186,12 +186,12 @@ Two kinds of document, kept strictly separate: **📖 Reference** describes what
 | `docs/index.md` | 📖 Reference | Documentation home / hub |
 | `docs/user-guide/*` | 📖 Reference | **Operator/UI** docs (console walkthrough, consuming the API) |
 | `docs/developer-guide/*` | 📖 Reference | **Engineer** docs: architecture, *Learning the system* (analogies for non-ML devs), workflow, code reference (auto from docstrings) |
-| [docs/PRODUCT_DEFINITION.md](docs/PRODUCT_DEFINITION.md) | 📖 Reference | **What** we're building (locked scope) |
-| [docs/SDD_WORKFLOW.md](docs/SDD_WORKFLOW.md) | 📖 Reference | **How** we work (Extended SDD, 3 contracts) |
+| [docs/reference/PRODUCT_DEFINITION.md](docs/reference/PRODUCT_DEFINITION.md) | 📖 Reference | **What** we're building (locked scope) |
+| [docs/reference/SDD_WORKFLOW.md](docs/reference/SDD_WORKFLOW.md) | 📖 Reference | **How** we work (Extended SDD, 3 contracts) |
 | `docs/reference/api.md` | 📖 Reference | **API reference** — rendered from `specs/openapi.yaml` (auto) |
-| [docs/API_EVOLUTION_PLAN.md](docs/API_EVOLUTION_PLAN.md) | 📖 Reference | **Origin record** — resolved audit, error architecture, cleanup history |
+| [docs/reference/API_EVOLUTION_PLAN.md](docs/reference/API_EVOLUTION_PLAN.md) | 📖 Reference | **Origin record** — resolved audit, error architecture, cleanup history |
 | [README.md](README.md) | 📖 Reference | How to run/operate the stack (GitHub front door) |
-| [docs/OPERATIONS.md](docs/OPERATIONS.md) | 📖 Reference | Backup/restore, upgrades, scaling, registry, host sizing (VRAM), console |
+| [docs/reference/OPERATIONS.md](docs/reference/OPERATIONS.md) | 📖 Reference | Backup/restore, upgrades, scaling, registry, host sizing (VRAM), console |
 | [TODO.md](TODO.md) | 🗺 **Roadmap** | **The only place with open tasks**, priorities, acceptance criteria (included verbatim at `docs/roadmap.md`) |
 
 Rule: never add open tasks to a 📖 Reference doc, and never let the roadmap re-describe architecture — link to the reference instead. Status of the build lives in TODO.md's "Status snapshot." **Auto-sync:** the API reference comes from the OpenAPI spec and the code reference from docstrings — don't hand-write what a generator already produces; improve the docstring/spec instead.

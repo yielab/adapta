@@ -1,7 +1,7 @@
 # 📖 Operations Runbook
 
 Reference for operators running Brain From Cero on their own infrastructure.
-Describes what *is* — no open tasks (those live in [TODO.md](../TODO.md)).
+Describes what *is* — no open tasks (those live in [TODO.md](../roadmap.md)).
 
 Covers: backup/restore, upgrades & migrations, horizontal scaling, image/registry
 strategy, graceful shutdown, and host sizing (VRAM / base-model catalog).
@@ -27,7 +27,7 @@ Redis is a transient queue; a graceful worker shutdown requeues in-flight jobs
 
 ## 2. Backup & restore (§3.3)
 
-> **Scripted:** [`scripts/backup.sh`](../scripts/backup.sh) runs all three backups
+> **Scripted:** [`scripts/backup.sh`](https://github.com/santiagoyie/brainFromCero/blob/main/scripts/backup.sh) runs all three backups
 > below from one window and prunes old files (`RETENTION_DAYS`, default 14). Cron it:
 > `0 3 * * * cd /opt/brainFromCero && scripts/backup.sh >> backup/backup.log 2>&1`.
 
@@ -71,7 +71,7 @@ both or an endpoint can reference a missing adapter.
 ## 3. Upgrades & migrations
 
 The `app` container runs `alembic upgrade head` on startup (in
-[entrypoint.sh](../entrypoint.sh)) **before** serving, gated by compose
+[entrypoint.sh](https://github.com/santiagoyie/brainFromCero/blob/main/entrypoint.sh)) **before** serving, gated by compose
 `depends_on: postgres (healthy)`. So the upgrade flow is:
 
 ```bash
@@ -172,7 +172,7 @@ serving:
 
 The GPU is the default: the worker reserves the host GPU, so the standard
 `docker compose up` expects a CUDA GPU + the NVIDIA Container Toolkit. A GPU-less
-host serves RAG fine — layer [docker-compose.cpu.yml](../docker-compose.cpu.yml)
+host serves RAG fine — layer [docker-compose.cpu.yml](https://github.com/santiagoyie/brainFromCero/blob/main/docker-compose.cpu.yml)
 (`-f docker-compose.yml -f docker-compose.cpu.yml`) to drop the reservation; LoRA
 jobs are then rejected fast with a clear "GPU required" message. See the README
 "GPU" section and TODO §4.2b.
@@ -245,5 +245,5 @@ builder stage) served same-origin via FastAPI `StaticFiles`.
 
 ---
 
-See also: [README.md](../README.md) (run/operate), [PRODUCT_DEFINITION.md](PRODUCT_DEFINITION.md)
+See also: [README.md](../index.md) (run/operate), [PRODUCT_DEFINITION.md](PRODUCT_DEFINITION.md)
 (scope), [SDD_WORKFLOW.md](SDD_WORKFLOW.md) (the three contracts).

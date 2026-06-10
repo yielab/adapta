@@ -1,13 +1,13 @@
 # Product Definition — Self-Hosted Model Customization Platform
 
-> 📖 **Reference document (the locked "what").** Defines scope. It is not a task list — open work lives in [TODO.md](../TODO.md).
+> 📖 **Reference document (the locked "what").** Defines scope. It is not a task list — open work lives in [TODO.md](../roadmap.md).
 
 **Status:** Locked (north-star)
 **Decision date:** 2026-06-08
 **Implementation status:** Phases 0–5 complete as of 2026-06-08
 **One-liner:** A platform technical teams deploy **on their own servers** to customize and serve private language models two ways — **Knowledge (RAG)** or **Fine-tuning (LoRA)** — each exposed as an OpenAI-compatible API.
 
-> This document supersedes the sprawling "AI platform" framing. The engineering origin record (audit + error architecture) is [API_EVOLUTION_PLAN.md](API_EVOLUTION_PLAN.md); the spec process is [SDD_WORKFLOW.md](SDD_WORKFLOW.md); the roadmap/open work is [TODO.md](../TODO.md).
+> This document supersedes the sprawling "AI platform" framing. The engineering origin record (audit + error architecture) is [API_EVOLUTION_PLAN.md](API_EVOLUTION_PLAN.md); the spec process is [SDD_WORKFLOW.md](SDD_WORKFLOW.md); the roadmap/open work is [TODO.md](../roadmap.md).
 
 ---
 
@@ -85,7 +85,7 @@ A **single-tenant, self-hosted** application. A company runs it on their own inf
 
 ### In scope — thin operator console (decided 2026-06-09)
 
-A bundled, **operator-facing** web console ships with the appliance. It is **not a second product surface**: it is a thin client over the **existing** API — every screen maps 1:1 to an endpoint already in `specs/openapi.yaml`, served same-origin from the `app` container (no new server capability, no new external protocol, no Node toolchain). The **OpenAI-compatible API remains the only protocol a customer's *applications* call**; the console is how a *human operator* drives setup (projects, files/datasets, training, eval gate, keys, a test playground). It honors the framing rule below: it never calls RAG "training." Build spec: [TODO.md §5](../TODO.md).
+A bundled, **operator-facing** web console ships with the appliance. It is **not a second product surface**: it is a thin client over the **existing** API — every screen maps 1:1 to an endpoint already in `specs/openapi.yaml`, served same-origin from the `app` container (no new server capability, no new external protocol, no Node toolchain). The **OpenAI-compatible API remains the only protocol a customer's *applications* call**; the console is how a *human operator* drives setup (projects, files/datasets, training, eval gate, keys, a test playground). It honors the framing rule below: it never calls RAG "training." Build spec: [TODO.md §5](../roadmap.md).
 
 ## 4. Architecture (self-hosted, on-prem)
 

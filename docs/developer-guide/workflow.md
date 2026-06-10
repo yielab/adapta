@@ -2,7 +2,7 @@
 
 How we make changes. The one rule that governs everything: **change the contract
 before the code.** This is Extended Spec-Driven Development (SDD). The full
-reference is [SDD workflow](../SDD_WORKFLOW.md); this page is the practical
+reference is [SDD workflow](../reference/SDD_WORKFLOW.md); this page is the practical
 day-to-day.
 
 ## The dev environment

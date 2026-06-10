@@ -1,12 +1,19 @@
 # Roadmap
 
-!!! note "Single source"
-    The roadmap is maintained in **`TODO.md`** at the repository root and
-    included verbatim below — it is never duplicated. `TODO.md` is the **only**
-    place with open work; reference docs describe what *is*, the roadmap is what
-    *isn't done yet*.
+The roadmap — the single source of open work, with priorities and acceptance
+criteria — is maintained in **`TODO.md`** at the repository root. It is the
+**only** place with open tasks: reference documentation describes what *is*,
+while the roadmap describes what is *not yet done*.
 
-{%
-   include-markdown "../TODO.md"
-   heading-offset=0
-%}
+It is deliberately kept in one file rather than duplicated here, so it cannot
+drift out of sync. The current build status is summarized in that file's
+"Status snapshot" section.
+
+[:material-github: View the roadmap (TODO.md) on GitHub](https://github.com/santiagoyie/brainFromCero/blob/main/TODO.md){ .md-button .md-button--primary }
+
+!!! note "Why it isn't embedded here"
+    `TODO.md` links extensively to source files (`brain/…`) and other
+    repository documents. Rendering it inside this site would either break those
+    links or require duplicating the file — both of which defeat the
+    single-source principle. Linking to the canonical file keeps one
+    authoritative copy.

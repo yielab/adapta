@@ -10,4 +10,3 @@
 mkdocs-material>=9.5.0
 mkdocstrings[python]>=0.24.0
 mkdocs-render-swagger-plugin>=0.1.1
-mkdocs-include-markdown-plugin>=6.0.0

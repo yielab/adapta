@@ -2,7 +2,7 @@
 
 > 📖 **This is a REFERENCE document, not a roadmap.** It records what was found in the June 2026 audit,
 > how it was resolved, and the resulting error architecture. **It contains no open tasks.** All
-> forward-looking work — including any remaining gaps in the SDD gates — lives in [TODO.md](../TODO.md).
+> forward-looking work — including any remaining gaps in the SDD gates — lives in [TODO.md](../roadmap.md).
 
 **Status:** Historical record (audit resolved; phases 0–5 code-complete as of 2026-06-08)
 **Audience:** Senior engineers and autonomous coding agents who need the "why" behind the current shape.
@@ -225,7 +225,7 @@ Contract SSOT: `specs/openapi.yaml`.
 ## 6. Testing system
 
 The architecture is described here; the **state of each test/gate and the open work** is tracked only in
-[TODO.md](../TODO.md) — this document deliberately keeps no task list, to avoid two competing roadmaps.
+[TODO.md](../roadmap.md) — this document deliberately keeps no task list, to avoid two competing roadmaps.
 
 - `tests/conftest.py` — async client fixture via `httpx.AsyncClient` + `ASGITransport`.
 - `pyproject.toml` — `asyncio_mode = "auto"`, `testpaths = ["tests"]`, markers `contract`/`integration`/`slow` registered and default-deselected.
@@ -234,7 +234,7 @@ The architecture is described here; the **state of each test/gate and the open w
 - Gates: `make ci` (offline: check-leaks + lint + coverage floor + validate-spec + check-models) and the `full` gate (migrate-test + boot smoke + contract + integration), wired in `.github/workflows/ci.yml`.
 - Generated DTOs: `brain/models/generated/models.py` is committed and kept in sync with the spec by `make check-models` (regenerate-and-diff). As of 2026-06-08 the contract gate passes `--checks all` against the live server (1260/1260, zero 5xx).
 
-> For what's done vs open across the three SDD pillars, see [TODO.md](../TODO.md) "Status snapshot" and §A.
+> For what's done vs open across the three SDD pillars, see [TODO.md](../roadmap.md) "Status snapshot" and §A.
 
 ---
 

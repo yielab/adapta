@@ -1,6 +1,6 @@
 # Development Workflow — Extended SDD (Contract-Driven)
 
-> 📖 **Reference document (the "how").** Defines the process every change follows. Open work lives in [TODO.md](../TODO.md).
+> 📖 **Reference document (the "how").** Defines the process every change follows. Open work lives in [TODO.md](../roadmap.md).
 
 This project is **contract-driven**: nothing of consequence changes unless its contract changes first. There are **three contracts**, each with a single source of truth (SSOT), a generate/apply step, and a merge gate. The original Spec-Driven Development (SDD) rule governs the API; two companion contracts govern the database and the model pipeline.
 

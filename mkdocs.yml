@@ -42,7 +42,6 @@ theme:
 
 plugins:
   - search
-  - include-markdown          # single-source includes (roadmap = the root TODO.md)
   - render_swagger            # render the OpenAPI spec (copied into docs/ by the build hook) as live API docs
   - mkdocstrings:             # auto code reference from docstrings (static, via griffe)
       handlers:
@@ -95,9 +94,9 @@ nav:
       - Workflow & the three contracts: developer-guide/workflow.md
       - Code reference: developer-guide/code-reference.md
   - Reference:
-      - Product definition (scope): PRODUCT_DEFINITION.md
+      - Product definition (scope): reference/PRODUCT_DEFINITION.md
       - API reference: reference/api.md
-      - Operations runbook: OPERATIONS.md
-      - SDD workflow: SDD_WORKFLOW.md
-      - Architecture decisions / origin record: API_EVOLUTION_PLAN.md
+      - Operations runbook: reference/OPERATIONS.md
+      - SDD workflow: reference/SDD_WORKFLOW.md
+      - Architecture decisions / origin record: reference/API_EVOLUTION_PLAN.md
   - Roadmap: roadmap.md

@@ -42,7 +42,7 @@ into four audiences — pick the one that matches what you're trying to do:
     the OpenAPI spec), the operations runbook, and the architecture-decision
     record.
 
-    [:octicons-arrow-right-24: Reference](PRODUCT_DEFINITION.md)
+    [:octicons-arrow-right-24: Reference](reference/PRODUCT_DEFINITION.md)
 
 -   :material-map: **Roadmap**
 
