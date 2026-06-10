@@ -52,7 +52,7 @@ Honour the [Definition of done](#definition-of-done-per-task) on every task. Wor
 | Docker dev/prod workflow | ✅ reworked 2026-06-08 — one multi-stage `Dockerfile`, non-root prod, dev toolchain baked in (no manual pip). See **§4**. |
 | Image size / CPU-only torch | ✅ app **1.87 GB** (was 6.45 GB), CPU-only torch, zero CUDA pkgs (2026-06-08). Worker keeps CUDA torch (verify-rebuild pending). See **§4.2**. |
 | Operator console (§5) | ✅ all views done (2026-06-09) — app shell, auth, projects, RAG flow, fine-tune flow, endpoint+keys, playground, usage, UX polish, mount+Docker+CI (C4 docs partial). Key-scoping (§5.12) enforced. |
-| **Staff audit (§A4)** | 🟡 **in progress (2026-06-09)** — A4.1 (concurrency-safe + time-bounded serving) ✅ DONE. Remaining: crashed jobs stick at `running` (A4.2, P0), no context-window guard (A4.3), quick-start lands in dev mode (A4.5), eval verdict not auditable (A4.6). 1×P0, 7×P1, batch of P2 left. |
+| **Staff audit (§A4)** | 🟡 **in progress (2026-06-09)** — both P0s done: A4.1 (concurrency-safe + time-bounded serving) ✅, A4.2 (crashed-job recovery + `attempts`) ✅. Remaining: no context-window guard (A4.3), quick-start lands in dev mode (A4.5), eval verdict not auditable (A4.6). 7×P1, batch of P2 left. |
 
 ---
 
@@ -174,22 +174,31 @@ Honour the [Definition of done](#definition-of-done-per-task) on every task. Wor
   on the model (a fake Llama raises if entered twice); a generation that outlasts the deadline
   raises `Timeout` in both paths and the lock is freed. `make ci` green (136 passed).
 
-### A4.2 `[BE]` Crashed-job recovery — no job stuck at `running` forever (P0)
-- **Context.** Graceful SIGTERM requeue works (§4.4, [worker/main.py:316](brain/worker/main.py#L316)),
-  but a **hard crash** (OOM-kill, power loss, segfault) loses the job: BLPOP already removed it
-  from the queue, Postgres says `running`, and nothing ever retries or fails it. There is no
-  visibility timeout and no startup reconciliation — the operator sees a job "running" with a
-  dead worker, forever.
-- **Steps.** (1) On worker startup, scan Postgres for jobs in `running`/`queued`-but-not-in-Redis
-  whose worker heartbeat is stale; requeue **once** (add an `attempts` counter to `training_jobs`)
-  then mark `failed` ("worker crashed during training") on the second loss. (2) Persist
-  `status=running` to Postgres **synchronously before** training starts (today the Redis update
-  can land while the Postgres write fails silently, [worker/main.py:29-36](brain/worker/main.py#L29)).
-- **Files.** `brain/worker/main.py`, `brain/services/jobs.py`, `brain/db/models.py` + migration
-  (`attempts`), `tests/`.
-- **Contract impact.** Pillar 2 (one migration). Job response may expose `attempts` (spec first).
-- **Acceptance.** `kill -9` the worker mid-training → restart → the job reaches a terminal state
-  on its own (retrained or `failed` with a clear reason). No job remains `running` with no live worker.
+### A4.2 `[BE]` Crashed-job recovery — no job stuck at `running` forever (P0) — ✅ DONE (2026-06-09)
+- [x] **Context.** Graceful SIGTERM requeue worked (§4.4), but a **hard crash** (OOM-kill, power
+  loss, segfault) lost the job: BLPOP had already removed it from the queue, Postgres said
+  `running`, and nothing ever retried or failed it — the operator saw a job "running" with a dead
+  worker, forever.
+- [x] **Done.** (1) `recover_orphaned_jobs()` (`brain/services/training.py`) runs at worker startup
+  before the dequeue loop. It scans Postgres for `running` jobs (single-worker → any `running` at
+  startup is orphaned) and `queued` jobs absent from the Redis queue list (lost enqueue / wiped
+  Redis), and either **requeues once** — reconstructing the payload from Postgres (`Dataset`/`Project`),
+  so recovery survives a wiped Redis — or **fails** them once they've burned their retries (new
+  `attempts` counter on `training_jobs`; `max_attempts=1` → one automatic retry, then `failed` with
+  "exhausted retries"). A `queued` job still in the queue is left untouched. (2) The initial
+  `running` transition now persists to Postgres **critically** (`_set_status(..., critical=True)`):
+  if it can't be written, the job is **not** run untracked — it raises and the loop requeues.
+- [x] **Files.** `brain/services/training.py` (`recover_orphaned_jobs`), `brain/services/jobs.py`
+  (`queued_job_ids`), `brain/worker/main.py` (startup recovery + critical running-write),
+  `brain/db/models.py` + `migrations/versions/0004_job_attempts.py` (`attempts`),
+  `tests/integration/test_job_recovery.py`.
+- [x] **Contract impact.** Pillar 2 (migration `0004`, up/down round-trip verified). `attempts` is
+  internal-only (not surfaced in the API) — no Pillar-1 change.
+- **Acceptance met.** `tests/integration/test_job_recovery.py` (2 tests, live Postgres+Redis):
+  a `running` orphan is requeued (attempts→1, back in the queue) then `failed` on the second loss;
+  a `queued` job still in the queue is left alone (no spurious requeue, no attempt burned). Tests
+  use an isolated queue key so the live worker can't steal the jobs. `make ci` green (offline);
+  migration down/up round-trip clean.
 
 ### A4.3 `[BE]` Context-window overflow guard + `max_tokens` cap (P1)
 - **Context.** Nothing checks prompt + RAG context + `max_tokens` against the model's `n_ctx`.

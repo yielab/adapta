@@ -121,6 +121,99 @@ async def update_job_record(
         await db.commit()
 
 
+async def recover_orphaned_jobs(max_attempts: int = 1) -> tuple[int, int]:
+    """Reconcile jobs a crashed worker left behind (A4.2). Returns (requeued, failed).
+
+    A hard crash (OOM-kill, power loss, segfault) pops a job off the Redis queue
+    but never drives it to a terminal state — so it sits ``running`` in Postgres
+    forever with no live worker. A failed enqueue (or a wiped Redis) can likewise
+    leave a job ``queued`` in Postgres but absent from the queue. On worker startup
+    we find both and either requeue them (reconstructing the payload from Postgres,
+    so it survives a wiped Redis) or fail them once they've burned their retries.
+
+    Single-worker assumption: at startup no other worker is live, so any ``running``
+    job is orphaned. Run this before the dequeue loop.
+    """
+    from datetime import datetime, timezone
+
+    from sqlalchemy import select
+
+    from brain.db.models import JobStatus as _JobStatus
+    from brain.db.models import Project, TrainingJob
+    from brain.db.session import AsyncSessionLocal
+
+    queue = get_job_queue()
+    queued_ids = set(await queue.queued_job_ids())
+    requeued = failed = 0
+
+    async with AsyncSessionLocal() as db:
+        rows = (
+            await db.execute(
+                select(TrainingJob).where(
+                    TrainingJob.status.in_([_JobStatus.running, _JobStatus.queued])
+                )
+            )
+        ).scalars().all()
+
+        for row in rows:
+            # A `queued` job that's still in the Redis queue is legitimately waiting.
+            if row.status == _JobStatus.queued and row.id in queued_ids:
+                continue
+
+            is_crash = row.status == _JobStatus.running
+            if is_crash:
+                # Only a real crash (was `running`) consumes a retry; a lost-enqueue
+                # `queued` job never actually ran.
+                row.attempts = (row.attempts or 0) + 1
+
+            dataset = (
+                await db.execute(select(Dataset).where(Dataset.id == row.dataset_id))
+            ).scalar_one_or_none()
+            project = (
+                await db.execute(select(Project).where(Project.id == row.project_id))
+            ).scalar_one_or_none()
+
+            give_up = (is_crash and row.attempts > max_attempts) or dataset is None or project is None
+            if give_up:
+                reason = (
+                    "dataset or project no longer exists"
+                    if dataset is None or project is None
+                    else f"worker crashed during training and exhausted retries ({max_attempts})"
+                )
+                row.status = _JobStatus.failed
+                row.error_message = f"Job could not be recovered — {reason}."
+                row.finished_at = datetime.now(timezone.utc)
+                await db.commit()
+                await queue.update_status(row.id, status="failed", error=row.error_message)
+                failed += 1
+                logger.warning("Orphaned job %s failed during recovery — %s", row.id, reason)
+                continue
+
+            assert dataset is not None and project is not None  # give_up covered None
+            row.status = _JobStatus.queued
+            row.progress = 0.0
+            await db.commit()
+
+            payload = {
+                "job_id": row.id,
+                "project_id": row.project_id,
+                "dataset_id": row.dataset_id,
+                "dataset_path": dataset.storage_path,
+                "base_model": project.base_model,
+                "training_config": json.loads(row.training_config) if row.training_config else {},
+            }
+            await queue.enqueue(row.id, payload)
+            requeued += 1
+            logger.warning(
+                "Requeued orphaned job %s (was %s, attempt %d)",
+                row.id, "running" if is_crash else "queued-lost", row.attempts,
+            )
+
+    if requeued or failed:
+        logger.info("Crash recovery: %d job(s) requeued, %d failed", requeued, failed)
+    return requeued, failed
+
+
 async def enqueue_training_job(
     db: AsyncSession,
     project_id: str,

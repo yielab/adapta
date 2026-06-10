@@ -26,14 +26,23 @@ configure_logging()
 logger = logging.getLogger("brain.worker")
 
 
-async def _set_status(queue, job_id: str, **fields) -> None:
+async def _set_status(queue, job_id: str, *, critical: bool = False, **fields) -> None:
     """Write a job's status to BOTH Redis (live progress) and Postgres (the source
-    of truth the API + endpoint gate read). Persisting must never crash the job."""
+    of truth the API + endpoint gate read).
+
+    Normally a failed Postgres write is logged but swallowed (a metering blip must
+    not crash a job). The initial ``running`` transition passes ``critical=True``
+    (A4.2): if it can't be persisted, the job must NOT train untracked — crash
+    recovery scans Postgres for ``running`` rows, and a job stuck at ``queued``
+    there (while it actually ran) would be invisible to it. On failure we re-raise
+    so the worker loop requeues the job instead."""
     await queue.update_status(job_id, **fields)
     try:
         await update_job_record(job_id, **fields)
     except Exception:
         logger.exception("Failed to persist job %s status to Postgres", job_id)
+        if critical:
+            raise
 
 
 async def _run_job(meta: dict) -> None:
@@ -58,7 +67,10 @@ async def _run_job(meta: dict) -> None:
         await queue.heartbeat()  # keep liveness fresh during long training steps
 
     logger.info("Starting job %s (project=%s, model=%s)", job_id, project_id, base_model)
-    await _set_status(queue, job_id, status="running", progress=0.0)
+    # Critical: the `running` transition MUST land in Postgres before training, or a
+    # crash would leave it invisible to recovery (A4.2). On failure this raises and
+    # the worker loop requeues the job.
+    await _set_status(queue, job_id, status="running", progress=0.0, critical=True)
 
     # GPU guard: QLoRA requires torch to be usable on CUDA. Gate strictly on the
     # torch-level check (not the nvidia-smi heuristic) so a CPU-only host — or a
@@ -278,6 +290,15 @@ async def worker_loop() -> None:
     settings.ensure_dirs()  # adapters/datasets dirs must exist before any job runs
     queue = get_job_queue()
     await queue.connect()
+
+    # Reconcile jobs a previous worker left behind (crashed mid-training, or a lost
+    # enqueue) before consuming new work (A4.2). A recovery failure must not stop the
+    # worker from serving the live queue, so it's best-effort.
+    try:
+        from brain.services.training import recover_orphaned_jobs
+        await recover_orphaned_jobs()
+    except Exception:
+        logger.exception("Crash-recovery reconciliation failed (continuing to serve queue)")
 
     loop = asyncio.get_running_loop()
     shutdown = asyncio.Event()

@@ -245,6 +245,9 @@ class TrainingJob(Base):
     eval_passed: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
     training_config: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # JSON
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # Crash-recovery retry counter (A4.2): incremented when startup reconciliation
+    # re-picks a job left `running` by a dead worker; bounds automatic retries.
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0", default=0)
     started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

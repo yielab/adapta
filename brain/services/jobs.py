@@ -78,6 +78,14 @@ class JobQueue:
             return None
         return json.loads(raw)  # type: ignore[no-any-return]
 
+    async def queued_job_ids(self) -> list[str]:
+        """All job_ids currently waiting in the queue list (not yet dequeued).
+
+        Used by crash recovery (A4.2) to tell a legitimately-waiting ``queued`` job
+        from one that was lost (in Postgres as queued but absent from the queue)."""
+        vals = await self.redis.lrange(QUEUE_KEY, 0, -1)
+        return [v if isinstance(v, str) else v.decode() for v in vals]
+
     async def heartbeat(self, ttl: int = 90) -> None:
         """Refresh the worker liveness key (TTL-expiring). A dead/hung worker stops
         refreshing it, so `worker_alive()` (and the container healthcheck) go red."""
