@@ -17,6 +17,7 @@ from sqlalchemy import (
     Enum,
     Float,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
@@ -284,6 +285,12 @@ class Endpoint(Base):
 class ApiKey(Base):
     """Scoped key for a specific endpoint."""
     __tablename__ = "api_keys"
+    # Every /v1/chat/completions call looks a key up by (key_prefix, is_active) —
+    # the hottest query in the product. Index it so auth stays O(index) not O(table)
+    # as key count grows (A4.4).
+    __table_args__ = (
+        Index("ix_apikey_prefix_active", "key_prefix", "is_active"),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     endpoint_id: Mapped[str] = mapped_column(String(36), ForeignKey("endpoints.id", ondelete="CASCADE"), nullable=False)
