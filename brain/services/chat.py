@@ -230,6 +230,11 @@ async def chat_stream(
     chunk_id = f"chatcmpl-{uuid.uuid4().hex[:8]}"
     created = int(time.time())
 
+    # Count the prompt tokens once up front (A4.11) — the same real tokenizer used
+    # for the context-fit check — so streaming usage is no longer recorded with
+    # prompt_tokens=0 (which systematically undercounted every streaming consumer).
+    prompt_tokens = inference_engine.count_prompt_tokens(model_obj, inference_messages, full_system)
+
     # The engine yields one model token per iteration, so counting yields is the
     # real completion-token count — no need for the old ~4-chars/token estimate.
     completion_tokens = 0
@@ -251,16 +256,20 @@ async def chat_stream(
             "created": created,
             "model": model_name,
             "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
-            "usage": {"prompt_tokens": 0, "completion_tokens": completion_tokens, "total_tokens": completion_tokens},
+            "usage": {
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": prompt_tokens + completion_tokens,
+            },
         }
         yield f"data: {json.dumps(finish)}\n\n"
         yield "data: [DONE]\n\n"
 
         # Meter streaming usage once the stream completes (off the client path —
-        # this runs after the last byte is yielded). §3.2.
+        # this runs after the last byte is yielded). §3.2 / A4.11.
         if endpoint_id:
             from brain.services.usage import record_usage
-            await record_usage(endpoint_id, 0, completion_tokens)
+            await record_usage(endpoint_id, prompt_tokens, completion_tokens)
 
     except DomainError:
         raise  # Timeout (504) and other typed errors keep their status — don't mask as 500.

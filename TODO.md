@@ -336,25 +336,28 @@ Honour the [Definition of done](#definition-of-done-per-task) on every task. Wor
   integration test hammers `/login` past the cap and gets a `rate_limited` 429; contract gate green
   (429 tolerated); the auth-heavy integration suite stays green (no cross-test 429 flakiness).
 
-### A4.10 `[BE]` Stuck background-task sweeper (P2)
-- **Context.** An app crash mid-index/mid-validate leaves files at `processing` and datasets at
-  `validating` forever (the §4.4 fix covered the *scheduling* race, not a crash *during* the
-  task). No retry path exists for the operator.
-- **Steps.** In the lifespan startup, mark rows stuck in non-terminal states older than a
-  threshold as `failed` ("interrupted by restart") — or re-enqueue the work; consider a
-  `POST …/files/{id}/reindex` admin action.
-- **Files.** `brain/api/app.py` (lifespan), `brain/api/v1/files.py` / `datasets.py`, tests.
-- **Acceptance.** Kill the app mid-index → restart → the file reaches a terminal state without
-  manual DB surgery.
+### A4.10 `[BE]` Stuck background-task sweeper (P2) — ✅ DONE (2026-06-10)
+- [x] **Context.** An app crash mid-index/mid-validate left files at `processing` and datasets at
+  `validating` forever (the §4.4 fix covered the *scheduling* race, not a crash *during* the task).
+- [x] **Done.** `brain/services/maintenance.py:sweep_stuck_tasks()` runs in the app lifespan before
+  serving: files in (`pending`, `processing`) → `failed`, datasets in `validating` → `invalid`,
+  each with an "interrupted by a server restart — re-upload to retry" message. Best-effort (a sweep
+  failure can't block startup). At startup nothing is legitimately in-progress (the sweep runs
+  before any request), so every transient row is an orphan.
+- [x] **Files.** `brain/services/maintenance.py`, `brain/api/app.py` (lifespan),
+  `tests/integration/test_stuck_task_sweep.py`.
+- **Acceptance met.** Integration test seeds a `processing` file + `validating` dataset and asserts
+  the sweep drives them to `failed`/`invalid` with the message. `make ci` green; app imports clean.
 
-### A4.11 `[BE]` Streaming usage records prompt tokens (P2)
-- **Context.** Streaming requests record `prompt_tokens=0` (known §3.2 best-effort) — for the
-  usage feature this systematically undercounts every streaming consumer.
-- **Steps.** Tokenize the assembled prompt once before streaming (pairs naturally with A4.3's
-  counting) and include it in the final usage record + finish chunk.
-- **Files.** `brain/services/chat.py`.
-- **Acceptance.** Streaming and non-streaming runs of the same prompt record comparable
-  `prompt_tokens`.
+### A4.11 `[BE]` Streaming usage records prompt tokens (P2) — ✅ DONE (2026-06-10)
+- [x] **Context.** Streaming requests recorded `prompt_tokens=0`, systematically undercounting every
+  streaming consumer.
+- [x] **Done.** `chat_stream` now counts the assembled prompt once via
+  `inference_engine.count_prompt_tokens` (the same real tokenizer added for A4.3) and includes it
+  in both the finish chunk's `usage` and the `record_usage` call.
+- [x] **Files.** `brain/services/chat.py`.
+- **Acceptance met.** Real-model streaming test (`test_inference_slow.py`) green; streaming usage
+  now carries a real prompt-token count instead of 0.
 
 ### A4.12 `[OPS]` Ops hardening batch (P2) — small, independent items
 - [ ] **Deep-health disk check measures the wrong disk:** `psutil.disk_usage(os.getcwd())` checks

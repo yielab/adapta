@@ -68,6 +68,15 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         logger.warning("Job queue connection failed (training jobs unavailable): %s", exc)
 
+    # Reconcile background-task orphans left transient by a prior crash (A4.10):
+    # a file stuck at `processing` / a dataset at `validating` has no live task to
+    # finish it. Best-effort — a sweep failure must not block startup.
+    try:
+        from brain.services.maintenance import sweep_stuck_tasks
+        await sweep_stuck_tasks()
+    except Exception as exc:
+        logger.warning("Startup stuck-task sweep failed: %s", exc)
+
     # Pre-warm model manager (non-blocking; errors are logged, not fatal)
     try:
         from brain.core import model_manager
