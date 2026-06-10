@@ -339,12 +339,24 @@ Full doc: [docs/SDD_WORKFLOW.md](docs/SDD_WORKFLOW.md).
 
 ## Documentation
 
-- **[docs/PRODUCT_DEFINITION.md](docs/PRODUCT_DEFINITION.md)** — authoritative scope: what this is and isn't
-- **[docs/SDD_WORKFLOW.md](docs/SDD_WORKFLOW.md)** — how we work (Extended SDD, three contracts)
-- **[docs/OPERATIONS.md](docs/OPERATIONS.md)** — backup/restore, upgrades, scaling, VRAM sizing, model catalog
-- **[docs/API_EVOLUTION_PLAN.md](docs/API_EVOLUTION_PLAN.md)** — engineering audit and architecture decisions
-- **[CLAUDE.md](CLAUDE.md)** — AI-assisted development guide and hard constraints
-- **[TODO.md](TODO.md)** — open backlog
+Full documentation is a **MkDocs Material** site built from [`docs/`](docs/) and
+published to GitHub Pages. Preview it locally with `make docs-serve` (live
+reload) or build it with `make docs-build`. It's organized into four audiences:
+
+- **User Guide** ([docs/user-guide/](docs/user-guide/index.md)) — for the operator: the console walkthrough and how applications consume the API.
+- **Developer Guide** ([docs/developer-guide/](docs/developer-guide/index.md)) — architecture, the contract-driven workflow, an auto-generated code reference, and a from-first-principles **[Learning the system](docs/developer-guide/learning-the-system.md)** deep-dive for developers new to ML infrastructure (RAG, embeddings, LoRA, GGUF, the eval gate — explained with analogies to ordinary backend concepts).
+- **Reference** — locked facts:
+  - **[docs/PRODUCT_DEFINITION.md](docs/PRODUCT_DEFINITION.md)** — authoritative scope: what this is and isn't
+  - **[API reference](docs/reference/api.md)** — rendered from `specs/openapi.yaml`
+  - **[docs/SDD_WORKFLOW.md](docs/SDD_WORKFLOW.md)** — how we work (Extended SDD, three contracts)
+  - **[docs/OPERATIONS.md](docs/OPERATIONS.md)** — backup/restore, upgrades, scaling, VRAM sizing, model catalog
+  - **[docs/API_EVOLUTION_PLAN.md](docs/API_EVOLUTION_PLAN.md)** — engineering audit and architecture decisions
+- **Roadmap** — **[TODO.md](TODO.md)** — the only place with open work.
+- **[CLAUDE.md](CLAUDE.md)** — AI-assisted development guide and hard constraints.
+
+The API reference is generated from the OpenAPI spec and the code reference from
+docstrings, so both stay in sync with the code; `mkdocs build --strict` runs in
+CI, so a broken internal link fails the build.
 
 ---
 

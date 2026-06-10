@@ -1,0 +1,103 @@
+site_name: Brain From Cero
+site_description: Self-hosted RAG + LoRA model-customization platform — documentation
+site_author: Santiago Yie
+repo_url: https://github.com/santiagoyie/brainFromCero
+repo_name: santiagoyie/brainFromCero
+edit_uri: edit/main/docs/
+copyright: MIT License — Santiago Yie
+
+# Fail the build on a broken internal link or a nav entry that points at a
+# missing file. This is the enforcement that keeps the docs honest: a page that
+# references a moved/deleted doc fails CI (see .github/workflows/ci.yml).
+strict: true
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: deep purple
+      accent: purple
+      toggle:
+        icon: material/weather-night
+        name: Switch to light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: deep purple
+      accent: purple
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to dark mode
+  features:
+    - navigation.sections
+    - navigation.tabs
+    - navigation.top
+    - navigation.indexes
+    - navigation.tracking
+    - toc.follow
+    - content.code.copy
+    - content.code.annotate
+    - search.highlight
+    - search.suggest
+
+plugins:
+  - search
+  - include-markdown          # single-source includes (roadmap = the root TODO.md)
+  - render_swagger            # render the OpenAPI spec (copied into docs/ by the build hook) as live API docs
+  - mkdocstrings:             # auto code reference from docstrings (static, via griffe)
+      handlers:
+        python:
+          paths: [.]
+          options:
+            docstring_style: google
+            show_source: true
+            show_root_heading: true
+            heading_level: 3
+            members_order: source
+            separate_signature: true
+            show_signature_annotations: true
+
+# Copy specs/openapi.yaml into the docs tree at build time so the API page can
+# render it without duplicating the spec in git (the copy is gitignored).
+hooks:
+  - docs/_hooks/copy_spec.py
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - attr_list
+  - md_in_html
+  - tables
+  - footnotes
+  - toc:
+      permalink: true
+
+nav:
+  - Home: index.md
+  - User Guide:
+      - user-guide/index.md
+      - Operator console: user-guide/operator-console.md
+      - Consuming the API: user-guide/consuming-the-api.md
+  - Developer Guide:
+      - developer-guide/index.md
+      - Architecture: developer-guide/architecture.md
+      - Learning the system: developer-guide/learning-the-system.md
+      - Workflow & the three contracts: developer-guide/workflow.md
+      - Code reference: developer-guide/code-reference.md
+  - Reference:
+      - Product definition (scope): PRODUCT_DEFINITION.md
+      - API reference: reference/api.md
+      - Operations runbook: OPERATIONS.md
+      - SDD workflow: SDD_WORKFLOW.md
+      - Architecture decisions / origin record: API_EVOLUTION_PLAN.md
+  - Roadmap: roadmap.md

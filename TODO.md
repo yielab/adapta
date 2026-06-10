@@ -52,6 +52,7 @@ Honour the [Definition of done](#definition-of-done-per-task) on every task. Wor
 | Docker dev/prod workflow | ✅ reworked 2026-06-08 — one multi-stage `Dockerfile`, non-root prod, dev toolchain baked in (no manual pip). See **§4**. |
 | Image size / CPU-only torch | ✅ app **1.87 GB** (was 6.45 GB), CPU-only torch, zero CUDA pkgs (2026-06-08). Worker keeps CUDA torch (verify-rebuild pending). See **§4.2**. |
 | Operator console (§5) | ✅ all views done (2026-06-09) — app shell, auth, projects, RAG flow, fine-tune flow, endpoint+keys, playground, usage, UX polish, mount+Docker+CI (C4 docs partial). Key-scoping (§5.12) enforced. |
+| Documentation system | ✅ **consolidated** (2026-06-10) — MkDocs Material site from `docs/` (User Guide / Developer Guide incl. a *Learning the system* deep-dive / Reference / Roadmap). API reference auto-rendered from `specs/openapi.yaml`, code reference auto from docstrings; `mkdocs build --strict` in the CI fast gate; published to GitHub Pages on push→main. Dead `examples/openclaw/` (cut scope) removed. |
 | **Staff audit (§A4)** | ✅ **complete** — all P0+P1 (A4.1–A4.9) and the full P2 batch (A4.10 stuck-task sweeper, A4.11 streaming prompt tokens, A4.12 ops hardening: disk-check path, chroma version guard, hyperparam bounds, image pinning, synthesis error-rate, GPU hygiene, backup.sh, ProjectStatus `ready`, Chroma retrieval timeout). |
 
 ---

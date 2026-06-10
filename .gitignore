@@ -98,3 +98,7 @@ AUDIT_*.txt
 
 # Docker volumes
 monitoring/
+
+# MkDocs documentation site
+site/
+docs/reference/openapi.yaml

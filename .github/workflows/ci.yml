@@ -65,6 +65,24 @@ jobs:
         working-directory: brain/console
         run: npm ci --no-audit && npm run build:fast
 
+      - name: Install docs toolchain
+        # Build-time-only (docs/requirements.txt), separate from the app deps.
+        # The code reference uses static analysis (griffe), so no runtime stack
+        # is needed — fast install, no llama-cpp/torch compile.
+        run: pip install -r docs/requirements.txt
+
+      - name: Build documentation site (mkdocs --strict)
+        # The docs maintenance gate: --strict fails on a broken internal link or
+        # a nav entry pointing at a missing file. Produces ./site for deploy.
+        run: mkdocs build --strict
+
+      - name: Upload Pages artifact
+        # Only on push to main — feeds the deploy-docs job below.
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
   # -------------------------------------------------------------------------
   # Full gate — requires a live stack. Runs on PRs to main AND on direct
   # pushes to main. The latter matters because this repo commits straight to
@@ -107,14 +125,11 @@ jobs:
 
       chroma:
         # MUST match chromadb==1.5.9 in pyproject.toml — version skew → KeyError('_type') on all indexing.
-        # 1.x ships no curl; use python3 (the image is a Python app, so python3 is always present).
+        # The 1.x image ships only the `chroma` binary (no curl/wget/python), so we cannot
+        # health-check from inside the container. We expose the port and poll it from the runner
+        # in the "Wait for Chroma" step below instead.
         image: chromadb/chroma:1.5.9
         ports: ["8001:8000"]
-        options: >-
-          --health-cmd "python3 -c 'import urllib.request; urllib.request.urlopen(\"http://127.0.0.1:8000/api/v2/heartbeat\")'"
-          --health-interval 10s
-          --health-timeout 10s
-          --health-retries 15
 
     env:
       BRAIN_DATABASE_URL: postgresql+asyncpg://brain:brain@localhost:5432/brain
@@ -132,6 +147,18 @@ jobs:
 
       - name: Install dependencies
         run: pip install -e ".[dev]"
+
+      - name: Wait for Chroma to be ready
+        # The chroma 1.x image has no shell/python/curl — we can't healthcheck from
+        # inside the container. Poll the exposed port from the runner instead.
+        run: |
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:8001/api/v2/heartbeat > /dev/null 2>&1; then
+              echo "Chroma ready after ${i}x2s"; break
+            fi
+            [ $i -eq 30 ] && { echo "FAIL: Chroma not ready after 60s"; exit 1; }
+            sleep 2
+          done
 
       - name: migrate-test (Pillar 2 — up/down round-trip)
         run: make migrate-test
@@ -235,3 +262,27 @@ jobs:
       - name: Teardown app + worker
         if: always()
         run: kill $SERVER_PID $WORKER_PID 2>/dev/null || true
+
+  # -------------------------------------------------------------------------
+  # Publish docs to GitHub Pages — push to main only, and only if the fast gate
+  # (which builds the site with --strict and uploads it as a Pages artifact)
+  # passed. This job just deploys that already-built artifact, so it needs no
+  # toolchain install of its own.
+  #
+  # One-time repo setup: Settings → Pages → Source = "GitHub Actions".
+  # -------------------------------------------------------------------------
+  deploy-docs:
+    name: Publish docs (GitHub Pages)
+    runs-on: ubuntu-latest
+    needs: fast
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

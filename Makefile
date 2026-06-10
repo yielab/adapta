@@ -23,7 +23,7 @@ DEV_COMPOSE := docker compose -f docker-compose.yml -f docker-compose.dev.yml
 DEV_COMPOSE_CPU := docker compose -f docker-compose.yml -f docker-compose.cpu.yml -f docker-compose.dev.yml
 
 .PHONY: help dev dev-cpu up down generate validate-spec test-contracts migrate migration migrate-test \
-        test coverage lint fmt check-leaks check-chroma ci ci-full
+        test coverage lint fmt check-leaks check-chroma docs-install docs-build docs-serve ci ci-full
 
 help:
 	@echo "Available targets:"
@@ -49,6 +49,9 @@ help:
 	@echo "  coverage        Run in-process tests with coverage report"
 	@echo "  lint            Run ruff + mypy"
 	@echo "  fmt             Run black formatter"
+	@echo "  -- documentation (MkDocs, run on the HOST) --"
+	@echo "  docs-serve      Live-reload docs preview at http://localhost:8000"
+	@echo "  docs-build      Build the docs site (--strict; fails on broken links)"
 
 # ── HOST targets — bring the stack up/down (run these on the host, not in a container) ──
 # Bare `docker compose up` is PRODUCTION (secure by default, §A4.5). `make dev`
@@ -138,6 +141,19 @@ check-leaks:
 
 check-chroma:
 	@python scripts/check_chroma_version.py
+
+# ── Documentation (MkDocs Material) ──
+# Build-time-only toolchain in docs/requirements.txt (NOT an app dep, never in
+# the image). These run on the HOST in a venv, like the stack targets — the docs
+# site is not part of the app/worker containers.
+docs-install:
+	pip install -r docs/requirements.txt
+
+docs-build: docs-install
+	mkdocs build --strict          # --strict: a broken link/nav fails the build
+
+docs-serve: docs-install
+	mkdocs serve                   # live-reload preview at http://localhost:8000
 
 ci: check-leaks check-chroma lint lint-imports coverage validate-spec check-models
 	@echo "✓ Fast CI gate passed (offline)"

@@ -177,15 +177,21 @@ Open backlog: integration tests, coverage ratchet to 50%, usage metering to DB, 
 
 ## Docs index
 
+All documentation is consolidated into a **MkDocs Material** site built from `docs/` (config: `mkdocs.yml`). It is organized into four audiences — **User Guide**, **Developer Guide** (incl. a from-first-principles *Learning the system* deep-dive), **Reference**, and **Roadmap**. The site is built `--strict` in the CI fast gate (a broken internal link fails the build) and published to GitHub Pages on push to main. Preview locally with `make docs-serve`.
+
 Two kinds of document, kept strictly separate: **📖 Reference** describes what *is* / how we work (no tasks); **🗺 Roadmap** is the only place with open work.
 
-| File | Kind | Purpose |
+| File / area | Kind | Purpose |
 |---|---|---|
+| `docs/index.md` | 📖 Reference | Documentation home / hub |
+| `docs/user-guide/*` | 📖 Reference | **Operator/UI** docs (console walkthrough, consuming the API) |
+| `docs/developer-guide/*` | 📖 Reference | **Engineer** docs: architecture, *Learning the system* (analogies for non-ML devs), workflow, code reference (auto from docstrings) |
 | [docs/PRODUCT_DEFINITION.md](docs/PRODUCT_DEFINITION.md) | 📖 Reference | **What** we're building (locked scope) |
 | [docs/SDD_WORKFLOW.md](docs/SDD_WORKFLOW.md) | 📖 Reference | **How** we work (Extended SDD, 3 contracts) |
+| `docs/reference/api.md` | 📖 Reference | **API reference** — rendered from `specs/openapi.yaml` (auto) |
 | [docs/API_EVOLUTION_PLAN.md](docs/API_EVOLUTION_PLAN.md) | 📖 Reference | **Origin record** — resolved audit, error architecture, cleanup history |
-| [README.md](README.md) | 📖 Reference | How to run/operate the stack |
-| [docs/OPERATIONS.md](docs/OPERATIONS.md) | 📖 Reference | Backup/restore, upgrades, scaling, registry, host sizing (VRAM) |
-| [TODO.md](TODO.md) | 🗺 **Roadmap** | **The only place with open tasks**, priorities, acceptance criteria |
+| [README.md](README.md) | 📖 Reference | How to run/operate the stack (GitHub front door) |
+| [docs/OPERATIONS.md](docs/OPERATIONS.md) | 📖 Reference | Backup/restore, upgrades, scaling, registry, host sizing (VRAM), console |
+| [TODO.md](TODO.md) | 🗺 **Roadmap** | **The only place with open tasks**, priorities, acceptance criteria (included verbatim at `docs/roadmap.md`) |
 
-Rule: never add open tasks to a 📖 Reference doc, and never let the roadmap re-describe architecture — link to the reference instead. Status of the build lives in TODO.md's "Status snapshot."
+Rule: never add open tasks to a 📖 Reference doc, and never let the roadmap re-describe architecture — link to the reference instead. Status of the build lives in TODO.md's "Status snapshot." **Auto-sync:** the API reference comes from the OpenAPI spec and the code reference from docstrings — don't hand-write what a generator already produces; improve the docstring/spec instead.
