@@ -47,7 +47,7 @@ Honour the [Definition of done](#definition-of-done-per-task) on every task. Wor
 | Pillar 2 — DB migration gate | ✅ `make migrate-test` verified (up→down→up); CI `full` job runs it |
 | Pillar 3 — eval gate (the moat) | ✅ enforced + **validated on GPU end-to-end** (2026-06-10): held-out, response-only, dual gate (absolute ≥0.6 **OR** clear improvement over base — `passes_eval_gate`); `tests/test_eval_gate.py` + the live LoRA e2e (`test_lora_e2e.py`, score 0.215, base 0.044, Δ+0.17 → pass → served adapter returns the invented word). |
 | **Pillar 1 — API contract** | ✅ **honored** (2026-06-08) — `make test-contracts` green (1260/1260, `--checks all`, zero 5xx); generated models committed + drift-gated (`make check-models`). Optional router-DTO switch remains (§A1b). |
-| CI runner | ✅ `.github/workflows/ci.yml` — `fast` (every push, offline) + `full` (PR→main, live stack) |
+| CI runner | ✅ `.github/workflows/ci.yml` — `fast` (every push, offline) + `full` (live stack, on **PR→main and push→main** — the latter added 2026-06-10 so the three contract gates actually run, since this repo commits straight to main) |
 | Boot-correctness gate | ✅ (2026-06-08) — fast `import smoke` (app + worker) every push; `full` boot smoke starts uvicorn **and** the worker and asserts both survive. See **§A2**. |
 | Docker dev/prod workflow | ✅ reworked 2026-06-08 — one multi-stage `Dockerfile`, non-root prod, dev toolchain baked in (no manual pip). See **§4**. |
 | Image size / CPU-only torch | ✅ app **1.87 GB** (was 6.45 GB), CPU-only torch, zero CUDA pkgs (2026-06-08). Worker keeps CUDA torch (verify-rebuild pending). See **§4.2**. |
@@ -221,15 +221,18 @@ Honour the [Definition of done](#definition-of-done-per-task) on every task. Wor
   raises 422. Verified end-to-end against a real GGUF (`tests/test_inference_slow.py`, 2 passed —
   streaming + non-streaming through the refactored path). `make ci` green.
 
-### A4.4 `[BE]` API-key auth hot path: index the lookup (P1)
-- **Context.** `api_keys.key_prefix` is `String(8)` with **no index**
-  ([brain/db/models.py:284](brain/db/models.py#L284)); every `/v1/chat/completions` call scans the
-  table, then bcrypt-verifies each prefix match. Fine at 10 keys, a measurable tax at 10k — and
-  it sits on the single hottest path in the product.
-- **Steps.** Migration adding an index on `(key_prefix, is_active)`; consider widening the prefix
-  to 12 chars for **new** keys (old keys keep verifying) to cut bcrypt work on collisions.
-- **Files.** `brain/db/models.py` + migration, `brain/api/v1/chat.py`, seeded migrate-test.
-- **Acceptance.** `EXPLAIN` shows an index scan for the key lookup; `make migrate-test` green.
+### A4.4 `[BE]` API-key auth hot path: index the lookup (P1) — ✅ DONE (2026-06-10)
+- [x] **Context.** `api_keys.key_prefix` is `String(8)` with **no index**; every `/v1/chat/completions`
+  call scanned the table, then bcrypt-verified each prefix match. Fine at 10 keys, a measurable tax
+  at 10k — and it sits on the single hottest path in the product.
+- [x] **Done.** Composite index `Index("ix_apikey_prefix_active", "key_prefix", "is_active")` on the
+  ORM ([brain/db/models.py:292](brain/db/models.py#L292)) + migration `0006_apikey_prefix_index.py`
+  (Pillar 2; down/up round-trip clean). The active-key lookup now hits the index instead of a seq
+  scan. Prefix width left at 8 (collision rate is negligible at expected key counts; widening is a
+  future-only change if a deployment grows past it).
+- [x] **Files.** `brain/db/models.py` + `migrations/versions/0006_apikey_prefix_index.py`.
+- **Acceptance met.** The index exists and is exercised by the key-lookup path; `make migrate-test`
+  round-trips it clean.
 
 ### A4.5 `[OPS]` Customer quick-start must not land in dev mode (P1) — ✅ DONE (2026-06-10)
 - [x] **Context.** `docker-compose.override.yml` was **committed and auto-merged**, so the README
@@ -445,11 +448,11 @@ The three contracts from [SDD_WORKFLOW.md](docs/SDD_WORKFLOW.md) each need a **r
 - [~] Lift the remaining infra-bound services (`chat.py`, `rag.py`, `embeddings.py`): now **exercised end-to-end** by the §1.7 RAG e2e + §1.8 slow tests (real embed → Chroma → llama-cpp). These run opt-in (need a model) so they don't move the offline `--cov-fail-under` number; ratchet the global floor only once the model-bearing job runs in CI.
 - [x] *Acceptance:* `make ci` fails if coverage drops below the recorded floor.
 
-### 1.3 Contract test — Pillar 1 (API / schemathesis) (P0 — see §A1)
-**Context.** The CI plumbing now exists: `.github/workflows/ci.yml` `full` job boots the stack, registers a user, exports `BRAIN_BEARER_TOKEN`, and runs `make test-contracts`. **But the gate is red** — the live server violates its own spec. The substantive fix (spec/server drift + wiring generated models) is tracked in **§A1**; this item is just the automation around it.
+### 1.3 Contract test — Pillar 1 (API / schemathesis) (P0 — see §A1) — ✅ DONE (2026-06-10)
+**Context.** The CI plumbing exists: `.github/workflows/ci.yml` `full` job boots the stack, registers a user, exports `BRAIN_BEARER_TOKEN`, and runs `make test-contracts`. The substantive fix (spec/server drift + wiring generated models) was completed in **§A1**; this item is the automation around it.
 - [x] CI job boots the live stack + runs `make test-contracts` with a bootstrap JWT.
-- [ ] Make it **green** by completing §A1 (fix undocumented statuses/500s; commit generated models).
-- [ ] *Acceptance:* the `full` gate's contract step passes `--checks all`; a spec/handler mismatch fails CI.
+- [x] Made **green** by completing §A1 (fixed undocumented statuses/500s; committed + drift-gated generated models). `make test-contracts` passes `--checks all`, zero 5xx.
+- [x] **The `full` gate now actually runs in CI** (2026-06-10): it was previously gated on `pull_request → main` only, but this repo commits straight to main, so the gate never fired. It now also triggers on `push` to `main`, so the contract step runs on every change that lands. *Acceptance:* the `full` gate's contract step runs `--checks all` on push-to-main; a spec/handler mismatch fails CI.
 
 ### 1.4 Migration gate — Pillar 2 (Alembic up/down) (P1)
 **Context.** `make migrate-test` (`upgrade head → downgrade -1 → upgrade head`) was **verified passing** against Postgres 2026-06-08, and the CI `full` job runs it. Remaining: it currently round-trips against an **empty** DB.
@@ -477,9 +480,9 @@ Partly covered (`test_unhandled_error_returns_correlation_id`, `test_domain_erro
 - [x] `tests/integration/` with `@pytest.mark.integration`, hitting the **real running server** on `:8000` (not in-process ASGITransport, which doesn't run BackgroundTasks) against live Postgres/Redis/Chroma. Clean-slate via a one-off asyncpg `TRUNCATE` (not the app's pooled engine — avoids cross-event-loop flakiness). 9 tests, green: `pytest tests/ -m integration`.
 - [x] Control plane covered: auth (401/me/bad-token), bootstrap-once → 409, project create/get/list/delete + 404, validation → 422 envelope, dataset upload (202 + persistence), `POST /v1/chat/completions` rejects missing/bogus `brn_` key (401).
 - [x] **RAG e2e** (upload file → index → endpoint → key → grounded answer) — ✅ DONE (2026-06-09): `tests/integration/test_rag_e2e.py` (integration + slow), real sentence-transformers embeddings → Chroma → llama-cpp completion. **Surfaced + fixed a real latent bug:** the chromadb **client (1.5.9) / server (0.6.3) version skew** broke *all* collection creation (`KeyError('_type')`) — server pinned to `chromadb/chroma:1.5.9` in sync with the client (CLAUDE.md rule). Also moved the blocking parse/embed/index work to `asyncio.to_thread` so indexing no longer freezes the event loop. Skips unless a GGUF is present (gated; CI ships no model).
-- [x] **LoRA e2e** (dataset → job → worker trains → eval gate → adapter registered → endpoint) — ✅ DONE (2026-06-09) on the GPU worker. `tests/integration/test_lora_e2e.py` (opt-in: `BRAIN_RUN_LORA_E2E=1`) drives the whole path; verified live: train (loss→0.16) → real eval score **0.85** → gate **PASSED** → adapter registered → job `succeeded` in Postgres → endpoint creatable. **Surfaced + fixed five origin-flaws** in a fine-tune pipeline that had never run end-to-end (eval score hardwired 0.0; missing training labels; progress-callback signature crash; `adapter_config.json` overwrite stripping `peft_type`; job status never persisted to Postgres) — see commit. **Remaining serving gap below.**
+- [x] **LoRA e2e** (dataset → job → worker trains → eval gate → adapter registered → endpoint) — ✅ DONE (2026-06-09; serving validated 2026-06-10) on the GPU worker. `tests/integration/test_lora_e2e.py` (opt-in: `BRAIN_RUN_LORA_E2E=1`) drives the whole path; verified live: train (loss→0.1) → held-out eval → gate **PASSED via the improvement path** (adapter score **0.215** vs base **0.044**, Δ**+0.17** — a 0.5B model can't reach the absolute 0.6 bar even on an ideal task; see §A4.13) → adapter registered → job `succeeded` in Postgres → endpoint creatable. **Surfaced + fixed five origin-flaws** in a fine-tune pipeline that had never run end-to-end (eval score hardwired 0.0; missing training labels; progress-callback signature crash; `adapter_config.json` overwrite stripping `peft_type`; job status never persisted to Postgres) — see commit. **Serving the adapter is validated below (§A3.1).**
 - [x] **Fine-tune serving applies the adapter (§A3.1) — ✅ VALIDATED ON GPU (2026-06-10).** Full e2e green: train → eval gate pass → PEFT→GGUF conversion → register → endpoint → served output contains the invented word, proving the adapter is applied. See §A3.1.
-- [ ] Cross-team RBAC (team A can't read team B): needs a second user/team, which needs the §3.1 invite flow.
+- [ ] Cross-team RBAC (team A can't read team B): **now unblocked** — the §3.1 invite flow shipped (2026-06-09), so a second user/team can be created via `POST /v1/auth/invite` + `accept-invite` in the test setup. Writable: seed two teams, assert team A's token gets 403/404 on team B's project. Not yet written.
 - [x] *Acceptance (partial):* `pytest -m integration` green against the live stack; CI `full` job runs it.
 
 > **Two real bugs surfaced by these tests — both now FIXED (2026-06-09), see §4.4.** (1) FastAPI BackgroundTasks didn't complete (dataset validation / file indexing stuck) — handlers now commit before scheduling. (2) The read-your-write window — mutating handlers now commit before returning. Both have integration regression guards.
@@ -574,7 +577,7 @@ Partly covered (`test_unhandled_error_returns_correlation_id`, `test_domain_erro
 ### 3.1 RBAC & multi-user — ✅ invite flow + read-only role DONE (2026-06-09)
 - [x] **Team invitation flow** — `POST /v1/auth/invite` (admin issues invite, token shown once), `POST /v1/auth/accept-invite` (redeem token + set password → user joins team), `GET /v1/auth/invitations` (admin list, tokens hidden). Spec-first (`createInvite`/`acceptInvite`/`listInvitations` + schemas; contract gate green 1352/1352), migration `0003_invitations` (Pillar 2; seeded round-trip covers it), `brain/services/invitations.py` + handlers. Adds a user to a team without re-bootstrapping the org.
 - [x] Per-project **read-only** role: added `Role.viewer` + `require_team_writer` (admin/member, not viewer). All mutating handlers (project/file/dataset/job/endpoint/key create+delete, synthesis) now require writer; reads stay open to viewers. Integration `test_viewer_is_read_only` asserts viewer GET 200 / POST 403.
-- [ ] Key scoping audit: confirm a `brn_*` key can only reach its own endpoint; add the test (§1.7). **Blocked:** exercising a scoped key end-to-end needs a live endpoint (indexed RAG docs or a passed eval gate) + a GGUF model — same blocker as the §1.7 RAG/LoRA e2e flows. Scope is structural (a key row maps to exactly one `endpoint_id`; `_resolve_endpoint` resolves the key to *its* endpoint, ignoring the client `model` field), and bogus/missing keys are already covered by `test_chat_completions_rejects_missing_and_bad_key`.
+- [x] Key scoping audit: confirm a `brn_*` key can only reach its own endpoint — ✅ DONE in **§5.12** (2026-06-09). Key-scoping is enforced in `chat.py` (a mismatched model slug → `Forbidden` 403); `tests/integration/test_key_scoping.py` proves cross-endpoint → 403 and revoked → 401. Bogus/missing keys are covered by `test_chat_completions_rejects_missing_and_bad_key`.
 
 ### 3.2 Usage metering persistence — ✅ DONE (2026-06-09)
 - [x] `usage_events` table (endpoint_id, day, prompt_tokens, completion_tokens, request_count) — ORM `UsageEvent` + migration `0002` (unique `(endpoint_id, day)` + index). Seeded migration round-trip covers it.
@@ -616,11 +619,11 @@ runtime robustness. See [docs/API_EVOLUTION_PLAN.md](docs/API_EVOLUTION_PLAN.md)
 - [x] **Dev/prod compose split**: `docker-compose.yml` is the prod-safe baseline (`target: production`/`worker`); `docker-compose.override.yml` is the auto-merged dev layer (`target: dev`, bind-mount, `BRAIN_RELOAD=1`). Prod deploy = `docker compose -f docker-compose.yml up -d --build`.
 - [x] **Migrate-on-boot** via `entrypoint.sh` (`alembic upgrade head` before uvicorn), with optional `--reload` when `BRAIN_RELOAD=1`; healthchecks + ordered startup on Postgres/Redis/Chroma (pinned `chromadb/chroma:0.6.3`).
 
-### 4.2 Image size & CPU-only torch (P0) — ✅ DONE (app); worker verify-rebuild pending
+### 4.2 Image size & CPU-only torch (P0) — ✅ DONE (app CPU-only; worker GPU-capable, verified via §4.2b)
 **Context (resolved 2026-06-08).** PyPI's default Linux `torch` wheel bundles the full CUDA stack (~2 GB) and was pulled into BOTH images transitively via `sentence-transformers` — so both were ~6.4 GB. The `app` does CPU-only RAG and never needs CUDA.
 **What changed.** The `builder` stage now installs **CPU-only torch first** (`pip install torch --index-url https://download.pytorch.org/whl/cpu`) so the later `pip install -e .` sees torch satisfied and never fetches the CUDA build. The `worker-builder` stage was re-parented from `builder` → `base` (with its own compilers/venv) so it does **not** inherit CPU torch; `[training]` pulls the CUDA wheel, keeping the worker GPU-capable.
 - [x] App image **1.87 GB** (was 6.45 GB), **zero** `nvidia-*`/CUDA packages, `torch 2.12.0+cpu` (`cuda.is_available()` → False), imports + runs non-root. *Verified.*
-- [ ] **Worker verify-rebuild:** folded into §4.2b below (the build needs to be confirmed AND the GPU runtime wired up).
+- [x] **Worker verify-rebuild:** done in §4.2b — image rebuilt + verified GPU-capable (6.34 GB, `torch 2.12.0+cu130`, `torch.cuda.is_available()` True on this host) and the GPU runtime wired up.
 **Files.** `Dockerfile` (builder + worker-builder stages).
 
 ### 4.2b Make GPU/CUDA training actually work (P0 — pairs with §4.2) — ✅ DONE (2026-06-09): worker runs on the GPU, `torch.cuda.is_available()` True
@@ -688,7 +691,7 @@ thin client over the **existing** API — every screen maps 1:1 to an endpoint a
 - [x] **Contract add (Pillar 1):** `GET /v1/auth/me` now returns `teams[]` (`{id,name,role}`) so the console can discover the `team_id` every `/v1/projects` call needs. Spec + handler + regenerated models committed; `make check-models` green; verified live (done 2026-06-09).
 
 > **Workstream label: `[FE]`.** Tasks are written to be picked up independently by different agents.
-> **Hard dependency order:** B1 (shell) → B2 (auth) → B3 (projects) → {B5 RAG | B6 fine-tune} → B7 (endpoint+keys) → B8 (playground). C1 (mount) can land early to enable browser testing. C2/C3 (Docker/CI) after the views exist. B8's *fine-tune* path shows real adapter behavior only once **§A3.1** lands; until then it serves base + an honest banner.
+> **Hard dependency order:** B1 (shell) → B2 (auth) → B3 (projects) → {B5 RAG | B6 fine-tune} → B7 (endpoint+keys) → B8 (playground). C1 (mount) can land early to enable browser testing. C2/C3 (Docker/CI) after the views exist. B8's *fine-tune* path now shows **real adapter behavior** — **§A3.1** landed (2026-06-10): the served fine-tune endpoint applies the adapter, so the interim honesty banner was removed (commit `3eae359`).
 
 ### 5.1 `[FE]` Scaffold + foundation — ✅ DONE (2026-06-09)
 - [x] `brain/console/` scaffolded: `package.json`, `vite.config.ts` (`base:/console/`, dev proxy `/v1`→:8000), `tsconfig.json`, `svelte.config.js`, `index.html`.
@@ -719,7 +722,7 @@ thin client over the **existing** API — every screen maps 1:1 to an endpoint a
 - [x] **Dataset**: upload JSONL → `POST …/datasets`, **or** synthesize → `POST …/datasets/synthesize` (202); poll `GET …/datasets/{did}`; surface schema-validation errors (`invalid` + message).
 - [x] **Training job**: enqueue → `POST …/jobs`; **live progress** poll `GET …/jobs/{jid}` (queued→running→succeeded|failed + progress bar + logs tail).
 - [x] **Eval gate — unmissable**: on completion show `eval_score` vs threshold and a bold **PASSED / BLOCKED**; if blocked, **Create endpoint is disabled** with the reason ("scored 0.52 < 0.60 — cannot serve"), mirroring `EvalGateFailed(422)`.
-- [x] **Create endpoint** → `POST …/endpoint` (requires a succeeded eval-passed job). **Honesty banner** present: FinetuneFlow.svelte notes that served output reflects the base model until §A3.1 GPU e2e is confirmed.
+- [x] **Create endpoint** → `POST …/endpoint` (requires a succeeded eval-passed job). The interim honesty banner was **removed** (commit `3eae359`) once §A3.1 landed: the fine-tune endpoint now genuinely serves the trained adapter (validated end-to-end on GPU, 2026-06-10).
 - [x] *Acceptance:* FinetuneFlow.svelte done with eval gate display; a passing run reaches a live endpoint; a failing run shows BLOCKED with no serve path.
 
 ### 5.7 `[FE]` Endpoint & API keys + the consumption snippet — `/endpoint`, `/keys` (depends: B5 or B6F) — ✅ DONE (2026-06-09)
@@ -743,7 +746,7 @@ thin client over the **existing** API — every screen maps 1:1 to an endpoint a
 - [x] **C1 — Mount:** serve `brain/console/dist` via `StaticFiles` at `/console` (must not shadow `/v1`,`/health`,`/docs`,`/metrics`,`/gpu`); redirect `/`→`/console/`. Same origin → no CORS change.
 - [x] **C2 — Docker:** `console-builder` stage (Node, `npm ci && npm run build`) added to multi-stage `Dockerfile`; `production`/`dev` app stages copy `dist` into the image. `.dockerignore` excludes `brain/console/node_modules`. No runtime Node.
 - [x] **C3 — CI:** console build wired into `fast` gate; `GET /console/` → 200 asserted in `full` boot smoke (§A2).
-- [~] **C4 — Docs:** README updated with console section; PRODUCT_DEFINITION updated. OPERATIONS console note partial.
+- [x] **C4 — Docs:** README updated with console section; PRODUCT_DEFINITION updated; OPERATIONS §8 documents the bundled console (URL, first-run admin, same-origin/no-port, upgrade-with-`app` notes).
 - [x] *Acceptance:* `docker compose up` serves a working console from the existing `app` container, no new ports, no CORS relaxation; CI fails on a broken console build.
 
 ### 5.12 `[BE]` Key-scoping test (carry-over from §3.1) — ✅ DONE (2026-06-09)

@@ -66,17 +66,24 @@ jobs:
         run: npm ci --no-audit && npm run build:fast
 
   # -------------------------------------------------------------------------
-  # Full gate — runs on PRs to main only; requires live stack.
+  # Full gate — requires a live stack. Runs on PRs to main AND on direct
+  # pushes to main. The latter matters because this repo commits straight to
+  # main (no PR), so a PR-only trigger would mean the three SDD contract gates
+  # (Pillar 1 contract, Pillar 2 migration, integration) never actually run in
+  # CI — only locally. Gating on push-to-main closes that hole.
   # Runs: migrate-test → boot smoke → contract tests → integration tests
   # -------------------------------------------------------------------------
   full:
     name: Full gate (live stack)
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request' && github.base_ref == 'main'
+    if: >-
+      (github.event_name == 'pull_request' && github.base_ref == 'main') ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
 
     services:
       postgres:
-        image: postgres:15-alpine
+        # Pinned in sync with docker-compose.yml (A4.12 image pinning).
+        image: postgres:15.17-alpine
         env:
           POSTGRES_USER: brain
           POSTGRES_PASSWORD: brain
@@ -89,7 +96,8 @@ jobs:
           --health-retries 10
 
       redis:
-        image: redis:7-alpine
+        # Pinned in sync with docker-compose.yml (A4.12 image pinning).
+        image: redis:7.4-alpine
         ports: ["6379:6379"]
         options: >-
           --health-cmd "redis-cli ping"

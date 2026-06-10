@@ -94,7 +94,7 @@ docker run --rm --device nvidia.com/gpu=all ubuntu nvidia-smi -L
 ### 1. Clone and configure
 
 ```bash
-git clone https://github.com/yourusername/brainFromCero
+git clone https://github.com/santiagoyie/brainFromCero
 cd brainFromCero
 
 cp .env.example .env

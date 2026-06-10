@@ -206,8 +206,6 @@ test, `tests/test_model_catalog.py`, asserts the two agree).
 
 ---
 
----
-
 ## 7. Observability (optional)
 
 - **Logs:** set `BRAIN_LOG_FORMAT=json` for structured JSON logs (app + worker);
@@ -223,6 +221,27 @@ test, `tests/test_model_catalog.py`, asserts the two agree).
   ```
   Grafana auto-provisions the Prometheus datasource (`deploy/observability/`).
   Prometheus scrapes `app:8000/metrics` every 15 s.
+
+---
+
+## 8. Operator console
+
+A bundled web console ships **inside the `app` container** — no extra service, no
+extra host port, no runtime Node. It is static SPA assets (built in a Docker
+builder stage) served same-origin via FastAPI `StaticFiles`.
+
+- **URL:** `http://<host>:8000/console/` (the bare `/` redirects there).
+- **First-run:** the first account registered through the console (or
+  `POST /v1/auth/register`) becomes the org admin; subsequent users join via the
+  invite flow (`POST /v1/auth/invite` → `accept-invite`).
+- **What it's for:** an operator drives the whole lifecycle — projects, file/
+  dataset upload, training + the eval gate, endpoints + `brn_` keys, a test
+  playground, usage — in the browser. It is a thin client over the existing API;
+  **the OpenAI-compatible API remains the only protocol customer *applications*
+  call** (the console is not a second product surface).
+- **Ops notes:** same origin ⇒ no CORS change; nothing to back up (it holds no
+  state); it upgrades with the `app` image. If `GET /console/` 404s, the image was
+  built without the console build stage — rebuild `app`.
 
 ---
 
