@@ -14,8 +14,9 @@
 > | [CLAUDE.md](CLAUDE.md) | 📖 Reference | AI/developer working agreement |
 > | **TODO.md** (this file) | 🗺 Roadmap | **The only place with open tasks, priorities, acceptance** |
 >
-> Phases 0–5 (the product build) are **code-complete** as of 2026-06-08. What remains: close the one
-> broken SDD gate (API contract), finish the test pyramid, harden deployment, and decide the operator console.
+> Phases 0–5 (the product build) are **code-complete** as of 2026-06-08, all three SDD gates are green,
+> and the operator console shipped 2026-06-09. The current focus is **§A4** (staff audit, 2026-06-09):
+> concurrency-safe serving, crash-durable training jobs, and an auditable eval gate.
 >
 > **Legend:** `[x]` done & verified · `[~]` partial / exists-but-not-wired · `[ ]` not started
 > **Priority:** **P0** blocks a trustworthy `main` · **P1** needed before first customer · **P2** nice-to-have
@@ -51,6 +52,7 @@ Honour the [Definition of done](#definition-of-done-per-task) on every task. Wor
 | Docker dev/prod workflow | ✅ reworked 2026-06-08 — one multi-stage `Dockerfile`, non-root prod, dev toolchain baked in (no manual pip). See **§4**. |
 | Image size / CPU-only torch | ✅ app **1.87 GB** (was 6.45 GB), CPU-only torch, zero CUDA pkgs (2026-06-08). Worker keeps CUDA torch (verify-rebuild pending). See **§4.2**. |
 | Operator console (§5) | ✅ all views done (2026-06-09) — app shell, auth, projects, RAG flow, fine-tune flow, endpoint+keys, playground, usage, UX polish, mount+Docker+CI (C4 docs partial). Key-scoping (§5.12) enforced. |
+| **Staff audit (§A4)** | 🔴 **open (2026-06-09)** — serving is not concurrency-safe (A4.1), crashed jobs stick at `running` (A4.2), no context-window guard (A4.3), quick-start lands in dev mode (A4.5), eval verdict not auditable (A4.6). 2×P0, 7×P1, batch of P2. |
 
 ---
 
@@ -135,6 +137,187 @@ Honour the [Definition of done](#definition-of-done-per-task) on every task. Wor
 - [x] **Steps.** Remove the vision model config, the `ModelType.VISION` branch, `is_vision_model`, and `_format_vision_prompt`. Confirm nothing else imports them (grep).
 - [x] **Files.** `brain/core/model_manager.py`, `brain/core/inference.py`.
 - [x] **Acceptance.** No `vision`/`moondream` references remain in `brain/core/`; `make ci` + boot smoke stay green. Vision/moondream code deleted; `grep -r 'vision\|moondream' brain/ --include='*.py'` confirms zero hits in `brain/` Python source.
+
+## A4. Staff architecture & MLOps audit (2026-06-09) — concurrency, durability, gate trustworthiness
+
+> **Found by a four-plane staff review (2026-06-09):** training pipeline, serving data plane,
+> control plane/SDD, deploy/ops. The control plane and SDD gates are in good shape; the critical
+> theme is that **the product is correct for one request at a time, but not yet under concurrency
+> or crash conditions** — and the eval gate produces a verdict the operator cannot audit.
+> Each task is self-contained and agent-pickable. Workstream labels: **`[BE]`** / **`[OPS]`**.
+
+### A4.1 `[BE]` Serialize inference per model instance (P0)
+- **Context.** llama-cpp-python's `Llama` object is **not thread-safe for concurrent calls on one
+  instance**. [brain/core/inference.py:87](brain/core/inference.py#L87) and [:135](brain/core/inference.py#L135)
+  dispatch `run_in_executor` into the default (unbounded) thread pool with **no lock**;
+  `model_manager._load_lock` ([model_manager.py:45](brain/core/model_manager.py#L45)) only guards
+  *loading*. Two concurrent chat requests to the same endpoint race on the model's KV cache →
+  garbage output or a segfault that kills the whole app. Nothing serializes them today.
+- **Scope.** Make concurrent serving safe without rewriting the engine (hard constraint #1) —
+  wrap, don't modify, the llama-cpp call sites.
+- **Steps.** (1) Per-model `asyncio.Lock` keyed by the model-cache key, held across the executor
+  call — and across the **entire stream consumption** for streaming (the generator touches the
+  same context). (2) Replace the default executor with a bounded `ThreadPoolExecutor`
+  (`settings.inference_max_workers`). (3) Add `asyncio.wait_for` around generation
+  (`settings.inference_timeout_seconds`, default ~300) → typed `DomainError` (504-style), so one
+  hung generation can't pin a thread forever.
+- **Files.** `brain/core/inference.py`, `brain/core/model_manager.py`, `brain/config.py`, tests.
+- **Acceptance.** A test fires N concurrent completions at one endpoint; all return valid,
+  non-interleaved output (slow but correct). A simulated hang aborts at the timeout with a typed
+  error envelope, not a stuck thread.
+
+### A4.2 `[BE]` Crashed-job recovery — no job stuck at `running` forever (P0)
+- **Context.** Graceful SIGTERM requeue works (§4.4, [worker/main.py:316](brain/worker/main.py#L316)),
+  but a **hard crash** (OOM-kill, power loss, segfault) loses the job: BLPOP already removed it
+  from the queue, Postgres says `running`, and nothing ever retries or fails it. There is no
+  visibility timeout and no startup reconciliation — the operator sees a job "running" with a
+  dead worker, forever.
+- **Steps.** (1) On worker startup, scan Postgres for jobs in `running`/`queued`-but-not-in-Redis
+  whose worker heartbeat is stale; requeue **once** (add an `attempts` counter to `training_jobs`)
+  then mark `failed` ("worker crashed during training") on the second loss. (2) Persist
+  `status=running` to Postgres **synchronously before** training starts (today the Redis update
+  can land while the Postgres write fails silently, [worker/main.py:29-36](brain/worker/main.py#L29)).
+- **Files.** `brain/worker/main.py`, `brain/services/jobs.py`, `brain/db/models.py` + migration
+  (`attempts`), `tests/`.
+- **Contract impact.** Pillar 2 (one migration). Job response may expose `attempts` (spec first).
+- **Acceptance.** `kill -9` the worker mid-training → restart → the job reaches a terminal state
+  on its own (retrained or `failed` with a clear reason). No job remains `running` with no live worker.
+
+### A4.3 `[BE]` Context-window overflow guard + `max_tokens` cap (P1)
+- **Context.** Nothing checks prompt + RAG context + `max_tokens` against the model's `n_ctx`.
+  llama-cpp silently truncates an oversized prompt — for RAG the chunks are injected **before**
+  the question, so the user's question is what gets cut. Client `max_tokens` is also uncapped
+  ([brain/api/v1/chat.py:41](brain/api/v1/chat.py#L41)) — `max_tokens=999999` is accepted.
+- **Steps.** (1) Token-count the assembled prompt before dispatch (the llama tokenizer is already
+  loaded — don't use the ±50% char/4 fallback). (2) If over budget: drop lowest-relevance RAG
+  chunks first; if still over, typed 422. (3) Clamp `max_tokens` to
+  `min(request, settings.max_tokens, n_ctx − prompt_tokens)`.
+- **Files.** `brain/services/chat.py`, `brain/core/inference.py`, `brain/config.py`, tests.
+- **Acceptance.** An oversized prompt → typed 422, never silent truncation; a long-context RAG
+  call keeps the question + the top chunks; an absurd `max_tokens` is clamped, not honored.
+
+### A4.4 `[BE]` API-key auth hot path: index the lookup (P1)
+- **Context.** `api_keys.key_prefix` is `String(8)` with **no index**
+  ([brain/db/models.py:284](brain/db/models.py#L284)); every `/v1/chat/completions` call scans the
+  table, then bcrypt-verifies each prefix match. Fine at 10 keys, a measurable tax at 10k — and
+  it sits on the single hottest path in the product.
+- **Steps.** Migration adding an index on `(key_prefix, is_active)`; consider widening the prefix
+  to 12 chars for **new** keys (old keys keep verifying) to cut bcrypt work on collisions.
+- **Files.** `brain/db/models.py` + migration, `brain/api/v1/chat.py`, seeded migrate-test.
+- **Acceptance.** `EXPLAIN` shows an index scan for the key lookup; `make migrate-test` green.
+
+### A4.5 `[OPS]` Customer quick-start must not land in dev mode (P1)
+- **Context.** `docker-compose.override.yml` is **committed and auto-merged**, so the README
+  quick start (`docker compose up -d`) gives a customer the **dev** stack: `BRAIN_ENVIRONMENT=development`
+  (which bypasses the §4.3 production fail-fast on weak secrets), Postgres/Redis/Chroma published
+  to the host, bind-mounted source. The prod-safe invocation (`-f docker-compose.yml`) is only in
+  OPERATIONS. Secure-by-default is inverted.
+- **Steps.** Decide and apply one: **(a) recommended** — rename the override to
+  `docker-compose.dev.yml`; dev becomes the explicit `docker compose -f docker-compose.yml -f docker-compose.dev.yml up`
+  (or a `make dev` wrapper), and bare `docker compose up` is prod-safe; **(b)** keep the override
+  but rewrite README/quick-start to use `-f docker-compose.yml` everywhere with a loud warning.
+  Note: (a) changes the documented dev workflow (CLAUDE.md "docker compose up = dev") — update
+  CLAUDE.md, CONTRIBUTING.md, OPERATIONS.md in the same PR.
+- **Files.** `docker-compose.override.yml` (rename), `README.md`, `CONTRIBUTING.md`,
+  `docs/OPERATIONS.md`, `CLAUDE.md`, `Makefile` (optional `dev` target).
+- **Acceptance.** A fresh clone following the README boots with production semantics: weak
+  secrets fail fast, only `app:8000` host-published. Dev remains a one-command workflow.
+
+### A4.6 `[BE]` Eval gate the operator can trust: min dataset size, persisted artifacts, distinct eval-crash (P1)
+- **Context.** Three gaps weaken Pillar 3's verdict: (1) a 1-row dataset makes the holdout split
+  empty (`split_holdout` returns 0 → eval rows fall back to train rows,
+  [worker/main.py:118-126](brain/worker/main.py#L118)) — the gate then measures memorization;
+  there is no minimum dataset size at enqueue. (2) Only the scalar `score` is persisted — the
+  computed base-vs-adapter delta and sample predictions are **dropped**, so a marginal pass can't
+  be audited. (3) An evaluator **crash** falls through to `eval_score=0.0` and reads "below
+  threshold" instead of "evaluation failed" ([worker/main.py:192-193](brain/worker/main.py#L192)).
+- **Steps.** (1) Enforce `settings.min_training_samples` (default 10) at dataset validation →
+  typed `InvalidRequest` with the reason. (2) Persist the full `EvaluationResult` (JSON column on
+  `training_jobs` or a small `eval_runs` table) and expose it in the job GET (spec first).
+  (3) On evaluator exception, fail the job with a distinct message; never report a crash as a
+  gate verdict.
+- **Files.** `brain/services/training.py`, `brain/worker/main.py`, `brain/training/evaluator.py`,
+  `brain/db/models.py` + migration, `specs/openapi.yaml`, `tests/test_eval_gate.py`.
+- **Contract impact.** Pillars 1 (job response), 2 (migration), 3 (gate semantics — document).
+- **Acceptance.** A <10-sample dataset is rejected at upload with a clear message; a finished job
+  exposes score, base score, delta, and sample predictions; an eval crash reads "evaluation
+  failed", not "score below threshold".
+
+### A4.7 `[BE]` Reproducibility: pin seed + hashes into the training record (P1)
+- **Context.** `training_config` is stored, but **no seed, no dataset hash, no HF model revision,
+  no library versions**. A 3-month-old adapter cannot be reproduced or audited — for a product
+  whose moat is "trustworthy fine-tunes", the training record must be a full provenance record.
+- **Steps.** Set + record a seed in the trainer; record dataset file SHA-256, resolved HF repo
+  revision, and `torch`/`peft`/`trl`/`transformers` versions into `training_metadata.json` and
+  the job row (reuse the `training_config` JSON or add a `provenance` JSON).
+- **Files.** `brain/training/trainer.py`, `brain/worker/main.py`, `brain/db/models.py`.
+- **Acceptance.** Every new job row carries seed/hashes/versions; two runs with identical pinned
+  inputs reproduce the eval score within tolerance.
+
+### A4.8 `[BE]` Model cache memory bounds (P1)
+- **Context.** `model_manager._models` is an **unbounded dict**, and since §A3.1 the cache key
+  includes the adapter — N fine-tune endpoints = N full model instances in RAM. The app container
+  is capped at 4 GB (compose); the second or third concurrently-loaded model OOM-kills the
+  container mid-request.
+- **Steps.** LRU eviction with `settings.max_loaded_models` (default 1–2); free the evicted
+  instance; log evictions; document per-model RAM in OPERATIONS §6 and revisit the 4 GB app limit.
+- **Files.** `brain/core/model_manager.py`, `brain/config.py`, `docker-compose.yml`,
+  `docs/OPERATIONS.md`.
+- **Acceptance.** Loading max+1 models evicts the LRU instead of growing; a chat to an evicted
+  endpoint transparently reloads it; the app stays under its memory limit.
+
+### A4.9 `[BE]` Auth brute-force rate limiting (P1)
+- **Context.** `/v1/auth/login`, `/register`, and `/accept-invite` have no throttling. Self-hosted
+  usually means LAN/VPN — but "usually" is not a control, and the console makes these endpoints
+  discoverable.
+- **Steps.** Fixed-window limiter in Redis (per-IP + per-email) on the three endpoints → typed
+  429 (`RateLimited` DomainError); document 429 in the spec (contract first).
+- **Files.** `brain/api/v1/auth.py`, `brain/domain/errors.py`, `specs/openapi.yaml` + regenerated
+  models, tests.
+- **Acceptance.** >N attempts/minute → 429 with the standard envelope; contract gate stays green.
+
+### A4.10 `[BE]` Stuck background-task sweeper (P2)
+- **Context.** An app crash mid-index/mid-validate leaves files at `processing` and datasets at
+  `validating` forever (the §4.4 fix covered the *scheduling* race, not a crash *during* the
+  task). No retry path exists for the operator.
+- **Steps.** In the lifespan startup, mark rows stuck in non-terminal states older than a
+  threshold as `failed` ("interrupted by restart") — or re-enqueue the work; consider a
+  `POST …/files/{id}/reindex` admin action.
+- **Files.** `brain/api/app.py` (lifespan), `brain/api/v1/files.py` / `datasets.py`, tests.
+- **Acceptance.** Kill the app mid-index → restart → the file reaches a terminal state without
+  manual DB surgery.
+
+### A4.11 `[BE]` Streaming usage records prompt tokens (P2)
+- **Context.** Streaming requests record `prompt_tokens=0` (known §3.2 best-effort) — for the
+  usage feature this systematically undercounts every streaming consumer.
+- **Steps.** Tokenize the assembled prompt once before streaming (pairs naturally with A4.3's
+  counting) and include it in the final usage record + finish chunk.
+- **Files.** `brain/services/chat.py`.
+- **Acceptance.** Streaming and non-streaming runs of the same prompt record comparable
+  `prompt_tokens`.
+
+### A4.12 `[OPS]` Ops hardening batch (P2) — small, independent items
+- [ ] **Deep-health disk check measures the wrong disk:** `psutil.disk_usage(os.getcwd())` checks
+  the container FS, not the data mounts — check `data/models`, `data/uploads`, adapters dirs.
+- [ ] **Chroma version-sync CI guard:** one assert comparing the `chromadb` pin in `pyproject.toml`
+  to the `chromadb/chroma:` image tag in compose (skew silently breaks **all** indexing — already
+  bitten once).
+- [ ] **Pin external images to minor:** `postgres:15-alpine` / `redis:7-alpine` float; pin
+  `15.x` / `7.x` for reproducible customer installs.
+- [ ] **Synthesis partial-failure threshold:** per-chunk errors only warn; synthesis "succeeds"
+  even if most chunks failed — add a max-error-rate (default ~10%) → `InternalError` above it.
+- [ ] **Hyperparameter bounds at enqueue:** `num_epochs=1000`/`learning_rate=1.0` are accepted
+  today; validate the training-config payload with min/max bounds before queueing.
+- [ ] **GPU hygiene in the worker:** `torch.cuda.empty_cache()` in a `finally` after each job;
+  free-disk preflight before training starts.
+- [ ] **`scripts/backup.sh`:** automate OPERATIONS §2 (pg_dump + volume tars + retention) with a
+  cron example.
+- [ ] **Dead `ProjectStatus` values:** `indexing`/`training` are never assigned — wire the
+  transitions or delete the enum values (no dead states).
+- [ ] **Chroma retrieval timeout:** wrap collection queries in a timeout so a hung Chroma
+  degrades to a typed error instead of hanging every chat request.
+
+---
 
 ## 0. Audit defects found 2026-06-08 — ✅ ALL RESOLVED (kept as record)
 
