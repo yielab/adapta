@@ -170,7 +170,10 @@ async def get_current_user(
     if not credentials:
         raise Unauthorized(message="Authentication required")
     payload = decode_access_token(credentials.credentials)
-    user = await get_user_by_id(db, payload["sub"])
+    user_id = payload.get("sub")
+    if not user_id:
+        raise Unauthorized(message="Invalid or expired token")
+    user = await get_user_by_id(db, user_id)
     if not user.is_active:
         raise Unauthorized(message="User account is disabled")
     return user

@@ -303,6 +303,12 @@ async def enqueue_training_job(
     }
 
     queue = get_job_queue()
-    await queue.enqueue(job.id, payload)
+    try:
+        await queue.enqueue(job.id, payload)
+    except RuntimeError as exc:
+        raise InvalidRequest(
+            message="Job queue is not available — training cannot be started right now.",
+            internal_detail=str(exc),
+        ) from exc
     logger.info("Training job %s enqueued for project %s", job.id, project_id)
     return job

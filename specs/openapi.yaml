@@ -361,8 +361,10 @@ paths:
       security: [{BearerAuth: []}]
       parameters: [{$ref: '#/components/parameters/ProjectId'}]
       responses:
+        '400': {$ref: '#/components/responses/Error'}
         '401': {$ref: '#/components/responses/Error'}
         '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Error'}
         '201': {description: Endpoint created, content: {application/json: {schema: {$ref: '#/components/schemas/EndpointResponse'}}}}
         '422': {$ref: '#/components/responses/Error'}
 
