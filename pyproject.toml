@@ -57,6 +57,8 @@ training = [
     # cover the rest of its model-introspection needs.
     "gguf>=0.10.0",
     "safetensors>=0.4.0",
+    # VLM processors (image preprocessing) for the §V image fine-tune workstream.
+    "pillow>=10.0.0",
 ]
 dev = [
     "pytest>=8.0.0",

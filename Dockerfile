@@ -105,12 +105,21 @@ COPY pyproject.toml ./
 RUN pip install --no-cache-dir -e ".[training]" --config-settings editable_mode=compat
 # Vendor llama.cpp's OFFICIAL PEFT->GGUF LoRA converter (A3.1). We do NOT reimplement
 # the GGUF-LoRA format ourselves; we run the upstream script as a subprocess in the
-# worker after eval passes. Pinned to a known tag for reproducibility. We keep only the
-# two convert scripts (convert_lora_to_gguf.py imports convert_hf_to_gguf.py).
-ARG LLAMA_CPP_TAG=b4576
+# worker after eval passes. Pinned to a known tag for reproducibility. We keep the
+# two convert scripts (convert_lora_to_gguf.py imports convert_hf_to_gguf.py) AND the
+# repo's own gguf-py package: the scripts require a gguf writer in lockstep with the
+# tag (at b5170 they need MODEL_ARCH.CLIP_VISION, which the pip `gguf` release lacks)
+# — installing the vendored gguf-py over the pip one keeps script + writer in sync.
+# b5170: adds Qwen2_5_VLForConditionalGeneration to the converter registry (§V0.3);
+# regression gate for this bump is the text LoRA e2e (test_lora_e2e.py).
+ARG LLAMA_CPP_TAG=b5170
 RUN git clone --depth 1 --branch ${LLAMA_CPP_TAG} https://github.com/ggerganov/llama.cpp /tmp/llamacpp \
     && mkdir -p /opt/llamacpp \
     && cp /tmp/llamacpp/convert_lora_to_gguf.py /tmp/llamacpp/convert_hf_to_gguf.py /opt/llamacpp/ \
+    && cp -r /tmp/llamacpp/gguf-py /opt/llamacpp/gguf-py \
+    # --no-deps: gguf-py's other deps (numpy/tqdm/pyyaml) are already pinned by
+    # [training]; sentencepiece is the one it needs that nothing else provides.
+    && pip install --no-cache-dir --no-deps /opt/llamacpp/gguf-py sentencepiece \
     && rm -rf /tmp/llamacpp
 
 FROM base AS worker
