@@ -35,6 +35,9 @@ class ModelConfig:
     n_gpu_layers: int = 0
     description: str = ""
     loaded: bool = False
+    # Vision (§V4): path to the mmproj (vision projector) GGUF. When set, the
+    # model loads with a multimodal chat handler and can take image content-parts.
+    mmproj_path: Optional[Path] = None
 
 
 class ModelManager:
@@ -140,10 +143,8 @@ class ModelManager:
             description="Small instruct model (fine-tune e2e base)",
         )
 
-        # Vision model (§V) — image+text→text. The GGUF registration keeps the
-        # catalog↔serving invariant (every catalog entry has a serving config);
-        # the mmproj/vision input wiring arrives with §V4, and endpoint creation
-        # for vision projects is gated until then (endpoints.py).
+        # Vision model (§V) — image+text→text, served as base GGUF + mmproj
+        # (vision projector) through a multimodal chat handler (§V4).
         self._configs["qwen2.5-vl-3b-instruct"] = ModelConfig(
             name="qwen2.5-vl-3b-instruct",
             model_type=ModelType.CHAT,
@@ -152,6 +153,7 @@ class ModelManager:
             n_threads=settings.n_threads,
             n_gpu_layers=settings.n_gpu_layers,
             description="Vision model (image+text→text) — document AI / visual QC",
+            mmproj_path=models_dir / "qwen2.5-vl-3b" / "mmproj-qwen2.5-vl-3b-f16.gguf",
         )
 
         # Optional reasoning model
@@ -281,6 +283,20 @@ class ModelManager:
                 )
                 if lora_path:
                     llama_kwargs["lora_path"] = lora_path
+                # Vision (§V4): attach the multimodal chat handler so image
+                # content-parts route through the vision projector. The handler
+                # is per-Llama (it owns a clip context) — never shared.
+                if config.mmproj_path is not None:
+                    if not config.mmproj_path.exists():
+                        raise FileNotFoundError(
+                            f"Vision projector (mmproj) not found: {config.mmproj_path}. "
+                            "Download it next to the base GGUF."
+                        )
+                    from llama_cpp.llama_chat_format import Qwen25VLChatHandler
+
+                    llama_kwargs["chat_handler"] = Qwen25VLChatHandler(
+                        clip_model_path=str(config.mmproj_path), verbose=False
+                    )
                 loop = asyncio.get_event_loop()
                 model = await loop.run_in_executor(None, lambda: Llama(**llama_kwargs))
 

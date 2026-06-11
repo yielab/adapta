@@ -150,6 +150,56 @@ class InferenceEngine:
             total_tokens=prompt_tokens + completion_tokens,
         )
 
+    async def generate_chat(
+        self,
+        model: Llama,
+        messages: List[dict],
+        *,
+        model_name: str,
+        temperature: float,
+        top_p: float,
+        max_tokens: int,
+        lock: Optional[asyncio.Lock] = None,
+    ) -> InferenceResponse:
+        """Generate via the model's chat handler (``create_chat_completion``).
+
+        The vision path (§V4): a multimodal model is loaded with a chat handler
+        that routes ``image_url`` content-parts through the vision projector —
+        something the text path's manual prompt formatting cannot express. Same
+        serialization-lock and timeout semantics as ``generate`` (A4.1).
+        """
+        loop = asyncio.get_event_loop()
+
+        def _call():
+            return model.create_chat_completion(
+                messages=messages,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                top_p=top_p,
+            )
+
+        try:
+            result = await self._run_locked(loop, _call, lock)
+        except Timeout:
+            raise
+        except Exception as e:
+            logger.error(f"Chat-handler inference error: {e}")
+            raise
+
+        choice = result["choices"][0]
+        content = (choice["message"].get("content") or "").strip()
+        usage = result.get("usage", {})
+        prompt_tokens = usage.get("prompt_tokens", 0)
+        completion_tokens = usage.get("completion_tokens", 0)
+        return InferenceResponse(
+            content=content,
+            model=model_name,
+            finish_reason=choice.get("finish_reason") or "stop",
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=prompt_tokens + completion_tokens,
+        )
+
     async def _run_locked(self, loop, fn, lock: Optional[asyncio.Lock]):
         """Run a blocking llama-cpp call serialized by `lock` and bounded by the
         inference timeout (A4.1).

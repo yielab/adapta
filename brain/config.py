@@ -118,6 +118,10 @@ class Settings(BaseSettings):
     max_image_mb: int = 10
     max_image_side_px: int = 8192
 
+    # Vision serving (§V4): caps on image content-parts per chat request.
+    # Decoded size/dimensions reuse max_image_mb / max_image_side_px above.
+    max_images_per_request: int = 4
+
     # Fine-tune serving (A3.1): PEFT adapters are converted to a GGUF LoRA so the
     # single llama-cpp runtime can serve them via `lora_path`. The converter is
     # llama.cpp's official convert_lora_to_gguf.py, vendored into the worker image.

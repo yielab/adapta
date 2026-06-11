@@ -4,8 +4,9 @@ Full path: fine-tune project on a vision base → upload an image bundle →
 background extract+validate (modality=vision) → enqueue a training job → the
 GPU worker QLoRA-trains the VLM (vision tower frozen, LM-only LoRA) → held-out,
 response-only eval gate (absolute OR improvement) → PEFT→GGUF conversion with
-the V0.3 caveats applied → adapter registered → endpoint creation is cleanly
-gated until §V4 serving ships.
+the V0.3 caveats applied → adapter registered → endpoint + scoped key → an
+OpenAI-shaped image content-part request is served through base GGUF + mmproj
++ the converted LoRA (§V4) and returns the trained association.
 
 Heavy (CUDA worker, ~7 GB base download on first run, minutes of training) —
 opt-in: BRAIN_RUN_VLM_E2E=1.
@@ -19,6 +20,7 @@ Run (GPU worker up):
 from __future__ import annotations
 
 import asyncio
+import base64
 import io
 import json
 import os
@@ -153,8 +155,44 @@ async def test_vlm_train_eval_gate_convert_register(client, admin):
         "vision job must register a converted, servable GGUF LoRA"
     )
 
-    # 6. §V3/§V4 seam: the adapter is registered, but the endpoint is cleanly
-    #    gated until vision serving (mmproj + content-parts) ships.
+    # 6. Serve it (§V4): endpoint + scoped key, then an OpenAI-shaped request
+    #    with an image content-part. The base GGUF + mmproj + converted LoRA
+    #    must produce the trained association for a NEVER-SEEN emblem rendering.
     ep = await client.post(f"/v1/projects/{pid}/endpoint", headers=h)
-    assert ep.status_code == 400, ep.text
-    assert "§V4" in ep.json()["error"]["message"]
+    assert ep.status_code == 201, ep.text
+    slug = ep.json()["slug"]
+
+    key = await client.post(
+        f"/v1/projects/{pid}/keys", headers=h, json={"name": "vlm e2e"}
+    )
+    assert key.status_code == 201, key.text
+    kh = {"Authorization": f"Bearer {key.json()['key']}"}
+
+    probe = _emblem_png(random.Random(2026))  # geometry no training row used
+    data_url = "data:image/png;base64," + base64.b64encode(probe).decode()
+    body = {
+        "model": slug,
+        "messages": [{"role": "user", "content": [
+            {"type": "image_url", "image_url": {"url": data_url}},
+            {"type": "text", "text": "What is this?"},
+        ]}],
+        "max_tokens": 48,
+        "temperature": 0,
+    }
+    chat = await client.post("/v1/chat/completions", headers=kh, json=body, timeout=180.0)
+    assert chat.status_code == 200, chat.text
+    payload = chat.json()
+    answer = payload["choices"][0]["message"]["content"]
+    usage = payload["usage"]
+    print(f"[vlm-e2e] served answer: {answer!r} usage={usage}")
+    assert "quoria" in answer.lower(), (
+        "served vision endpoint did not produce the trained association"
+    )
+    assert usage["prompt_tokens"] > 0 and usage["completion_tokens"] > 0
+
+    # 7. Streaming with image input is a typed 400 (v1), decided BEFORE the
+    #    stream starts — never a broken SSE body.
+    stream_req = dict(body, stream=True)
+    st = await client.post("/v1/chat/completions", headers=kh, json=stream_req)
+    assert st.status_code == 400, st.text
+    assert "stream" in st.json()["error"]["message"].lower()

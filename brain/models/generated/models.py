@@ -7,7 +7,7 @@ from datetime import date
 from enum import Enum
 from typing import Annotated, Any, Literal
 
-from pydantic import AwareDatetime, BaseModel, EmailStr, Field
+from pydantic import AwareDatetime, BaseModel, ConfigDict, EmailStr, Field, RootModel
 
 
 class RegisterRequest(BaseModel):
@@ -223,21 +223,30 @@ class Role3(Enum):
     assistant = "assistant"
 
 
-class Message(BaseModel):
-    role: Role3
-    content: str
+class ChatContentPart1(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    type: Literal["text"]
+    text: str
 
 
-class ChatCompletionRequest(BaseModel):
-    model: str
+class ImageUrl(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    url: str
     """
-    Endpoint slug
+    Inline image as a data:image/...;base64, URL (remote URLs rejected)
     """
-    messages: list[Message]
-    temperature: Annotated[float | None, Field(ge=0.0, le=2.0)] = None
-    max_tokens: int | None = None
-    top_p: Annotated[float | None, Field(ge=0.0, le=1.0)] = None
-    stream: bool = False
+
+
+class ChatContentPart2(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    type: Literal["image_url"]
+    image_url: ImageUrl
 
 
 class Message1(BaseModel):
@@ -294,3 +303,32 @@ class UserResponse(BaseModel):
     """
     Teams the user belongs to, with their role in each. Lets a client discover the team_id required by the project endpoints.
     """
+
+
+class Content(RootModel[list[ChatContentPart1 | ChatContentPart2]]):
+    root: Annotated[list[ChatContentPart1 | ChatContentPart2], Field(max_length=16)]
+    """
+    Plain text, or an OpenAI content-parts array (text and/or image_url parts; images as data: URLs, vision endpoints only).
+
+    """
+
+
+class Message(BaseModel):
+    role: Role3
+    content: str | Content
+    """
+    Plain text, or an OpenAI content-parts array (text and/or image_url parts; images as data: URLs, vision endpoints only).
+
+    """
+
+
+class ChatCompletionRequest(BaseModel):
+    model: str
+    """
+    Endpoint slug
+    """
+    messages: list[Message]
+    temperature: Annotated[float | None, Field(ge=0.0, le=2.0)] = None
+    max_tokens: int | None = None
+    top_p: Annotated[float | None, Field(ge=0.0, le=1.0)] = None
+    stream: bool = False

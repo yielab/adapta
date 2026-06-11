@@ -8,7 +8,7 @@ the trained adapter when the endpoint has one — or both together.
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import List, Optional
+from typing import List, Literal, Optional, Union
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Request
 from fastapi.responses import StreamingResponse
@@ -20,7 +20,7 @@ from brain.db.models import ApiKey, Collection, Endpoint, EndpointStatus, Projec
 from brain.db.session import get_db
 from brain.domain.errors import Forbidden, InvalidRequest, NotFound, Unauthorized
 from brain.services.auth import verify_api_key
-from brain.services.chat import chat, chat_stream
+from brain.services.chat import chat, chat_stream, has_image_parts
 from brain.services.usage import record_usage
 
 router = APIRouter(tags=["chat"])
@@ -30,9 +30,28 @@ router = APIRouter(tags=["chat"])
 # OpenAI-compatible request / response schemas
 # ---------------------------------------------------------------------------
 
+class TextPart(BaseModel):
+    type: Literal["text"]
+    text: str
+
+
+class ImageUrl(BaseModel):
+    url: str  # data:image/...;base64, only — remote URLs rejected in the service
+
+
+class ImagePart(BaseModel):
+    type: Literal["image_url"]
+    image_url: ImageUrl
+
+
+ContentPart = Union[TextPart, ImagePart]
+
+
 class ChatMessage(BaseModel):
     role: str
-    content: str
+    # Plain text, or the OpenAI content-parts array (§V4: image_url parts on
+    # vision endpoints; data: URLs only).
+    content: Union[str, List[ContentPart]]
 
 
 class ChatCompletionRequest(BaseModel):
@@ -110,7 +129,26 @@ async def chat_completions(
             internal_detail=f"key for endpoint slug={endpoint.slug!r} but model={request_body.model!r}",
         )
 
-    messages = [{"role": m.role, "content": m.content} for m in request_body.messages]
+    # Plain dicts for the service; content-parts models dump to OpenAI-shaped
+    # dicts (the same shape the multimodal chat handler consumes).
+    messages = [
+        {
+            "role": m.role,
+            "content": (
+                m.content if isinstance(m.content, str)
+                else [p.model_dump() for p in m.content]
+            ),
+        }
+        for m in request_body.messages
+    ]
+
+    # Streaming with images is rejected HERE, before a StreamingResponse exists —
+    # raised inside the stream generator it would surface as a broken body, not
+    # a typed 422 (§V4).
+    if request_body.stream and has_image_parts(messages):
+        raise InvalidRequest(
+            message="Streaming with image content is not supported; send stream=false."
+        )
 
     # Serving composes the project's artifacts rather than switching on its type:
     # retrieval runs whenever the project has indexed chunks, and the adapter

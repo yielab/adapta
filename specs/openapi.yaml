@@ -496,6 +496,15 @@ paths:
         endpoint has a trained adapter (fine-tune), it is applied. A fine-tune
         project with indexed documents gets both — knowledge from its documents,
         behavior from its adapter.
+
+        **Images (vision endpoints, §V):** `messages[].content` also accepts the
+        OpenAI content-parts array with `image_url` parts. Images must be inline
+        `data:image/...;base64,` URLs (remote http(s) URLs are rejected — the
+        server never fetches external content). Image parts are accepted only on
+        endpoints whose base model is a vision model; on a text endpoint they are
+        rejected with 400. In v1, requests carrying images are non-streaming
+        (`stream` must be false) and skip document retrieval (no RAG composition
+        with image input yet).
       security: [{ApiKeyAuth: []}]
       requestBody:
         required: true
@@ -784,11 +793,42 @@ components:
             required: [role, content]
             properties:
               role: {type: string, enum: [system, user, assistant]}
-              content: {type: string}
+              content:
+                description: >
+                  Plain text, or an OpenAI content-parts array (text and/or
+                  image_url parts; images as data: URLs, vision endpoints only).
+                oneOf:
+                  - type: string
+                  - type: array
+                    maxItems: 16
+                    items: {$ref: '#/components/schemas/ChatContentPart'}
         temperature: {type: number, minimum: 0, maximum: 2, nullable: true}
         max_tokens: {type: integer, nullable: true}
         top_p: {type: number, minimum: 0, maximum: 1, nullable: true}
         stream: {type: boolean, default: false}
+
+    ChatContentPart:
+      description: One OpenAI-style message content part.
+      oneOf:
+        - type: object
+          required: [type, text]
+          properties:
+            type: {type: string, enum: [text]}
+            text: {type: string}
+          additionalProperties: false
+        - type: object
+          required: [type, image_url]
+          properties:
+            type: {type: string, enum: [image_url]}
+            image_url:
+              type: object
+              required: [url]
+              properties:
+                url:
+                  type: string
+                  description: "Inline image as a data:image/...;base64, URL (remote URLs rejected)"
+              additionalProperties: false
+          additionalProperties: false
 
     ChatCompletionResponse:
       type: object
