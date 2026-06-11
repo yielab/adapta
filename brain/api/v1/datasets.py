@@ -110,6 +110,9 @@ async def upload_dataset(
     filename = file.filename or "dataset.jsonl"
     if not filename.endswith(".jsonl"):
         raise InvalidRequest(message="Dataset must be a .jsonl file")
+    # Truncate from the front (keeps the .jsonl suffix): the name is metadata,
+    # and an over-long one would overflow datasets.name String(256) → 500.
+    filename = filename[-200:]
 
     ds_dir = settings.datasets_dir / project_id
     ds_dir.mkdir(parents=True, exist_ok=True)

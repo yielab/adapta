@@ -3,7 +3,7 @@
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, Request
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -35,8 +35,10 @@ class TokenResponse(BaseModel):
 
 
 class RegisterRequest(BaseModel):
-    org_name: str
-    email: EmailStr
+    # Length caps mirror the spec / DB columns (orgs.name, users.email) — an
+    # uncapped value overflows the column and surfaces as a 500.
+    org_name: str = Field(min_length=1, max_length=128)
+    email: EmailStr = Field(max_length=256)
     password: str
 
 
@@ -132,7 +134,7 @@ async def me(current_user=Depends(get_current_user), db: AsyncSession = Depends(
 # ---------------------------------------------------------------------------
 
 class InviteRequest(BaseModel):
-    email: EmailStr
+    email: EmailStr = Field(max_length=255)  # mirrors invitations.email String(255)
     team_id: str
     role: Role = Role.member
 

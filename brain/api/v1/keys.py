@@ -3,7 +3,7 @@
 from typing import List
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,7 +21,7 @@ router = APIRouter(prefix="/projects/{project_id}/keys", tags=["keys"])
 
 
 class KeyCreateRequest(BaseModel):
-    name: str
+    name: str = Field(min_length=1, max_length=128)  # mirrors api_keys.name String(128)
 
 
 class KeyCreatedResponse(BaseModel):

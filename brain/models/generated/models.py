@@ -11,8 +11,8 @@ from pydantic import AwareDatetime, BaseModel, EmailStr, Field
 
 
 class RegisterRequest(BaseModel):
-    org_name: Annotated[str, Field(min_length=1, pattern="\\S")]
-    email: EmailStr
+    org_name: Annotated[str, Field(max_length=128, min_length=1, pattern="\\S")]
+    email: Annotated[EmailStr, Field(max_length=256)]
     password: Annotated[str, Field(min_length=8)]
 
 
@@ -39,7 +39,7 @@ class TeamSummary(BaseModel):
 
 
 class InviteRequest(BaseModel):
-    email: EmailStr
+    email: Annotated[EmailStr, Field(max_length=255)]
     team_id: str
     role: Role | None = None
 
@@ -71,7 +71,7 @@ class Type(Enum):
 
 
 class ProjectCreate(BaseModel):
-    name: str
+    name: Annotated[str, Field(max_length=128, min_length=1)]
     type: Type
     base_model: str
     description: str | None = None
@@ -108,13 +108,13 @@ class DatasetResponse(BaseModel):
 
 
 class TrainingConfig(BaseModel):
-    num_epochs: int = 3
-    batch_size: int = 4
-    learning_rate: float = 0.0002
-    lora_r: int = 16
-    lora_alpha: int = 32
-    lora_dropout: float = 0.1
-    max_seq_length: int = 512
+    num_epochs: Annotated[int, Field(ge=1, le=100)] = 3
+    batch_size: Annotated[int, Field(ge=1, le=128)] = 4
+    learning_rate: Annotated[float, Field(ge=1e-06, le=0.1)] = 0.0002
+    lora_r: Annotated[int, Field(ge=1, le=256)] = 16
+    lora_alpha: Annotated[int, Field(ge=1, le=512)] = 32
+    lora_dropout: Annotated[float, Field(ge=0.0, le=0.9)] = 0.1
+    max_seq_length: Annotated[int, Field(ge=16, le=8192)] = 512
 
 
 class JobCreateRequest(BaseModel):
@@ -176,7 +176,7 @@ class UsageResponse(BaseModel):
 
 
 class KeyCreateRequest(BaseModel):
-    name: str
+    name: Annotated[str, Field(max_length=128, min_length=1)]
 
 
 class KeyCreatedResponse(BaseModel):

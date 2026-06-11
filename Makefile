@@ -125,10 +125,14 @@ test-contracts:
 	# `unsupported_method` is excluded: GET /datasets/synthesize legitimately matches
 	# the GET /datasets/{dataset_id} route (id="synthesize") and returns 404, not 405 —
 	# a literal-vs-parameter path overlap, not a contract defect.
+	# filter_too_much is suppressed: an intermittent hypothesis generation-health
+	# complaint (too many filtered examples on POST /jobs), not an API defect —
+	# observed flaking a run in which all generated cases passed.
 	schemathesis run specs/openapi.yaml \
 	  --url http://localhost:8000/v1 \
 	  --checks all \
 	  --exclude-checks unsupported_method \
+	  --suppress-health-check filter_too_much \
 	  --max-examples 30 \
 	  -H "Authorization: Bearer $(BRAIN_BEARER_TOKEN)" \
 	  $(SCHEMATHESIS_ARGS)

@@ -26,6 +26,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy.exc import DBAPIError
 from starlette.datastructures import MutableHeaders
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
@@ -216,6 +217,39 @@ def create_app() -> FastAPI:
             status_code=exc.status_code,
             headers=headers,
             content={"error": {"code": code, "message": message, "correlation_id": cid}},
+        )
+
+    @app.exception_handler(DBAPIError)
+    async def db_data_error_handler(request: Request, exc: DBAPIError):
+        # SQLSTATE class 22 ("data exception": 22001 value too long, 22021 NUL
+        # byte, 22P02 bad text representation…) means the CLIENT sent a value the
+        # DB cannot represent — a 422, not a server fault. The DTOs mirror the
+        # column caps, but this net guarantees the class can never surface as a
+        # raw 500 (found by the contract gate's fuzzing). Any other DB error
+        # (deadlock, disconnect, unhandled integrity) stays a generic 500.
+        cid = getattr(request.state, "cid", None)
+        sqlstate, node = None, exc.orig
+        while node is not None and sqlstate is None:
+            sqlstate = getattr(node, "sqlstate", None)
+            node = node.__cause__
+        if not (sqlstate or "").startswith("22"):
+            logger.exception("[%s] Unhandled DB error: %s", cid, exc)
+            return JSONResponse(
+                status_code=500,
+                headers={"X-Correlation-ID": cid} if cid else {},
+                content={"error": {"code": "internal_error", "message": "An internal error occurred", "correlation_id": cid}},
+            )
+        logger.warning("[%s] DB data error %s (client value rejected): %s", cid, sqlstate, exc)
+        return JSONResponse(
+            status_code=422,
+            headers={"X-Correlation-ID": cid} if cid else {},
+            content={
+                "error": {
+                    "code": "invalid_request",
+                    "message": "A provided value is invalid — too long, out of range, or contains unsupported characters.",
+                    "correlation_id": cid,
+                }
+            },
         )
 
     @app.exception_handler(Exception)

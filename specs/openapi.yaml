@@ -543,9 +543,11 @@ components:
       required: [org_name, email, password]
       properties:
         # Must contain at least one non-whitespace character — the server
-        # rejects blank names (auth.py strips before checking).
-        org_name: {type: string, minLength: 1, pattern: "\\S"}
-        email: {type: string, format: email}
+        # rejects blank names (auth.py strips before checking). maxLength
+        # values mirror the DB column sizes (orgs.name/users.email) — without
+        # them an oversized value overflows the column → 500.
+        org_name: {type: string, minLength: 1, maxLength: 128, pattern: "\\S"}
+        email: {type: string, format: email, maxLength: 256}
         password: {type: string, minLength: 8}
 
     LoginRequest:
@@ -584,7 +586,7 @@ components:
       type: object
       required: [email, team_id]
       properties:
-        email: {type: string, format: email}
+        email: {type: string, format: email, maxLength: 255}
         team_id: {type: string}
         role: {type: string, enum: [admin, member, viewer]}
     AcceptInviteRequest:
@@ -609,7 +611,8 @@ components:
       type: object
       required: [name, type, base_model, team_id]
       properties:
-        name: {type: string}
+        # maxLength mirrors projects.name String(128) — see RegisterRequest note.
+        name: {type: string, minLength: 1, maxLength: 128}
         type: {type: string, enum: [rag, finetune]}
         base_model: {type: string}
         description: {type: string, nullable: true}
@@ -656,16 +659,19 @@ components:
       properties:
         dataset_id: {type: string}
         training_config:
+          # Bounds mirror the server's enqueue-time validation (A4.12,
+          # brain/services/training.py _HYPERPARAM_BOUNDS) — out-of-range
+          # values are rejected with 422 before a job is created.
           type: object
           nullable: true
           properties:
-            num_epochs: {type: integer, default: 3}
-            batch_size: {type: integer, default: 4}
-            learning_rate: {type: number, default: 0.0002}
-            lora_r: {type: integer, default: 16}
-            lora_alpha: {type: integer, default: 32}
-            lora_dropout: {type: number, default: 0.1}
-            max_seq_length: {type: integer, default: 512}
+            num_epochs: {type: integer, default: 3, minimum: 1, maximum: 100}
+            batch_size: {type: integer, default: 4, minimum: 1, maximum: 128}
+            learning_rate: {type: number, default: 0.0002, minimum: 1.0e-6, maximum: 0.1}
+            lora_r: {type: integer, default: 16, minimum: 1, maximum: 256}
+            lora_alpha: {type: integer, default: 32, minimum: 1, maximum: 512}
+            lora_dropout: {type: number, default: 0.1, minimum: 0.0, maximum: 0.9}
+            max_seq_length: {type: integer, default: 512, minimum: 16, maximum: 8192}
 
     JobResponse:
       type: object
@@ -718,7 +724,8 @@ components:
       type: object
       required: [name]
       properties:
-        name: {type: string}
+        # maxLength mirrors api_keys.name String(128) — see RegisterRequest note.
+        name: {type: string, minLength: 1, maxLength: 128}
 
     KeyCreatedResponse:
       type: object

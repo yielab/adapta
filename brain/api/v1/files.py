@@ -145,7 +145,9 @@ async def upload_file(
     project = await _get_project(db, project_id)
     await require_team_writer(db, current_user.id, project.team_id)
 
-    filename = file.filename or "upload"
+    # Truncate, don't reject: the filename is metadata, and an over-long one
+    # would overflow project_files.filename String(256) → 500.
+    filename = (file.filename or "upload")[:200]
     content_type = file.content_type or "text/plain"
     ct_base = content_type.split(";")[0].strip()
     if ct_base not in SUPPORTED_TYPES and not any(
