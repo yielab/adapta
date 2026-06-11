@@ -105,7 +105,7 @@ def test_dataset_validation_valid(tmp_path):
         json.dumps({"prompt": "Hello?", "response": "Hi there."}) + "\n" +
         json.dumps({"prompt": "What is 2+2?", "response": "4"}) + "\n"
     )
-    valid, error, count = validate_dataset(ds)
+    valid, error, count, _imgs = validate_dataset(ds)
     assert valid
     assert error is None
     assert count == 2
@@ -117,23 +117,22 @@ def test_dataset_validation_with_optional_fields(tmp_path):
     ds.write_text(
         json.dumps({"prompt": "Q?", "response": "A.", "system": "Be helpful.", "metadata": {"source": "web"}}) + "\n"
     )
-    valid, error, count = validate_dataset(ds)
+    valid, error, count, _imgs = validate_dataset(ds)
     assert valid
     assert count == 1
 
 
-def test_dataset_validation_image_rows_rejected_until_v3(tmp_path):
-    """Contract v2 admits `images` rows (§V1.1), but they must be rejected with a
-    clear message until the training path ships (§V2/§V3) — never accepted into a
-    dataset that would fail mid-train."""
+def test_dataset_validation_image_rows_require_bundle(tmp_path):
+    """Image rows in a PLAIN .jsonl upload are rejected with a clear pointer to
+    the .zip bundle path (§V2.1) — images can't ride a bare manifest."""
     from brain.services.training import validate_dataset
     ds = tmp_path / "data.jsonl"
     ds.write_text(
         json.dumps({"prompt": "What is this?", "response": "The emblem.", "images": ["images/a.png"]}) + "\n"
     )
-    valid, error, count = validate_dataset(ds)
+    valid, error, count, _imgs = validate_dataset(ds)
     assert not valid
-    assert "images" in (error or "") and "§V" in (error or "")
+    assert "zip" in (error or "").lower()
     assert count == 0
 
 
@@ -141,7 +140,7 @@ def test_dataset_validation_missing_response(tmp_path):
     from brain.services.training import validate_dataset
     ds = tmp_path / "bad.jsonl"
     ds.write_text(json.dumps({"prompt": "Hello?"}) + "\n")
-    valid, error, count = validate_dataset(ds)
+    valid, error, count, _imgs = validate_dataset(ds)
     assert not valid
     assert "response" in error
 
@@ -150,7 +149,7 @@ def test_dataset_validation_empty_prompt(tmp_path):
     from brain.services.training import validate_dataset
     ds = tmp_path / "bad.jsonl"
     ds.write_text(json.dumps({"prompt": "", "response": "A"}) + "\n")
-    valid, error, count = validate_dataset(ds)
+    valid, error, count, _imgs = validate_dataset(ds)
     assert not valid
 
 
@@ -158,7 +157,7 @@ def test_dataset_validation_empty(tmp_path):
     from brain.services.training import validate_dataset
     ds = tmp_path / "empty.jsonl"
     ds.write_text("")
-    valid, error, count = validate_dataset(ds)
+    valid, error, count, _imgs = validate_dataset(ds)
     assert not valid
 
 
@@ -166,7 +165,7 @@ def test_dataset_validation_bad_json(tmp_path):
     from brain.services.training import validate_dataset
     ds = tmp_path / "bad.jsonl"
     ds.write_text("not json\n")
-    valid, error, count = validate_dataset(ds)
+    valid, error, count, _imgs = validate_dataset(ds)
     assert not valid
     assert "invalid JSON" in error
 

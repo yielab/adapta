@@ -39,15 +39,49 @@ def sha256_file(path: Path) -> Optional[str]:
         return None
 
 
-def build_provenance(base_model: str, dataset_path: Path, seed: int) -> dict:
+def dataset_manifest_sha256(dataset_path: Path, bundle_dir: Optional[Path] = None) -> Optional[str]:
+    """Content hash of a dataset INCLUDING any images its rows reference (§V2.3).
+
+    For a text dataset this is the JSONL bytes' hash. For an image bundle the
+    hash additionally folds in each referenced image's bytes, in row order, so a
+    one-pixel change to any image — or a re-ordering of rows — changes the hash.
+    Returns None if the manifest can't be read.
+    """
+    import json
+
+    base = sha256_file(dataset_path)
+    if base is None:
+        return None
+    if bundle_dir is None:
+        return base
+
+    h = hashlib.sha256(base.encode())
+    try:
+        with Path(dataset_path).open(encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                for rel in (json.loads(line).get("images") or []):
+                    h.update(rel.encode())
+                    h.update((sha256_file(bundle_dir / rel) or "missing").encode())
+    except Exception:
+        return None
+    return h.hexdigest()
+
+
+def build_provenance(
+    base_model: str, dataset_path: Path, seed: int, bundle_dir: Optional[Path] = None
+) -> dict:
     """Assemble the provenance record for a training run.
 
     ``dataset_path`` should be the EXACT file fed to the trainer (the train split),
-    so the hash pins the data actually trained on.
+    so the hash pins the data actually trained on. For image datasets (§V) pass
+    ``bundle_dir`` so the hash covers the referenced image bytes too.
     """
     return {
         "seed": seed,
         "base_model": base_model,
-        "dataset_sha256": sha256_file(dataset_path),
+        "dataset_sha256": dataset_manifest_sha256(dataset_path, bundle_dir=bundle_dir),
         "library_versions": {pkg: _pkg_version(pkg) for pkg in _PROVENANCE_PACKAGES},
     }

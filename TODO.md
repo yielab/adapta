@@ -837,18 +837,17 @@ thin client over the **existing** API — every screen maps 1:1 to an endpoint a
 
 ### V2. Data plane — bundle upload + validation
 
-#### V2.1 `[BE]` Zip-bundle dataset upload
-- [ ] **Steps.** Accept `.zip` in the dataset upload path; extract under the dataset's storage dir with **zip-slip protection** (reject absolute/`..` entries), caps on total size / file count / per-image size; whitelist `png/jpg/jpeg/webp` + the manifest JSONL. Plain JSONL upload unchanged (text path).
-- [ ] **Files.** `brain/api/v1/datasets.py`, `brain/services/training.py`, `brain/config.py` (caps).
-- [ ] **Acceptance.** Traversal zip → typed 422; oversized bundle → 422; clean bundle extracts and validates.
+#### V2.1 `[BE]` Zip-bundle dataset upload — ✅ DONE (2026-06-11)
+- [x] **Done.** `POST …/datasets` accepts `.zip` beside `.jsonl` (spec updated per the V1.2 re-sequencing; `DatasetResponse` gained `modality`/`num_images`). Extraction (`extract_bundle`, `brain/services/training.py`) rejects zip-slip/absolute paths/symlinks, enforces caps (`max_bundle_files` 2000, `max_bundle_uncompressed_mb` 500), whitelists png/jpg/jpeg/webp + exactly one root `.jsonl`; a rejected bundle drives the dataset to `invalid` with the reason. Extraction+validation run in the existing background task; `storage_path` then points at the extracted manifest. Also fixed in passing: the upload path used the **untruncated** filename on disk (a >255-char name → OSError 500). **Training gate:** `enqueue_training_job` rejects `modality == "vision"` with a clear "§V3 not shipped yet" 400 — never a mid-train crash. `pillow` moved to base deps (validation runs in the app).
+- [x] **Verified.** Unit: `tests/test_dataset_bundles.py` (zip-slip, disallowed types, manifest count, file-count cap). Integration: `tests/integration/test_image_bundles.py` — real zip upload → background extract+validate → `valid`, `modality=vision`, counts right → job creation 400-gated.
 
-#### V2.2 `[BE]` `validate_dataset` v2
-- [ ] **Steps.** Per row with `images`: path resolves inside the bundle, file decodes (PIL `verify()`), resolution/format within caps; report `num_samples` + `num_images`; per-line typed errors as today. Image rows against a text-modality base → validation error naming the mismatch.
-- [ ] **Acceptance.** Missing/corrupt/oversized image on line N → `"Line N: …"`; valid bundle → `valid` with both counts.
+#### V2.2 `[BE]` `validate_dataset` v2 — ✅ DONE (2026-06-11)
+- [x] **Done.** Now returns `(valid, error, num_samples, num_images)`. Image rows: path must resolve **inside** the bundle, exist, carry an allowed extension, fit `max_image_mb` (10) and `max_image_side_px` (8192), and decode (PIL `verify()`); failures report `"Line N: …"`. Image rows in a **plain** `.jsonl` (no bundle) are rejected pointing at the zip path. Dataset rows record `modality`/`num_images` on success.
+- [x] **Verified.** Unit: missing-image, corrupt-image, plain-jsonl-image cases green; all pre-existing validation tests updated to the 4-tuple.
 
-#### V2.3 `[BE]` Provenance covers images
-- [ ] **Steps.** `build_provenance`'s dataset hash becomes a manifest hash: JSONL bytes + each image's sha256, order-stable (one changed pixel → different hash).
-- [ ] **Files.** `brain/training/provenance.py`, `tests/test_provenance.py`.
+#### V2.3 `[BE]` Provenance covers images — ✅ DONE (2026-06-11)
+- [x] **Done.** `dataset_manifest_sha256(path, bundle_dir)` folds each referenced image's sha256 into the hash in row order (one-pixel repaint → different hash; text datasets hash exactly as before). `build_provenance` takes the optional `bundle_dir`; the worker passes it in §V3.
+- [x] **Verified.** `test_manifest_hash_changes_with_image_bytes` green.
 
 ### V3. Training + eval in the worker
 

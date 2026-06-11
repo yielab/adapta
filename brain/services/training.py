@@ -21,6 +21,14 @@ logger = logging.getLogger(__name__)
 
 DATASET_SCHEMA_PATH = Path("specs/schemas/training_dataset.schema.json")
 
+# §V2: image formats accepted inside a dataset bundle.
+ALLOWED_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
+
+
+class BundleError(ValueError):
+    """A dataset .zip bundle that cannot be safely extracted (zip-slip, caps,
+    disallowed content). The message is operator-safe."""
+
 
 def _load_schema() -> Optional[dict]:
     if DATASET_SCHEMA_PATH.exists():
@@ -28,15 +36,117 @@ def _load_schema() -> Optional[dict]:
     return None
 
 
-def validate_dataset(path: Path) -> tuple[bool, Optional[str], int]:
+def extract_bundle(zip_path: Path, dest_dir: Path) -> Path:
+    """Safely extract a dataset bundle (§V2.1) and return the manifest path.
+
+    A bundle is a .zip holding exactly one ``*.jsonl`` manifest at its root and
+    the images the manifest references (``ALLOWED_IMAGE_EXTENSIONS``). Hostile
+    archives are rejected before any byte is written: path traversal (zip-slip),
+    absolute paths, symlinks, over-cap file counts / uncompressed size, and
+    disallowed file types all raise :class:`BundleError`.
     """
-    Validate a JSONL file against the instruction-pair schema.
-    Returns (is_valid, error_message, num_samples).
-    Each line must be {"prompt": str, "response": str}.
+    import zipfile
+
+    if not zipfile.is_zipfile(zip_path):
+        raise BundleError("Not a valid .zip archive")
+
+    max_bytes = settings.max_bundle_uncompressed_mb * 1024 * 1024
+    dest_dir = dest_dir.resolve()
+
+    with zipfile.ZipFile(zip_path) as zf:
+        members = [m for m in zf.infolist() if not m.is_dir()]
+        if len(members) > settings.max_bundle_files:
+            raise BundleError(
+                f"Bundle has {len(members)} files; at most {settings.max_bundle_files} are allowed"
+            )
+        total = sum(m.file_size for m in members)
+        if total > max_bytes:
+            raise BundleError(
+                f"Bundle uncompressed size ({total // (1024 * 1024)} MB) exceeds the "
+                f"{settings.max_bundle_uncompressed_mb} MB limit"
+            )
+
+        manifests: list[str] = []
+        for m in members:
+            name = m.filename
+            # Zip-slip / absolute-path / drive-letter protection: the resolved
+            # destination must stay inside dest_dir.
+            if name.startswith(("/", "\\")) or ".." in Path(name).parts or ":" in name.split("/")[0]:
+                raise BundleError(f"Unsafe path in bundle: {name!r}")
+            resolved = (dest_dir / name).resolve()
+            if not resolved.is_relative_to(dest_dir):
+                raise BundleError(f"Unsafe path in bundle: {name!r}")
+            # Symlink entries (external_attr high bits = S_IFLNK) would let a
+            # later member write through the link — reject outright.
+            if (m.external_attr >> 16) & 0o170000 == 0o120000:
+                raise BundleError(f"Symlinks are not allowed in bundles: {name!r}")
+            ext = Path(name).suffix.lower()
+            if ext == ".jsonl":
+                if "/" in name:
+                    raise BundleError("The .jsonl manifest must be at the bundle root")
+                manifests.append(name)
+            elif ext not in ALLOWED_IMAGE_EXTENSIONS:
+                raise BundleError(
+                    f"Disallowed file type in bundle: {name!r} (allowed: one root .jsonl + "
+                    + "/".join(sorted(e.lstrip('.') for e in ALLOWED_IMAGE_EXTENSIONS)) + ")"
+                )
+
+        if len(manifests) != 1:
+            raise BundleError(
+                f"Bundle must contain exactly one root .jsonl manifest (found {len(manifests)})"
+            )
+
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        for m in members:
+            zf.extract(m, dest_dir)
+
+    return dest_dir / manifests[0]
+
+
+def _validate_image(bundle_dir: Path, rel_path: str) -> Optional[str]:
+    """Validate one referenced image; returns an error string or None."""
+    from PIL import Image
+
+    candidate = (bundle_dir / rel_path).resolve()
+    if not candidate.is_relative_to(bundle_dir.resolve()):
+        return f"image path {rel_path!r} escapes the bundle"
+    if not candidate.is_file():
+        return f"image {rel_path!r} not found in the bundle"
+    if candidate.suffix.lower() not in ALLOWED_IMAGE_EXTENSIONS:
+        return f"image {rel_path!r} has a disallowed format"
+    if candidate.stat().st_size > settings.max_image_mb * 1024 * 1024:
+        return f"image {rel_path!r} exceeds the {settings.max_image_mb} MB limit"
+    try:
+        with Image.open(candidate) as img:
+            img.verify()  # decodability without loading full pixel data
+        with Image.open(candidate) as img:  # verify() exhausts the fp — reopen for size
+            w, h = img.size
+        if max(w, h) > settings.max_image_side_px:
+            return (
+                f"image {rel_path!r} is {w}x{h}; the longest side may be at most "
+                f"{settings.max_image_side_px}px"
+            )
+    except Exception:
+        return f"image {rel_path!r} cannot be decoded"
+    return None
+
+
+def validate_dataset(
+    path: Path, bundle_dir: Optional[Path] = None
+) -> tuple[bool, Optional[str], int, int]:
+    """
+    Validate a JSONL file against the instruction-pair schema (v2, §V1.1).
+    Returns (is_valid, error_message, num_samples, num_images).
+
+    Each line must be {"prompt": str, "response": str}; rows may carry
+    ``images`` (paths relative to the dataset bundle). Image rows are only
+    valid when ``bundle_dir`` is given (zip-bundle upload, §V2.1) — every
+    referenced image must exist inside the bundle and decode within the caps.
     """
     try:
         schema = _load_schema()
         samples = []
+        num_images = 0
         with path.open(encoding="utf-8") as f:
             for i, line in enumerate(f, 1):
                 line = line.strip()
@@ -45,38 +155,44 @@ def validate_dataset(path: Path) -> tuple[bool, Optional[str], int]:
                 try:
                     obj = json.loads(line)
                 except json.JSONDecodeError as exc:
-                    return False, f"Line {i}: invalid JSON — {exc}", 0
+                    return False, f"Line {i}: invalid JSON — {exc}", 0, 0
 
                 if not isinstance(obj.get("prompt"), str) or not obj["prompt"].strip():
-                    return False, f"Line {i}: missing or empty 'prompt' field", 0
+                    return False, f"Line {i}: missing or empty 'prompt' field", 0, 0
                 if not isinstance(obj.get("response"), str) or not obj["response"].strip():
-                    return False, f"Line {i}: missing or empty 'response' field", 0
-                if obj.get("images"):
-                    # Contract v2 admits image rows (§V), but the training path
-                    # doesn't ship until TODO §V2/§V3 — reject loudly rather than
-                    # accept a dataset that would fail mid-train.
+                    return False, f"Line {i}: missing or empty 'response' field", 0, 0
+
+                images = obj.get("images") or []
+                if images and bundle_dir is None:
                     return False, (
-                        f"Line {i}: 'images' rows are not trainable yet — image "
-                        "fine-tuning is being built (roadmap §V). Remove the "
-                        "'images' field to train a text dataset."
-                    ), 0
+                        f"Line {i}: rows with 'images' must be uploaded as a .zip "
+                        "bundle (one root .jsonl manifest + the image files), not "
+                        "a plain .jsonl."
+                    ), 0, 0
 
                 if schema:
                     import jsonschema
                     try:
                         jsonschema.validate(obj, schema)
                     except jsonschema.ValidationError as e:
-                        return False, f"Line {i}: schema violation — {e.message}", 0
+                        return False, f"Line {i}: schema violation — {e.message}", 0, 0
+
+                if images and bundle_dir is not None:
+                    for rel in images:
+                        img_err = _validate_image(bundle_dir, rel)
+                        if img_err:
+                            return False, f"Line {i}: {img_err}", 0, 0
+                    num_images += len(images)
 
                 samples.append(obj)
 
         if not samples:
-            return False, "Dataset is empty — must have at least one instruction pair", 0
+            return False, "Dataset is empty — must have at least one instruction pair", 0, 0
 
-        return True, None, len(samples)
+        return True, None, len(samples), num_images
 
     except Exception as exc:
-        return False, str(exc), 0
+        return False, str(exc), 0, 0
 
 
 async def update_job_record(
@@ -290,6 +406,15 @@ async def enqueue_training_job(
         raise NotFound(message="Dataset not found")
     if dataset.status != DatasetStatus.valid:
         raise InvalidRequest(message="Dataset is not valid — cannot start training")
+    if dataset.modality == "vision":
+        # §V2 accepts/validates image bundles; the TRAINING path arrives in §V3.
+        # Gate here so an operator gets a clear answer, not a mid-train crash.
+        raise InvalidRequest(
+            message=(
+                "This is an image dataset — image fine-tuning is being built "
+                "(roadmap §V3) and cannot be trained yet."
+            )
+        )
     check_min_training_samples(dataset.num_samples)
     validate_training_config(training_config)
 

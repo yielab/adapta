@@ -32,7 +32,9 @@ dependencies = [
     # Embeddings + vector store
     "sentence-transformers>=2.3.1",
     "chromadb==1.5.9",  # pinned in sync with the chroma server image (docker-compose.yml)
-    # Document parsing
+    # Document parsing + dataset-image validation (§V2 — bundle images are
+    # decoded/checked at upload time in the app, not just in the worker)
+    "pillow>=10.0.0",
     "pypdf>=4.0.0",
     "python-docx>=1.1.0",
     "markdown>=3.5.0",
@@ -59,8 +61,6 @@ training = [
     # cover the rest of its model-introspection needs.
     "gguf>=0.10.0",
     "safetensors>=0.4.0",
-    # VLM processors (image preprocessing) for the §V image fine-tune workstream.
-    "pillow>=10.0.0",
 ]
 dev = [
     "pytest>=8.0.0",

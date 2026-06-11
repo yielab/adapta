@@ -255,7 +255,13 @@ paths:
     post:
       operationId: uploadDataset
       tags: [datasets]
-      summary: Upload a JSONL dataset for training (finetune projects)
+      summary: Upload a training dataset (finetune projects) — .jsonl, or a .zip image bundle
+      description: |
+        Plain `.jsonl` for text datasets. For image datasets (§V), a `.zip`
+        bundle holding exactly one root `.jsonl` manifest plus the images its
+        rows reference (`images` paths relative to the bundle; png/jpg/jpeg/webp).
+        Validation runs in the background; poll the dataset until `valid`/`invalid`.
+        Bundles are extracted with traversal protection and size/count caps.
       security: [{BearerAuth: []}]
       parameters: [{$ref: '#/components/parameters/ProjectId'}]
       requestBody:
@@ -649,6 +655,11 @@ components:
         name: {type: string}
         status: {type: string}
         num_samples: {type: integer, nullable: true}
+        # §V image datasets: "vision" once an image bundle validates; "text" otherwise.
+        # (enum without default — codegen renders `enum + default` as an untyped
+        # str assignment that fails mypy in the generated module.)
+        modality: {type: string, enum: [text, vision]}
+        num_images: {type: integer, nullable: true}
         validation_error: {type: string, nullable: true}
         created_at: {type: string, format: date-time}
 

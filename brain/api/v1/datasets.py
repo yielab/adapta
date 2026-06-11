@@ -28,6 +28,8 @@ class DatasetResponse(BaseModel):
     name: str
     status: str
     num_samples: Optional[int]
+    modality: str = "text"  # "text" | "vision" (§V)
+    num_images: Optional[int] = None
     validation_error: Optional[str]
     created_at: str
 
@@ -38,6 +40,8 @@ def _ds_resp(d: Dataset) -> DatasetResponse:
         name=d.name,
         status=d.status.value,
         num_samples=d.num_samples,
+        modality=d.modality,
+        num_images=d.num_images,
         validation_error=d.validation_error,
         created_at=d.created_at.isoformat(),
     )
@@ -53,7 +57,7 @@ async def _get_finetune_project(db: AsyncSession, project_id: str) -> Project:
     return project
 
 
-async def _validate_in_background(dataset_id: str, path: Path) -> None:
+async def _validate_in_background(dataset_id: str, path: Path, is_bundle: bool = False) -> None:
     """Validate an uploaded dataset out-of-band and record the terminal status.
 
     Runs in its own DB session (the request's session is already closed). The row
@@ -83,14 +87,35 @@ async def _validate_in_background(dataset_id: str, path: Path) -> None:
                 )
                 return
 
-            is_valid, error, num_samples = validate_dataset(path)
+            manifest, bundle_dir = path, None
+            if is_bundle:
+                # Extract the zip beside it (zip-slip/caps enforced) and validate
+                # the manifest against the extracted images (§V2.1).
+                from brain.services.training import BundleError, extract_bundle
+
+                bundle_dir = path.parent / f"{dataset_id}_bundle"
+                try:
+                    manifest = extract_bundle(path, bundle_dir)
+                except BundleError as exc:
+                    dataset.status = DatasetStatus.invalid
+                    dataset.validation_error = str(exc)
+                    await db.commit()
+                    logger.info("Dataset bundle rejected: %s — %s", dataset_id, exc)
+                    return
+
+            is_valid, error, num_samples, num_images = validate_dataset(manifest, bundle_dir=bundle_dir)
             dataset.status = DatasetStatus.valid if is_valid else DatasetStatus.invalid
             dataset.validation_error = error
             dataset.num_samples = num_samples
+            dataset.num_images = num_images or None
+            dataset.modality = "vision" if num_images else "text"
+            if is_valid and is_bundle:
+                # Training (§V3) reads the manifest; images resolve relative to it.
+                dataset.storage_path = str(manifest)
             await db.commit()
             logger.info(
-                "Dataset validation task done: %s -> %s (%s samples)",
-                dataset_id, dataset.status.value, num_samples,
+                "Dataset validation task done: %s -> %s (%s samples, %s images)",
+                dataset_id, dataset.status.value, num_samples, num_images,
             )
     except Exception:
         logger.exception("Dataset validation task crashed for %s", dataset_id)
@@ -108,10 +133,14 @@ async def upload_dataset(
     await require_team_writer(db, current_user.id, project.team_id)
 
     filename = file.filename or "dataset.jsonl"
-    if not filename.endswith(".jsonl"):
-        raise InvalidRequest(message="Dataset must be a .jsonl file")
-    # Truncate from the front (keeps the .jsonl suffix): the name is metadata,
-    # and an over-long one would overflow datasets.name String(256) → 500.
+    is_bundle = filename.endswith(".zip")
+    if not filename.endswith(".jsonl") and not is_bundle:
+        raise InvalidRequest(
+            message="Dataset must be a .jsonl file, or a .zip bundle (one root "
+            ".jsonl manifest + the images it references) for image datasets."
+        )
+    # Truncate from the front (keeps the extension): the name is metadata, and an
+    # over-long one would overflow datasets.name String(256) → 500.
     filename = filename[-200:]
 
     ds_dir = settings.datasets_dir / project_id
@@ -126,7 +155,7 @@ async def upload_dataset(
     db.add(dataset)
     await db.flush()
 
-    dest = ds_dir / f"{dataset.id}_{file.filename}"
+    dest = ds_dir / f"{dataset.id}_{filename}"
     with dest.open("wb") as out:
         shutil.copyfileobj(file.file, out)
 
@@ -136,9 +165,9 @@ async def upload_dataset(
     # finds nothing, and the dataset is stuck at 'validating' forever (§4.4).
     dataset_id = dataset.id
     await db.commit()
-    background_tasks.add_task(_validate_in_background, dataset_id, dest)
+    background_tasks.add_task(_validate_in_background, dataset_id, dest, is_bundle)
 
-    return {"id": dataset_id, "name": file.filename, "status": "validating"}
+    return {"id": dataset_id, "name": filename, "status": "validating"}
 
 
 @router.get("", response_model=List[DatasetResponse])

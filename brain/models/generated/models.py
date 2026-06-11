@@ -98,11 +98,18 @@ class FileResponse(BaseModel):
     uploaded_at: AwareDatetime | None = None
 
 
+class Modality(Enum):
+    text = "text"
+    vision = "vision"
+
+
 class DatasetResponse(BaseModel):
     id: str | None = None
     name: str | None = None
     status: str | None = None
     num_samples: int | None = None
+    modality: Modality | None = None
+    num_images: int | None = None
     validation_error: str | None = None
     created_at: AwareDatetime | None = None
 

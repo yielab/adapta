@@ -110,6 +110,14 @@ class Settings(BaseSettings):
     # adapters volume has less than this much free, rather than dying deep in a run.
     min_free_disk_gb: float = 5.0
 
+    # Image dataset bundles (§V2): caps applied while extracting/validating a
+    # .zip bundle (JSONL manifest + images). Outside these a bundle is rejected
+    # at validation, never accepted into a run that would die mid-train.
+    max_bundle_files: int = 2000
+    max_bundle_uncompressed_mb: int = 500
+    max_image_mb: int = 10
+    max_image_side_px: int = 8192
+
     # Fine-tune serving (A3.1): PEFT adapters are converted to a GGUF LoRA so the
     # single llama-cpp runtime can serve them via `lora_path`. The converter is
     # llama.cpp's official convert_lora_to_gguf.py, vendored into the worker image.

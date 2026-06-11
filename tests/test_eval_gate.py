@@ -208,7 +208,7 @@ def test_invalid_dataset_rejected_before_enqueue(tmp_path):
     bad = tmp_path / "bad.jsonl"
     bad.write_text(json.dumps({"question": "no response field"}) + "\n")
 
-    valid, error, _ = validate_dataset(bad)
+    valid, error, _, _ = validate_dataset(bad)
     assert not valid
     assert error is not None
 
@@ -219,7 +219,7 @@ def test_valid_dataset_passes_schema(tmp_path):
     good = tmp_path / "good.jsonl"
     good.write_text(json.dumps({"prompt": "Q?", "response": "A."}) + "\n")
 
-    valid, error, count = validate_dataset(good)
+    valid, error, count, _ = validate_dataset(good)
     assert valid
     assert count == 1
 

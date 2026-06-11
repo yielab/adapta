@@ -128,11 +128,15 @@ test-contracts:
 	# filter_too_much is suppressed: an intermittent hypothesis generation-health
 	# complaint (too many filtered examples on POST /jobs), not an API defect —
 	# observed flaking a run in which all generated cases passed.
+	# allow-x00=false: PostgreSQL cannot store NUL bytes in text, ever — the API
+	# answers them with a typed 422 (the DBAPIError net), which the positive-
+	# acceptance check would miscount as rejecting valid data.
 	schemathesis run specs/openapi.yaml \
 	  --url http://localhost:8000/v1 \
 	  --checks all \
 	  --exclude-checks unsupported_method \
 	  --suppress-health-check filter_too_much \
+	  --generation-allow-x00 false \
 	  --max-examples 30 \
 	  -H "Authorization: Bearer $(BRAIN_BEARER_TOKEN)" \
 	  $(SCHEMATHESIS_ARGS)
