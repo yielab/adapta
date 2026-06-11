@@ -1,5 +1,6 @@
 """Model Evaluation Engine"""
 
+import gc
 import logging
 import math
 import time
@@ -253,6 +254,14 @@ class ModelEvaluator:
                         "predicted": prediction,
                     })
 
+            # Eval is the last consumer of the model in this worker job. PeftModel↔base
+            # is a reference cycle: without an explicit collect the CUDA tensors stay
+            # allocated after return and the NEXT job OOMs (the cache can't reclaim
+            # memory that is still referenced).
+            del model, base
+            gc.collect()
+            torch.cuda.empty_cache()
+
             # Calculate metrics — score is built from the RESPONSE-ONLY held-out loss.
             perplexity = math.exp(adapter_loss) if adapter_loss < 100 else float("inf")
             score = score_from_loss(adapter_loss)
@@ -315,6 +324,189 @@ class ModelEvaluator:
         except Exception as e:
             logger.error(f"Evaluation {eval_id} failed: {e}")
             raise
+
+    async def evaluate_adapter_vision(
+        self,
+        job_id: str,
+        agent_id: str,
+        adapter_name: str,
+        adapter_path: Path,
+        base_model: str,
+        dataset_path: Path,
+        bundle_dir: Path,
+        num_samples: int = 3,
+        compare_base: bool = True,
+    ) -> EvaluationResult:
+        """Evaluate a VLM adapter on a held-out split (§V3.3).
+
+        Same gate semantics as the text path — response-only cross-entropy on
+        rows the model never trained on, adapter-vs-base on the same split —
+        with the forward pass carrying the row's image. Rows are the schema's
+        {prompt, response, system?, images[1]}; image paths resolve against
+        ``bundle_dir``. The base loads in 4-bit (the dtype it was trained
+        against, and a 3B VLM in fp16 doesn't share an 8 GB card with anything).
+        """
+        if not self.dependencies_available:
+            raise RuntimeError("Evaluation dependencies not installed.")
+
+        import json as _json
+
+        import torch
+        from peft import PeftModel
+        from PIL import Image
+        from transformers import (
+            AutoProcessor,
+            BitsAndBytesConfig,
+            Qwen2_5_VLForConditionalGeneration,
+        )
+
+        start_time = time.time()
+        eval_id = str(uuid.uuid4())
+        logger.info("Starting VISION evaluation %s for adapter %s", eval_id, adapter_name)
+
+        processor = AutoProcessor.from_pretrained(
+            base_model, min_pixels=256 * 28 * 28, max_pixels=512 * 28 * 28
+        )
+        bnb = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_quant_type="nf4",
+            bnb_4bit_compute_dtype=torch.float16,
+            bnb_4bit_use_double_quant=True,
+        )
+        base = Qwen2_5_VLForConditionalGeneration.from_pretrained(
+            base_model, quantization_config=bnb, device_map="auto"
+        )
+        model = PeftModel.from_pretrained(base, str(adapter_path))
+        model.eval()
+
+        rows = []
+        with Path(dataset_path).open(encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    rows.append(_json.loads(line))
+        logger.info("Evaluating on %d held-out vision examples", len(rows))
+
+        marker = processor.tokenizer.encode("<|im_start|>assistant\n", add_special_tokens=False)
+
+        def _encode(row: dict, include_response: bool):
+            img = Image.open(bundle_dir / row["images"][0]).convert("RGB")
+            messages = []
+            if row.get("system"):
+                messages.append({"role": "system", "content": [{"type": "text", "text": row["system"]}]})
+            messages.append({
+                "role": "user",
+                "content": [{"type": "image"}, {"type": "text", "text": row["prompt"]}],
+            })
+            if include_response:
+                messages.append({"role": "assistant", "content": [{"type": "text", "text": row["response"]}]})
+            text = processor.apply_chat_template(
+                messages, tokenize=False, add_generation_prompt=not include_response
+            )
+            inputs = processor(text=[text], images=[img], return_tensors="pt")
+            if include_response:
+                labels = inputs["input_ids"].clone()
+                ids = inputs["input_ids"][0].tolist()
+                start = None
+                for i in range(len(ids) - len(marker), -1, -1):
+                    if ids[i:i + len(marker)] == marker:
+                        start = i + len(marker)
+                        break
+                if start is None:
+                    raise RuntimeError("assistant marker not found in templated row")
+                labels[0, :start] = -100
+                inputs["labels"] = labels
+            return inputs
+
+        def _split_loss() -> float:
+            total, counted = 0.0, 0
+            for row in rows:
+                inputs = _encode(row, include_response=True).to(model.device)
+                out = model(**inputs)
+                loss = out.loss.item()
+                if loss == loss:  # not NaN
+                    total += loss
+                    counted += 1
+            return total / counted if counted else float("inf")
+
+        with torch.no_grad():
+            adapter_loss = _split_loss()
+
+        base_loss: Optional[float] = None
+        if compare_base:
+            try:
+                with torch.no_grad(), model.disable_adapter():
+                    base_loss = _split_loss()
+            except Exception as exc:  # base comparison is best-effort, never blocks
+                logger.warning("Base-model comparison failed: %s", exc)
+
+        sample_predictions = []
+        with torch.no_grad():
+            for row in rows[:num_samples]:
+                inputs = _encode(row, include_response=False).to(model.device)
+                generated = model.generate(**inputs, max_new_tokens=64, do_sample=False)
+                prediction = processor.tokenizer.decode(
+                    generated[0][inputs["input_ids"].shape[1]:], skip_special_tokens=True
+                )
+                sample_predictions.append({
+                    "input": row["prompt"] + f" [image: {row['images'][0]}]",
+                    "expected": row["response"],
+                    "predicted": prediction,
+                })
+
+        # Same hygiene as the text path: break the PeftModel↔base cycle and release
+        # the ~2.5 GiB of 4-bit CUDA tensors now, or the next vision job OOMs on an
+        # 8 GB card (observed: second e2e run failed epoch-1 backward at 180 MiB free).
+        # Rebind (not `del`): `model` is captured by the _split_loss closure.
+        model = base = None  # noqa: F841
+        gc.collect()
+        torch.cuda.empty_cache()
+
+        perplexity = math.exp(adapter_loss) if adapter_loss < 100 else float("inf")
+        score = score_from_loss(adapter_loss)
+        base_perplexity = base_score = score_delta = loss_improvement = None
+        if base_loss is not None:
+            base_perplexity = math.exp(base_loss) if base_loss < 100 else float("inf")
+            base_score = score_from_loss(base_loss)
+            score_delta = score - base_score
+            loss_improvement = base_loss - adapter_loss
+
+        metrics = EvaluationMetrics(
+            loss=adapter_loss,
+            perplexity=perplexity,
+            accuracy=None, exact_match=None, token_accuracy=None,
+            bleu_score=None, coherence_score=None, fluency_score=None,
+            base_loss=base_loss,
+            base_perplexity=base_perplexity,
+            loss_improvement=loss_improvement,
+        )
+        duration = time.time() - start_time
+        result = EvaluationResult(
+            eval_id=eval_id,
+            job_id=job_id,
+            agent_id=agent_id,
+            adapter_name=adapter_name,
+            adapter_path=str(adapter_path),
+            dataset_path=str(dataset_path),
+            num_examples=len(rows),
+            metrics=metrics,
+            score=score,
+            base_score=base_score,
+            score_delta=score_delta,
+            held_out=True,
+            sample_predictions=sample_predictions,
+            created_at=start_time,
+            duration_seconds=duration,
+        )
+        logger.info(
+            "Vision evaluation %s completed (held-out, response-only): "
+            "loss=%.4f ppl=%.2f score=%.4f%s duration=%.1fs",
+            eval_id, adapter_loss, perplexity, score,
+            (f" | base_score={base_score:.4f} delta={score_delta:+.4f}"
+             if base_score is not None else ""),
+            duration,
+        )
+        return result
 
 
 # Global evaluator instance

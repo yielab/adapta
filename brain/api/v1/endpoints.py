@@ -82,6 +82,20 @@ async def create_endpoint(
             raise InvalidRequest(message="No indexed documents found. Upload and index files first.")
 
     elif project.type == ProjectType.finetune:
+        # §V3/§V4 seam: vision fine-tunes train and pass the gate as of §V3, but
+        # serving them (mmproj load + image content-parts) arrives with §V4 —
+        # binding the adapter now would expose an endpoint that can't see images.
+        from brain.core.model_catalog import resolve as resolve_catalog
+
+        entry = resolve_catalog(project.base_model)
+        if entry is not None and entry.modality == "vision":
+            raise InvalidRequest(
+                message=(
+                    "Image endpoints are not servable yet — serving for image "
+                    "fine-tunes arrives with roadmap §V4. The trained adapter is "
+                    "registered and will bind once serving ships."
+                )
+            )
         job_result = await db.execute(
             select(TrainingJob)
             .where(

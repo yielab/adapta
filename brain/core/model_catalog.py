@@ -89,6 +89,19 @@ _ENTRIES: List[CatalogEntry] = [
         model_type=ModelType.REASONING,
         notes="Higher quality, needs a bigger GPU (~12-16 GB train).",
     ),
+    # §V image-understanding fine-tunes. Trains as of §V3 (QLoRA, vision tower
+    # frozen, batch 1 on ~6 GB VRAM); endpoint creation is gated until §V4
+    # serving (mmproj + image content-parts) lands — see endpoints.py.
+    CatalogEntry(
+        name="qwen2.5-vl-3b-instruct",
+        hf_repo_id="Qwen/Qwen2.5-VL-3B-Instruct",
+        gguf_subdir="qwen2.5-vl-3b",
+        gguf_filename="qwen2.5-vl-3b-instruct-q4_k_m.gguf",
+        model_type=ModelType.CHAT,
+        modality="vision",
+        mmproj_filename="mmproj-qwen2.5-vl-3b-f16.gguf",
+        notes="Vision (image+text→text) — document AI / visual QC (~6 GB train, batch 1).",
+    ),
 ]
 
 # operator-facing name -> entry

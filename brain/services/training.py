@@ -406,13 +406,26 @@ async def enqueue_training_job(
         raise NotFound(message="Dataset not found")
     if dataset.status != DatasetStatus.valid:
         raise InvalidRequest(message="Dataset is not valid — cannot start training")
-    if dataset.modality == "vision":
-        # §V2 accepts/validates image bundles; the TRAINING path arrives in §V3.
-        # Gate here so an operator gets a clear answer, not a mid-train crash.
+    # §V3: the dataset's modality must match the base model's. A vision dataset
+    # on a text base would crash mid-train (no image inputs); a text dataset on
+    # a vision base would waste the vision tower — reject both with the fix.
+    from brain.core.model_catalog import resolve as resolve_catalog
+
+    entry = resolve_catalog(base_model)
+    model_modality = entry.modality if entry else "text"
+    if dataset.modality != model_modality:
+        if dataset.modality == "vision":
+            raise InvalidRequest(
+                message=(
+                    f"This dataset contains images but the project's base model "
+                    f"{base_model!r} is text-only — create the project with a vision "
+                    "base model (e.g. qwen2.5-vl-3b-instruct) to train on images."
+                )
+            )
         raise InvalidRequest(
             message=(
-                "This is an image dataset — image fine-tuning is being built "
-                "(roadmap §V3) and cannot be trained yet."
+                f"The project's base model {base_model!r} is a vision model but this "
+                "dataset has no images — upload an image bundle, or use a text base model."
             )
         )
     check_min_training_samples(dataset.num_samples)

@@ -57,9 +57,15 @@ async def _run_job(meta: dict) -> None:
     # Resolve the operator-facing catalog name to the HF repo id the trainer/evaluator
     # load via from_pretrained() (A3.3). Serving (model_manager) resolves the GGUF from
     # the SAME catalog entry, so train and serve can never reference different bases.
-    from brain.core.model_catalog import resolve_hf_id
+    from brain.core.model_catalog import resolve, resolve_hf_id
 
     hf_base_model = resolve_hf_id(base_model)
+    # §V3: the catalog entry's modality picks the training path. Vision rows keep
+    # the schema shape (prompt/response/images) and resolve images against the
+    # extracted bundle dir (the dataset_path is the bundle's manifest, §V2.1).
+    entry = resolve(base_model)
+    modality = entry.modality if entry else "text"
+    bundle_dir = dataset_path.parent
 
     queue = get_job_queue()
 
@@ -133,6 +139,12 @@ async def _run_job(meta: dict) -> None:
             if not line:
                 continue
             obj = _json.loads(line)
+            if modality == "vision":
+                # The vision trainer/evaluator consume the schema shape directly
+                # (they template + mask per-row with the processor) — converting
+                # to messages here would lose the image references.
+                rows.append(obj)
+                continue
             messages = [
                 {"role": "user", "content": obj["prompt"]},
                 {"role": "assistant", "content": obj["response"]},
@@ -174,15 +186,27 @@ async def _run_job(meta: dict) -> None:
         await progress(min(0.9, 0.1 + 0.8 * frac), f"epoch {epoch:.2f} step {step} loss {loss:.4f}")
 
     trainer = LoRATrainer()
-    success = await trainer.train(
-        job_id=job_id,
-        base_model=hf_base_model,
-        dataset_path=dataset_path,
-        output_dir=output_dir,
-        adapter_path=output_dir,
-        config=config,
-        progress_callback=_on_train_log,
-    )
+    if modality == "vision":
+        success = await trainer.train_vision(
+            job_id=job_id,
+            base_model=hf_base_model,
+            dataset_path=dataset_path,
+            bundle_dir=bundle_dir,
+            output_dir=output_dir,
+            adapter_path=output_dir,
+            config=config,
+            progress_callback=_on_train_log,
+        )
+    else:
+        success = await trainer.train(
+            job_id=job_id,
+            base_model=hf_base_model,
+            dataset_path=dataset_path,
+            output_dir=output_dir,
+            adapter_path=output_dir,
+            config=config,
+            progress_callback=_on_train_log,
+        )
 
     if not success:
         await _set_status(queue, job_id, status="failed", error="Training returned failure")
@@ -193,14 +217,25 @@ async def _run_job(meta: dict) -> None:
     try:
         from brain.training.evaluator import evaluator
         # Score on the HELD-OUT split (eval_path), never the rows we trained on.
-        result = await evaluator.evaluate_adapter(
-            job_id=job_id,
-            agent_id=project_id,
-            adapter_name=adapter_id,
-            adapter_path=output_dir,
-            dataset_path=eval_path,
-            base_model=hf_base_model,
-        )
+        if modality == "vision":
+            result = await evaluator.evaluate_adapter_vision(
+                job_id=job_id,
+                agent_id=project_id,
+                adapter_name=adapter_id,
+                adapter_path=output_dir,
+                dataset_path=eval_path,
+                base_model=hf_base_model,
+                bundle_dir=bundle_dir,
+            )
+        else:
+            result = await evaluator.evaluate_adapter(
+                job_id=job_id,
+                agent_id=project_id,
+                adapter_name=adapter_id,
+                adapter_path=output_dir,
+                dataset_path=eval_path,
+                base_model=hf_base_model,
+            )
     except Exception as exc:
         # An evaluator CRASH is not a gate verdict (A4.6). Reporting it as
         # "score below threshold" would mislead the operator into thinking the
@@ -255,7 +290,9 @@ async def _run_job(meta: dict) -> None:
     adapter_gguf_path = None
     try:
         from brain.core.adapter_conversion import convert_peft_to_gguf
-        gguf_path = await convert_peft_to_gguf(output_dir, base_model_id=hf_base_model)
+        gguf_path = await convert_peft_to_gguf(
+            output_dir, base_model_id=hf_base_model, vision=(modality == "vision")
+        )
         adapter_gguf_path = str(gguf_path)
     except Exception as exc:
         # A converted, servable adapter is the whole point of a fine-tune endpoint.
@@ -306,10 +343,17 @@ async def _run_job(meta: dict) -> None:
 
 def _free_gpu_memory() -> None:
     """Release cached CUDA memory after a job (A4.12) so a failed/finished run
-    doesn't leave VRAM pinned for the next one. No-op if torch/CUDA isn't present."""
+    doesn't leave VRAM pinned for the next one. No-op if torch/CUDA isn't present.
+
+    gc.collect() first: a crashed train/eval leaves its PeftModel↔base reference
+    cycle uncollected, and empty_cache() cannot reclaim memory that live (cyclic)
+    tensors still hold — only the cycle collector frees them."""
     try:
+        import gc
+
         import torch
 
+        gc.collect()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
     except Exception:  # pragma: no cover - best-effort cleanup

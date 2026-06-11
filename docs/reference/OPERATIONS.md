@@ -164,8 +164,22 @@ serving:
 |---|---|---|
 | 1–1.5B | ~6 GB | GTX 1660 / RTX 2060 |
 | 3B (Qwen2.5-3B) | ~8–10 GB | RTX 3050 8 GB (tight) / 3060 12 GB |
+| 3B VLM (Qwen2.5-VL-3B, §V) | ~6–8 GB | 8 GB card (validated) |
 | 7–8B | ~12–16 GB | RTX 3080 / 4070 Ti / A4000 |
 | 13B | ~24 GB | RTX 3090 / 4090 / A5000 |
+
+**Vision (VLM) fine-tunes — measured on an 8 GB card** (Qwen2.5-VL-3B, QLoRA
+4-bit, vision tower frozen, LoRA on LM attention only, batch 1, 224×224 images,
+`max_seq_length` 512): ~5.5 GiB peak VRAM during training; ~46 s/epoch on 24
+rows; held-out eval (incl. the base-model comparison pass) ~20 s; PEFT→GGUF
+conversion ~3 s — a full train→gate→convert→register job is **~5 minutes** once
+the base is cached. The **first** job on a host downloads the ~7 GB HF base;
+unauthenticated HF Hub throttling made that take ~35 minutes in validation —
+set `HF_TOKEN` on the worker for faster, rate-limit-free downloads. The worker
+frees VRAM between jobs (back-to-back vision jobs on one 8 GB card are
+validated). Disk impact of image datasets is bounded at upload time by the
+bundle caps (`max_bundle_uncompressed_mb`, default 500 MB; `max_bundle_files`,
+default 2000), and the existing free-disk preflight covers training writes.
 
 The GPU is the default: the worker reserves the host GPU, so a bare
 `docker compose up` expects a CUDA GPU + the NVIDIA Container Toolkit. A GPU-less
@@ -194,6 +208,11 @@ name → HF repo id):
 | `qwen2.5-3b-instruct` | `Qwen/Qwen2.5-3B-Instruct` | **default** — RAG + fine-tune | ~8–10 GB |
 | `qwen2.5-coder-3b` | `Qwen/Qwen2.5-Coder-3B-Instruct` | code understanding/generation | ~8–10 GB |
 | `qwen2.5-7b-instruct` | `Qwen/Qwen2.5-7B-Instruct` | higher quality, bigger GPU | ~12–16 GB |
+| `qwen2.5-vl-3b-instruct` | `Qwen/Qwen2.5-VL-3B-Instruct` | image understanding (vision LoRA, §V) | ~6–8 GB |
+
+Vision entries additionally declare the `mmproj` (vision projector) GGUF the
+serving runtime needs; image fine-tunes train and pass the gate as of §V3, and
+their endpoints become servable with §V4.
 
 To add a base (e.g. a Llama-3.x / Mistral instruct GGUF), append a `CatalogEntry`
 with its HF repo id + GGUF subdir/filename; validate VRAM against §6.2 first.

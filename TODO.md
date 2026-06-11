@@ -54,6 +54,7 @@ Honour the [Definition of done](#definition-of-done-per-task) on every task. Wor
 | Operator console (§5) | ✅ all views done (2026-06-09) — app shell, auth, projects, RAG flow, fine-tune flow, endpoint+keys, playground, usage, UX polish, mount+Docker+CI (C4 docs partial). Key-scoping (§5.12) enforced. |
 | Documentation system | ✅ **consolidated** (2026-06-10) — MkDocs Material site from `docs/` (User Guide / Developer Guide incl. a *Learning the system* deep-dive / Reference / Roadmap). API reference auto-rendered from `specs/openapi.yaml`, code reference auto from docstrings; `mkdocs build --strict` in the CI fast gate; published to GitHub Pages on push→main. Dead `examples/openclaw/` (cut scope) removed. |
 | **Staff audit (§A4)** | ✅ **complete** — all P0+P1 (A4.1–A4.9) and the full P2 batch (A4.10 stuck-task sweeper, A4.11 streaming prompt tokens, A4.12 ops hardening: disk-check path, chroma version guard, hyperparam bounds, image pinning, synthesis error-rate, GPU hygiene, backup.sh, ProjectStatus `ready`, Chroma retrieval timeout). |
+| **Image fine-tunes (§V)** | 🔨 **V0–V3 done** (2026-06-11) — both kill-or-commit spikes passed; contracts (V1), data plane (V2), and worker training/eval/conversion (V3) shipped + GPU e2e green (`test_vlm_lora_e2e.py`, held-out score 1.000 vs base 0.011). **Next: §V4 serving** (mmproj load + OpenAI image content-parts); endpoints for vision projects are 400-gated until then. |
 
 ---
 
@@ -796,8 +797,9 @@ thin client over the **existing** API — every screen maps 1:1 to an endpoint a
 > **Architecture bet:** extend Strategy A (one llama-cpp serving runtime). llama.cpp serves VLMs as
 > base GGUF + an `mmproj` (vision projector) file; with the **vision tower frozen** and LoRA only on
 > the language-model layers, the existing PEFT→GGUF conversion (`convert_lora_to_gguf.py`, vendored
-> at `/opt/llamacpp`, tag `b4576`) and `lora_path=` serving should extend unchanged. **That bet is
-> unproven — V0 is a kill-or-commit gate; nothing past V0 starts until both spikes pass.**
+> at `/opt/llamacpp`, tag `b5170` — bumped from `b4576` in V0.3) and `lora_path=` serving should
+> extend unchanged. **That bet was proven by V0 (both spikes passed 2026-06-11) and productionized
+> through §V3: train → held-out gate → GGUF conversion → registry runs through the real worker.**
 > Estimated total after V0: ~5–7 weeks single-developer.
 
 ### V0. Decision + feasibility spikes (P0 of this workstream — KILL-OR-COMMIT)
@@ -852,26 +854,23 @@ thin client over the **existing** API — every screen maps 1:1 to an endpoint a
 ### V3. Training + eval in the worker
 
 #### V3.1 `[OPS]` Worker dependencies
-- [ ] **Steps.** Pin in `pyproject.toml [training]`: transformers version supporting the chosen arch, `pillow`; verify bitsandbytes/PEFT compat; `make up` rebuild; record worker image-size delta. (Constraint #2 — never manual pip.)
+- [x] **Done.** `torchvision` added to `[training]` (Qwen2.5-VL's video processor imports it even for stills); `pillow` already in base deps since V2. The worker image also vendors llama.cpp b5170's own `gguf-py` + `sentencepiece` (landed with the V0.3 pin bump — the pip `gguf` lacks `MODEL_ARCH.CLIP_VISION`). All via `pyproject.toml`/`Dockerfile` + `make up` (constraint #2 — no manual pip).
 
 #### V3.2 `[BE]` Trainer: modality branch
-- [ ] **Context.** Trainer is text-only (`AutoTokenizer` + `AutoModelForCausalLM`). Also: `trainer.py`'s `preprocess_function` reads `examples["messages"]`, which doesn't match the prompt/response schema — verify which path the validated GPU e2e exercised and align while in here.
-- [ ] **Steps.** (1) Branch on catalog modality: `AutoProcessor` + the arch's model class. (2) **Vision tower frozen; `target_modules` = LM projection layers only** — hard constraint from V0.3 (GGUF-LoRA convertibility); enforce in `TrainingConfig` validation, not operator-overridable. (3) Collator producing `pixel_values` + labels with prompt **and image** positions masked −100. (4) `split_holdout` unchanged (row-based).
-- [ ] **Files.** `brain/training/trainer.py`, `brain/training/models.py`, `brain/worker/main.py` (pass bundle dir so relative image paths resolve).
-- [ ] **Acceptance.** A vision job trains on GPU; loss decreases; adapter + `training_metadata.json` provenance saved.
+- [x] **Done.** `train_vision()` in `brain/training/trainer.py`: `AutoProcessor` + `Qwen2_5_VLForConditionalGeneration` 4-bit; **vision tower frozen by construction** — LoRA `target_modules` is a regex over LM self-attention projections only (the V0.3 GGUF-convertibility constraint), with a hard assert that no non-LM parameter is trainable (not operator-overridable). Response-only labels via the `<|im_start|>assistant\n` marker — prompt **and image** positions masked −100. Worker passes `bundle_dir` (= the extracted manifest's dir) so relative image paths resolve; vision rows stay in schema shape (no messages conversion — the text-path `examples["messages"]` mismatch doesn't apply). `split_holdout` unchanged. **Verified on GPU:** loss 0.8822 → 0.0000 over 6 epochs (~46 s/epoch, 24 rows, batch 1, 8 GB card); adapter + provenance (incl. image hashes, §V2.3) saved.
 
 #### V3.3 `[BE]` Evaluator: image-aware forward pass
-- [ ] **Steps.** Processor + VLM (+`PeftModel` for the adapter case); per held-out row, forward with the image, response-only CE. **`passes_eval_gate` (absolute OR improvement, §A4.13) is reused unchanged** — the dual gate transfers cleanly.
-- [ ] **Files.** `brain/training/evaluator.py`, `tests/test_eval_gate.py` (vision cases, mocked forward).
-- [ ] **Acceptance.** Gate verdict + full `eval_metrics` (score, base_score, delta, sample predictions) persist exactly as for text.
+- [x] **Done.** `evaluate_adapter_vision()` in `brain/training/evaluator.py`: 4-bit base + `PeftModel`, per held-out row forward **with the image**, response-only CE with the same marker masking as training; base comparison via `model.disable_adapter()` on the same split; `passes_eval_gate` reused unchanged. Full `eval_metrics` persist exactly as for text. **Verified:** adapter 1.0000 vs base 0.0113 (delta +0.9886, held_out=true), held-out predictions exact on unseen images/prompts; eval ~20 s for 6 rows.
+- [x] **VRAM hygiene (found here, fixed at origin):** the PeftModel↔base **reference cycle** kept ~2.5 GiB of CUDA tensors allocated after eval returned — job #1 succeeded, job #2 OOM'd at epoch-1 backward (180 MiB free). Fix: trainer + both evaluator paths release refs then `gc.collect()` + `empty_cache()`; the worker's between-jobs `_free_gpu_memory()` (§A4.12) now collects before emptying so crash paths are covered too. **Validated: two consecutive vision jobs in one worker process, no OOM.**
 
 #### V3.4 `[BE]` Adapter conversion for VLM
-- [ ] **Steps.** Productionize V0.3: run the LM-only PEFT adapter through the existing conversion step; store `.gguf` beside safetensors; typed error path on conversion failure.
-- [ ] **Files.** `brain/worker/main.py` / `brain/services/adapters.py`.
-- [ ] **Acceptance.** A passed vision job registers with a loadable `.gguf` adapter path.
+- [x] **Done.** `convert_peft_to_gguf(..., vision=True)` productionizes both V0.3 caveats: stages a copy with the transformers-5.x tensor paths renamed (`model.language_model.layers.*` → `model.layers.*`), converts with a local `--base` pointing at the raw hub `config.json` the trainer stashed (`adapter_path/base_config/`) instead of `--base-model-id` (AutoConfig re-nesting). Conversion failure → distinct failed status (never a silent base-only endpoint). **Verified:** `.gguf` written in ~3 s, adapter registered, `adapter_path` is the servable GGUF.
 
 #### V3.5 `[OPS]` Resource guards + sizing docs
-- [ ] **Steps.** Extend §A4.12 preflights: VRAM note per catalog entry; disk preflight accounts for image bundles; `docs/reference/OPERATIONS.md` host-sizing table gains the measured VLM numbers from V0.
+- [x] **Done.** OPERATIONS §6.2/§6.3 gained the measured VLM numbers: ~5.5 GiB peak VRAM (8 GB card validated), ~46 s/epoch on 24 rows, ~5 min full job with the base cached, ~7 GB/~35 min first-run download unauthenticated (→ set `HF_TOKEN` on the worker), back-to-back jobs validated; catalog table gained `qwen2.5-vl-3b-instruct` with its VRAM note + the mmproj/§V4 serving seam. Disk: bundle caps (§V2.2) bound image-dataset size at upload; the existing §A4.12 free-disk preflight covers training writes unchanged.
+
+#### V3.6 `[QA]` GPU e2e through the real product pipeline
+- [x] **Done.** `tests/integration/test_vlm_lora_e2e.py` (opt-in `BRAIN_RUN_VLM_E2E=1`, mirrors `test_lora_e2e.py`): vision project → 30-row "visual Quoria" zip bundle (synthetic emblem the base has never seen labeled) → background extract/validate (`modality=vision`, 30 images) → modality-matched enqueue → worker QLoRA → held-out gate → GGUF conversion → registry → endpoint creation cleanly 400-gated "§V4". **PASSED in 4:58** as the *second* job in one worker process (also proves the V3.3 leak fix). This pre-fills §V6.2.
 
 ### V4. Serving
 

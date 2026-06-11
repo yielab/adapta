@@ -140,6 +140,20 @@ class ModelManager:
             description="Small instruct model (fine-tune e2e base)",
         )
 
+        # Vision model (§V) — image+text→text. The GGUF registration keeps the
+        # catalog↔serving invariant (every catalog entry has a serving config);
+        # the mmproj/vision input wiring arrives with §V4, and endpoint creation
+        # for vision projects is gated until then (endpoints.py).
+        self._configs["qwen2.5-vl-3b-instruct"] = ModelConfig(
+            name="qwen2.5-vl-3b-instruct",
+            model_type=ModelType.CHAT,
+            path=models_dir / "qwen2.5-vl-3b" / "qwen2.5-vl-3b-instruct-q4_k_m.gguf",
+            context_length=32768,
+            n_threads=settings.n_threads,
+            n_gpu_layers=settings.n_gpu_layers,
+            description="Vision model (image+text→text) — document AI / visual QC",
+        )
+
         # Optional reasoning model
         self._configs["qwen2.5-7b-instruct"] = ModelConfig(
             name="qwen2.5-7b-instruct",
