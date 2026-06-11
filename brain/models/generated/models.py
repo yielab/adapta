@@ -223,6 +223,15 @@ class Role3(Enum):
     assistant = "assistant"
 
 
+class BaseModelInfo(BaseModel):
+    name: str
+    """
+    Catalog name — the value Project.base_model takes
+    """
+    modality: Modality
+    description: str | None = None
+
+
 class ChatContentPart1(BaseModel):
     model_config = ConfigDict(
         extra="forbid",

@@ -38,6 +38,16 @@ export interface ProjectFile {
   uploaded_at: string;
 }
 
+export type Modality = "text" | "vision";
+
+// One base-model catalog entry (GET /v1/models) — the SSOT the server
+// validates Project.base_model against; drives modality-aware UI (§V5).
+export interface BaseModelInfo {
+  name: string;
+  modality: Modality;
+  description: string | null;
+}
+
 export type DatasetStatus = "uploaded" | "validating" | "valid" | "invalid";
 export interface Dataset {
   id: string;
@@ -46,6 +56,8 @@ export interface Dataset {
   num_samples: number | null;
   validation_error: string | null;
   created_at: string;
+  modality: Modality;
+  num_images: number | null;
 }
 
 export type JobStatus = "queued" | "running" | "succeeded" | "failed" | "cancelled";
@@ -107,6 +119,17 @@ export interface Citation {
   source?: string;
   text?: string;
   [k: string]: unknown;
+}
+
+// OpenAI content-parts (§V4): a wire message's content is plain text or an
+// array of text / inline-image parts (vision endpoints only).
+export type ChatContentPart =
+  | { type: "text"; text: string }
+  | { type: "image_url"; image_url: { url: string } };
+
+export interface WireChatMessage {
+  role: string;
+  content: string | ChatContentPart[];
 }
 
 export interface ChatCompletion {

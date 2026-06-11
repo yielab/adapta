@@ -87,6 +87,15 @@ In the **Setup** tab:
     A dataset must have at least a minimum number of samples (default 10) before
     you can train on it.
 
+    **Vision projects** (a base model labeled *vision* in the create dialog)
+    upload a **`.zip` bundle** instead: your images plus one `data.jsonl`
+    manifest whose rows add `"images": ["images/photo.png"]` (exactly one
+    bundle-relative path per row). The console's collapsible help in the
+    dataset step shows the full layout and caps; the served endpoint then
+    accepts images — see
+    [Image understanding](knowledge-and-behavior.md#image-understanding-vision-fine-tunes).
+    Synthesize is text-only and hidden for vision projects.
+
 3. **Start a training job** — enqueue it. A GPU worker picks it up. The job
    moves `queued → running → succeeded | failed` with a live progress bar and a
    tail of the training log.

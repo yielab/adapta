@@ -3,19 +3,34 @@
   import { session } from "../lib/session";
   import { navigate } from "../lib/router";
   import { toastError } from "../lib/toast";
-  import type { Project, ProjectType } from "../lib/types";
+  import type { BaseModelInfo, Project, ProjectType } from "../lib/types";
 
   import Modal from "../components/Modal.svelte";
   import ConfirmDialog from "../components/ConfirmDialog.svelte";
   import StatusBadge from "../components/StatusBadge.svelte";
 
-  // Curated Qwen2.5 list until §A3.3's base-model catalog lands; values are the
-  // operator-facing strings the API expects verbatim.
-  const BASE_MODELS = [
-    "qwen2.5-3b-instruct",
-    "qwen2.5-7b-instruct",
-    "qwen2.5-coder-3b",
-  ];
+  // Base-model catalog from GET /v1/models — the same SSOT the server
+  // validates against (A3.3), so the dropdown can never drift. Vision bases
+  // (image+text) are labeled; they enable image fine-tunes (§V).
+  let baseModels = $state<BaseModelInfo[]>([]);
+  $effect(() => {
+    void api
+      .listModels()
+      .then((m) => {
+        baseModels = m;
+        if (!baseModel && m.length > 0) baseModel = defaultBase(m);
+      })
+      .catch(() => {
+        /* dropdown shows an explanatory empty state; create stays disabled */
+      });
+  });
+  function defaultBase(models: BaseModelInfo[]): string {
+    // Prefer the platform default; fall back to the first entry.
+    return models.find((m) => m.name === "qwen2.5-3b-instruct")?.name ?? models[0].name;
+  }
+  function modelLabel(m: BaseModelInfo): string {
+    return m.modality === "vision" ? `${m.name} — vision (image + text)` : m.name;
+  }
 
   let projects = $state<Project[]>([]);
   let loading = $state(false);
@@ -56,7 +71,7 @@
   let showCreate = $state(false);
   let createType = $state<ProjectType | null>(null);
   let name = $state("");
-  let baseModel = $state(BASE_MODELS[0]);
+  let baseModel = $state("");
   let description = $state("");
   let creating = $state(false);
 
@@ -65,7 +80,7 @@
   function openCreate() {
     createType = null;
     name = "";
-    baseModel = BASE_MODELS[0];
+    baseModel = baseModels.length > 0 ? defaultBase(baseModels) : "";
     description = "";
     showCreate = true;
   }
@@ -210,11 +225,23 @@
         </div>
         <div class="field">
           <label for="proj-base">Base model</label>
-          <select id="proj-base" bind:value={baseModel} disabled={creating}>
-            {#each BASE_MODELS as m}
-              <option value={m}>{m}</option>
-            {/each}
+          <select id="proj-base" bind:value={baseModel} disabled={creating || baseModels.length === 0}>
+            {#if baseModels.length === 0}
+              <option value="">Could not load the model catalog — reload the page</option>
+            {:else}
+              {#each baseModels as m (m.name)}
+                <option value={m.name}>{modelLabel(m)}</option>
+              {/each}
+            {/if}
           </select>
+          {#if baseModels.find((m) => m.name === baseModel)?.modality === "vision"}
+            <small class="muted">
+              Vision base: fine-tune on image + text examples (zip bundle) and send
+              images to the endpoint. Image <em>understanding</em> only — never generation.
+            </small>
+          {:else if baseModels.find((m) => m.name === baseModel)?.description}
+            <small class="muted">{baseModels.find((m) => m.name === baseModel)?.description}</small>
+          {/if}
         </div>
         <div class="field">
           <label for="proj-desc">Description <span class="muted">(optional)</span></label>

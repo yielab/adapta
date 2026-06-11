@@ -12,6 +12,20 @@
 
   let { project }: { project: Project } = $props();
 
+  // Modality follows the project's base model (§V5.1) — resolved from the same
+  // catalog the server validates against, never a console-side duplicate.
+  let isVision = $state(false);
+  $effect(() => {
+    void api
+      .listModels()
+      .then((models) => {
+        isVision = models.find((m) => m.name === project.base_model)?.modality === "vision";
+      })
+      .catch(() => {
+        /* default to text UI; the server still enforces modality on enqueue */
+      });
+  });
+
   // The eval-gate threshold the backend enforces (EvalGateFailed at < 0.6).
   const EVAL_THRESHOLD = 0.6;
   const POLL_MS = 2000;
@@ -221,7 +235,11 @@
     uploading = true;
     try {
       await api.uploadDataset(project.id, file);
-      toastSuccess("Dataset uploaded — validating against the schema…");
+      toastSuccess(
+        isVision
+          ? "Bundle uploaded — extracting and validating rows + images…"
+          : "Dataset uploaded — validating against the schema…",
+      );
       await loadDatasets();
     } catch (e) {
       reportErr(e, "Could not upload the dataset.");
@@ -451,7 +469,7 @@
         <input
           bind:this={fileInput}
           type="file"
-          accept=".jsonl,application/jsonl,application/x-ndjson,text/plain"
+          accept={isVision ? ".zip,application/zip" : ".jsonl,application/jsonl,application/x-ndjson,text/plain"}
           onchange={onFilePicked}
           style="display: none;"
           id="ds-file"
@@ -462,20 +480,70 @@
           disabled={uploading}
         >
           {#if uploading}<span class="spinner"></span>{/if}
-          Upload JSONL
+          {isVision ? "Upload image bundle (.zip)" : "Upload JSONL"}
         </button>
-        <button class="sm" onclick={() => (showSynth = !showSynth)}>
-          Synthesize from documents
-        </button>
+        {#if !isVision}
+          <button class="sm" onclick={() => (showSynth = !showSynth)}>
+            Synthesize from documents
+          </button>
+        {/if}
       </div>
     </div>
 
-    <p class="muted" style="margin: 0 0 12px;">
-      Provide instruction examples as a <span class="mono">.jsonl</span> file, or
-      generate Q/A pairs automatically from the documents you indexed in step 1.
-    </p>
+    {#if isVision}
+      <p class="muted" style="margin: 0 0 12px;">
+        This project fine-tunes a <strong>vision</strong> base — examples pair an
+        <strong>image</strong> with a prompt and the ideal response. Upload a
+        <span class="mono">.zip</span> bundle: your images plus one
+        <span class="mono">.jsonl</span> manifest at the root.
+      </p>
+    {:else}
+      <p class="muted" style="margin: 0 0 12px;">
+        Provide instruction examples as a <span class="mono">.jsonl</span> file, or
+        generate Q/A pairs automatically from the documents you indexed in step 1.
+      </p>
+    {/if}
 
     <!-- Collapsible: what a dataset is, its exact format, and where to get one. -->
+    {#if isVision}
+      <details class="help" style="margin-bottom: 14px;">
+        <summary>Image bundle format — what goes in the .zip</summary>
+        <div class="help-body">
+          <h4>What an image dataset is</h4>
+          <p style="margin: 0;">
+            Example <strong>image + prompt → response</strong> triples that teach the
+            model to read <em>your</em> images in <em>your</em> output format —
+            invoices to your JSON schema, inspection photos to your defect taxonomy.
+            Image <strong>understanding</strong> only; this never generates images.
+          </p>
+
+          <h4>Bundle layout — a .zip with one manifest</h4>
+          <pre class="code" style="margin: 4px 0 8px; white-space: pre-wrap;">{`bundle.zip
+├── data.jsonl          ← one manifest at the root
+└── images/
+    ├── invoice_001.png
+    └── invoice_002.jpg`}</pre>
+          <p style="margin: 0 0 8px;">Each manifest line references its image by bundle-relative path:</p>
+          <pre class="code" style="margin: 4px 0 8px; white-space: pre-wrap;">{`{"prompt": "Extract vendor, date and total as JSON.", "response": "{\\"vendor\\": \\"Acme GmbH\\", \\"date\\": \\"2026-05-02\\", \\"total\\": \\"412.50\\"}", "images": ["images/invoice_001.png"]}`}</pre>
+          <ul>
+            <li><code>prompt</code> / <code>response</code> <strong>(required)</strong> — as in text datasets.</li>
+            <li><code>images</code> <strong>(required, exactly 1)</strong> — bundle-relative path; png, jpg, jpeg or webp.</li>
+            <li><code>system</code> (optional) — persona / context for the turn.</li>
+          </ul>
+
+          <h4>Requirements & caps</h4>
+          <ul>
+            <li>At least <strong>{MIN_SAMPLES} valid rows</strong>; 30–300 focused examples go a long way.</li>
+            <li>≤ 10 MB and ≤ 8192 px per image; ≤ 500 MB uncompressed, ≤ 2000 files per bundle.</li>
+            <li>Keep the response format identical across rows — format consistency is what the model learns.</li>
+            <li>The last ~20% of rows is held out for the eval gate and never trained on.</li>
+          </ul>
+          <p style="margin: 10px 0 0;">
+            <a href={DOCS_URL} target="_blank" rel="noopener">Full guide →</a>
+          </p>
+        </div>
+      </details>
+    {:else}
     <details class="help" style="margin-bottom: 14px;">
       <summary>What a dataset is, the format, and where to get one</summary>
       <div class="help-body">
@@ -515,8 +583,9 @@
         </p>
       </div>
     </details>
+    {/if}
 
-    {#if showSynth}
+    {#if showSynth && !isVision}
       <div class="muted-box" style="margin-bottom: 14px;">
         <h3>Synthesize a dataset</h3>
         <p class="muted" style="margin: 0 0 4px;">
@@ -590,6 +659,7 @@
             <th>Name</th>
             <th>Status</th>
             <th>Samples</th>
+            {#if isVision}<th>Images</th>{/if}
             <th>Created</th>
           </tr>
         </thead>
@@ -609,6 +679,9 @@
                 {/if}
               </td>
               <td>{d.status === "valid" && d.num_samples !== null ? d.num_samples : "—"}</td>
+              {#if isVision}
+                <td>{d.status === "valid" && d.num_images !== null ? d.num_images : "—"}</td>
+              {/if}
               <td class="muted">{fmtDate(d.created_at)}</td>
             </tr>
           {/each}
@@ -748,6 +821,10 @@
       <p class="muted" style="margin: 0 0 12px;">
         An endpoint exists for this project. Manage its slug and API keys under
         the <strong>Endpoint &amp; keys</strong> tab.
+        {#if isVision}
+          Send images with your prompts (OpenAI image content-parts) — try it in
+          the <strong>Playground</strong>.
+        {/if}
       </p>
       <button class="sm" onclick={() => navigate("/projects/" + project.id)}>
         Go to Endpoint &amp; keys

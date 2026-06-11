@@ -137,6 +137,26 @@ paths:
   # ──────────────────────────────────────────────────────────────────────────
   # Projects
   # ──────────────────────────────────────────────────────────────────────────
+  /models:
+    get:
+      operationId: listBaseModels
+      tags: [models]
+      summary: List the base-model catalog
+      description: >
+        The single catalog (A3.3) every project's base_model validates against —
+        one entry per servable+trainable base, with its modality (text or
+        vision). Feeds the console's base-model dropdown and modality-aware UI.
+      security: [{BearerAuth: []}]
+      responses:
+        '401': {$ref: '#/components/responses/Error'}
+        '200':
+          description: Catalog entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/BaseModelInfo'}
+
   /projects:
     get:
       operationId: listProjects
@@ -806,6 +826,14 @@ components:
         max_tokens: {type: integer, nullable: true}
         top_p: {type: number, minimum: 0, maximum: 1, nullable: true}
         stream: {type: boolean, default: false}
+
+    BaseModelInfo:
+      type: object
+      required: [name, modality]
+      properties:
+        name: {type: string, description: "Catalog name — the value Project.base_model takes"}
+        modality: {type: string, enum: [text, vision]}
+        description: {type: string}
 
     ChatContentPart:
       description: One OpenAI-style message content part.

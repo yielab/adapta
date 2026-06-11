@@ -8,15 +8,70 @@
   import { api, ApiError } from "../lib/api";
   import { toastError } from "../lib/toast";
   import { getRememberedKey } from "../lib/keyvault";
-  import type { Project, Endpoint, ChatCompletion, Citation } from "../lib/types";
+  import type {
+    Project,
+    Endpoint,
+    ChatCompletion,
+    ChatContentPart,
+    Citation,
+    WireChatMessage,
+  } from "../lib/types";
 
   let { project }: { project: Project } = $props();
 
   interface ChatMsg {
     role: "user" | "assistant";
     content: string;
+    imageUrl?: string; // data URL of the image sent with this turn (vision)
     citations?: Citation[];
     usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number };
+  }
+
+  // ── vision (§V5.2) ─────────────────────────────────────────────────────────
+  // Modality follows the endpoint's base model, resolved from the catalog.
+  let isVision = $state(false);
+  $effect(() => {
+    const base = endpoint?.base_model;
+    if (!base) {
+      isVision = false;
+      return;
+    }
+    void api
+      .listModels()
+      .then((models) => {
+        isVision = models.find((m) => m.name === base)?.modality === "vision";
+      })
+      .catch(() => {
+        /* fall back to text-only UI; the server enforces modality anyway */
+      });
+  });
+
+  const MAX_IMAGE_MB = 10; // mirrors the server's per-image cap
+  let attachedImage = $state<string | null>(null); // data URL
+  let attachedName = $state("");
+  let imgInput = $state<HTMLInputElement | null>(null);
+
+  function onImagePicked(ev: Event) {
+    const input = ev.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+    if (file.size > MAX_IMAGE_MB * 1024 * 1024) {
+      toastError(`Image exceeds the ${MAX_IMAGE_MB} MB limit.`);
+      input.value = "";
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      attachedImage = reader.result as string; // data:image/...;base64,...
+      attachedName = file.name;
+    };
+    reader.readAsDataURL(file);
+    input.value = "";
+  }
+
+  function clearImage() {
+    attachedImage = null;
+    attachedName = "";
   }
 
   // ── endpoint ────────────────────────────────────────────────────────────────
@@ -76,13 +131,26 @@
     if (!canSend || !endpoint) return;
     const text = draft.trim();
     const key = apiKey.trim();
+    const image = attachedImage;
 
     // Build the wire payload from the conversation so far + this turn. We send
     // only role/content (what an OpenAI client would), not our UI annotations.
-    messages = [...messages, { role: "user", content: text }];
+    // Earlier image turns are sent as their text only — resending every data
+    // URL each turn would bloat requests; the current turn carries its image.
+    messages = [...messages, { role: "user", content: text, imageUrl: image ?? undefined }];
     draft = "";
+    clearImage();
     sending = true;
-    const wire = messages.map((m) => ({ role: m.role, content: m.content }));
+    const wire: WireChatMessage[] = messages.map((m, i) => {
+      if (m.imageUrl && i === messages.length - 1) {
+        const parts: ChatContentPart[] = [
+          { type: "image_url", image_url: { url: m.imageUrl } },
+          { type: "text", text: m.content },
+        ];
+        return { role: m.role, content: parts };
+      }
+      return { role: m.role, content: m.content };
+    });
 
     try {
       const resp: ChatCompletion = await api.chat(slug, key, wire);
@@ -100,6 +168,10 @@
       // Roll the failed user turn back out so they can retry/edit it.
       messages = messages.slice(0, -1);
       draft = text;
+      if (image) {
+        attachedImage = image;
+        attachedName = attachedName || "image";
+      }
       if (e instanceof ApiError) toastError(e.message, e.correlationId);
       else toastError("The chat request failed.");
     } finally {
@@ -209,6 +281,9 @@
         {#each messages as m, i (i)}
           <div class="msg {m.role}">
             <div class="msg-role mono">{m.role === "user" ? "you" : "assistant"}</div>
+            {#if m.imageUrl}
+              <img class="msg-img" src={m.imageUrl} alt="attached" />
+            {/if}
             <div class="msg-body">{m.content}</div>
 
             {#if m.role === "assistant" && m.citations && m.citations.length > 0}
@@ -249,7 +324,29 @@
     {/if}
 
     <!-- ── Composer ─────────────────────────────────────────────────────────── -->
-    <div class="field" style="margin: 14px 0 0;">
+    {#if isVision}
+      <div class="row" style="gap: 8px; margin: 14px 0 0; align-items: center;">
+        <input
+          bind:this={imgInput}
+          type="file"
+          accept="image/png,image/jpeg,image/webp"
+          onchange={onImagePicked}
+          style="display: none;"
+          id="pg-image"
+        />
+        <button class="ghost sm" onclick={() => imgInput?.click()} disabled={sending || !keyLooksValid}>
+          Attach image
+        </button>
+        {#if attachedImage}
+          <img class="attach-thumb" src={attachedImage} alt="to send" />
+          <span class="mono" style="font-size: 12px;">{attachedName}</span>
+          <button class="danger ghost sm" onclick={clearImage} disabled={sending}>Remove</button>
+        {:else}
+          <small class="muted">PNG, JPEG or WebP, ≤ {MAX_IMAGE_MB} MB — sent inline with your next message.</small>
+        {/if}
+      </div>
+    {/if}
+    <div class="field" style="margin: {isVision ? '8px' : '14px'} 0 0;">
       <label for="pg-input">Message</label>
       <textarea
         id="pg-input"
@@ -261,7 +358,15 @@
       ></textarea>
     </div>
     <div class="row between">
-      <small class="muted">{project.type === "rag" ? "Retrieval-augmented — cited from your documents." : "Served by your fine-tuned model."}</small>
+      <small class="muted">
+        {#if isVision}
+          Vision endpoint — attach an image and ask about it.
+        {:else if project.type === "rag"}
+          Retrieval-augmented — cited from your documents.
+        {:else}
+          Served by your fine-tuned model.
+        {/if}
+      </small>
       <button class="primary" onclick={send} disabled={!canSend}>
         {#if sending}<span class="spinner"></span>{/if}
         Send
@@ -303,5 +408,20 @@
     width: 100%;
     resize: vertical;
     font: inherit;
+  }
+  .msg-img {
+    max-width: 220px;
+    max-height: 160px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    margin-bottom: 6px;
+    display: block;
+  }
+  .attach-thumb {
+    width: 36px;
+    height: 36px;
+    object-fit: cover;
+    border-radius: 4px;
+    border: 1px solid var(--border);
   }
 </style>

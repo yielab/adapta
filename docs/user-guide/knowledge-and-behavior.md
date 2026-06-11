@@ -162,6 +162,80 @@ template (**behavior**). The raw HTTP response also carries `citations`
 pointing at the manual passages used, so your app can show "source: service
 manual §4.2".
 
+## Image understanding — vision fine-tunes
+
+A project on a **vision base model** (`qwen2.5-vl-3b-instruct` in the catalog)
+fine-tunes on **image + prompt → response** examples and serves an endpoint
+that accepts images. It teaches the model to read *your* images in *your*
+output format. Image **understanding** only — the platform never generates
+images.
+
+Real-life cases:
+
+| Your situation | Why a vision fine-tune |
+|---|---|
+| "Extract vendor, date and totals from our scanned invoices into our JSON schema" | A generic VLM doesn't know your layouts or schema; 50–300 labeled examples teach both. |
+| "Classify product photos against our internal defect taxonomy" | Your categories are private; the model learns them from examples — on your hardware. |
+| "Read handwritten intake forms into structured fields" | Exactly the documents privacy-bound teams refuse to send to cloud APIs. |
+
+### Dataset — a zip bundle
+
+Images can't live in a JSONL line, so a vision dataset is a **`.zip` bundle**:
+your images plus one manifest at the root. Each row points at its image by
+bundle-relative path:
+
+```text
+invoices.zip
+├── data.jsonl
+└── images/
+    ├── invoice_001.png
+    └── invoice_002.jpg
+```
+
+```json
+{"prompt": "Extract vendor, date and total as JSON.", "response": "{\"vendor\": \"Acme GmbH\", \"date\": \"2026-05-02\", \"total\": \"412.50\"}", "images": ["images/invoice_001.png"]}
+```
+
+`prompt`/`response` as in text datasets; `images` is required with **exactly
+one** bundle-relative path (png, jpg, jpeg or webp; ≤ 10 MB and ≤ 8192 px per
+image; ≤ 500 MB uncompressed and ≤ 2000 files per bundle). Upload it to the
+same endpoint (`POST …/datasets`, or the fine-tune flow in the console) — the
+server extracts, validates every row *and* every image, and reports
+`modality: "vision"` with an image count. Training, the eval gate, and adapter
+conversion then run exactly like a text fine-tune: held-out rows score the
+adapter on images it never trained on, and an unverified adapter never serves.
+
+### Calling a vision endpoint
+
+Send OpenAI image content-parts with the image **inline as a data URL** (the
+server never fetches remote image URLs):
+
+```python
+import base64
+from openai import OpenAI
+
+client = OpenAI(base_url="http://localhost:8000/v1", api_key=KEY)
+
+with open("invoice_huber_may.png", "rb") as f:
+    data_url = "data:image/png;base64," + base64.b64encode(f.read()).decode()
+
+r = client.chat.completions.create(
+    model=SLUG,  # a vision endpoint's slug
+    messages=[{"role": "user", "content": [
+        {"type": "image_url", "image_url": {"url": data_url}},
+        {"type": "text", "text": "Extract vendor, date and total as JSON."},
+    ]}],
+)
+print(r.choices[0].message.content)
+# {"vendor": "Huber & Söhne KG", "date": "2026-05-17", "total": "1,284.00"}
+```
+
+v1 limits, by design: requests with images are non-streaming (`stream: false`),
+up to 4 images per request, and skip document retrieval (text-only requests on
+the same endpoint still answer from indexed documents with citations). Sending
+an image to a *text* endpoint returns a clear 400 — create the project on a
+vision base instead.
+
 ## Realistic expectations
 
 - **Knowledge is live**: add or remove a manual and re-index — the very next

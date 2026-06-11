@@ -39,6 +39,7 @@ from brain.api.v1 import (
     files,
     jobs,
     keys,
+    models,
     projects,
     synthesis,
     usage,
@@ -318,6 +319,7 @@ def create_app() -> FastAPI:
     # v1 routers
     prefix = "/v1"
     app.include_router(auth.router, prefix=prefix)
+    app.include_router(models.router, prefix=prefix)
     app.include_router(projects.router, prefix=prefix)
     app.include_router(files.router, prefix=prefix)
     app.include_router(datasets.router, prefix=prefix)

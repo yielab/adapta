@@ -5,6 +5,7 @@ import type {
   Project,
   ProjectType,
   ProjectFile,
+  BaseModelInfo,
   Dataset,
   TrainingJob,
   Endpoint,
@@ -12,6 +13,7 @@ import type {
   ApiKeyCreated,
   UsageResponse,
   ChatCompletion,
+  WireChatMessage,
 } from "./types";
 
 // Same-origin: the console is served by the app under /console/, so /v1/* is a
@@ -96,6 +98,9 @@ export const api = {
     request<{ access_token: string }>(`${V1}/auth/login`, { method: "POST", auth: false, body: { email, password } }),
   me: () => request<User>(`${V1}/auth/me`),
 
+  // Base-model catalog (SSOT for the dropdown + modality-aware UI, §V5)
+  listModels: () => request<BaseModelInfo[]>(`${V1}/models`),
+
   // Projects
   listProjects: (teamId: string) => request<Project[]>(`${V1}/projects?team_id=${encodeURIComponent(teamId)}`),
   createProject: (p: { name: string; type: ProjectType; base_model: string; description?: string; team_id: string }) =>
@@ -134,7 +139,7 @@ export const api = {
   getUsage: (pid: string) => request<UsageResponse>(`${V1}/projects/${pid}/usage`),
 
   // Chat (uses a scoped brn_ key, NOT the JWT — auth:false + manual header)
-  chat: (slug: string, brnKey: string, messages: { role: string; content: string }[]) =>
+  chat: (slug: string, brnKey: string, messages: WireChatMessage[]) =>
     fetch(`${V1}/chat/completions`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${brnKey}` },
