@@ -779,9 +779,133 @@ thin client over the **existing** API — every screen maps 1:1 to an endpoint a
 
 ---
 
+## V. Image fine-tuning (VLM) — scope-gated workstream (approved for planning 2026-06-10)
+
+> **What this is:** add **image-understanding fine-tunes** — vision-language models (image + text in →
+> text out), LoRA-tuned on the customer's data and served through the existing OpenAI-compatible
+> endpoint (OpenAI already defines image content-parts). **What this is NOT:** image *generation*
+> (Stable-Diffusion-style) — permanently out of scope.
+>
+> **Why (CTO rationale):** the killer self-hosted use case is **private document AI** — invoices,
+> scanned forms, handwritten intake sheets → structured extraction in the customer's schema — plus
+> visual QC/inspection in the customer's taxonomy. These are exactly the images privacy-bound orgs
+> refuse to send to cloud APIs, and a generic VLM doesn't know their layouts or output formats.
+> RAG cannot substitute: today an image is simply not understood at all, so this adds a capability,
+> not an alternative. Prerequisite (text pipeline proven end-to-end) was met 2026-06-10 (§A3.1/§A3.6).
+>
+> **Architecture bet:** extend Strategy A (one llama-cpp serving runtime). llama.cpp serves VLMs as
+> base GGUF + an `mmproj` (vision projector) file; with the **vision tower frozen** and LoRA only on
+> the language-model layers, the existing PEFT→GGUF conversion (`convert_lora_to_gguf.py`, vendored
+> at `/opt/llamacpp`, tag `b4576`) and `lora_path=` serving should extend unchanged. **That bet is
+> unproven — V0 is a kill-or-commit gate; nothing past V0 starts until both spikes pass.**
+> Estimated total after V0: ~5–7 weeks single-developer.
+
+### V0. Decision + feasibility spikes (P0 of this workstream — KILL-OR-COMMIT)
+
+#### V0.1 `[CTO]` Product-definition amendment
+- [ ] **Context.** Vision was cut in Phase 0 (§A3.5 deleted the dead code) and the scope doc is locked. Re-admitting it must go through the SSOT, bounded tightly.
+- [ ] **Steps.** Amend `docs/reference/PRODUCT_DEFINITION.md`: image-*understanding* fine-tune (image+text→text) in; image *generation* explicitly permanently out; medical-diagnosis positioning excluded (document/report drafting only). Update CLAUDE.md's product summary. Replace the "Images / vision — removed" line with the bounded re-admission.
+- [ ] **Acceptance.** Amendment committed; §6's "Multimodal RAG" future bullet cross-references this workstream instead of floating free.
+
+#### V0.2 `[BE]` Spike: serve a stock VLM through the existing runtime
+- [ ] **Context.** The single-runtime bet rests on llama-cpp-python serving base GGUF + mmproj at our pinned llama.cpp tag.
+- [ ] **Steps.** (1) Pick 2 candidate architectures (LLaVA-1.6-Mistral-7B, Qwen2-VL-2B/7B — verify GGUF+mmproj support at `b4576`; a pin bump is its own recorded decision). (2) Scratch script in the worker container: load base GGUF + `clip_model_path=mmproj` via the chat handler, send one image, get a description. (3) Measure load time, VRAM, tokens/s on GPU **and** CPU (the app container is CPU-only — record whether CPU VLM serving is shippable or vision endpoints are honestly GPU-only).
+- [ ] **Acceptance.** A committed matrix: arch × {serves at pin?, VRAM, t/s GPU, t/s CPU}; one arch chosen for v1.
+
+#### V0.3 `[BE]` Spike: VLM QLoRA → GGUF LoRA → served adapter ("visual Quoria")
+- [ ] **Context.** The unproven link: a PEFT adapter trained on a VLM must convert with `convert_lora_to_gguf.py` and load alongside mmproj. Constraint to verify: **vision tower frozen, LoRA on LM projection modules only** (vision-tower LoRA likely doesn't convert).
+- [ ] **Steps.** (1) QLoRA the chosen arch on ~30 synthetic pairs teaching an invented association (image of X → invented word). (2) Convert adapter → `.gguf`. (3) Serve base+mmproj+`lora_path`; assert the invented word appears with the image and not from the base model — mirroring `test_lora_e2e.py`'s proof exactly.
+- [ ] **Acceptance.** Invented-word assertion passes on the live GPU. **If V0.2 or V0.3 fails after reasonable effort: STOP** and re-decide with the fallback on the table (Strategy B: transformers-based GPU serving for vision endpoints — a much larger lift; likely "defer feature").
+
+### V1. Contracts first (all three SDD pillars fire)
+
+#### V1.1 `[BE]` Dataset contract v2 (Pillar 3 SSOT)
+- [ ] **Steps.** Extend `specs/schemas/training_dataset.schema.json`: optional `images: array[string]` of paths **relative to the dataset bundle** (exactly 1 image/row in v1; array for forward-compat). Update the `$comment` gate note: response-only CE unchanged — image tokens are context, masked from loss like prompt tokens. Document allowed formats/caps in the schema description. Text-only rows (no `images` key) stay valid — full back-compat.
+- [ ] **Acceptance.** `jsonschema` validates both text-only and image rows; existing datasets unaffected.
+
+#### V1.2 `[BE]` OpenAPI contract (Pillar 1)
+- [ ] **Steps.** In `specs/openapi.yaml`: (1) dataset upload gains a zip-bundle variant (multipart; JSONL manifest + `images/` dir), `modality` on DatasetResponse; (2) chat `content` becomes `string | ContentPart[]` with `{type: "text"|"image_url"}` (OpenAI-compatible, base64 data-URLs; max size/count documented); (3) typed error documented for image content sent to a text endpoint. Then `make generate` + `make check-models` + `make validate-spec`.
+- [ ] **Acceptance.** Spec valid; generated models committed; contract gate green on unchanged ops.
+
+#### V1.3 `[BE]` DB migration (Pillar 2)
+- [ ] **Steps.** Alembic migration: `datasets.modality` (string, default `text`), `datasets.num_images`. Project modality derives from the `base_model` catalog entry — confirm no `projects` column is needed. Vision training knobs live in the existing `training_config` JSON (no column).
+- [ ] **Acceptance.** `make migrate-test` up→down→up clean.
+
+#### V1.4 `[BE]` Model catalog v2
+- [ ] **Steps.** Extend `brain/core/model_catalog.py` entries with `mmproj_path: Optional`, `modality: text|vision`, VRAM notes (real numbers from V0.2/V0.3). Project-creation validation and the console dropdown pick it up for free (§A3.3 pattern).
+- [ ] **Acceptance.** A vision entry resolves HF id + GGUF + mmproj from one declaration; text entries unchanged.
+
+### V2. Data plane — bundle upload + validation
+
+#### V2.1 `[BE]` Zip-bundle dataset upload
+- [ ] **Steps.** Accept `.zip` in the dataset upload path; extract under the dataset's storage dir with **zip-slip protection** (reject absolute/`..` entries), caps on total size / file count / per-image size; whitelist `png/jpg/jpeg/webp` + the manifest JSONL. Plain JSONL upload unchanged (text path).
+- [ ] **Files.** `brain/api/v1/datasets.py`, `brain/services/training.py`, `brain/config.py` (caps).
+- [ ] **Acceptance.** Traversal zip → typed 422; oversized bundle → 422; clean bundle extracts and validates.
+
+#### V2.2 `[BE]` `validate_dataset` v2
+- [ ] **Steps.** Per row with `images`: path resolves inside the bundle, file decodes (PIL `verify()`), resolution/format within caps; report `num_samples` + `num_images`; per-line typed errors as today. Image rows against a text-modality base → validation error naming the mismatch.
+- [ ] **Acceptance.** Missing/corrupt/oversized image on line N → `"Line N: …"`; valid bundle → `valid` with both counts.
+
+#### V2.3 `[BE]` Provenance covers images
+- [ ] **Steps.** `build_provenance`'s dataset hash becomes a manifest hash: JSONL bytes + each image's sha256, order-stable (one changed pixel → different hash).
+- [ ] **Files.** `brain/training/provenance.py`, `tests/test_provenance.py`.
+
+### V3. Training + eval in the worker
+
+#### V3.1 `[OPS]` Worker dependencies
+- [ ] **Steps.** Pin in `pyproject.toml [training]`: transformers version supporting the chosen arch, `pillow`; verify bitsandbytes/PEFT compat; `make up` rebuild; record worker image-size delta. (Constraint #2 — never manual pip.)
+
+#### V3.2 `[BE]` Trainer: modality branch
+- [ ] **Context.** Trainer is text-only (`AutoTokenizer` + `AutoModelForCausalLM`). Also: `trainer.py`'s `preprocess_function` reads `examples["messages"]`, which doesn't match the prompt/response schema — verify which path the validated GPU e2e exercised and align while in here.
+- [ ] **Steps.** (1) Branch on catalog modality: `AutoProcessor` + the arch's model class. (2) **Vision tower frozen; `target_modules` = LM projection layers only** — hard constraint from V0.3 (GGUF-LoRA convertibility); enforce in `TrainingConfig` validation, not operator-overridable. (3) Collator producing `pixel_values` + labels with prompt **and image** positions masked −100. (4) `split_holdout` unchanged (row-based).
+- [ ] **Files.** `brain/training/trainer.py`, `brain/training/models.py`, `brain/worker/main.py` (pass bundle dir so relative image paths resolve).
+- [ ] **Acceptance.** A vision job trains on GPU; loss decreases; adapter + `training_metadata.json` provenance saved.
+
+#### V3.3 `[BE]` Evaluator: image-aware forward pass
+- [ ] **Steps.** Processor + VLM (+`PeftModel` for the adapter case); per held-out row, forward with the image, response-only CE. **`passes_eval_gate` (absolute OR improvement, §A4.13) is reused unchanged** — the dual gate transfers cleanly.
+- [ ] **Files.** `brain/training/evaluator.py`, `tests/test_eval_gate.py` (vision cases, mocked forward).
+- [ ] **Acceptance.** Gate verdict + full `eval_metrics` (score, base_score, delta, sample predictions) persist exactly as for text.
+
+#### V3.4 `[BE]` Adapter conversion for VLM
+- [ ] **Steps.** Productionize V0.3: run the LM-only PEFT adapter through the existing conversion step; store `.gguf` beside safetensors; typed error path on conversion failure.
+- [ ] **Files.** `brain/worker/main.py` / `brain/services/adapters.py`.
+- [ ] **Acceptance.** A passed vision job registers with a loadable `.gguf` adapter path.
+
+#### V3.5 `[OPS]` Resource guards + sizing docs
+- [ ] **Steps.** Extend §A4.12 preflights: VRAM note per catalog entry; disk preflight accounts for image bundles; `docs/reference/OPERATIONS.md` host-sizing table gains the measured VLM numbers from V0.
+
+### V4. Serving
+
+#### V4.1 `[BE]` `model_manager`: multimodal load
+- [ ] **Steps.** When the catalog entry has `mmproj_path`: construct the `Llama` with the arch's chat handler (`clip_model_path=…`) plus `lora_path=` as today. Cache key/inference lock already key on `(base, adapter)` — mmproj rides on the catalog entry. §A4.1 lock/timeout and §A4.8 LRU semantics unchanged (vision models are bigger — flag a per-entry cache weight as a follow-up, don't solve in v1). Wrap, don't rewrite (constraint #1).
+- [ ] **Files.** `brain/core/model_manager.py`.
+
+#### V4.2 `[BE]` Chat: OpenAI image content-parts
+- [ ] **Steps.** (1) `chat.py` accepts `content` parts; decode base64 data-URLs (size/count caps → typed 422); pass images to the chat-handler call. (2) Image content on a text endpoint → typed `InvalidRequest`, never a crash. (3) Usage metering counts image tokens in `prompt_tokens` (verify llama.cpp reporting in V0.2). (4) **Design decision to record:** whether §A3.6 text-RAG composition also runs for vision endpoints in v1 (project has indexed docs + image input) or is deferred — simplest honest answer first.
+- [ ] **Files.** `brain/services/chat.py`, `brain/api/v1/chat.py`.
+- [ ] **Acceptance.** An OpenAI SDK client sends `{type:"image_url"}` parts to a vision endpoint and gets a grounded answer; same payload to a text endpoint → typed 422.
+
+#### V4.3 `[BE]` Context-fit guard with images
+- [ ] **Steps.** Extend §A4.3's `_fit_context`: image patches consume context tokens (per-arch count from V0.2); an unfittable image+prompt → typed 422, never silent truncation.
+
+### V5. Console + docs
+
+- [ ] **V5.1** `[FE]` `FinetuneFlow.svelte`: modality follows the chosen base model; zip-bundle upload with image-count/size feedback; per-line validation errors; small thumbnail preview of a few dataset rows.
+- [ ] **V5.2** `[FE]` Playground: image-attach (base64 → content-part) when the endpoint's modality is vision.
+- [ ] **V5.3** `[DOCS]` User guide: extend *Knowledge + behavior together* (or a sibling page) with the vision use cases (document extraction, visual QC) and a worked example; OPERATIONS sizing; API reference regenerates from the spec.
+
+### V6. Hardening + gates (exit criteria)
+
+- [ ] **V6.1** Contract gate green over the new surface (`make test-contracts`, zero 5xx — schemathesis will fuzz the content-parts union and multipart hard; budget time).
+- [ ] **V6.2** GPU e2e: `tests/integration/test_vlm_lora_e2e.py` — the "visual Quoria" proof as a permanent opt-in test, mirroring `test_lora_e2e.py`.
+- [ ] **V6.3** Migration round-trip in CI `full`; `make ci` green offline; boot smoke covers new imports.
+- [ ] **V6.4** TODO status snapshot updated; §V tasks closed with verification notes.
+
+---
+
 ## 6. Future — deferred, not promised
 
-- [ ] Multimodal RAG (CLIP + vision model)
+- [ ] Multimodal RAG (CLIP image *retrieval*) — distinct from §V (which is image *understanding* via VLM fine-tune); revisit after §V ships
 - [ ] Hosted/multi-tenant SaaS edition
 - [ ] Heavy MLOps (MLflow, DVC)
 - [ ] Additional API protocols (Anthropic/MCP/Responses)
