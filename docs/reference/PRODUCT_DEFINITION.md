@@ -91,7 +91,7 @@ Serving **composes the project's artifacts** rather than switching on its type. 
 
 A bundled, **operator-facing** web console ships with the appliance. It is **not a second product surface**: it is a thin client over the **existing** API — every screen maps 1:1 to an endpoint already in `specs/openapi.yaml`, served same-origin from the `app` container (no new server capability, no new external protocol, no Node toolchain). The **OpenAI-compatible API remains the only protocol a customer's *applications* call**; the console is how a *human operator* drives setup (projects, files/datasets, training, eval gate, keys, a test playground). It honors the framing rule below: it never calls RAG "training." Build spec: [TODO.md §5](../roadmap.md).
 
-### In scope — image-understanding fine-tunes (approved 2026-06-11, building)
+### In scope — image-understanding fine-tunes (approved 2026-06-11, shipped 2026-06-11)
 
 Service B extends to **vision-language models**: image + text in → text out, LoRA-tuned on the customer's image/instruction pairs and served through the **same** OpenAI-compatible endpoint (OpenAI's standard image content-parts). The use case is **private document AI and visual inspection** — invoices, scanned forms, handwritten intake sheets, QC photos → answers/extractions in the customer's own schema and taxonomy: exactly the images privacy-bound organizations refuse to send to cloud APIs, and a capability RAG cannot substitute (an image is otherwise not understood at all).
 
@@ -101,7 +101,10 @@ Bounds, fixed at approval:
 - **Not a medical device.** Positioning is document/report drafting assistance — never diagnosis.
 - **One serving runtime.** VLMs serve as base GGUF + vision projector (mmproj) through the existing llama-cpp engine; the fine-tune trains the language half only (vision tower frozen), so the existing PEFT→GGUF conversion and eval-gate semantics (response-only loss, absolute-or-improvement) carry over unchanged. Both halves of this bet were proven by the V0 kill-or-commit spikes (2026-06-10/11) before scope was unlocked.
 
-Build plan: [TODO.md §V](../roadmap.md).
+Shipped end to end (§V0–V6): zip dataset bundles → VLM QLoRA on the worker
+(vision tower frozen) → held-out eval gate → GGUF conversion → serving with
+OpenAI image content-parts → console flows + user guide. Build record:
+[TODO.md §V](../roadmap.md).
 
 ## 4. Architecture (self-hosted, on-prem)
 

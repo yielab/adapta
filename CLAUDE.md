@@ -9,7 +9,7 @@
 
 Serving **composes the project's artifacts**: a fine-tune project can also upload/index documents, and its endpoint then injects retrieved context (with citations) **and** applies the adapter in one call — facts from RAG, tone/format from the fine-tune. Those documents are also what synthesis reads.
 
-**Image-understanding fine-tunes are in scope as of 2026-06-11** (building — TODO §V): VLM LoRA (image+text→text, vision tower frozen) served as base GGUF + mmproj through the same llama-cpp runtime. Image *generation* is permanently out.
+**Image-understanding fine-tunes shipped 2026-06-11** (§V complete): VLM LoRA (image+text→text, vision tower frozen) trained from zip dataset bundles, gated on held-out rows, converted to GGUF, and served as base GGUF + mmproj through the same llama-cpp runtime with OpenAI image content-parts (data-URLs only; v1: non-streaming, no RAG composition with image input). Image *generation* is permanently out.
 
 Self-hosted, multi-user: registering creates an organization with you as its admin; teammates join an existing org via invites. A development admin (`admin@example.com` / `admin12345`) is seeded on an empty DB (`BRAIN_SEED_DEFAULT_ADMIN`, on by default in compose). **Authoritative scope:** [docs/reference/PRODUCT_DEFINITION.md](docs/reference/PRODUCT_DEFINITION.md). The UI never calls RAG "training" — it asks *"give it knowledge"* (RAG) vs *"change how it behaves"* (fine-tuning).
 
