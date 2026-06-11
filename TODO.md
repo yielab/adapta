@@ -802,10 +802,8 @@ thin client over the **existing** API — every screen maps 1:1 to an endpoint a
 
 ### V0. Decision + feasibility spikes (P0 of this workstream — KILL-OR-COMMIT)
 
-#### V0.1 `[CTO]` Product-definition amendment
-- [ ] **Context.** Vision was cut in Phase 0 (§A3.5 deleted the dead code) and the scope doc is locked. Re-admitting it must go through the SSOT, bounded tightly.
-- [ ] **Steps.** Amend `docs/reference/PRODUCT_DEFINITION.md`: image-*understanding* fine-tune (image+text→text) in; image *generation* explicitly permanently out; medical-diagnosis positioning excluded (document/report drafting only). Update CLAUDE.md's product summary. Replace the "Images / vision — removed" line with the bounded re-admission.
-- [ ] **Acceptance.** Amendment committed; §6's "Multimodal RAG" future bullet cross-references this workstream instead of floating free.
+#### V0.1 `[CTO]` Product-definition amendment — ✅ DONE (2026-06-11)
+- [x] **Done** (after both V0 spikes passed). PRODUCT_DEFINITION gained *"In scope — image-understanding fine-tunes (approved 2026-06-11, building)"* with the three bounds (understanding only — generation permanently out; not a medical device; one serving runtime, vision tower frozen); the out-of-scope line now reads "Image **generation** — permanently out" with the re-admission cross-reference. CLAUDE.md product summary updated. §6's Multimodal-RAG bullet already cross-references §V.
 
 #### V0.2 `[BE]` Spike: serve a stock VLM through the existing runtime — ✅ PASSED (2026-06-10)
 
@@ -824,21 +822,18 @@ thin client over the **existing** API — every screen maps 1:1 to an endpoint a
 
 ### V1. Contracts first (all three SDD pillars fire)
 
-#### V1.1 `[BE]` Dataset contract v2 (Pillar 3 SSOT)
-- [ ] **Steps.** Extend `specs/schemas/training_dataset.schema.json`: optional `images: array[string]` of paths **relative to the dataset bundle** (exactly 1 image/row in v1; array for forward-compat). Update the `$comment` gate note: response-only CE unchanged — image tokens are context, masked from loss like prompt tokens. Document allowed formats/caps in the schema description. Text-only rows (no `images` key) stay valid — full back-compat.
-- [ ] **Acceptance.** `jsonschema` validates both text-only and image rows; existing datasets unaffected.
+#### V1.1 `[BE]` Dataset contract v2 (Pillar 3 SSOT) — ✅ DONE (2026-06-11)
+- [x] **Done.** `training_dataset.schema.json` gained the optional `images: array[string]` field (paths relative to the dataset bundle; exactly 1/row in v1, array for forward-compat; png/jpg/jpeg/webp; gate semantics unchanged — image tokens are masked context). Text rows unaffected. **Guard until §V2/§V3 ship:** `validate_dataset` rejects `images` rows with an explicit "being built (roadmap §V)" message rather than accepting a dataset that would fail mid-train (`test_dataset_validation_image_rows_rejected_until_v3`).
 
-#### V1.2 `[BE]` OpenAPI contract (Pillar 1)
-- [ ] **Steps.** In `specs/openapi.yaml`: (1) dataset upload gains a zip-bundle variant (multipart; JSONL manifest + `images/` dir), `modality` on DatasetResponse; (2) chat `content` becomes `string | ContentPart[]` with `{type: "text"|"image_url"}` (OpenAI-compatible, base64 data-URLs; max size/count documented); (3) typed error documented for image content sent to a text endpoint. Then `make generate` + `make check-models` + `make validate-spec`.
-- [ ] **Acceptance.** Spec valid; generated models committed; contract gate green on unchanged ops.
+#### V1.2 `[BE]` OpenAPI contract (Pillar 1) — ⏩ re-sequenced to land WITH its implementations
+- [ ] **Re-sequencing note (2026-06-11).** Advertising request formats the live server rejects (zip bundles, image content-parts) would make the spec lie for weeks and trip the contract gate's positive-acceptance checks. Each spec piece lands contract-first *within its implementing task*: zip-bundle upload + `modality` on DatasetResponse → **V2.1**; chat `content: string | ContentPart[]` + the text-endpoint typed error → **V4.2**; catalog `modality` in the projects surface → with the first vision entry (**V4.1**).
+- [ ] **Acceptance.** Unchanged: spec valid; generated models committed; contract gate green — verified per implementing task.
 
-#### V1.3 `[BE]` DB migration (Pillar 2)
-- [ ] **Steps.** Alembic migration: `datasets.modality` (string, default `text`), `datasets.num_images`. Project modality derives from the `base_model` catalog entry — confirm no `projects` column is needed. Vision training knobs live in the existing `training_config` JSON (no column).
-- [ ] **Acceptance.** `make migrate-test` up→down→up clean.
+#### V1.3 `[BE]` DB migration (Pillar 2) — ✅ DONE (2026-06-11)
+- [x] **Done.** Migration `0007_dataset_modality.py`: `datasets.modality` (String(16), NOT NULL, server_default `text` — backfills every existing row) + `datasets.num_images` (nullable). ORM updated. Project modality confirmed derivable from the catalog entry — no `projects` column. Vision knobs stay in `training_config` JSON. `make migrate-test` up→down→up clean.
 
-#### V1.4 `[BE]` Model catalog v2
-- [ ] **Steps.** Extend `brain/core/model_catalog.py` entries with `mmproj_path: Optional`, `modality: text|vision`, VRAM notes (real numbers from V0.2/V0.3). Project-creation validation and the console dropdown pick it up for free (§A3.3 pattern).
-- [ ] **Acceptance.** A vision entry resolves HF id + GGUF + mmproj from one declaration; text entries unchanged.
+#### V1.4 `[BE]` Model catalog v2 — ✅ DONE (2026-06-11)
+- [x] **Done.** `CatalogEntry` gained `modality: "text"|"vision"` (default `text`) and `mmproj_filename` + `mmproj_path()` (same subdir as the base GGUF). All current entries unchanged (text). The first **vision** entry (qwen2.5-vl-3b, artifacts already at `data/models/qwen2.5-vl-3b/`) is added in **V4.1** when it is servable end-to-end — listing it earlier would offer operators a base model that can't serve.
 
 ### V2. Data plane — bundle upload + validation
 

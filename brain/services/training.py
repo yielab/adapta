@@ -51,6 +51,15 @@ def validate_dataset(path: Path) -> tuple[bool, Optional[str], int]:
                     return False, f"Line {i}: missing or empty 'prompt' field", 0
                 if not isinstance(obj.get("response"), str) or not obj["response"].strip():
                     return False, f"Line {i}: missing or empty 'response' field", 0
+                if obj.get("images"):
+                    # Contract v2 admits image rows (§V), but the training path
+                    # doesn't ship until TODO §V2/§V3 — reject loudly rather than
+                    # accept a dataset that would fail mid-train.
+                    return False, (
+                        f"Line {i}: 'images' rows are not trainable yet — image "
+                        "fine-tuning is being built (roadmap §V). Remove the "
+                        "'images' field to train a text dataset."
+                    ), 0
 
                 if schema:
                     import jsonschema

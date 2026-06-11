@@ -46,6 +46,8 @@ dependencies = [
 [project.optional-dependencies]
 training = [
     "torch>=2.2.0",
+    # torchvision pairs with torch (VLM processors import it — §V image fine-tune).
+    "torchvision",
     "transformers>=4.38.0",
     "peft>=0.8.2",
     "datasets>=2.16.1",

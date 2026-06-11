@@ -224,6 +224,10 @@ class Dataset(Base):
     name: Mapped[str] = mapped_column(String(256), nullable=False)
     storage_path: Mapped[str] = mapped_column(String(512), nullable=False)
     num_samples: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    # §V image-understanding fine-tunes: "text" | "vision". Vision bundles also
+    # record how many images they carry (NULL for text datasets).
+    modality: Mapped[str] = mapped_column(String(16), nullable=False, default="text", server_default="text")
+    num_images: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     status: Mapped[DatasetStatus] = mapped_column(Enum(DatasetStatus, native_enum=False, length=16), nullable=False, default=DatasetStatus.uploaded)
     validation_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

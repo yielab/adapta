@@ -122,6 +122,21 @@ def test_dataset_validation_with_optional_fields(tmp_path):
     assert count == 1
 
 
+def test_dataset_validation_image_rows_rejected_until_v3(tmp_path):
+    """Contract v2 admits `images` rows (§V1.1), but they must be rejected with a
+    clear message until the training path ships (§V2/§V3) — never accepted into a
+    dataset that would fail mid-train."""
+    from brain.services.training import validate_dataset
+    ds = tmp_path / "data.jsonl"
+    ds.write_text(
+        json.dumps({"prompt": "What is this?", "response": "The emblem.", "images": ["images/a.png"]}) + "\n"
+    )
+    valid, error, count = validate_dataset(ds)
+    assert not valid
+    assert "images" in (error or "") and "§V" in (error or "")
+    assert count == 0
+
+
 def test_dataset_validation_missing_response(tmp_path):
     from brain.services.training import validate_dataset
     ds = tmp_path / "bad.jsonl"

@@ -79,7 +79,7 @@ Serving **composes the project's artifacts** rather than switching on its type. 
 
 ### Out of scope (deleted)
 
-- Images / vision (moondream2, vision endpoints) — removed.
+- Image **generation** (Stable-Diffusion-style) — permanently out. (The original moondream2 vision routes were deleted in Phase 0; image **understanding** was re-admitted, bounded, on 2026-06-11 — see the section below.)
 - Unified orchestrator mock — deleted; one real `ChatService` path.
 - Agent communication hub, agent A/B "evolution" — no consumer in this product.
 - Framework adapters (LangChain/LangGraph/OpenClaw) — dropped.
@@ -90,6 +90,18 @@ Serving **composes the project's artifacts** rather than switching on its type. 
 ### In scope — thin operator console (decided 2026-06-09)
 
 A bundled, **operator-facing** web console ships with the appliance. It is **not a second product surface**: it is a thin client over the **existing** API — every screen maps 1:1 to an endpoint already in `specs/openapi.yaml`, served same-origin from the `app` container (no new server capability, no new external protocol, no Node toolchain). The **OpenAI-compatible API remains the only protocol a customer's *applications* call**; the console is how a *human operator* drives setup (projects, files/datasets, training, eval gate, keys, a test playground). It honors the framing rule below: it never calls RAG "training." Build spec: [TODO.md §5](../roadmap.md).
+
+### In scope — image-understanding fine-tunes (approved 2026-06-11, building)
+
+Service B extends to **vision-language models**: image + text in → text out, LoRA-tuned on the customer's image/instruction pairs and served through the **same** OpenAI-compatible endpoint (OpenAI's standard image content-parts). The use case is **private document AI and visual inspection** — invoices, scanned forms, handwritten intake sheets, QC photos → answers/extractions in the customer's own schema and taxonomy: exactly the images privacy-bound organizations refuse to send to cloud APIs, and a capability RAG cannot substitute (an image is otherwise not understood at all).
+
+Bounds, fixed at approval:
+
+- **Image *understanding* only.** Image *generation* (Stable-Diffusion-style) is permanently out of scope.
+- **Not a medical device.** Positioning is document/report drafting assistance — never diagnosis.
+- **One serving runtime.** VLMs serve as base GGUF + vision projector (mmproj) through the existing llama-cpp engine; the fine-tune trains the language half only (vision tower frozen), so the existing PEFT→GGUF conversion and eval-gate semantics (response-only loss, absolute-or-improvement) carry over unchanged. Both halves of this bet were proven by the V0 kill-or-commit spikes (2026-06-10/11) before scope was unlocked.
+
+Build plan: [TODO.md §V](../roadmap.md).
 
 ## 4. Architecture (self-hosted, on-prem)
 

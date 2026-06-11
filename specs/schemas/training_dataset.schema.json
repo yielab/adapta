@@ -22,6 +22,13 @@
       "type": "string",
       "description": "Optional system prompt context."
     },
+    "images": {
+      "type": "array",
+      "description": "§V image-understanding fine-tunes: paths RELATIVE to the dataset bundle (zip) the row's image(s) live in. Exactly 1 image per row in v1 (the array is forward-compat). Image tokens are context like prompt tokens — masked from the eval-gate's response-only loss, so the gate semantics in $comment are unchanged. Formats: png/jpg/jpeg/webp. Rows without this key are plain text rows (full back-compat). NOTE: accepted by this schema ahead of the implementation; the upload validator rejects image rows with a clear message until the training path (TODO §V2/V3) ships.",
+      "items": {"type": "string", "minLength": 1},
+      "minItems": 1,
+      "maxItems": 1
+    },
     "metadata": {
       "type": "object",
       "description": "Optional arbitrary metadata (source, quality score, etc.)",

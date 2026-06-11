@@ -37,9 +37,20 @@ class CatalogEntry:
     gguf_filename: str  # preferred GGUF filename within that subdir
     model_type: ModelType
     notes: str = ""  # VRAM / quality tradeoff, surfaced to the operator console
+    # §V (image-understanding fine-tunes): a vision entry additionally declares
+    # the mmproj (vision projector) GGUF that serving loads beside the base.
+    # modality stays "text" for every current entry; the first "vision" entry
+    # lands with V3/V4 when it is trainable AND servable end-to-end.
+    modality: str = "text"  # "text" | "vision"
+    mmproj_filename: Optional[str] = None  # vision projector GGUF, same subdir
 
     def gguf_path(self) -> Path:
         return settings.models_dir / self.gguf_subdir / self.gguf_filename
+
+    def mmproj_path(self) -> Optional[Path]:
+        if self.mmproj_filename is None:
+            return None
+        return settings.models_dir / self.gguf_subdir / self.mmproj_filename
 
 
 # The catalog. Keyed by the operator-facing name; this is the value an operator
