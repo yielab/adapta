@@ -41,7 +41,6 @@ dependencies = [
     # General
     "httpx>=0.26.0",
     "pyyaml>=6.0.1",
-    "click>=8.1.7",
     "psutil>=5.9.0",
 ]
 
@@ -76,9 +75,6 @@ dev = [
     "openapi-spec-validator>=0.7.0",
     "import-linter>=2.0",
 ]
-
-[project.scripts]
-brain = "brain.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
@@ -115,17 +111,14 @@ warn_return_any = true
 warn_unused_configs = true
 ignore_missing_imports = true
 
-# Protected / legacy internals — not rewritten, only wrapped
+# Protected internals — wrapped, not rewritten (hard constraint #1)
 [[tool.mypy.overrides]]
 module = [
     "brain.core.inference",
     "brain.core.model_manager",
     "brain.training.trainer",
     "brain.training.evaluator",
-    "brain.training.job_manager",
-    "brain.training.data_manager",
     "brain.core.gpu",
-    "brain.core.cache",
     "brain.core.metrics",
 ]
 ignore_errors = true

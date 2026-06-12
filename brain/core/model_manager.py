@@ -235,7 +235,8 @@ class ModelManager:
                 else:
                     raise FileNotFoundError(
                         f"Model file not found: {config.path}\n"
-                        f"Please download the model first using: brain download {model_name}"
+                        "Download the base GGUF into the models volume first "
+                        "(huggingface-cli; see README §4 'Download a base model')."
                     )
 
             # Resolve + validate the GGUF LoRA adapter (A3.1), if any.
