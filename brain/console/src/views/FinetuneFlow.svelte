@@ -374,6 +374,31 @@
       documents you index here</strong> — facts from your documents (with
       citations), tone and format from the fine-tune.
     </p>
+    <div class="use-case-grid">
+      <div class="use-case-item">
+        <strong>Support voice</strong>
+        <span class="muted">Ticket history or chat logs → answers in your team's tone, format, and escalation rules.</span>
+      </div>
+      <div class="use-case-item">
+        <strong>Domain Q&amp;A</strong>
+        <span class="muted">Product docs, handbooks, or policies → accurate on-brand answers. <em>Synthesize</em> skips manual labeling.</span>
+      </div>
+      <div class="use-case-item">
+        <strong>Structured output</strong>
+        <span class="muted">Free-form text → consistent JSON, tables, or a fixed report format. Consistency across rows is what the model learns.</span>
+      </div>
+      {#if isVision}
+      <div class="use-case-item">
+        <strong>Image extraction</strong>
+        <span class="muted">Invoices, inspection forms, or photos → structured fields pulled from visual input.</span>
+      </div>
+      {:else}
+      <div class="use-case-item">
+        <strong>Code or writing style</strong>
+        <span class="muted">Before/after pairs that enforce a house style, naming convention, or editorial voice.</span>
+      </div>
+      {/if}
+    </div>
   </aside>
 
   <!-- ====================== DOCUMENTS (optional) ====================== -->
@@ -491,17 +516,20 @@
     </div>
 
     {#if isVision}
-      <p class="muted" style="margin: 0 0 12px;">
+      <p class="muted" style="margin: 0 0 6px;">
         This project fine-tunes a <strong>vision</strong> base — examples pair an
-        <strong>image</strong> with a prompt and the ideal response. Upload a
-        <span class="mono">.zip</span> bundle: your images plus one
-        <span class="mono">.jsonl</span> manifest at the root.
+        <strong>image</strong> with a prompt and the ideal response. Typical tasks:
+        invoice extraction, visual QC, form understanding, or image captioning in
+        your house style. Upload a <span class="mono">.zip</span> bundle: your
+        images plus one <span class="mono">data.jsonl</span> manifest at the root.
       </p>
     {:else}
-      <p class="muted" style="margin: 0 0 12px;">
-        Provide instruction examples as a <span class="mono">.jsonl</span> file, or
-        generate Q/A pairs automatically from the documents you indexed in step 1.
-      </p>
+      <p class="muted" style="margin: 0 0 4px; font-size: 13px;">Choose your path based on what you have:</p>
+      <ul class="approach-list">
+        <li><strong>Have documents?</strong> Index them in step 1, then click <strong>Synthesize</strong> — fastest path to a first dataset.</li>
+        <li><strong>Have logs or past examples?</strong> Export as prompt/response pairs and upload a <span class="mono">.jsonl</span> file.</li>
+        <li><strong>Want exact output format?</strong> Hand-write 50–100 focused examples of the input → output pattern you need.</li>
+      </ul>
     {/if}
 
     <!-- Collapsible: what a dataset is, its exact format, and where to get one. -->
@@ -509,12 +537,15 @@
       <details class="help" style="margin-bottom: 14px;">
         <summary>Image bundle format — what goes in the .zip</summary>
         <div class="help-body">
-          <h4>What an image dataset is</h4>
-          <p style="margin: 0;">
-            Example <strong>image + prompt → response</strong> triples that teach the
-            model to read <em>your</em> images in <em>your</em> output format —
-            invoices to your JSON schema, inspection photos to your defect taxonomy.
-            Image <strong>understanding</strong> only; this never generates images.
+          <h4>Common use cases</h4>
+          <ul style="margin: 0 0 4px; padding-left: 18px; line-height: 1.8;">
+            <li><strong>Document extraction</strong> — invoices, receipts, or purchase orders → structured JSON fields.</li>
+            <li><strong>Visual QC</strong> — inspection photos → defect classification, grading, or pass/fail verdict.</li>
+            <li><strong>Form understanding</strong> — scanned forms or ID documents → key-value extraction.</li>
+            <li><strong>Image captioning</strong> — product or facility photos → descriptions matching your style guide.</li>
+          </ul>
+          <p class="muted" style="margin: 0 0 4px; font-size: 13px;">
+            Image <strong>understanding</strong> only — this never generates images.
           </p>
 
           <h4>Bundle layout — a .zip with one manifest</h4>
@@ -531,12 +562,13 @@
             <li><code>system</code> (optional) — persona / context for the turn.</li>
           </ul>
 
-          <h4>Requirements & caps</h4>
+          <h4>Requirements & quality tips</h4>
           <ul>
             <li>At least <strong>{MIN_SAMPLES} valid rows</strong>; 30–300 focused examples go a long way.</li>
-            <li>≤ 10 MB and ≤ 8192 px per image; ≤ 500 MB uncompressed, ≤ 2000 files per bundle.</li>
+            <li><strong>Focus on one task per adapter</strong> — don't mix invoice extraction with QC inspection in the same dataset.</li>
             <li>Keep the response format identical across rows — format consistency is what the model learns.</li>
-            <li>The last ~20% of rows is held out for the eval gate and never trained on.</li>
+            <li>≤ 10 MB and ≤ 8192 px per image; ≤ 500 MB uncompressed, ≤ 2000 files per bundle.</li>
+            <li>The last ~20 % of rows is held out for the eval gate and never trained on.</li>
           </ul>
           <p style="margin: 10px 0 0;">
             <a href={DOCS_URL} target="_blank" rel="noopener">Full guide →</a>
@@ -545,15 +577,23 @@
       </details>
     {:else}
     <details class="help" style="margin-bottom: 14px;">
-      <summary>What a dataset is, the format, and where to get one</summary>
+      <summary>Use cases, format &amp; quality guide</summary>
       <div class="help-body">
-        <h4>What a dataset is</h4>
-        <p style="margin: 0;">
-          A set of example <strong>prompt → response</strong> pairs that show the
-          model the behavior you want — a tone, a format, a way of answering. It
-          learns the <em>pattern</em>, not the facts; for facts use the Knowledge
-          (RAG) path instead.
-        </p>
+        <h4>Common use cases</h4>
+        <ul style="margin: 0 0 4px; padding-left: 18px; line-height: 1.8;">
+          <li><strong>Support voice</strong> — export past tickets or chat logs as prompt/response pairs; the model learns your tone, format, and escalation rules.</li>
+          <li><strong>Domain Q&amp;A</strong> — have product docs or handbooks? Use <em>Synthesize</em> to auto-generate Q/A pairs. No manual labeling needed.</li>
+          <li><strong>Structured output</strong> — write focused examples of the exact input → JSON / table / report output you need. Consistency is what the model learns.</li>
+          <li><strong>Code or writing style</strong> — before/after pairs demonstrating a house style, naming convention, or editorial voice.</li>
+        </ul>
+
+        <h4>What makes a good dataset</h4>
+        <ul style="margin: 0 0 4px; padding-left: 18px; line-height: 1.8;">
+          <li><strong>Focus on one task.</strong> Don't mix a support-voice dataset with a JSON-extraction task — train a separate adapter for each.</li>
+          <li><strong>Consistent output format.</strong> If some responses are JSON and others are prose, the model learns the inconsistency too.</li>
+          <li><strong>Coverage over perfection.</strong> 100 diverse examples of the same task outperform 10 polished ones.</li>
+          <li><strong>Size to your holdout.</strong> The last ~20 % is reserved for the eval gate and never trained on — keep this in mind when sizing.</li>
+        </ul>
 
         <h4>Format — JSONL (one JSON object per line)</h4>
         <pre class="code" style="margin: 4px 0 8px; white-space: pre-wrap;">{`{"prompt": "Summarize this support ticket", "response": "Customer can't log in after the 2.3 update; cause is the expired token cache.", "system": "You are a concise support assistant."}`}</pre>
@@ -564,11 +604,10 @@
           <li><code>metadata</code> (optional) — free-form (source, quality score…).</li>
         </ul>
 
-        <h4>Requirements</h4>
+        <h4>Minimum requirements</h4>
         <ul>
-          <li>At least <strong>{MIN_SAMPLES} valid rows</strong>; aim for 50–500+ for a real effect.</li>
-          <li>Every <code>prompt</code> and <code>response</code> non-empty; keep the style consistent across rows.</li>
-          <li>The last ~20% is held out to score the result and is never trained on (the eval gate below).</li>
+          <li>At least <strong>{MIN_SAMPLES} valid rows</strong>; aim for 50–500+ for a noticeable effect.</li>
+          <li>Every <code>prompt</code> and <code>response</code> must be non-empty.</li>
         </ul>
 
         <h4>Where to get one</h4>
@@ -849,6 +888,32 @@
 
 <style>
   .explainer { background: var(--panel-2); }
+
+  .use-case-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    gap: 8px;
+    margin-top: 14px;
+  }
+  .use-case-item {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding: 10px 12px;
+    background: var(--panel-1);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 13px;
+  }
+  .use-case-item strong { font-size: 13px; }
+
+  .approach-list {
+    margin: 0 0 14px;
+    padding-left: 20px;
+    font-size: 14px;
+    line-height: 1.9;
+    color: var(--muted);
+  }
 
   .ds-err {
     margin-top: 6px;

@@ -15,8 +15,9 @@
 > | **TODO.md** (this file) | 🗺 Roadmap | **The only place with open tasks, priorities, acceptance** |
 >
 > Phases 0–5 (the product build) are **code-complete** as of 2026-06-08, all three SDD gates are green,
-> and the operator console shipped 2026-06-09. The current focus is **§A4** (staff audit, 2026-06-09):
-> concurrency-safe serving, crash-durable training jobs, and an auditable eval gate.
+> the operator console shipped 2026-06-09, the §A4 staff audit closed 2026-06-10, and §V (image
+> fine-tunes) shipped 2026-06-11. The current focus is **§C** (console v2, planned 2026-06-12):
+> model-catalog UX, informative project/endpoint dashboards, and a settings section.
 >
 > **Legend:** `[x]` done & verified · `[~]` partial / exists-but-not-wired · `[ ]` not started
 > **Priority:** **P0** blocks a trustworthy `main` · **P1** needed before first customer · **P2** nice-to-have
@@ -54,6 +55,7 @@ Honour the [Definition of done](#definition-of-done-per-task) on every task. Wor
 | Operator console (§5) | ✅ all views done (2026-06-09) — app shell, auth, projects, RAG flow, fine-tune flow, endpoint+keys, playground, usage, UX polish, mount+Docker+CI (C4 docs partial). Key-scoping (§5.12) enforced. |
 | Documentation system | ✅ **consolidated** (2026-06-10) — MkDocs Material site from `docs/` (User Guide / Developer Guide incl. a *Learning the system* deep-dive / Reference / Roadmap). API reference auto-rendered from `specs/openapi.yaml`, code reference auto from docstrings; `mkdocs build --strict` in the CI fast gate; published to GitHub Pages on push→main. Dead `examples/openclaw/` (cut scope) removed. |
 | **Staff audit (§A4)** | ✅ **complete** — all P0+P1 (A4.1–A4.9) and the full P2 batch (A4.10 stuck-task sweeper, A4.11 streaming prompt tokens, A4.12 ops hardening: disk-check path, chroma version guard, hyperparam bounds, image pinning, synthesis error-rate, GPU hygiene, backup.sh, ProjectStatus `ready`, Chroma retrieval timeout). |
+| **Console v2 (§C)** | 🗺 **planned** (2026-06-12) — model-catalog transparency (BaseModelInfo v2 + Models page + informative picker), project summary read-model + dashboard/Overview tab, endpoint provenance (adapter eval evidence on the card), settings section (account password, team/invitations UI, DB-backed whitelisted platform overrides, system status). Eval-gate knobs stay env-only by design. |
 | **Image fine-tunes (§V)** | ✅ **complete** (2026-06-11, V0–V6) — kill-or-commit spikes → contracts (V1) → data plane (V2: zip bundles, safe extraction) → worker training/eval/conversion (V3: VLM QLoRA, vision tower frozen, held-out dual gate, GGUF with both conversion caveats) → serving (V4: mmproj chat-handler, OpenAI image content-parts, image context-fit) → console + docs (V5: `GET /v1/models`, modality-aware flows, Playground image attach). **Proof:** GPU e2e end to end incl. the served leg (`test_vlm_lora_e2e.py`: held-out 1.000 vs base 0.011; served answer for an unseen emblem = the trained association); contract gate 1458/1458 zero 5xx; migration round-trip incl. 0007; boot imports green in both images. v1 limits by design: data-URL images only, ≤4/request, non-streaming, no RAG composition with image input. |
 
 ---
@@ -896,6 +898,311 @@ thin client over the **existing** API — every screen maps 1:1 to an endpoint a
 - [x] **V6.2** GPU e2e: `tests/integration/test_vlm_lora_e2e.py` (opt-in `BRAIN_RUN_VLM_E2E=1`, mirrors `test_lora_e2e.py`) — the full "visual Quoria" proof: bundle → queue → QLoRA → held-out gate (1.000 vs base 0.011) → GGUF → registry → endpoint → **served image answer = the trained association** (5:19 wall, second job in one worker process — also regression-proves the VRAM-cycle fix).
 - [x] **V6.3** Migration round-trip green incl. 0007 (`make migrate-test`: up→down→up + seeded round-trip, DB left clean — runs in CI `full`); `make ci` green offline (173 passed); boot imports verified in BOTH images (`brain.api.app` + `brain.worker.main`).
 - [x] **V6.4** Status snapshot updated (§V complete); every §V task closed with its verification note; PRODUCT_DEFINITION flipped to *shipped*; CLAUDE.md scope line updated.
+
+---
+
+## C. Console v2 — informative console: model-catalog UX, dashboards, settings (planned 2026-06-12)
+
+> **Why.** The §5 console proves the *flows* work, but the operator flies blind between them:
+> a project card shows five static fields (name, type, status, base model, date — `Projects.svelte:175-185`);
+> the base-model dropdown shows a bare name plus a "vision" flag, with the purpose/VRAM guidance
+> buried in a single free-text `notes` string ([brain/core/model_catalog.py:39](brain/core/model_catalog.py#L39));
+> the endpoint card omits *when* it was created and *which adapter at which eval score* it serves
+> ([brain/api/v1/endpoints.py:27-33](brain/api/v1/endpoints.py#L27)); there is **no settings surface at
+> all** — the sidebar has exactly one nav item ("Projects"), the invitation API (§3.1) has **no UI**
+> (the only way to onboard a teammate today is curl), and the console never reads `/health/deep` or
+> `/gpu`. This workstream makes the console *informative and practical*: the operator should always
+> see **what models exist and what each is for**, **where every project stands in its pipeline**,
+> **what an endpoint is actually serving**, and **a settings area for everything user-configurable**.
+>
+> **Scope guard (unchanged from §5):** the console stays a thin client over the API. If a screen
+> needs data the API doesn't expose, the **API contract changes first** (Pillar 1), never the UI
+> guessing. The OpenAI-compatible API remains the only protocol customer applications call.
+>
+> **Workstream labels:** `[BE]` / `[FE]` — tasks are agent-pickable independently.
+> **Dependency order:** C0 → C1.1 → {C1.2, C1.3} · C2.1 → {C2.2, C2.3} · C3.1 → C3.2 ·
+> C4.1 → {C4.2, C4.3, C4.6} · C4.4 → C4.5. C5 rides every phase.
+
+### C0. Architecture decisions (record before building) (P1)
+
+#### C0.1 Read-model strategy — summaries are embedded, computed in aggregate
+- [ ] **Context.** C2/C3 need per-project rollups (file/dataset/job/endpoint/usage counts). The naive
+  console-side approach is 5 extra requests per card — 50 projects = 250 calls.
+- [ ] **Decision to record.** Summary data is served by the API, not assembled client-side:
+  a `ProjectSummary` object embedded in the project list via `GET /v1/projects?team_id=…&include=summary`
+  (and always present on `GET /v1/projects/{id}/summary`), computed with **aggregate SQL grouped by
+  `project_id`** (a fixed number of queries per list call, independent of project count — no N+1).
+- [ ] **Acceptance.** The decision + rationale recorded here; C2.1 implements it.
+
+#### C0.2 Settings architecture — three tiers, the moat stays env-only
+- [ ] **Context.** "All configurable stuff" spans very different blast radii. [brain/config.py](brain/config.py)
+  is a single pydantic-settings class where `rag_top_k` (harmless, per-request) sits beside
+  `secret_key` and `eval_score_threshold` (security / the moat). A web UI must not flatten that.
+- [ ] **Decision to record.** Three tiers:
+  1. **Account (per-user):** password change — API + UI (C4.2).
+  2. **Org/team settings (DB-backed, admin-editable):** a **whitelisted** subset of runtime knobs
+     with per-key type+bounds, stored in a new table, resolved as **DB override → env → code default**
+     (C4.4). Candidate whitelist: generation defaults (`temperature`, `top_p`, `top_k`, `max_tokens`),
+     retrieval (`rag_top_k`, `chunk_size`, `chunk_overlap`), synthesis (`synthesis_max_error_rate`),
+     vision request caps (`max_images_per_request`).
+  3. **Host/runtime (env-only, read-only in UI):** secrets, DB/Redis URLs, dirs, CORS, inference
+     concurrency/timeouts, model-cache bound, **and the entire eval-gate family**
+     (`eval_score_threshold`, `eval_min_improvement`, `eval_min_floor`, `min_training_samples`).
+     **Rationale:** the eval gate is the product's safety promise (Pillar 3) — it must not be
+     relaxable from a browser session; weakening it requires deliberate host-level action.
+- [ ] **Acceptance.** Tier assignment for every `Settings` field recorded in the C4.4 whitelist
+  registry; anything not whitelisted is structurally unsettable via the API.
+
+### C1. Model catalog transparency — what models exist, what each is for (P1)
+
+#### C1.1 `[BE]` `BaseModelInfo` v2 — structured purpose/resources/availability (spec-first)
+- [ ] **Context.** `GET /v1/models` returns `{name, modality, description}` where `description` is
+  the catalog `notes` free-text mixing purpose and VRAM ("Default — RAG + fine-tune (~8-10 GB train)").
+  The console can't render guidance it can't parse; and nothing tells the operator whether the GGUF
+  is actually **on disk** (a model that validates at project creation but 500s at first serve).
+- [ ] **Scope.** Enrich the catalog SSOT + the listing; no new behavior elsewhere.
+- [ ] **Steps.** (1) Split `CatalogEntry.notes` into structured fields: `use_case` (one-line purpose,
+  e.g. "General chat + RAG default"), `best_for` (list drawn from {knowledge, behavior, code, vision}),
+  `train_vram_gb` (number), `serve_ram_gb` (number), keeping `notes` for the residual caveat text.
+  (2) Spec-first: extend `BaseModelInfo` with `model_type` (chat|code|reasoning), `use_case`,
+  `best_for[]`, `train_vram_gb`, `serve_ram_gb`, `hf_repo_id`, and **`available: bool`**
+  (= `gguf_path().exists()` and, for vision, `mmproj_path().exists()` too). (3) `make generate` +
+  `make check-models`. (4) Keep OPERATIONS §6.3 in sync (it stays the prose table; the catalog module
+  stays the SSOT).
+- [ ] **Files.** `brain/core/model_catalog.py`, `brain/api/v1/models.py`, `specs/openapi.yaml` +
+  regenerated models, `docs/reference/OPERATIONS.md` §6.3.
+- [ ] **Contract impact.** Pillar 1 (additive fields on `listModels`); contract gate must re-green.
+- [ ] **Acceptance.** `GET /v1/models` returns structured purpose/resource/availability per entry;
+  `available` flips correctly when a GGUF is present/absent; contract gate green; no free-text
+  parsing anywhere in the console.
+
+#### C1.2 `[FE]` Models page — the catalog as a first-class view (depends: C1.1)
+- [ ] **Context.** There is no place an operator can *browse* what the platform can run; the catalog
+  is only visible squeezed into a `<select>` at project creation.
+- [ ] **Steps.** New sidebar route `/models` → `Models.svelte`: one card per catalog entry showing
+  name, modality badge, `use_case`, "best for" chips (Knowledge / Behavior / Code / Vision),
+  resource needs ("trains on ~8–10 GB VRAM · serves in ~2 GB RAM"), and an **availability badge** —
+  `ready` vs `GGUF not downloaded` with a link to the OPERATIONS §6.3 download instructions. Add a
+  short "which model should I pick?" intro block (smallest = e2e/dev, 3B default, coder for code,
+  7B quality, VL for image understanding). Plain language per §5.10.
+- [ ] **Files.** `brain/console/src/views/Models.svelte` (new), `src/components/Layout.svelte`
+  (sidebar item), `src/lib/router.ts`, `src/lib/types.ts` (BaseModelInfo v2).
+- [ ] **Acceptance.** An operator who has never read the docs can state, from the page alone, which
+  model to pick for a code-assistant fine-tune and whether it can run on their GPU; `svelte-check`
+  0 errors; console build green in CI.
+
+#### C1.3 `[FE]` Informative base-model picker at project creation (depends: C1.1)
+- [ ] **Context.** The create form's dropdown shows the bare name (+ "vision (image + text)" suffix);
+  the description renders only after selection, below the field (`Projects.svelte:221-257`).
+- [ ] **Steps.** Replace the bare `<select>` with an informative chooser (radio-cards or
+  select + live detail panel): per option show `use_case`, best-for chips, resource needs, and
+  availability. An unavailable model is visible but **disabled** with "GGUF not on this server —
+  see Models page". Keep the vision hint and the knowledge-vs-behavior framing rule untouched.
+  Cross-link "Compare models →" to `/models`.
+- [ ] **Files.** `brain/console/src/views/Projects.svelte`.
+- [ ] **Acceptance.** Choosing a base requires no doc lookup; an absent GGUF cannot be selected for
+  a new project; creating each project type still works end-to-end in the browser.
+
+### C2. Projects dashboard — every card answers "where does this stand?" (P1)
+
+#### C2.1 `[BE]` Project summary read-model (spec-first; implements C0.1)
+- [ ] **Context.** `ProjectResponse` carries only identity fields, so the list view cannot show
+  pipeline state, and the detail view opens straight into Setup with no overview.
+- [ ] **Scope.** A read-only aggregate; no new writable state.
+- [ ] **Steps.** (1) Spec-first: `ProjectSummary` schema —
+  `files {total, indexed, chunks}`, `datasets {total, valid}`,
+  `jobs {total, running, last_status, last_eval_score, gate_passed}`,
+  `endpoint {exists, slug, status}`, `keys_active`,
+  `usage_7d {requests, total_tokens}`, `last_activity_at`. Expose as
+  `GET /v1/projects/{id}/summary` + `include=summary` on the list (C0.1). (2) Implement with
+  grouped aggregate queries (`GROUP BY project_id` over files/datasets/jobs/endpoints/keys/usage) —
+  a constant number of queries per list call. (3) Derive a single `stage` enum the console can
+  render directly (`awaiting_data → indexing/training → gate_blocked → ready_to_serve → live`),
+  computed server-side so the stage logic isn't duplicated per view. (4) `make generate` + tests.
+- [ ] **Files.** `brain/api/v1/projects.py` (or a new `brain/services/project_summary.py`),
+  `specs/openapi.yaml` + regenerated models, `tests/integration/test_project_summary.py` (new).
+- [ ] **Contract impact.** Pillar 1 (new op + additive list param); gate re-green. No migration.
+- [ ] **Acceptance.** A 50-project list costs O(1) extra queries (assert query count in the test or
+  document the EXPLAIN); summary numbers match the per-resource endpoints; RBAC: team A cannot read
+  team B's summary (403, extend the §1.7 pattern).
+
+#### C2.2 `[FE]` Projects home v2 — practical cards (depends: C2.1)
+- [ ] **Steps.** Card v2 renders the `stage` as the primary line with a **next-action hint**
+  ("Awaiting documents — upload to index", "Training running — 64 %", "Gate blocked — score 0.31",
+  "Live — 12.4k tokens this week"), plus compact counts (files indexed / datasets valid / endpoint
+  status) and `last_activity_at`. Add client-side sort (recent activity, name) and filter
+  (type, stage). Keep the empty state + knowledge-vs-behavior framing.
+- [ ] **Files.** `brain/console/src/views/Projects.svelte`, `src/lib/types.ts`.
+- [ ] **Acceptance.** From the list alone an operator can tell which project needs attention and why,
+  without opening any of them.
+
+#### C2.3 `[FE]` Project Overview tab — pipeline at a glance (depends: C2.1)
+- [ ] **Context.** `Project.svelte` opens directly into Setup; there is no single place showing the
+  whole lifecycle state of one project.
+- [ ] **Steps.** New first tab **Overview** (becomes the landing tab): (1) a pipeline checklist
+  driven by `ProjectSummary` — documents → (dataset → training → eval gate, fine-tune only) →
+  endpoint → keys — each step with its status and a **CTA that jumps to the right tab** for the
+  next action; (2) recent jobs with eval verdict (PASSED/BLOCKED + score); (3) endpoint snapshot
+  (slug + status + copy snippet shortcut); (4) 7-day usage mini-table. Existing tabs unchanged.
+- [ ] **Files.** `brain/console/src/views/Project.svelte`, new `src/views/Overview.svelte`.
+- [ ] **Acceptance.** Opening any project answers "what's done, what's next" in one screen; every
+  CTA lands on the tab that performs the action.
+
+### C3. Endpoint observability — show what is actually being served (P1)
+
+#### C3.1 `[BE]` `EndpointResponse` v2 — provenance + composition (spec-first)
+- [ ] **Context.** The endpoint card can't say *when* the endpoint was created, *which adapter* it
+  serves, or *what eval evidence* let it through the gate — `EndpointResponse` is
+  `{id, slug, status, base_model, adapter_path, project_type}` ([brain/api/v1/endpoints.py:27-33](brain/api/v1/endpoints.py#L27)),
+  even though full `eval_metrics` are persisted on the job (§A4.6) and the registry stores
+  `base_score`/`score_delta` (§A4.13). `adapter_path` is also a server-internal path the UI
+  shouldn't be parsing.
+- [ ] **Steps.** Spec-first: add `created_at`, `modality`, and an `adapter` object
+  (`{job_id, eval_score, base_score, score_delta, gate: "absolute"|"improvement"}`, null for pure
+  RAG) resolved from the adapter registry / owning job; add `retrieval {indexed_chunks}` so the
+  card can state the composition ("base + adapter + retrieval over N chunks", §A3.6). Consider
+  deprecating raw `adapter_path` from the response (internal detail; keep only if something
+  external consumes it).
+- [ ] **Files.** `brain/api/v1/endpoints.py`, `brain/services/adapters.py` (lookup),
+  `specs/openapi.yaml` + regenerated models, tests.
+- [ ] **Contract impact.** Pillar 1 (additive; removing `adapter_path` is breaking — acceptable
+  per the development philosophy, but flag it in the commit). Gate re-green.
+- [ ] **Acceptance.** `GET …/endpoint` for the GPU-e2e fine-tune endpoint carries the real score,
+  delta, and gate path; RAG endpoints return `adapter: null` + their chunk count.
+
+#### C3.2 `[FE]` Endpoint panel v2 (depends: C3.1)
+- [ ] **Steps.** (1) **Composition explainer** at the top of the card: "This endpoint serves
+  *{base}* + *fine-tuned adapter (eval 0.215, +0.17 vs base — passed via improvement)* + *retrieval
+  over 1,204 chunks*" — each clause only when present, in plain language. (2) Adapter provenance
+  block linking to the training job (jumps to the Setup tab's job entry). (3) `created_at` on the
+  card; key list gains its `created_at` column (already in the API). (4) Usage snapshot
+  (today / 7 days, from C2.1's summary or `GET …/usage`) beside the snippet.
+- [ ] **Files.** `brain/console/src/views/EndpointPanel.svelte`, `src/lib/types.ts`.
+- [ ] **Acceptance.** An operator can answer "what exactly is this endpoint serving, since when,
+  and on what eval evidence?" from the panel alone.
+
+### C4. Settings section — account, team, platform, system (P1 shell/team · P2 platform)
+
+#### C4.1 `[FE]` Settings shell + routes (P1)
+- [ ] **Context.** The sidebar has a single nav item; there is nowhere to put any configuration UI.
+- [ ] **Steps.** Sidebar gains **Models** (C1.2) and **Settings**. `Settings.svelte` is a tabbed
+  shell: **Account** (C4.2) · **Team** (C4.3) · **Platform** (C4.5, admin-only) · **System**
+  (C4.6, admin-only). RBAC-aware rendering from `me.teams[].role`: non-admins see Account + a
+  read-only Team member list; admin-only tabs are hidden (not merely disabled) for others —
+  the server still enforces (the UI hiding is convenience, not security).
+- [ ] **Files.** `brain/console/src/views/Settings.svelte` (new), `src/components/Layout.svelte`,
+  `src/lib/router.ts`.
+- [ ] **Acceptance.** Route lands per-role on the right tabs; deep links to a forbidden tab fall
+  back gracefully.
+
+#### C4.2 `[BE+FE]` Account — change password (P1)
+- [ ] **Context.** No password-change API exists; a user who received an invite-set password (or the
+  seeded dev admin) has no way to rotate it.
+- [ ] **Steps.** (1) Spec-first: `POST /v1/auth/change-password {current_password, new_password}` →
+  204; wrong current password → typed 401/403 (pick one, document it); same password policy as
+  `accept-invite`; **rate-limited with the §A4.9 auth limiter** (per-user) — declare 429 in the
+  spec like the other auth ops. (2) Handler in `brain/api/v1/auth.py` using the existing bcrypt
+  helpers; commit-before-return (§4.4 pattern). (3) FE form in the Account tab with the standard
+  pending/done/error states.
+- [ ] **Files.** `specs/openapi.yaml` + regenerated models, `brain/api/v1/auth.py`,
+  `brain/services/auth.py`, `brain/console/src/views/Settings.svelte`, `src/lib/api.ts`,
+  `tests/integration/test_change_password.py` (new).
+- [ ] **Contract impact.** Pillar 1 (new op incl. 429); `schemathesis.toml` already tolerates 429.
+- [ ] **Acceptance.** Change → old JWT still valid until expiry (document), old password rejected on
+  next login, new accepted; wrong current → typed error; hammering → 429; contract gate green.
+
+#### C4.3 `[BE+FE]` Team & members — finally a UI for invitations (P1)
+- [ ] **Context.** The §3.1 invitation flow (`POST /v1/auth/invite`, `GET /v1/auth/invitations`,
+  `accept-invite`) ships **with no console surface** — onboarding a teammate requires curl. There is
+  also no way to even *list* who is on a team (no members endpoint exists).
+- [ ] **Steps.** (1) Spec-first: `GET /v1/teams/{team_id}/members` → `[{user_id, email, role, joined_at}]`
+  (any team member may read; non-members 403 per the §1.7 convention). (2) FE Team tab: members
+  table; **Invite member** (admin): email + role select (admin/member/viewer with one-line role
+  descriptions) → show-once token modal (reuse the §5.7 show-once pattern) **plus a copyable
+  accept-invite link/snippet** the admin can paste to the teammate; invitations list with status
+  (pending/accepted). (3) P2 follow-up (separate sub-task, do not block):
+  `PATCH /v1/teams/{id}/members/{uid}` (change role) + `DELETE` (remove) with a **last-admin guard**
+  (a team must always retain ≥1 admin) — migrationless, but contract + RBAC tests required.
+- [ ] **Files.** `specs/openapi.yaml` + regenerated models, new `brain/api/v1/teams.py` (members),
+  `brain/console/src/views/Settings.svelte` (Team tab), `src/lib/api.ts`,
+  `tests/integration/test_team_members.py` (new; includes cross-team 403 + viewer-can-read).
+- [ ] **Contract impact.** Pillar 1 (new ops). No migration for members-read; the P2 role-change
+  needs none either (role lives on the membership row).
+- [ ] **Acceptance.** An admin onboards a teammate entirely in the browser (invite → copy link →
+  teammate accepts → appears in the members list with the chosen role); viewer sees but cannot
+  mutate; cross-team access 403s.
+
+#### C4.4 `[BE]` Platform settings — DB-backed whitelisted overrides (P2; implements C0.2 tier 2)
+- [ ] **Context.** Every runtime knob currently requires editing env + restarting the stack — wrong
+  altitude for per-org preferences like generation defaults or `rag_top_k`. But a naive "settings
+  table for everything" would expose the moat and boot-critical config to a browser session (C0.2).
+- [ ] **Scope.** Org-scoped overrides for the C0.2 tier-2 whitelist only. Single-org semantics today
+  (one org per registration) — scope rows by `team_id` so multi-team is already correct.
+- [ ] **Steps.** (1) **Whitelist registry** in code: `brain/services/app_settings.py` mapping
+  key → (type, bounds, default = the `Settings` field) — reuse the §A4.12 bounds-validation style;
+  a key absent from the registry is structurally unsettable. (2) **Migration** `000X_app_settings`:
+  `app_settings (team_id FK, key String, value JSONB, updated_at, updated_by)` unique on
+  `(team_id, key)`. (3) Resolver with precedence **DB override → env → code default**, read at use
+  time (per-request DB read is fine at this scale; add a short-TTL in-process cache only if
+  measured). (4) Thread consumers: chat generation defaults (`temperature/top_p/top_k/max_tokens`
+  in `brain/services/chat.py`), retrieval (`rag_top_k`, and `chunk_size/chunk_overlap` at indexing
+  time in `brain/services/documents.py`/`rag.py`), synthesis knobs, `max_images_per_request`.
+  (5) Spec-first API: `GET /v1/settings?team_id=` → effective values **with provenance**
+  (`{key, value, source: default|env|override, bounds}`) readable by any member;
+  `PUT /v1/settings` (admin) validating against the registry → typed 422 out-of-bounds, 400 unknown
+  key; `DELETE /v1/settings/{key}` (admin) = reset to default.
+- [ ] **Files.** `brain/services/app_settings.py` (new), `migrations/versions/000X_app_settings.py`,
+  `brain/db/models.py`, `brain/api/v1/settings.py` (new router), `specs/openapi.yaml` + regenerated
+  models, consumers as above, `tests/test_app_settings.py` + `tests/integration/test_settings_api.py`.
+- [ ] **Contract impact.** **Pillar 1** (new ops) + **Pillar 2** (new table; `make migrate-test`
+  up/down + seeded round-trip). Pillar 3 untouched **by construction** — gate keys are not in the
+  registry.
+- [ ] **Acceptance.** `PUT rag_top_k=8` → the next chat retrieves 8 chunks, surviving restart;
+  out-of-bounds → 422 with the bound in the message; `eval_score_threshold` → 400 unknown key
+  (test pinned so the moat can never quietly enter the whitelist); member/viewer PUT → 403;
+  cross-team → 403; both gates green.
+
+#### C4.5 `[FE]` Platform settings UI (P2, depends: C4.4)
+- [ ] **Steps.** Platform tab (admin-only): grouped form — *Generation defaults* / *Retrieval &
+  chunking* / *Synthesis* / *Request limits*. Per field: effective value, **source badge**
+  (default / env-pinned / override), bounds hint, reset-to-default. Env-pinned values render locked
+  with "set by the host environment — see OPERATIONS". Explicit save with per-group pending/saved
+  states; a note that retrieval/chunking changes apply to **future** indexing, not already-indexed
+  documents.
+- [ ] **Files.** `brain/console/src/views/Settings.svelte`, `src/lib/api.ts`, `src/lib/types.ts`.
+- [ ] **Acceptance.** An admin tunes generation defaults and `rag_top_k` from the browser and sees
+  them take effect in the Playground; a viewer never sees the tab; reset restores the default and
+  the badge flips back.
+
+#### C4.6 `[BE+FE]` System status — surface the health the API already measures (P2)
+- [ ] **Context.** `/health/deep` (Postgres/Redis/Chroma/disk/memory) and `/gpu` exist and are tested,
+  but the console never calls them; the worker heartbeat (§4.4) and queue depth (already exported to
+  Prometheus, §3.5) are invisible to an operator without shell access.
+- [ ] **Steps.** (1) Verify what `/health/deep` exposes; **spec-first** add what the panel needs but
+  the API lacks (likely: queue depth via Redis `LLEN`, worker-heartbeat freshness — both already
+  computed elsewhere in the codebase; reuse, don't duplicate). (2) FE System tab (admin-only):
+  status chips per component (ok/degraded + the check's message), disk free on the data volume,
+  GPU card (name/VRAM or "CPU-only host"), training queue depth + worker liveness, with a manual
+  refresh (no polling by default). Link to `/metrics` + the observability profile docs for more.
+- [ ] **Files.** `brain/core/health.py` (+ spec if extended), `brain/console/src/views/Settings.svelte`
+  (System tab), `src/lib/api.ts`.
+- [ ] **Contract impact.** Pillar 1 only if `/health/deep` is extended (it is in the spec today —
+  keep it accurate).
+- [ ] **Acceptance.** An operator can tell from the browser that the worker is alive, the GPU is
+  visible, and how deep the training queue is — without `docker exec`.
+
+### C5. Cross-cutting & gates (rides every phase)
+
+- [ ] **C5.1 RBAC tests for every new surface.** Extend the §1.7 cross-team pattern to:
+  `summary`, `members`, `change-password`, `settings` GET/PUT/DELETE, extended endpoint GET —
+  team A's token → 403 on team B; viewer read-yes/write-no holds everywhere.
+- [ ] **C5.2 Contract + build gates.** Contract gate re-green (`--checks all`, zero 5xx) after each
+  `[BE]` task; `make check-models` clean; console `svelte-check` 0 errors + build green in the CI
+  fast gate (already wired — keep it).
+- [ ] **C5.3 Docs in the same PR (per the Definition of done).** `docs/user-guide/operator-console.md`
+  gains Models page / Overview / Settings sections; OPERATIONS gains the settings-precedence note
+  (DB → env → default) and the System tab; PRODUCT_DEFINITION needs **no scope change** (the console
+  remains a thin operator surface — re-affirm, don't re-describe).
 
 ---
 

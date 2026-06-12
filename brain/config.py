@@ -138,6 +138,19 @@ class Settings(BaseSettings):
 
     @model_validator(mode="before")
     @classmethod
+    def _validate_secret_key(cls, values: dict) -> dict:
+        secret = values.get("secret_key", "CHANGE_ME_IN_PRODUCTION_use_openssl_rand_hex_32")
+        if "CHANGE_ME" in str(secret):
+            import warnings
+            warnings.warn(
+                "BRAIN_SECRET_KEY is still the default placeholder. "
+                "Set a strong secret with: openssl rand -hex 32",
+                stacklevel=2,
+            )
+        return values
+
+    @model_validator(mode="before")
+    @classmethod
     def _derive_subdirs(cls, values: dict) -> dict:
         # If BRAIN_DATA_DIR is set, re-base any subdir that wasn't explicitly
         # overridden. This runs before field parsing, so all annotations stay Path.

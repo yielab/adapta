@@ -180,7 +180,7 @@ Phases 0–5 shipped as of 2026-06-08.
 4. **Dataset synthesis** — indexed docs → LLM Q/A pairs → JSONL dataset.
 5. **Hardening** — DomainError taxonomy, `make check-leaks` + `make ci`, usage metering, real health checks, 65 in-process tests + enforced contract gate (Pillar 1).
 
-The §V image-understanding workstream (V0–V6) shipped 2026-06-11. Open work: only the deferred-future list (TODO.md §6 — CLIP retrieval, SaaS edition, heavy MLOps, extra protocols, licensing) plus one quality ratchet — lift the coverage floor (now 30%) once the model-bearing e2e jobs run in CI. See [TODO.md](TODO.md).
+The §V image-understanding workstream (V0–V6) shipped 2026-06-11. Open work: the **Console v2 workstream (TODO.md §C, planned 2026-06-12)** — model-catalog UX, informative project/endpoint dashboards, settings section — plus the deferred-future list (TODO.md §6 — CLIP retrieval, SaaS edition, heavy MLOps, extra protocols, licensing) and one quality ratchet — lift the coverage floor (now 30%) once the model-bearing e2e jobs run in CI. See [TODO.md](TODO.md).
 
 ---
 
