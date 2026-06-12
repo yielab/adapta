@@ -1,26 +1,37 @@
 # Brain From Cero
 
 **A self-hosted platform for customizing and serving private language models.**
-Deploy it on your own servers, specialize a model two ways — **Knowledge (RAG)**
-or **Fine-tuning (LoRA)** — and consume each as an OpenAI-compatible API. Your
-data never leaves your infrastructure.
+Upload documents or train a fine-tuned adapter on your own GPU — then expose
+the result as an OpenAI-compatible API. Your data never leaves your servers.
+
+This documentation serves two purposes: it is the operational and developer
+reference for the platform, and it is a concrete learning resource for anyone
+building or studying AI infrastructure on a real, production-grade codebase.
 
 ---
 
-## What you're looking at
-
-This is the consolidated documentation for the whole product. It is organized
-into four audiences — pick the one that matches what you're trying to do:
+## Where to start
 
 <div class="grid cards" markdown>
+
+-   :material-brain: **AI Infrastructure Guide**
+
+    ---
+
+    Not sure what GGUF, LoRA, embeddings, or a vector store are? Start here.
+    This section explains the full technology stack — every component, why it
+    was chosen, and how it fits — written for engineers who know web development
+    but are new to AI infrastructure.
+
+    [:octicons-arrow-right-24: AI Infrastructure Guide](concepts/index.md)
 
 -   :material-account-tie: **User Guide**
 
     ---
 
-    For the **operator** running the appliance. How to use the browser console
-    to create projects, give a model knowledge or change its behavior, and hand
-    an application an API key.
+    For the operator running the platform. How to create projects, give a model
+    knowledge from your documents, change how it behaves through fine-tuning,
+    and hand an application a scoped API key.
 
     [:octicons-arrow-right-24: User Guide](user-guide/index.md)
 
@@ -28,9 +39,10 @@ into four audiences — pick the one that matches what you're trying to do:
 
     ---
 
-    For an **engineer working on the codebase**. The architecture, a
-    from-first-principles **"Learning the system"** deep-dive for developers new
-    to ML infrastructure, the contract-driven workflow, and the code reference.
+    For engineers working on the codebase. Architecture, the contract-driven
+    workflow, the three CI gates, and the auto-generated code reference.
+    Read [Learning the system](developer-guide/learning-the-system.md)
+    before your first change.
 
     [:octicons-arrow-right-24: Developer Guide](developer-guide/index.md)
 
@@ -38,51 +50,57 @@ into four audiences — pick the one that matches what you're trying to do:
 
     ---
 
-    The locked facts: product scope, the live **API reference** (generated from
-    the OpenAPI spec), the operations runbook, and the architecture-decision
+    The locked facts: product scope, the live API reference generated from
+    the OpenAPI spec, the operations runbook, and the architecture-decision
     record.
 
-    [:octicons-arrow-right-24: Reference](reference/PRODUCT_DEFINITION.md)
-
--   :material-map: **Roadmap**
-
-    ---
-
-    The single source of **open work** — priorities, acceptance criteria, and
-    status. Everything that isn't done yet lives here.
-
-    [:octicons-arrow-right-24: Roadmap](roadmap.md)
+    [:octicons-arrow-right-24: API Reference](reference/api.md)
 
 </div>
 
 ---
 
-## The product in one paragraph
+## What the platform does
 
-A company runs Brain From Cero on its own server (Docker Compose). Inside that
-deployment, teams create **Projects**. Each project is one of two types and ends
-in a private **model endpoint** consumed with a scoped API key:
+A company deploys Brain From Cero on its own server with Docker Compose.
+Inside that deployment, teams create **Projects**. Each project ends in a
+private model **endpoint** consumed with a scoped API key:
 
-- **Knowledge (RAG)** — upload documents → they're embedded into a per-project
-  vector store → the model answers **grounded in your documents, with
-  citations**. CPU-only; the model's weights never change.
-- **Fine-tuning (LoRA)** — provide an instruction dataset (or synthesize one
-  from your documents) → a GPU worker trains a LoRA adapter → it must pass an
-  **evaluation gate** before it can serve → the endpoint serves base model +
-  adapter. On a **vision base model**, the dataset is a zip bundle of
-  image + instruction examples and the endpoint accepts images (OpenAI
-  content-parts) — image *understanding* for document AI and visual QC, never
-  image generation.
+**Knowledge (RAG)** — upload documents → they are parsed, chunked, and
+embedded into a per-project vector store → the model answers grounded in
+your documents, with citations pointing at the source passages. The model's
+weights never change. CPU-only.
 
-The OpenAI-compatible `POST /v1/chat/completions` is the **only** protocol a
-customer's applications call. A bundled operator console drives setup in a
-browser.
+**Fine-tuning (LoRA)** — provide an instruction dataset → a GPU worker trains
+a LoRA adapter → the adapter must pass an evaluation gate before it can serve
+→ the endpoint serves base model + adapter. On a vision base model, the dataset
+is a zip bundle of image + instruction examples and the endpoint accepts images
+— for invoice extraction, visual QC, document AI.
 
-!!! tip "New to RAG, embeddings, LoRA, or GGUF?"
-    The Developer Guide's [Learning the system](developer-guide/learning-the-system.md)
-    page explains every one of these from the perspective of a backend developer
-    coming from standard languages and infrastructure — using analogies to
-    things you already know (databases, caches, job queues, CI gates).
+**Both together** — a fine-tune project can also index documents. Its endpoint
+then injects retrieved context and applies the adapter in one call: facts from
+retrieval with citations, tone and structure from the fine-tune.
+
+The `POST /v1/chat/completions` endpoint is the only protocol customer
+applications call. If your code already calls OpenAI, it already calls
+Brain From Cero.
+
+!!! tip "New to RAG, LoRA, GGUF, or embeddings?"
+    The [AI Infrastructure Guide](concepts/index.md) explains every concept in
+    terms of engineering ideas you already know — databases, caches, job
+    queues, and CI pipelines. No prior ML background required.
+
+---
+
+## Learning paths
+
+| Your goal | Recommended path |
+|---|---|
+| Understand the AI infrastructure | [AI Infrastructure Guide](concepts/index.md) → [Stack & decisions](concepts/stack.md) → [Learning the system](developer-guide/learning-the-system.md) |
+| Set up and use the platform | [User Guide](user-guide/index.md) → [Operator console](user-guide/operator-console.md) → [Consuming the API](user-guide/consuming-the-api.md) |
+| Contribute to the codebase | [Developer Guide](developer-guide/index.md) → [Architecture](developer-guide/architecture.md) → [Workflow](developer-guide/workflow.md) |
+| Understand a specific decision | [Stack & decisions](concepts/stack.md) — each component has an explicit "why not X?" section |
+| Operate the platform in production | [Operations runbook](reference/OPERATIONS.md) |
 
 ---
 
@@ -90,13 +108,10 @@ browser.
 
 Docs rot. This system is built so the parts that drift hardest can't:
 
-| Part | How it's kept in sync |
+| Part | How it stays in sync |
 |---|---|
-| **API reference** | Rendered directly from `specs/openapi.yaml` — the same contract the server is tested against. Change the API → the docs change. |
-| **Code reference** | Auto-extracted from the source docstrings (mkdocstrings). The reference *is* the code. |
-| **Internal links / nav** | `mkdocs build --strict` runs in CI; a page that points at a moved or deleted doc **fails the build**. |
-| **Roadmap** | A single source ([TODO.md](roadmap.md) at the repo root) included here, never duplicated. |
-| **Scope vs. tasks** | Reference docs describe *what is*; the Roadmap is the *only* place with open work. The two are never mixed. |
-
-See the Developer Guide's [Workflow](developer-guide/workflow.md) page for the
-contract-driven discipline (Extended SDD) that the same rule extends to code.
+| **API reference** | Rendered from `specs/openapi.yaml` — the same file the server is tested against. Change the API, the docs change. |
+| **Code reference** | Auto-extracted from source docstrings (mkdocstrings). The reference *is* the code. |
+| **Internal links** | `mkdocs build --strict` runs in CI. A broken internal link fails the build. |
+| **Roadmap** | A single source (`TODO.md` at the repo root) included verbatim — never duplicated. |
+| **Scope vs. tasks** | Reference docs describe what *is*. The Roadmap is the only place with open work. The two are never mixed. |

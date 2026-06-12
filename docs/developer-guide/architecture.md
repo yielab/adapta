@@ -1,8 +1,13 @@
 # Architecture
 
 This page is the map: the moving parts, how they're separated, and how a request
-travels through them. For *why* the ML-specific parts work the way they do, read
-[Learning the system](learning-the-system.md) alongside this.
+travels through them.
+
+!!! abstract "Companion pages"
+    [Stack & decisions](../concepts/stack.md) explains why each component was
+    chosen and covers the alternatives. [Learning the system](learning-the-system.md)
+    explains how the ML-specific parts work from first principles. Read those
+    alongside this page for the full picture.
 
 ## The containers
 

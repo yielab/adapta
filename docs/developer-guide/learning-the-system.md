@@ -10,6 +10,12 @@
 > infrastructure is assumed; familiarity with ordinary backend systems is
 > sufficient to follow every section.
 
+!!! abstract "Companion pages"
+    [Stack & decisions](../concepts/stack.md) covers *which* components were
+    chosen and why. This page covers *how* those components work. Read both for
+    the full picture, or use the [Architecture](architecture.md) page as the map
+    once the concepts are clear.
+
 Most of this platform is built from conventional components: an HTTP service, a
 relational database, a job queue, and a background worker. The
 machine-learning-specific parts are comparatively few, and each one corresponds

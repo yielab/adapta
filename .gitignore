@@ -102,3 +102,4 @@ monitoring/
 # MkDocs documentation site
 site/
 docs/reference/openapi.yaml
+.venv-docs/

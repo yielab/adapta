@@ -83,21 +83,24 @@ markdown_extensions:
 
 nav:
   - Home: index.md
+  - AI Infrastructure:
+      - concepts/index.md
+      - Stack & decisions: concepts/stack.md
   - User Guide:
       - user-guide/index.md
       - Operator console: user-guide/operator-console.md
-      - Knowledge + behavior together: user-guide/knowledge-and-behavior.md
+      - Knowledge + behavior: user-guide/knowledge-and-behavior.md
       - Consuming the API: user-guide/consuming-the-api.md
   - Developer Guide:
       - developer-guide/index.md
       - Architecture: developer-guide/architecture.md
       - Learning the system: developer-guide/learning-the-system.md
-      - Workflow & the three contracts: developer-guide/workflow.md
+      - Workflow & contracts: developer-guide/workflow.md
       - Code reference: developer-guide/code-reference.md
   - Reference:
-      - Product definition (scope): reference/PRODUCT_DEFINITION.md
+      - Product definition: reference/PRODUCT_DEFINITION.md
       - API reference: reference/api.md
       - Operations runbook: reference/OPERATIONS.md
       - SDD workflow: reference/SDD_WORKFLOW.md
-      - Architecture decisions / origin record: reference/API_EVOLUTION_PLAN.md
+      - Architecture decisions: reference/API_EVOLUTION_PLAN.md
   - Roadmap: roadmap.md

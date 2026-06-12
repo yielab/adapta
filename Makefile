@@ -183,16 +183,24 @@ check-chroma:
 
 # ── Documentation (MkDocs Material) ──
 # Build-time-only toolchain in docs/requirements.txt (NOT an app dep, never in
-# the image). These run on the HOST in a venv, like the stack targets — the docs
-# site is not part of the app/worker containers.
-docs-install:
-	pip install -r docs/requirements.txt
+# the image). These run on the HOST in a venv (.venv-docs/) so they don't
+# touch the system Python (PEP 668 safe).
+DOCS_VENV := .venv-docs
+DOCS_PIP  := $(DOCS_VENV)/bin/pip
+DOCS_BIN  := $(DOCS_VENV)/bin
+
+$(DOCS_VENV):
+	python3 -m venv $(DOCS_VENV)
+
+docs-install: $(DOCS_VENV)
+	$(DOCS_PIP) install --quiet -r docs/requirements.txt
 
 docs-build: docs-install
-	mkdocs build --strict          # --strict: a broken link/nav fails the build
+	$(DOCS_BIN)/mkdocs build --strict
 
+DOCS_PORT ?= 8001
 docs-serve: docs-install
-	mkdocs serve                   # live-reload preview at http://localhost:8000
+	$(DOCS_BIN)/mkdocs serve --dev-addr 127.0.0.1:$(DOCS_PORT)
 
 ci: check-leaks check-chroma lint lint-imports coverage validate-spec check-models
 	@echo "✓ Fast CI gate passed (offline)"
