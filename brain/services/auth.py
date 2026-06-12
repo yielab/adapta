@@ -111,9 +111,14 @@ async def get_user_role_in_team(db: AsyncSession, user_id: str, team_id: str) ->
 
 
 async def require_team_member(db: AsyncSession, user_id: str, team_id: str) -> Role:
+    # Forbidden (403), not Unauthorized (401): the caller IS authenticated —
+    # their token is valid — they just lack rights on this team. 401 would tell
+    # clients to re-authenticate, which can't help. (§1.7 cross-team RBAC)
     role = await get_user_role_in_team(db, user_id, team_id)
     if role is None:
-        raise Unauthorized(message="Not a member of this team")
+        from brain.domain.errors import Forbidden
+
+        raise Forbidden(message="Not a member of this team")
     return role
 
 
