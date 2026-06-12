@@ -136,6 +136,26 @@ stuck at `running` forever, so the worker recovers orphaned jobs at startup
 (requeue once, then fail). This is the kind of robustness any job-queue system
 needs; it just matters more when each job costs GPU-minutes.
 
+## Vision fine-tunes ride the same rails (§V)
+
+Image-understanding fine-tunes reuse every stage above with a modality branch,
+not a parallel system:
+
+- **Dataset** — a `.zip` bundle (images + one JSONL manifest with an
+  `images: [path]` field per row) instead of a bare JSONL; extraction is
+  hardened (zip-slip/symlink rejection, size/count caps) and every image is
+  validated at upload, never mid-train.
+- **Train** — the worker dispatches on the catalog entry's `modality`: the VLM
+  trains with its **vision tower frozen** and LoRA on the language-model
+  attention only (the constraint that keeps the PEFT→GGUF conversion working).
+- **Gate** — the same held-out, response-only eval gate, with the image in the
+  forward pass.
+- **Serve** — the same llama-cpp runtime loads the base GGUF **plus** an
+  `mmproj` (vision projector) via a multimodal chat handler; requests carry
+  OpenAI `image_url` content-parts (inline data-URLs only). The catalog
+  (`brain/core/model_catalog.py`) is the single place a base model declares its
+  HF repo, GGUF, modality, and mmproj — so a base that trains can always serve.
+
 ---
 
 Next: **[Learning the system](learning-the-system.md)** for the concepts behind

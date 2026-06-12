@@ -61,11 +61,41 @@ curl http://your-server:8000/v1/chat/completions \
   and the adapter compose in the same call (see
   [Knowledge + behavior together](knowledge-and-behavior.md)).
 
+## Images (vision endpoints)
+
+An endpoint whose project was created on a **vision base model** accepts the
+standard OpenAI image content-parts — the image inline as a base64 `data:` URL:
+
+```python
+import base64
+
+with open("invoice.png", "rb") as f:
+    data_url = "data:image/png;base64," + base64.b64encode(f.read()).decode()
+
+resp = client.chat.completions.create(
+    model="invoice-reader-a1b2c3d4",
+    messages=[{"role": "user", "content": [
+        {"type": "image_url", "image_url": {"url": data_url}},
+        {"type": "text", "text": "Extract vendor, date and total as JSON."},
+    ]}],
+)
+```
+
+Rules (v1, all violations come back as typed 4xx errors, never a crash):
+
+- **Inline `data:` URLs only** — the server never fetches remote image URLs.
+- png, jpeg or webp; **≤ 10 MB** and **≤ 8192 px** per image; **≤ 4 images** per request.
+- Requests with images are **non-streaming** (`stream` must be false) and skip
+  document retrieval — text-only requests on the same endpoint still answer
+  from indexed documents with citations.
+- Sending an image to a *text* endpoint returns a clear `400` — create the
+  project on a vision base instead.
+
 ## Streaming
 
 Set `"stream": true` (or `stream=True` in the SDK) to receive tokens as
 server-sent events, the same as the OpenAI streaming protocol. The final chunk
-carries the usage totals.
+carries the usage totals. (Not available for requests carrying images — see above.)
 
 ## Errors
 

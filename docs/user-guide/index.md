@@ -19,6 +19,11 @@ types, and the type decides how you specialize the model:
 |---|---|---|---|
 | Make a model answer **from your documents** | **Knowledge (RAG)** | Documents (PDF, DOCX, TXT, MD, HTML) | CPU |
 | Change **how a model behaves** (tone, format, a skill) | **Fine-tuning (LoRA)** | An instruction dataset (or synthesize one from documents) | GPU |
+| Make a model **read your images** (invoices, forms, QC photos) | **Fine-tuning (LoRA)** on a *vision* base model | A `.zip` bundle of image + prompt → response examples | GPU |
+
+Image *understanding* only — the platform never generates images. See
+[Image understanding](knowledge-and-behavior.md#image-understanding-vision-fine-tunes)
+for the bundle format and a worked example.
 
 !!! note "These are different mechanisms, not two kinds of 'training'"
     The console never calls RAG "training." When you create a project it asks

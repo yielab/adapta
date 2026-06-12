@@ -54,18 +54,20 @@ Make a model answer **from your documents**.
 ### Fine-tuning (LoRA)
 Change **how a model behaves** — tone, format, or a specific skill.
 
-- **Input:** instruction dataset (prompt/response pairs as JSONL) — uploaded, or **synthesized by the platform from your indexed documents**.
+- **Input:** instruction dataset (prompt/response pairs as JSONL) — uploaded, or **synthesized by the platform from your indexed documents**. On a **vision base model**, a `.zip` bundle of **image + prompt → response** examples instead (image *understanding*: invoice extraction, visual QC, handwritten forms — never image generation).
 - **How:** validate → train a LoRA adapter (QLoRA, 4-bit) on a GPU worker → evaluate on a held-out split → register if it passes the eval gate (score ≥ 0.6, **or** a clear improvement over the base model).
-- **Serving:** base model + your adapter, served once it passes the **evaluation gate**.
-- **Hardware:** requires a CUDA GPU (8 GB+ VRAM recommended for a 3B model).
-- **Use it for:** house style, structured output, domain tasks the base model does poorly.
+- **Serving:** base model + your adapter, served once it passes the **evaluation gate**. Vision endpoints accept OpenAI image content-parts (inline data-URLs).
+- **Hardware:** requires a CUDA GPU (8 GB+ VRAM recommended for a 3B model — text or vision).
+- **Use it for:** house style, structured output, domain tasks the base model does poorly, reading *your* images in *your* output format.
 
 | | Knowledge (RAG) | Fine-tuning (LoRA) |
 | --- | --- | --- |
 | Changes the model weights? | No | Yes — a trained adapter |
-| Input | Documents | Instruction pairs |
+| Input | Documents | Instruction pairs (text), or image+instruction bundles (vision) |
 | Hardware | CPU | GPU |
 | Speed | Seconds to index | Minutes–hours to train |
+
+The two compose on **one endpoint**: a fine-tune project that also indexes documents serves answers with facts retrieved from the documents (cited) *and* the tone/format of the adapter, in the same call. See [Knowledge + behavior together](docs/user-guide/knowledge-and-behavior.md).
 
 ---
 
@@ -169,6 +171,20 @@ Supported base models (see [docs/reference/OPERATIONS.md §6](docs/reference/OPE
 | Qwen2.5-3B-Instruct | `Qwen/Qwen2.5-3B-Instruct-GGUF` | ~4 GB |
 | Qwen2.5-Coder-3B | `Qwen/Qwen2.5-Coder-3B-Instruct-GGUF` | ~4 GB |
 | Qwen2.5-7B-Instruct | `Qwen/Qwen2.5-7B-Instruct-GGUF` | ~8 GB |
+| Qwen2.5-VL-3B-Instruct (vision) | GGUF + mmproj (see below) | ~6 GB train |
+
+A **vision** base needs two files in its model directory — the base GGUF *and*
+the `mmproj` vision projector:
+
+```bash
+mkdir -p ./data/models/qwen2.5-vl-3b
+huggingface-cli download ggml-org/Qwen2.5-VL-3B-Instruct-GGUF \
+  Qwen2.5-VL-3B-Instruct-Q4_K_M.gguf --local-dir /tmp/vl && \
+  mv /tmp/vl/Qwen2.5-VL-3B-Instruct-Q4_K_M.gguf ./data/models/qwen2.5-vl-3b/qwen2.5-vl-3b-instruct-q4_k_m.gguf
+huggingface-cli download ggml-org/Qwen2.5-VL-3B-Instruct-GGUF \
+  mmproj-Qwen2.5-VL-3B-Instruct-f16.gguf --local-dir /tmp/vl && \
+  mv /tmp/vl/mmproj-Qwen2.5-VL-3B-Instruct-f16.gguf ./data/models/qwen2.5-vl-3b/mmproj-qwen2.5-vl-3b-f16.gguf
+```
 
 ---
 
@@ -218,6 +234,15 @@ docker compose exec -e BRAIN_RUN_LORA_E2E=1 app \
 
 This test downloads the base model's HuggingFace weights for training, trains for a few minutes on the GPU, and passes when the adapter clears the eval gate (absolute score ≥ 0.6, or a clear improvement over base) and then **serves the adapter** — the served answer contains an invented word the base model can't know, proving the LoRA is applied at serve time. Expected output ends with `1 passed`.
 
+The **vision** equivalent (needs the VL base + mmproj downloaded, ~7 GB of HF weights on first run — set `HF_TOKEN` on the worker to avoid throttling):
+
+```bash
+docker compose exec -e BRAIN_RUN_VLM_E2E=1 app \
+  python -m pytest -m "integration and slow" tests/integration/test_vlm_lora_e2e.py -s
+```
+
+It uploads a zip bundle of synthetic emblem images, trains a VLM LoRA (vision tower frozen), passes the held-out gate, converts to GGUF, and serves an image request whose answer is the trained association. ~5 minutes once the base is cached.
+
 ---
 
 ## API consumption
@@ -237,6 +262,15 @@ resp = client.chat.completions.create(
     messages=[{"role": "user", "content": "What is our refund window?"}],
 )
 print(resp.choices[0].message.content)  # RAG answers include citations
+```
+
+Vision endpoints take the standard OpenAI image content-parts — the image inline as a base64 `data:` URL (the server never fetches remote image URLs):
+
+```python
+messages=[{"role": "user", "content": [
+    {"type": "image_url", "image_url": {"url": data_url}},
+    {"type": "text", "text": "Extract vendor, date and total as JSON."},
+]}]
 ```
 
 OpenAI-compatible serving (`POST /v1/chat/completions`) is the only external protocol customer applications call.
@@ -293,23 +327,25 @@ OpenAI-compatible serving (`POST /v1/chat/completions`) is the only external pro
 
 ## Current status
 
-Phases 0–5 are complete. Pre-first-customer software: the core platform is built and the full lifecycle works end-to-end.
+Phases 0–5 and the image-understanding workstream (§V) are complete. Pre-first-customer software: the core platform is built and the full lifecycle works end-to-end.
 
 | Capability | Status | Notes |
 | --- | --- | --- |
-| Operator console | ✅ Done | Browser UI at `/console/` — full RAG + fine-tune lifecycle, endpoint+keys, playground, usage |
+| Operator console | ✅ Done | Browser UI at `/console/` — full RAG + fine-tune lifecycle (incl. vision), endpoint+keys, playground (with image attach), usage |
 | OpenAI-compatible serving | ✅ Done | `POST /v1/chat/completions`; base model + GGUF LoRA adapter; key-scoped |
 | RAG retrieval with citations | ✅ Done | Real sentence-transformers embeddings; PDF/DOCX/MD/TXT/HTML; per-project ChromaDB |
 | LoRA training pipeline | ✅ Done | QLoRA (4-bit) on GPU worker; eval gate (≥ 0.6 or beats base); PEFT→GGUF conversion after gate passes; served adapter verified end-to-end |
-| Eval gate | ✅ Done | Held-out split, response-only loss, base-vs-adapter delta; `EvalGateFailed(422)` if below threshold |
-| Dataset synthesis | ✅ Done | `POST /datasets/synthesize` — indexed docs → LLM Q/A pairs → JSONL |
-| Auth / teams / RBAC | ✅ Done | bcrypt + JWT; orgs/teams/roles; invite flow; viewer read-only role |
+| **Image-understanding fine-tunes** | ✅ Done | Vision base (`qwen2.5-vl-3b-instruct`): zip image bundles → VLM QLoRA (vision tower frozen) → same eval gate → served via mmproj + OpenAI image content-parts. v1: data-URL images only, ≤4/request, non-streaming, no RAG composition with image input |
+| Eval gate | ✅ Done | Held-out split, response-only loss, base-vs-adapter delta; an unverified adapter never serves |
+| Dataset synthesis | ✅ Done | `POST /datasets/synthesize` — indexed docs → LLM Q/A pairs → JSONL (text bases only) |
+| Combined serving | ✅ Done | One endpoint composes retrieval (cited) + the trained adapter in the same call |
+| Auth / teams / RBAC | ✅ Done | bcrypt + JWT; orgs/teams/roles; invite flow; viewer read-only; cross-team access is a typed 403 (tested) |
 | Usage metering | ✅ Done | Per-endpoint daily token rollup; `GET /usage` |
-| API contract (Pillar 1) | ✅ Done | schemathesis 1260/1260, `--checks all`, zero 5xx; generated models drift-gated |
+| API contract (Pillar 1) | ✅ Done | schemathesis `--checks all`, zero 5xx (last run 1574/1574); generated models drift-gated |
 | Error handling | ✅ Done | `DomainError` taxonomy; one error envelope; 0 `detail=str(e)` sites; correlation IDs |
 | Docker app/worker | ✅ Done | One multi-stage Dockerfile, single local stack; CPU-only app image; CUDA worker |
-| Test coverage | 🚧 Partial | 132 in-process tests; ~30% line coverage floor enforced; integration tests green |
-| Multimodal RAG / vision | 🗑️ Cut | Not in scope |
+| Test coverage | 🚧 Partial | 173 in-process + 35 integration tests; ~30% line coverage floor enforced (ratchet upward pending) |
+| Image generation / multimodal RAG | 🗑️ Out | Image *generation* permanently out; CLIP image *retrieval* deferred (`TODO.md §6`) |
 
 ---
 

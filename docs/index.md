@@ -69,7 +69,10 @@ in a private **model endpoint** consumed with a scoped API key:
 - **Fine-tuning (LoRA)** — provide an instruction dataset (or synthesize one
   from your documents) → a GPU worker trains a LoRA adapter → it must pass an
   **evaluation gate** before it can serve → the endpoint serves base model +
-  adapter.
+  adapter. On a **vision base model**, the dataset is a zip bundle of
+  image + instruction examples and the endpoint accepts images (OpenAI
+  content-parts) — image *understanding* for document AI and visual QC, never
+  image generation.
 
 The OpenAI-compatible `POST /v1/chat/completions` is the **only** protocol a
 customer's applications call. A bundled operator console drives setup in a

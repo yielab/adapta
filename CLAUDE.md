@@ -71,7 +71,7 @@ Why three: it's **self-hosted** (you upgrade customer DBs → migrations are man
 
 **Makefile targets** (in container): `make generate`, `make validate-spec`, `make check-models`, `make test-contracts`, `make migrate`, `make test`, `make lint`, `make fmt`, `make check-leaks`, `make ci`.
 
-> **Pillar 1 is enforced as of 2026-06-08.** `make test-contracts` passes `--checks all` against the live server (1260/1260, zero 5xx); `brain/models/generated/models.py` is committed and kept in sync by `make check-models` (in `make ci`). Auth uses **direct bcrypt** (SHA-256 pre-hash) — `passlib` was removed (incompatible with bcrypt 5.x). ORM enums are `native_enum=False` to match the `String(16)` migration columns.
+> **Pillar 1 is enforced as of 2026-06-08.** `make test-contracts` passes `--checks all` against the live server (zero 5xx — last run 1574/1574, incl. the §V image surface); `brain/models/generated/models.py` is committed and kept in sync by `make check-models` (in `make ci`). Auth uses **direct bcrypt** (SHA-256 pre-hash) — `passlib` was removed (incompatible with bcrypt 5.x). ORM enums are `native_enum=False` to match the `String(16)` migration columns.
 
 ---
 
@@ -84,6 +84,8 @@ GET  /health                             liveness
 GET  /health/deep                        Postgres + Redis + Chroma + disk + memory
 GET  /gpu                                GPU detection
 
+GET  /v1/models                          base-model catalog (name, modality) — feeds the console
+
 POST /v1/auth/register                   create an org + its admin (open registration)
 POST /v1/auth/login                      obtain JWT
 GET  /v1/auth/me                         current user
@@ -95,7 +97,7 @@ GET/POST       /v1/projects              list (by team_id) / create
 GET/DELETE     /v1/projects/{id}         get / delete
 
 POST/GET/DELETE /v1/projects/{id}/files             upload + background index / list / delete
-POST/GET        /v1/projects/{id}/datasets           upload JSONL + background validate / list
+POST/GET        /v1/projects/{id}/datasets           upload JSONL or .zip image bundle + background validate / list
 POST            /v1/projects/{id}/datasets/synthesize  generate from indexed docs (async, 202)
 GET             /v1/projects/{id}/datasets/{did}     get / poll synthesis status
 
@@ -106,7 +108,8 @@ POST/GET        /v1/projects/{id}/endpoint           create (eval_passed require
 POST/GET/DELETE /v1/projects/{id}/keys               generate scoped key / list / revoke
 GET             /v1/projects/{id}/usage              daily token-usage rollup for the endpoint
 
-POST /v1/chat/completions                OpenAI-compatible (scoped brn_* key, model = endpoint slug)
+POST /v1/chat/completions                OpenAI-compatible (scoped brn_* key, model = endpoint slug);
+                                         vision endpoints take image content-parts (data: URLs only)
 ```
 
 ---
@@ -126,7 +129,9 @@ POST /v1/chat/completions                OpenAI-compatible (scoped brn_* key, mo
 | `brain/services/rag.py` | ChromaDB per-project collections, retrieval, citations |
 | `brain/services/chat.py` | Single real `ChatService` — RAG injection + inference call + usage metering |
 | `brain/services/jobs.py` | Redis BLPOP job queue |
-| `brain/services/training.py` | JSONL validation + `enqueue_training_job` |
+| `brain/services/training.py` | JSONL + zip-bundle validation (`extract_bundle`, image checks) + `enqueue_training_job` (modality match) |
+| `brain/core/model_catalog.py` | Base-model catalog SSOT (A3.3): HF id + GGUF + modality + mmproj per entry |
+| `brain/core/adapter_conversion.py` | PEFT→GGUF LoRA conversion (text + vision shims) |
 | `brain/services/adapters.py` | Adapter registry + eval threshold gate |
 | `brain/services/synthesis.py` | Document chunks → LLM-generated instruction pairs → JSONL |
 | `brain/worker/main.py` | Training worker process (BLPOP consumer, runs QLoRA, evaluates, registers adapter) |
@@ -158,7 +163,7 @@ The flaws found in the June 2026 audit are fixed. Do not reintroduce them.
 | Dummy auth key | Hard-coded `"dummy"` string | bcrypt + JWT in `brain/services/auth.py` |
 | Triple build config | `setup.py` + `requirements*.txt` + `pyproject.toml` | Single-source `pyproject.toml` |
 | Dead code (288 KB) | `archive/` in working tree | Deleted (in git history) |
-| No test infrastructure | No `conftest.py`, no pytest config | `tests/conftest.py` + asyncio config + 65 in-process tests (unit, eval-gate, error-boundary) + green contract gate |
+| No test infrastructure | No `conftest.py`, no pytest config | `tests/conftest.py` + asyncio config + 173 in-process and 35 integration tests + green contract gate |
 | No async job queue | Redis declared but unused | Redis BLPOP queue + dedicated worker |
 | Dataset synthesis | Not implemented | `brain/services/synthesis.py` + `POST /v1/projects/{id}/datasets/synthesize` |
 
@@ -175,7 +180,7 @@ Phases 0–5 shipped as of 2026-06-08.
 4. **Dataset synthesis** — indexed docs → LLM Q/A pairs → JSONL dataset.
 5. **Hardening** — DomainError taxonomy, `make check-leaks` + `make ci`, usage metering, real health checks, 65 in-process tests + enforced contract gate (Pillar 1).
 
-Open backlog: integration tests, coverage ratchet to 50%, usage metering to DB, team invitation flow, backup/restore runbook, optional Prometheus/Grafana. See [TODO.md](TODO.md).
+The §V image-understanding workstream (V0–V6) shipped 2026-06-11. Open work: only the deferred-future list (TODO.md §6 — CLIP retrieval, SaaS edition, heavy MLOps, extra protocols, licensing) plus one quality ratchet — lift the coverage floor (now 30%) once the model-bearing e2e jobs run in CI. See [TODO.md](TODO.md).
 
 ---
 
