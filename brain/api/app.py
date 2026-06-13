@@ -41,6 +41,7 @@ from brain.api.v1 import (
     keys,
     models,
     projects,
+    settings as settings_router,
     synthesis,
     usage,
 )
@@ -329,6 +330,7 @@ def create_app() -> FastAPI:
     app.include_router(chat.router, prefix=prefix)
     app.include_router(synthesis.router, prefix=prefix)
     app.include_router(usage.router, prefix=prefix)
+    app.include_router(settings_router.router, prefix=prefix)
 
     # ---------------------------------------------------------------------------
     # Operator console — static SPA (Vite+Svelte, built to brain/console/dist/).

@@ -10,8 +10,10 @@
   const teams = $derived(user?.teams ?? []);
   const activeTeam = $derived($session.activeTeam);
 
-  // Highlight the Projects nav item for any /projects* route.
+  // Highlight nav items by active route prefix.
   const onProjects = $derived($route.path === "/projects" || $route.parts[0] === "projects");
+  const onModels   = $derived($route.parts[0] === "models");
+  const onSettings = $derived($route.parts[0] === "settings");
 
   function onTeamChange(e: Event) {
     const id = (e.currentTarget as HTMLSelectElement).value;
@@ -34,6 +36,8 @@
     <a href="#/projects" class="brand">Brain <span>From Cero</span></a>
     <nav class="stack">
       <a href="#/projects" class="navlink" class:active={onProjects}>Projects</a>
+      <a href="#/models"   class="navlink" class:active={onModels}>Models</a>
+      <a href="#/settings" class="navlink" class:active={onSettings}>Settings</a>
     </nav>
   </aside>
 

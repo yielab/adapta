@@ -19,7 +19,7 @@ resolves the GGUF from the same entry. Keep in sync with OPERATIONS §6.3.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -43,6 +43,11 @@ class CatalogEntry:
     # lands with V3/V4 when it is trainable AND servable end-to-end.
     modality: str = "text"  # "text" | "vision"
     mmproj_filename: Optional[str] = None  # vision projector GGUF, same subdir
+    # §C: console catalog display fields
+    use_case: str = ""
+    best_for: List[str] = field(default_factory=list)
+    train_vram_gb: Optional[int] = None
+    serve_ram_gb: Optional[int] = None
 
     def gguf_path(self) -> Path:
         return settings.models_dir / self.gguf_subdir / self.gguf_filename
@@ -64,6 +69,10 @@ _ENTRIES: List[CatalogEntry] = [
         gguf_filename="qwen2.5-0.5b-instruct-q4_k_m.gguf",
         model_type=ModelType.CHAT,
         notes="Smallest — low-resource hosts / fine-tune e2e base (~3 GB train).",
+        use_case="Low-resource experimentation, quick fine-tune iteration.",
+        best_for=["knowledge", "behavior"],
+        train_vram_gb=3,
+        serve_ram_gb=1,
     ),
     CatalogEntry(
         name="qwen2.5-3b-instruct",
@@ -72,6 +81,10 @@ _ENTRIES: List[CatalogEntry] = [
         gguf_filename="qwen2.5-3b-instruct-q4_k_m.gguf",
         model_type=ModelType.CHAT,
         notes="Default — RAG + fine-tune (~8-10 GB train).",
+        use_case="RAG knowledge bases and general behavior fine-tuning.",
+        best_for=["knowledge", "behavior"],
+        train_vram_gb=10,
+        serve_ram_gb=2,
     ),
     CatalogEntry(
         name="qwen2.5-coder-3b",
@@ -80,6 +93,10 @@ _ENTRIES: List[CatalogEntry] = [
         gguf_filename="qwen2.5-coder-3b-instruct-q4_k_m.gguf",
         model_type=ModelType.CODE,
         notes="Code understanding/generation (~8-10 GB train).",
+        use_case="Code review, completion, explanation and documentation.",
+        best_for=["code"],
+        train_vram_gb=10,
+        serve_ram_gb=2,
     ),
     CatalogEntry(
         name="qwen2.5-7b-instruct",
@@ -88,6 +105,10 @@ _ENTRIES: List[CatalogEntry] = [
         gguf_filename="qwen2.5-7b-instruct-q4_k_m.gguf",
         model_type=ModelType.REASONING,
         notes="Higher quality, needs a bigger GPU (~12-16 GB train).",
+        use_case="High-quality RAG and complex reasoning tasks.",
+        best_for=["knowledge"],
+        train_vram_gb=16,
+        serve_ram_gb=4,
     ),
     # §V image-understanding fine-tunes. Trains as of §V3 (QLoRA, vision tower
     # frozen, batch 1 on ~6 GB VRAM); endpoint creation is gated until §V4
@@ -101,6 +122,10 @@ _ENTRIES: List[CatalogEntry] = [
         modality="vision",
         mmproj_filename="mmproj-qwen2.5-vl-3b-f16.gguf",
         notes="Vision (image+text→text) — document AI / visual QC (~6 GB train, batch 1).",
+        use_case="Document AI, visual QA, image captioning, and OCR tasks.",
+        best_for=["vision"],
+        train_vram_gb=6,
+        serve_ram_gb=2,
     ),
 ]
 

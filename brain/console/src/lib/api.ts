@@ -138,6 +138,26 @@ export const api = {
   // Usage
   getUsage: (pid: string) => request<UsageResponse>(`${V1}/projects/${pid}/usage`),
 
+  // Team members & invites (Settings §C)
+  listTeamMembers: (teamId: string) =>
+    request<{ user_id: string; email: string; role: string; joined_at: string }[]>(
+      `${V1}/auth/members?team_id=${encodeURIComponent(teamId)}`
+    ),
+  invite: (teamId: string, email: string, role: string) =>
+    request<{ id: string; email: string; team_id: string; role: string; status: string; token?: string; expires_at: string }>(
+      `${V1}/auth/invite`, { method: "POST", body: { team_id: teamId, email, role } }
+    ),
+  changePassword: (current_password: string, new_password: string) =>
+    request<void>(`${V1}/auth/change-password`, { method: "POST", body: { current_password, new_password } }),
+
+  // Platform settings (Settings §C4.4)
+  getSettings: (teamId: string) =>
+    request<import("./types").SettingEntry[]>(`${V1}/settings?team_id=${encodeURIComponent(teamId)}`),
+  putSetting: (teamId: string, key: string, value: number) =>
+    request<import("./types").SettingEntry>(`${V1}/settings`, { method: "PUT", body: { team_id: teamId, key, value } }),
+  deleteSetting: (teamId: string, key: string) =>
+    request<void>(`${V1}/settings/${encodeURIComponent(key)}?team_id=${encodeURIComponent(teamId)}`, { method: "DELETE" }),
+
   // Chat (uses a scoped brn_ key, NOT the JWT — auth:false + manual header)
   chat: (slug: string, brnKey: string, messages: WireChatMessage[]) =>
     fetch(`${V1}/chat/completions`, {

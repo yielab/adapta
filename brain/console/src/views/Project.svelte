@@ -5,6 +5,7 @@
   import type { Project } from "../lib/types";
 
   import StatusBadge from "../components/StatusBadge.svelte";
+  import Overview from "./Overview.svelte";
   import RagFlow from "./RagFlow.svelte";
   import FinetuneFlow from "./FinetuneFlow.svelte";
   import EndpointPanel from "./EndpointPanel.svelte";
@@ -14,12 +15,12 @@
   // The project id is routed in by App.svelte (parts[1] of the hash route).
   let { id }: { id: string } = $props();
 
-  type Tab = "setup" | "endpoint" | "playground" | "usage";
+  type Tab = "overview" | "setup" | "endpoint" | "playground" | "usage";
 
   let project = $state<Project | null>(null);
   let loading = $state(false);
   let loadErr = $state(false);
-  let tab = $state<Tab>("setup");
+  let tab = $state<Tab>("overview");
 
   // Re-fetch whenever the routed id changes.
   let loadedId = $state<string | null>(null);
@@ -82,6 +83,9 @@
   </div>
 
   <div class="tabs" role="tablist">
+    <button class="tab" class:active={tab === "overview"} role="tab" aria-selected={tab === "overview"} onclick={() => (tab = "overview")}>
+      Overview
+    </button>
     <button class="tab" class:active={tab === "setup"} role="tab" aria-selected={tab === "setup"} onclick={() => (tab = "setup")}>
       Setup
     </button>
@@ -96,7 +100,9 @@
     </button>
   </div>
 
-  {#if tab === "setup"}
+  {#if tab === "overview"}
+    <Overview {project} onGoTab={(t) => (tab = t)} />
+  {:else if tab === "setup"}
     {#if project.type === "rag"}
       <RagFlow {project} />
     {:else}

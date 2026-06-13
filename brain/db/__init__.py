@@ -1,5 +1,6 @@
 from .models import (
     ApiKey,
+    AppSetting,
     Base,
     Collection,
     Dataset,
@@ -30,4 +31,5 @@ __all__ = [
     "TrainingJob",
     "Endpoint",
     "ApiKey",
+    "AppSetting",
 ]

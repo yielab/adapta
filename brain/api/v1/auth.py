@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from brain.db.models import Invitation, Org, Role, Team, TeamMember
+from brain.db.models import Invitation, Org, Role, Team, TeamMember, User
 from brain.db.session import get_db
 from brain.domain.errors import Conflict, InvalidRequest
 from brain.services.auth import (
@@ -17,6 +17,9 @@ from brain.services.auth import (
     create_user,
     get_current_user,
     require_team_admin,
+    require_team_member,
+    verify_password,
+    hash_password,
 )
 from brain.services.invitations import accept_invitation, create_invitation
 from brain.services.rate_limit import enforce_auth
@@ -209,3 +212,57 @@ async def list_invitations(
     await require_team_admin(db, current_user.id, team_id)
     result = await db.execute(select(Invitation).where(Invitation.team_id == team_id))
     return [_invite_resp(i) for i in result.scalars().all()]
+
+
+class MemberResponse(BaseModel):
+    user_id: str
+    email: str
+    role: str
+    joined_at: str
+
+
+@router.get("/members", response_model=List[MemberResponse])
+async def list_team_members(
+    team_id: str,
+    current_user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """List all members of a team with their emails and roles."""
+    await require_team_member(db, current_user.id, team_id)
+    result = await db.execute(
+        select(TeamMember, User)
+        .join(User, TeamMember.user_id == User.id)
+        .where(TeamMember.team_id == team_id)
+    )
+    return [
+        MemberResponse(
+            user_id=tm.user_id,
+            email=u.email,
+            role=tm.role.value,
+            joined_at=tm.joined_at.isoformat(),
+        )
+        for tm, u in result.all()
+    ]
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str = Field(min_length=8)
+
+
+@router.post("/change-password", status_code=204)
+async def change_password(
+    body: ChangePasswordRequest,
+    current_user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Change the current user's password. Verifies the current password first."""
+    user_row = await db.execute(select(User).where(User.id == current_user.id))
+    user = user_row.scalar_one_or_none()
+    if not user or not verify_password(body.current_password, user.hashed_password):
+        raise InvalidRequest(
+            message="Current password is incorrect.",
+            internal_detail="change-password: incorrect current password",
+        )
+    user.hashed_password = hash_password(body.new_password)
+    await db.commit()

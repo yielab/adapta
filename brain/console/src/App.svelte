@@ -9,6 +9,8 @@
   import Login from "./views/Login.svelte";
   import Projects from "./views/Projects.svelte";
   import Project from "./views/Project.svelte";
+  import Models from "./views/Models.svelte";
+  import Settings from "./views/Settings.svelte";
 
   // Hydration: on first load a token may live in sessionStorage but the user
   // object does not (it isn't persisted). Re-fetch it; on failure the session is
@@ -54,6 +56,8 @@
     if (path === "/login") return { kind: "login" as const };
     if (parts[0] === "projects" && parts[1]) return { kind: "project" as const, id: parts[1] };
     if (parts[0] === "projects" || path === "/") return { kind: "projects" as const };
+    if (parts[0] === "models") return { kind: "models" as const };
+    if (parts[0] === "settings") return { kind: "settings" as const, tab: parts[1] };
     return { kind: "projects" as const };
   });
 </script>
@@ -68,6 +72,10 @@
   <Layout>
     {#if view.kind === "project"}
       <Project id={view.id} />
+    {:else if view.kind === "models"}
+      <Models />
+    {:else if view.kind === "settings"}
+      <Settings tab={view.tab} />
     {:else}
       <Projects />
     {/if}

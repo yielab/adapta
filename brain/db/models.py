@@ -354,3 +354,26 @@ class UsageEvent(Base):
     )
 
     __table_args__ = (UniqueConstraint("endpoint_id", "day", name="uq_usage_endpoint_day"),)
+
+
+class AppSetting(Base):
+    """DB-backed org-scoped override for a whitelisted runtime knob (§C4.4).
+
+    Precedence: DB override → env/config default. The whitelist is enforced in
+    `brain.services.app_settings`; the table stores only JSON-encoded scalars.
+    """
+
+    __tablename__ = "app_settings"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    team_id: Mapped[str] = mapped_column(String(36), ForeignKey("teams.id", ondelete="CASCADE"), nullable=False)
+    key: Mapped[str] = mapped_column(String(64), nullable=False)
+    value: Mapped[str] = mapped_column(Text, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+    updated_by: Mapped[Optional[str]] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+
+    __table_args__ = (UniqueConstraint("team_id", "key", name="uq_app_settings_team_key"),)

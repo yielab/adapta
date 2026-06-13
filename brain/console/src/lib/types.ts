@@ -17,6 +17,43 @@ export interface User {
   teams: TeamSummary[];
 }
 
+// §C2.1: per-project aggregate read-model (returned as `summary` on Project)
+export interface FileSummaryData {
+  total: number;
+  indexed: number;
+  chunks: number;
+}
+export interface DatasetSummaryData {
+  total: number;
+  valid: number;
+}
+export interface JobSummaryData {
+  total: number;
+  running: number;
+  last_status: string | null;
+  last_eval_score: number | null;
+  gate_passed: boolean | null;
+}
+export interface EndpointSummaryData {
+  exists: boolean;
+  slug: string | null;
+  status: string | null;
+}
+export interface UsageSummaryData {
+  requests: number;
+  total_tokens: number;
+}
+export interface ProjectSummary {
+  stage: string;
+  files: FileSummaryData;
+  datasets: DatasetSummaryData;
+  jobs: JobSummaryData;
+  endpoint: EndpointSummaryData;
+  keys_active: number;
+  usage_7d: UsageSummaryData;
+  last_activity_at: string | null;
+}
+
 export interface Project {
   id: string;
   name: string;
@@ -26,6 +63,20 @@ export interface Project {
   description: string | null;
   team_id: string;
   created_at: string;
+  summary: ProjectSummary | null;
+}
+
+// §C4.4: DB-backed platform setting entry
+export interface SettingEntry {
+  key: string;
+  label: string;
+  group: string;
+  value: number;
+  source: "override" | "env" | "default";
+  default: number;
+  min: number;
+  max: number;
+  description: string;
 }
 
 export type FileStatus = "pending" | "processing" | "indexed" | "failed";
@@ -39,13 +90,22 @@ export interface ProjectFile {
 }
 
 export type Modality = "text" | "vision";
+export type BestFor = "knowledge" | "behavior" | "code" | "vision";
 
 // One base-model catalog entry (GET /v1/models) — the SSOT the server
 // validates Project.base_model against; drives modality-aware UI (§V5).
 export interface BaseModelInfo {
   name: string;
   modality: Modality;
+  model_type: string;
   description: string | null;
+  use_case: string;
+  best_for: BestFor[];
+  available: boolean;
+  train_vram_gb: number | null;
+  serve_ram_gb: number | null;
+  hf_repo_id: string;
+  notes: string;
 }
 
 export type DatasetStatus = "uploaded" | "validating" | "valid" | "invalid";

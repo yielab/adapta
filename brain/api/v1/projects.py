@@ -1,6 +1,6 @@
 """Project CRUD endpoints."""
 
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
@@ -38,11 +38,12 @@ class ProjectResponse(BaseModel):
     description: Optional[str]
     team_id: str
     created_at: str
+    summary: Optional[Dict[str, Any]] = None
 
     model_config = {"from_attributes": True}
 
 
-def _proj_resp(p: Project) -> ProjectResponse:
+def _proj_resp(p: Project, summary: Optional[Dict[str, Any]] = None) -> ProjectResponse:
     return ProjectResponse(
         id=p.id,
         name=p.name,
@@ -52,7 +53,14 @@ def _proj_resp(p: Project) -> ProjectResponse:
         description=p.description,
         team_id=p.team_id,
         created_at=p.created_at.isoformat(),
+        summary=summary,
     )
+
+
+def _summary_to_dict(s: Any) -> Dict[str, Any]:
+    """Serialize a ProjectSummary dataclass to a plain dict for the API response."""
+    from dataclasses import asdict
+    return asdict(s)
 
 
 @router.post("", response_model=ProjectResponse, status_code=201)
@@ -93,7 +101,11 @@ async def list_projects(
     await require_team_member(db, current_user.id, team_id)
     result = await db.execute(select(Project).where(Project.team_id == team_id))
     projects = result.scalars().all()
-    return [_proj_resp(p) for p in projects]
+    if not projects:
+        return []
+    from brain.services.project_summary import compute_summaries
+    summaries = await compute_summaries(db, [p.id for p in projects])
+    return [_proj_resp(p, _summary_to_dict(summaries[p.id]) if p.id in summaries else None) for p in projects]
 
 
 @router.get("/{project_id}", response_model=ProjectResponse)
@@ -104,7 +116,9 @@ async def get_project(
 ):
     project = await _get_project(db, project_id)
     await require_team_member(db, current_user.id, project.team_id)
-    return _proj_resp(project)
+    from brain.services.project_summary import compute_summary
+    summary = await compute_summary(db, project_id)
+    return _proj_resp(project, _summary_to_dict(summary))
 
 
 @router.delete("/{project_id}", status_code=204)
