@@ -15,9 +15,11 @@
 > | **TODO.md** (this file) | 🗺 Roadmap | **The only place with open tasks, priorities, acceptance** |
 >
 > Phases 0–5 (the product build) are **code-complete** as of 2026-06-08, all three SDD gates are green,
-> the operator console shipped 2026-06-09, the §A4 staff audit closed 2026-06-10, and §V (image
-> fine-tunes) shipped 2026-06-11. The current focus is **§C** (console v2, planned 2026-06-12):
-> model-catalog UX, informative project/endpoint dashboards, and a settings section.
+> the operator console shipped 2026-06-09, the §A4 staff audit closed 2026-06-10, §V (image
+> fine-tunes) shipped 2026-06-11, and **§C (console v2) shipped 2026-06-13**. **Every planned
+> workstream (0–5, §A, §V, §C) is now complete.** The only remaining work is optional/deferred:
+> the §A1b router-DTO switch (P2, contract gate is green without it), the §1.2 coverage ratchet
+> (blocked on CI model-bearing jobs), and the §6 deferred-future list. No open P0/P1 task remains.
 >
 > **Legend:** `[x]` done & verified · `[~]` partial / exists-but-not-wired · `[ ]` not started
 > **Priority:** **P0** blocks a trustworthy `main` · **P1** needed before first customer · **P2** nice-to-have
@@ -40,7 +42,7 @@ Honour the [Definition of done](#definition-of-done-per-task) on every task. Wor
 
 ---
 
-## Status snapshot (2026-06-08)
+## Status snapshot (updated 2026-06-13)
 
 | Area | State |
 |---|---|
@@ -75,7 +77,7 @@ Honour the [Definition of done](#definition-of-done-per-task) on every task. Wor
 
 **Result:** `make test-contracts` → **1260 generated, 1260 passed, 0 failures** (`--checks all`). Zero 5xx. Pillar 1 is honored and enforced.
 
-**Remaining (optional, downgraded to P2) — A1b: switch routers to the generated DTOs.** Routers in `brain/api/v1/*` still hand-write their Pydantic request/response models; `brain.models.generated` is committed and drift-checked but **not yet imported**. Incrementally replace the hand-written DTOs with the generated equivalents (per the note in `brain/models/__init__.py`), deleting duplicates. *Acceptance:* every router imports its DTOs from `brain.models.generated`; no hand-written request/response model remains; contract gate stays green.
+- [ ] **Remaining (optional, downgraded to P2) — A1b: switch routers to the generated DTOs.** Routers in `brain/api/v1/*` still hand-write their Pydantic request/response models (verified 2026-06-13: 0 routers import `brain.models.generated`); `brain.models.generated` is committed and drift-checked but **not yet imported**. This is a code-tidiness item, **not** an integrity gap — the contract gate is green regardless because the generated models are drift-checked against the spec by `make check-models`. Incrementally replace the hand-written DTOs with the generated equivalents (per the note in `brain/models/__init__.py`), deleting duplicates. *Acceptance:* every router imports its DTOs from `brain.models.generated`; no hand-written request/response model remains; contract gate stays green.
 
 ### A2. Boot-correctness gate — ✅ DONE (the image runs, not just builds) (P0)
 
@@ -516,7 +518,7 @@ Partly covered (`test_unhandled_error_returns_correlation_id`, `test_domain_erro
 
 - [x] `make ci` is the **fast, offline** gate: `check-leaks + lint + test (in-process only) + validate-spec`.
 - [x] `make ci-full` runs: `ci + migrate-test + test-contracts + integration tests` against a live stack.
-- [x] `make coverage` produces a term-missing coverage report (baseline TBD — run `make coverage` in container first).
+- [x] `make coverage` produces a term-missing coverage report (baseline measured: 28% → floor raised to 30%; now 45.65% as of 2026-06-13, see §C5.2).
 - [x] `.github/workflows/ci.yml`: fast gate on every push; full gate on PRs to `main`.
 - [x] *Acceptance:* `make ci` passes on a clean clone with no running server.
 
@@ -584,7 +586,7 @@ Partly covered (`test_unhandled_error_returns_correlation_id`, `test_domain_erro
 - [x] In-process suites: `test_basic.py`, `test_error_boundary.py`, `test_eval_gate.py`; contract sweep in `test_api_contracts.py`
 - [x] `tests/conftest.py` async client fixture; asyncio configured
 - [x] `.github/workflows/ci.yml` runs the `fast` (offline) + `full` (live-stack) gates
-- [~] Test pyramid: Pillars 2 & 3 gated and green; **Pillar 1 (API contract) gate is red** — see §A1
+- [x] Test pyramid: all three SDD gates green — Pillar 2 (migration up/down) + Pillar 3 (eval gate) gated and green; **Pillar 1 (API contract) gate green since 2026-06-08** (see §A1 / §1.3, last contract run 1683/1683, zero 5xx)
 </details>
 
 ---
