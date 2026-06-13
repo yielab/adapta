@@ -141,7 +141,7 @@ export const api = {
   // Team members & invites (Settings §C)
   listTeamMembers: (teamId: string) =>
     request<{ user_id: string; email: string; role: string; joined_at: string }[]>(
-      `${V1}/auth/members?team_id=${encodeURIComponent(teamId)}`
+      `${V1}/teams/${encodeURIComponent(teamId)}/members`
     ),
   invite: (teamId: string, email: string, role: string) =>
     request<{ id: string; email: string; team_id: string; role: string; status: string; token?: string; expires_at: string }>(

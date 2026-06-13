@@ -20,6 +20,7 @@ from brain.services.auth import (
 
 # --- Password hashing (bcrypt + sha256 pre-hash) ---------------------------
 
+
 def test_hash_password_is_salted_and_verifies():
     h1 = hash_password("correct horse battery staple")
     h2 = hash_password("correct horse battery staple")
@@ -51,6 +52,7 @@ def test_long_password_does_not_raise_72_byte_limit():
 
 # --- JWT round-trip --------------------------------------------------------
 
+
 def test_jwt_roundtrip_carries_claims():
     token = create_access_token(user_id="u-1", org_id="org-9")
     payload = decode_access_token(token)
@@ -71,6 +73,7 @@ def test_decode_rejects_garbage():
 
 
 # --- Scoped API keys -------------------------------------------------------
+
 
 def test_generate_api_key_shape_and_verify():
     raw, prefix, stored_hash = generate_api_key()

@@ -62,7 +62,7 @@ def dataset_manifest_sha256(dataset_path: Path, bundle_dir: Optional[Path] = Non
                 line = line.strip()
                 if not line:
                     continue
-                for rel in (json.loads(line).get("images") or []):
+                for rel in json.loads(line).get("images") or []:
                     h.update(rel.encode())
                     h.update((sha256_file(bundle_dir / rel) or "missing").encode())
     except Exception:

@@ -16,10 +16,9 @@ from brain.services.auth import (
     create_access_token,
     create_user,
     get_current_user,
-    require_team_admin,
-    require_team_member,
-    verify_password,
     hash_password,
+    require_team_admin,
+    verify_password,
 )
 from brain.services.invitations import accept_invitation, create_invitation
 from brain.services.rate_limit import enforce_auth
@@ -136,6 +135,7 @@ async def me(current_user=Depends(get_current_user), db: AsyncSession = Depends(
 # Team invitations (§3.1)
 # ---------------------------------------------------------------------------
 
+
 class InviteRequest(BaseModel):
     email: EmailStr = Field(max_length=255)  # mirrors invitations.email String(255)
     team_id: str
@@ -188,7 +188,9 @@ async def invite(
 
 
 @router.post("/accept-invite", response_model=UserResponse, status_code=201)
-async def accept_invite(body: AcceptInviteRequest, request: Request, db: AsyncSession = Depends(get_db)):
+async def accept_invite(
+    body: AcceptInviteRequest, request: Request, db: AsyncSession = Depends(get_db)
+):
     """Redeem an invite token + set a password → user joins the team."""
     await enforce_auth(request)
     if not body.password or len(body.password) < 8:
@@ -212,37 +214,6 @@ async def list_invitations(
     await require_team_admin(db, current_user.id, team_id)
     result = await db.execute(select(Invitation).where(Invitation.team_id == team_id))
     return [_invite_resp(i) for i in result.scalars().all()]
-
-
-class MemberResponse(BaseModel):
-    user_id: str
-    email: str
-    role: str
-    joined_at: str
-
-
-@router.get("/members", response_model=List[MemberResponse])
-async def list_team_members(
-    team_id: str,
-    current_user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    """List all members of a team with their emails and roles."""
-    await require_team_member(db, current_user.id, team_id)
-    result = await db.execute(
-        select(TeamMember, User)
-        .join(User, TeamMember.user_id == User.id)
-        .where(TeamMember.team_id == team_id)
-    )
-    return [
-        MemberResponse(
-            user_id=tm.user_id,
-            email=u.email,
-            role=tm.role.value,
-            joined_at=tm.joined_at.isoformat(),
-        )
-        for tm, u in result.all()
-    ]
 
 
 class ChangePasswordRequest(BaseModel):

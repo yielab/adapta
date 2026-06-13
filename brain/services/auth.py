@@ -27,6 +27,7 @@ from brain.domain.errors import Conflict, NotFound, Unauthorized
 # silent truncation. Same construction as Django's BCryptSHA256 hasher.
 # ---------------------------------------------------------------------------
 
+
 def _prehash(plain: str) -> bytes:
     digest = hashlib.sha256(plain.encode("utf-8")).digest()
     return base64.b64encode(digest)
@@ -47,6 +48,7 @@ def verify_password(plain: str, hashed: str) -> bool:
 # JWT helpers
 # ---------------------------------------------------------------------------
 
+
 def create_access_token(user_id: str, org_id: str) -> str:
     expire = datetime.now(timezone.utc) + timedelta(minutes=settings.access_token_expire_minutes)
     payload = {"sub": user_id, "org": org_id, "exp": expire}
@@ -63,6 +65,7 @@ def decode_access_token(token: str) -> dict:
 # ---------------------------------------------------------------------------
 # User CRUD
 # ---------------------------------------------------------------------------
+
 
 async def get_user_by_email(db: AsyncSession, email: str) -> Optional[User]:
     result = await db.execute(select(User).where(User.email == email))
@@ -99,6 +102,7 @@ async def create_user(db: AsyncSession, org_id: str, email: str, password: str) 
 # RBAC helpers
 # ---------------------------------------------------------------------------
 
+
 async def get_user_role_in_team(db: AsyncSession, user_id: str, team_id: str) -> Optional[Role]:
     result = await db.execute(
         select(TeamMember.role).where(
@@ -127,6 +131,7 @@ async def require_team_writer(db: AsyncSession, user_id: str, team_id: str) -> R
     role = await require_team_member(db, user_id, team_id)
     if role == Role.viewer:
         from brain.domain.errors import Forbidden
+
         raise Forbidden(message="Read-only (viewer) role cannot perform this action")
     return role
 
@@ -135,12 +140,14 @@ async def require_team_admin(db: AsyncSession, user_id: str, team_id: str) -> No
     role = await require_team_member(db, user_id, team_id)
     if role != Role.admin:
         from brain.domain.errors import Forbidden
+
         raise Forbidden(message="Admin role required")
 
 
 # ---------------------------------------------------------------------------
 # API key helpers (scoped to endpoints)
 # ---------------------------------------------------------------------------
+
 
 def _hash_key(raw: str) -> str:
     return hashlib.sha256(raw.encode()).hexdigest()

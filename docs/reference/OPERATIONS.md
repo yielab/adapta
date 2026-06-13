@@ -261,6 +261,14 @@ builder stage) served same-origin via FastAPI `StaticFiles`.
 - **Ops notes:** same origin ⇒ no CORS change; nothing to back up (it holds no
   state); it upgrades with the `app` image. If `GET /console/` 404s, the image was
   built without the console build stage — rebuild `app`.
+- **Settings tab (Platform sub-tab):** per-team inference knobs (temperature,
+  top-k, chunk count, etc.) with override → env-var → built-in default precedence.
+  Admins set a DB override via the console or `PUT /v1/settings`; non-admins
+  can read but not write. The eval-gate threshold is intentionally excluded from
+  operator-configurable knobs — it is a platform invariant, not a per-team
+  setting.
+- **Settings tab (System sub-tab):** read-only health dashboard (Postgres, Redis,
+  Chroma, disk, memory, GPU detection) — same data as `GET /health/deep`.
 
 ---
 

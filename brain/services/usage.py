@@ -43,7 +43,8 @@ async def record_usage(endpoint_id: str, prompt_tokens: int, completion_tokens: 
                     constraint="uq_usage_endpoint_day",
                     set_={
                         "prompt_tokens": UsageEvent.prompt_tokens + max(0, prompt_tokens),
-                        "completion_tokens": UsageEvent.completion_tokens + max(0, completion_tokens),
+                        "completion_tokens": UsageEvent.completion_tokens
+                        + max(0, completion_tokens),
                         "request_count": UsageEvent.request_count + 1,
                         "updated_at": datetime.now(timezone.utc),
                     },

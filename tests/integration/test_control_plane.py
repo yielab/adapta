@@ -30,6 +30,7 @@ async def _retry(make_request, ok, tries=15, delay=0.1):
 
 # --- Auth ------------------------------------------------------------------
 
+
 async def test_unauthenticated_is_401(client):
     r = await client.get("/v1/projects", params={"team_id": "whatever"})
     assert r.status_code == 401
@@ -91,13 +92,19 @@ async def test_register_short_password_is_400(client, admin):
 
 # --- Projects (persistence + team scoping) ---------------------------------
 
+
 async def test_project_lifecycle(client, admin):
     h, team_id = admin["headers"], admin["team_id"]
 
     created = await client.post(
         "/v1/projects",
         headers=h,
-        json={"name": "Docs RAG", "type": "rag", "base_model": "qwen2.5-3b-instruct", "team_id": team_id},
+        json={
+            "name": "Docs RAG",
+            "type": "rag",
+            "base_model": "qwen2.5-3b-instruct",
+            "team_id": team_id,
+        },
     )
     assert created.status_code == 201, created.text
     pid = created.json()["id"]
@@ -155,12 +162,11 @@ async def test_create_project_unknown_base_model_rejected(client, admin):
 
 # --- Datasets (upload + background validation, finetune project) -----------
 
+
 async def _upload_dataset(client, headers, project_id, lines):
     payload = "\n".join(json.dumps(x) for x in lines).encode()
     files = {"file": ("data.jsonl", io.BytesIO(payload), "application/jsonl")}
-    return await client.post(
-        f"/v1/projects/{project_id}/datasets", headers=headers, files=files
-    )
+    return await client.post(f"/v1/projects/{project_id}/datasets", headers=headers, files=files)
 
 
 async def _await_terminal(client, headers, pid, did, terminals=("valid", "invalid")):
@@ -168,7 +174,8 @@ async def _await_terminal(client, headers, pid, did, terminals=("valid", "invali
     r = await _retry(
         lambda: client.get(f"/v1/projects/{pid}/datasets/{did}", headers=headers),
         lambda r: r.status_code == 200 and r.json().get("status") in terminals,
-        tries=40, delay=0.1,
+        tries=40,
+        delay=0.1,
     )
     return r
 
@@ -181,13 +188,20 @@ async def test_dataset_upload_validates_to_terminal_state(client, admin):
     proj = await client.post(
         "/v1/projects",
         headers=h,
-        json={"name": "FT", "type": "finetune", "base_model": "qwen2.5-3b-instruct", "team_id": team_id},
+        json={
+            "name": "FT",
+            "type": "finetune",
+            "base_model": "qwen2.5-3b-instruct",
+            "team_id": team_id,
+        },
     )
     pid = proj.json()["id"]
 
     good = await _retry(
         lambda: _upload_dataset(
-            client, h, pid,
+            client,
+            h,
+            pid,
             [{"prompt": "Hi", "response": "Hello"}, {"prompt": "Bye", "response": "Goodbye"}],
         ),
         lambda r: r.status_code == 202,
@@ -214,7 +228,12 @@ async def test_dataset_invalid_reaches_invalid_state(client, admin):
     proj = await client.post(
         "/v1/projects",
         headers=h,
-        json={"name": "FT2", "type": "finetune", "base_model": "qwen2.5-3b-instruct", "team_id": team_id},
+        json={
+            "name": "FT2",
+            "type": "finetune",
+            "base_model": "qwen2.5-3b-instruct",
+            "team_id": team_id,
+        },
     )
     pid = proj.json()["id"]
 
@@ -237,15 +256,23 @@ async def test_create_then_immediate_get_no_retry(client, admin):
         created = await client.post(
             "/v1/projects",
             headers=h,
-            json={"name": f"rw{i}", "type": "rag", "base_model": "qwen2.5-3b-instruct", "team_id": team_id},
+            json={
+                "name": f"rw{i}",
+                "type": "rag",
+                "base_model": "qwen2.5-3b-instruct",
+                "team_id": team_id,
+            },
         )
         assert created.status_code == 201, created.text
         pid = created.json()["id"]
         got = await client.get(f"/v1/projects/{pid}", headers=h)
-        assert got.status_code == 200, f"immediate read missed just-created {pid}: {got.status_code}"
+        assert (
+            got.status_code == 200
+        ), f"immediate read missed just-created {pid}: {got.status_code}"
 
 
 # --- Scoped key auth on the serving endpoint -------------------------------
+
 
 async def test_chat_completions_rejects_missing_and_bad_key(client):
     # No key

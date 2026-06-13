@@ -83,7 +83,8 @@ async def _validate_in_background(dataset_id: str, path: Path, is_bundle: bool =
             if dataset is None:
                 logger.error(
                     "Dataset validation task could not find row %s after retries — "
-                    "status will remain 'validating'.", dataset_id,
+                    "status will remain 'validating'.",
+                    dataset_id,
                 )
                 return
 
@@ -103,7 +104,9 @@ async def _validate_in_background(dataset_id: str, path: Path, is_bundle: bool =
                     logger.info("Dataset bundle rejected: %s — %s", dataset_id, exc)
                     return
 
-            is_valid, error, num_samples, num_images = validate_dataset(manifest, bundle_dir=bundle_dir)
+            is_valid, error, num_samples, num_images = validate_dataset(
+                manifest, bundle_dir=bundle_dir
+            )
             dataset.status = DatasetStatus.valid if is_valid else DatasetStatus.invalid
             dataset.validation_error = error
             dataset.num_samples = num_samples
@@ -115,7 +118,10 @@ async def _validate_in_background(dataset_id: str, path: Path, is_bundle: bool =
             await db.commit()
             logger.info(
                 "Dataset validation task done: %s -> %s (%s samples, %s images)",
-                dataset_id, dataset.status.value, num_samples, num_images,
+                dataset_id,
+                dataset.status.value,
+                num_samples,
+                num_images,
             )
     except Exception:
         logger.exception("Dataset validation task crashed for %s", dataset_id)
@@ -191,7 +197,9 @@ async def get_dataset(
 ):
     project = await _get_finetune_project(db, project_id)
     await require_team_member(db, current_user.id, project.team_id)
-    result = await db.execute(select(Dataset).where(Dataset.id == dataset_id, Dataset.project_id == project_id))
+    result = await db.execute(
+        select(Dataset).where(Dataset.id == dataset_id, Dataset.project_id == project_id)
+    )
     dataset = result.scalar_one_or_none()
     if not dataset:
         raise NotFound(message="Dataset not found")

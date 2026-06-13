@@ -25,20 +25,20 @@ from brain.domain.errors import (
 )
 
 ALL_DOMAIN_ERRORS = [
-    (InvalidRequest,    400, "invalid_request"),
-    (Unauthorized,      401, "unauthorized"),
-    (Forbidden,         403, "forbidden"),
-    (NotFound,          404, "not_found"),
-    (Conflict,          409, "conflict"),
-    (ModelNotFound,     404, "model_not_found"),
-    (ProjectNotFound,   404, "project_not_found"),
-    (TrainingFailed,    500, "training_failed"),
-    (InferenceFailed,   500, "inference_failed"),
-    (EmbeddingFailed,   500, "embedding_failed"),
-    (EvalGateFailed,    422, "eval_gate_failed"),
-    (RateLimited,       429, "rate_limited"),
-    (Timeout,           504, "timeout"),
-    (InternalError,     500, "internal_error"),
+    (InvalidRequest, 400, "invalid_request"),
+    (Unauthorized, 401, "unauthorized"),
+    (Forbidden, 403, "forbidden"),
+    (NotFound, 404, "not_found"),
+    (Conflict, 409, "conflict"),
+    (ModelNotFound, 404, "model_not_found"),
+    (ProjectNotFound, 404, "project_not_found"),
+    (TrainingFailed, 500, "training_failed"),
+    (InferenceFailed, 500, "inference_failed"),
+    (EmbeddingFailed, 500, "embedding_failed"),
+    (EvalGateFailed, 422, "eval_gate_failed"),
+    (RateLimited, 429, "rate_limited"),
+    (Timeout, 504, "timeout"),
+    (InternalError, 500, "internal_error"),
 ]
 
 
@@ -62,9 +62,9 @@ async def test_domain_error_http_status_and_code(error_cls, expected_status, exp
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         resp = await client.get("/test-error")
 
-    assert resp.status_code == expected_status, (
-        f"{error_cls.__name__}: expected {expected_status}, got {resp.status_code}"
-    )
+    assert (
+        resp.status_code == expected_status
+    ), f"{error_cls.__name__}: expected {expected_status}, got {resp.status_code}"
     body = resp.json()
     assert "error" in body
     assert body["error"]["code"] == expected_code

@@ -59,7 +59,9 @@ async def _get_project(db: AsyncSession, project_id: str) -> Project:
     return project
 
 
-async def _index_file(file_id: str, file_path: Path, content_type: str, filename: str, project_id: str) -> None:
+async def _index_file(
+    file_id: str, file_path: Path, content_type: str, filename: str, project_id: str
+) -> None:
     """Background task: parse → chunk → embed → store in Chroma, update DB status.
 
     The row is committed by the request handler before this is scheduled; the
@@ -83,7 +85,8 @@ async def _index_file(file_id: str, file_path: Path, content_type: str, filename
             if pfile is None:
                 logger.error(
                     "File indexing task could not find row %s after retries — "
-                    "status will remain 'pending'.", file_id,
+                    "status will remain 'pending'.",
+                    file_id,
                 )
                 return
 
@@ -103,7 +106,9 @@ async def _index_file(file_id: str, file_path: Path, content_type: str, filename
             count = await asyncio.to_thread(_do_index)
 
             # Update collection metadata
-            col_result = await db.execute(select(Collection).where(Collection.project_id == project_id))
+            col_result = await db.execute(
+                select(Collection).where(Collection.project_id == project_id)
+            )
             collection = col_result.scalar_one_or_none()
             if collection:
                 collection.num_documents += 1
@@ -205,7 +210,9 @@ async def delete_file(
 ):
     project = await _get_project(db, project_id)
     await require_team_writer(db, current_user.id, project.team_id)
-    result = await db.execute(select(ProjectFile).where(ProjectFile.id == file_id, ProjectFile.project_id == project_id))
+    result = await db.execute(
+        select(ProjectFile).where(ProjectFile.id == file_id, ProjectFile.project_id == project_id)
+    )
     pfile = result.scalar_one_or_none()
     if not pfile:
         raise NotFound(message="File not found")

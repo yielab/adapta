@@ -41,9 +41,12 @@ from brain.api.v1 import (
     keys,
     models,
     projects,
-    settings as settings_router,
     synthesis,
+    teams,
     usage,
+)
+from brain.api.v1 import (
+    settings as settings_router,
 )
 from brain.config import settings
 from brain.domain.errors import DomainError
@@ -55,15 +58,18 @@ logger = logging.getLogger(__name__)
 # Lifespan
 # ---------------------------------------------------------------------------
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Create data directories now (not at config-import time, which would give the
     # module a filesystem side effect and break imports under tests/CI).
     from brain.config import settings
+
     settings.ensure_dirs()
 
     # Connect job queue on startup
     from brain.services.jobs import get_job_queue
+
     queue = get_job_queue()
     try:
         await queue.connect()
@@ -76,6 +82,7 @@ async def lifespan(app: FastAPI):
     # finish it. Best-effort — a sweep failure must not block startup.
     try:
         from brain.services.maintenance import sweep_stuck_tasks
+
         await sweep_stuck_tasks()
     except Exception as exc:
         logger.warning("Startup stuck-task sweep failed: %s", exc)
@@ -83,6 +90,7 @@ async def lifespan(app: FastAPI):
     # Pre-warm model manager (non-blocking; errors are logged, not fatal)
     try:
         from brain.core import model_manager
+
         await model_manager.preload_default_models()
         logger.info("Default models preloaded")
     except Exception as exc:
@@ -106,6 +114,7 @@ async def lifespan(app: FastAPI):
 # from running under some transports. A pure ASGI middleware has neither problem,
 # and lets the registered exception handlers run normally (so no try/except here).
 # ---------------------------------------------------------------------------
+
 
 class CorrelationIdMiddleware:
     def __init__(self, app):
@@ -135,6 +144,7 @@ class CorrelationIdMiddleware:
             # Record request latency/count/errors (cheap; feeds GET /metrics, §3.5).
             try:
                 from brain.core.metrics import get_metrics_collector
+
                 mc = get_metrics_collector()
                 mc.request_latency.observe(time.perf_counter() - start)
                 mc.request_count.inc()
@@ -148,8 +158,10 @@ class CorrelationIdMiddleware:
 # App factory
 # ---------------------------------------------------------------------------
 
+
 def create_app() -> FastAPI:
     from brain.core.logging_config import configure_logging
+
     configure_logging()
 
     app = FastAPI(
@@ -191,12 +203,16 @@ def create_app() -> FastAPI:
         errors = exc.errors()
         message = "Request validation failed"
         if errors:
-            loc = ".".join(str(p) for p in errors[0].get("loc", []) if p not in ("body", "query", "path"))
+            loc = ".".join(
+                str(p) for p in errors[0].get("loc", []) if p not in ("body", "query", "path")
+            )
             message = f"Request validation failed: {loc or errors[0].get('msg', '')}".strip()
         return JSONResponse(
             status_code=422,
             headers={"X-Correlation-ID": cid} if cid else {},
-            content={"error": {"code": "invalid_request", "message": message, "correlation_id": cid}},
+            content={
+                "error": {"code": "invalid_request", "message": message, "correlation_id": cid}
+            },
         )
 
     @app.exception_handler(StarletteHTTPException)
@@ -205,8 +221,12 @@ def create_app() -> FastAPI:
         # HTTPException also get the standard envelope rather than {"detail": ...}.
         cid = getattr(request.state, "cid", None)
         code_map = {
-            400: "invalid_request", 401: "unauthorized", 403: "forbidden",
-            404: "not_found", 405: "method_not_allowed", 409: "conflict",
+            400: "invalid_request",
+            401: "unauthorized",
+            403: "forbidden",
+            404: "not_found",
+            405: "method_not_allowed",
+            409: "conflict",
         }
         code = code_map.get(exc.status_code, "http_error")
         message = exc.detail if isinstance(exc.detail, str) else "Request failed"
@@ -239,7 +259,13 @@ def create_app() -> FastAPI:
             return JSONResponse(
                 status_code=500,
                 headers={"X-Correlation-ID": cid} if cid else {},
-                content={"error": {"code": "internal_error", "message": "An internal error occurred", "correlation_id": cid}},
+                content={
+                    "error": {
+                        "code": "internal_error",
+                        "message": "An internal error occurred",
+                        "correlation_id": cid,
+                    }
+                },
             )
         logger.warning("[%s] DB data error %s (client value rejected): %s", cid, sqlstate, exc)
         return JSONResponse(
@@ -263,7 +289,13 @@ def create_app() -> FastAPI:
         return JSONResponse(
             status_code=500,
             headers={"X-Correlation-ID": cid} if cid else {},
-            content={"error": {"code": "internal_error", "message": "An internal error occurred", "correlation_id": cid}},
+            content={
+                "error": {
+                    "code": "internal_error",
+                    "message": "An internal error occurred",
+                    "correlation_id": cid,
+                }
+            },
         )
 
     # Pure ASGI correlation middleware (see CorrelationIdMiddleware above).
@@ -280,31 +312,34 @@ def create_app() -> FastAPI:
     @app.get("/health/deep", tags=["system"])
     async def deep_health():
         from brain.core.health import get_health_monitor
+
         monitor = get_health_monitor()
         result = await monitor.run_all_checks()
         return result.to_dict()
 
     if settings.metrics_enabled:
+
         @app.get("/metrics", tags=["system"], include_in_schema=False)
         async def metrics():
             # Prometheus text-format scrape. Refresh the queue-depth gauge live
             # from Redis on each scrape (§3.5). Scraped by the optional
             # `observability` compose profile.
             from brain.core.metrics import get_metrics_collector
+
             mc = get_metrics_collector()
             try:
                 from brain.services.jobs import QUEUE_KEY, get_job_queue
+
                 depth = await get_job_queue().redis.llen(QUEUE_KEY)
                 mc.queue_depth.set(depth)
             except Exception:
                 pass
-            return PlainTextResponse(
-                mc.export_prometheus(), media_type="text/plain; version=0.0.4"
-            )
+            return PlainTextResponse(mc.export_prometheus(), media_type="text/plain; version=0.0.4")
 
     @app.get("/gpu", tags=["system"])
     async def gpu_info():
         from brain.core.gpu import get_gpu_config
+
         cfg = get_gpu_config()
         return {
             "available": cfg.available,
@@ -331,6 +366,7 @@ def create_app() -> FastAPI:
     app.include_router(synthesis.router, prefix=prefix)
     app.include_router(usage.router, prefix=prefix)
     app.include_router(settings_router.router, prefix=prefix)
+    app.include_router(teams.router, prefix=prefix)
 
     # ---------------------------------------------------------------------------
     # Operator console — static SPA (Vite+Svelte, built to brain/console/dist/).
@@ -348,7 +384,10 @@ def create_app() -> FastAPI:
 
         logger.info("Operator console mounted at /console/ from %s", _console_dist)
     else:
-        logger.warning("Operator console dist not present at %s — UI unavailable (run `npm run build` in brain/console/)", _console_dist)
+        logger.warning(
+            "Operator console dist not present at %s — UI unavailable (run `npm run build` in brain/console/)",
+            _console_dist,
+        )
 
     return app
 

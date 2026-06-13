@@ -16,8 +16,8 @@ def test_dataset_hash_is_content_addressed(tmp_path):
     c = tmp_path / "c.jsonl"
     c.write_text('{"prompt": "Q", "response": "different"}\n')
 
-    assert sha256_file(a) == sha256_file(b)   # same bytes → same hash
-    assert sha256_file(a) != sha256_file(c)   # different bytes → different hash
+    assert sha256_file(a) == sha256_file(b)  # same bytes → same hash
+    assert sha256_file(a) != sha256_file(c)  # different bytes → different hash
 
 
 def test_missing_file_hashes_to_none(tmp_path):

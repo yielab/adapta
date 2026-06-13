@@ -62,6 +62,7 @@ async def _get_project(db: AsyncSession, project_id: str) -> Project:
 def _modality_for(base_model: str) -> str:
     try:
         from brain.core.model_catalog import all_entries
+
         for e in all_entries():
             if e.name == base_model:
                 return e.modality
@@ -113,9 +114,7 @@ async def _build_response(
             )
 
     # Retrieval layer: any project can also have indexed documents.
-    col_result = await db.execute(
-        select(Collection).where(Collection.project_id == project.id)
-    )
+    col_result = await db.execute(select(Collection).where(Collection.project_id == project.id))
     collection = col_result.scalar_one_or_none()
     if collection and collection.num_chunks > 0:
         retrieval = RetrievalSummary(indexed_chunks=collection.num_chunks)
@@ -160,7 +159,9 @@ async def create_endpoint(
         col_result = await db.execute(select(Collection).where(Collection.project_id == project_id))
         collection = col_result.scalar_one_or_none()
         if not collection or collection.num_chunks == 0:
-            raise InvalidRequest(message="No indexed documents found. Upload and index files first.")
+            raise InvalidRequest(
+                message="No indexed documents found. Upload and index files first."
+            )
 
     elif project.type == ProjectType.finetune:
         job_result = await db.execute(
@@ -180,6 +181,7 @@ async def create_endpoint(
         adapter_path = job.adapter_path
 
     import re
+
     base = re.sub(r"[^a-z0-9-]", "-", project.name.lower()).strip("-")[:55] or "endpoint"
     suffix = project.id.replace("-", "")[:8]
     slug = f"{base}-{suffix}"

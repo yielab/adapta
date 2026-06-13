@@ -51,28 +51,42 @@ async def _seed_running_job(tag: str, *, status: str = "running", attempts: int 
     conn = await asyncpg.connect(_dsn())
     try:
         org_id = str(uuid.uuid4())
-        await conn.execute("INSERT INTO orgs (id, name) VALUES ($1, $2)", org_id, f"RecOrg-{tag}-{sfx}")
+        await conn.execute(
+            "INSERT INTO orgs (id, name) VALUES ($1, $2)", org_id, f"RecOrg-{tag}-{sfx}"
+        )
         team_id = str(uuid.uuid4())
         await conn.execute(
-            "INSERT INTO teams (id, org_id, name) VALUES ($1, $2, $3)", team_id, org_id, f"RecTeam-{tag}"
+            "INSERT INTO teams (id, org_id, name) VALUES ($1, $2, $3)",
+            team_id,
+            org_id,
+            f"RecTeam-{tag}",
         )
         project_id = str(uuid.uuid4())
         await conn.execute(
             "INSERT INTO projects (id, team_id, name, type, status, base_model) "
             "VALUES ($1, $2, $3, 'finetune', 'created', 'qwen2.5-3b-instruct')",
-            project_id, team_id, f"RecProject-{tag}",
+            project_id,
+            team_id,
+            f"RecProject-{tag}",
         )
         dataset_id = str(uuid.uuid4())
         await conn.execute(
             "INSERT INTO datasets (id, project_id, name, storage_path, num_samples, status) "
             "VALUES ($1, $2, $3, $4, 5, 'valid')",
-            dataset_id, project_id, "rec.jsonl", "/tmp/rec.jsonl",
+            dataset_id,
+            project_id,
+            "rec.jsonl",
+            "/tmp/rec.jsonl",
         )
         job_id = str(uuid.uuid4())
         await conn.execute(
             "INSERT INTO training_jobs (id, project_id, dataset_id, status, progress, attempts) "
             "VALUES ($1, $2, $3, $4, 0.5, $5)",
-            job_id, project_id, dataset_id, status, attempts,
+            job_id,
+            project_id,
+            dataset_id,
+            status,
+            attempts,
         )
         return job_id
     finally:
@@ -105,6 +119,7 @@ async def queue(monkeypatch):
     # conftest note). Dispose the engine and install a fresh JobQueue bound to THIS
     # loop, pointing the module singleton at it so recover_orphaned_jobs uses it.
     from brain.db.session import engine
+
     await engine.dispose()
 
     # recover_orphaned_jobs scans ALL running/queued jobs in Postgres, so each test

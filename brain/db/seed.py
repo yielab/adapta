@@ -42,7 +42,9 @@ async def seed_default_admin(session_factory=AsyncSessionLocal) -> bool:
         db.add(team)
         await db.flush()
 
-        user = await create_user(db, org.id, settings.default_admin_email, settings.default_admin_password)
+        user = await create_user(
+            db, org.id, settings.default_admin_email, settings.default_admin_password
+        )
         db.add(TeamMember(team_id=team.id, user_id=user.id, role=Role.admin))
         await db.commit()
 

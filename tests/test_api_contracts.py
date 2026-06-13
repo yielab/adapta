@@ -10,7 +10,9 @@ import os
 
 import pytest
 
-schemathesis = pytest.importorskip("schemathesis", reason="schemathesis not installed — run with [dev] extras")
+schemathesis = pytest.importorskip(
+    "schemathesis", reason="schemathesis not installed — run with [dev] extras"
+)
 
 pytestmark = pytest.mark.contract
 
@@ -42,6 +44,7 @@ class BrainBearerAuth:
 # Default contract sweep — exercises every declared (method, path) pair
 # ---------------------------------------------------------------------------
 
+
 @schema.parametrize()
 def test_api_contract(case):
     """
@@ -57,6 +60,7 @@ def test_api_contract(case):
 # ---------------------------------------------------------------------------
 # Focused high-value paths
 # ---------------------------------------------------------------------------
+
 
 @schema.parametrize(endpoint="/auth/login", method="POST")
 def test_login_contract(case):

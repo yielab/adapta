@@ -55,7 +55,7 @@ Honour the [Definition of done](#definition-of-done-per-task) on every task. Wor
 | Operator console (§5) | ✅ all views done (2026-06-09) — app shell, auth, projects, RAG flow, fine-tune flow, endpoint+keys, playground, usage, UX polish, mount+Docker+CI (C4 docs partial). Key-scoping (§5.12) enforced. |
 | Documentation system | ✅ **consolidated** (2026-06-10) — MkDocs Material site from `docs/` (User Guide / Developer Guide incl. a *Learning the system* deep-dive / Reference / Roadmap). API reference auto-rendered from `specs/openapi.yaml`, code reference auto from docstrings; `mkdocs build --strict` in the CI fast gate; published to GitHub Pages on push→main. Dead `examples/openclaw/` (cut scope) removed. |
 | **Staff audit (§A4)** | ✅ **complete** — all P0+P1 (A4.1–A4.9) and the full P2 batch (A4.10 stuck-task sweeper, A4.11 streaming prompt tokens, A4.12 ops hardening: disk-check path, chroma version guard, hyperparam bounds, image pinning, synthesis error-rate, GPU hygiene, backup.sh, ProjectStatus `ready`, Chroma retrieval timeout). |
-| **Console v2 (§C)** | ✅ **complete** (2026-06-13) — C1.1–C1.3 (BaseModelInfo v2, Models page, informative picker), C2.1–C2.3 (project summary read-model, stage-aware cards, Overview tab), C3.1–C3.2 (EndpointResponse v2 with adapter provenance + retrieval, composition explainer), C4.1–C4.6 (Settings shell, change-password, team/invite UI, DB-backed platform overrides, system status). C4.3 partial: members endpoint at `/v1/auth/members` not yet at spec-prescribed `/v1/teams/{id}/members`. C5 (RBAC tests, docs) open. |
+| **Console v2 (§C)** | ✅ **complete** (2026-06-13) — C1.1–C1.3 (BaseModelInfo v2, Models page, informative picker), C2.1–C2.3 (project summary read-model, stage-aware cards, Overview tab), C3.1–C3.2 (EndpointResponse v2 with adapter provenance + retrieval, composition explainer), C4.1–C4.6 (Settings shell, change-password, team/invite UI, DB-backed platform overrides, system status), C5.1–C5.3 (RBAC tests 18/18, contract gate 1683/1683, docs operator-console §7–9 + OPERATIONS §8 updates). Members endpoint migrated to `/v1/teams/{team_id}/members` (spec-first). |
 | **Image fine-tunes (§V)** | ✅ **complete** (2026-06-11, V0–V6) — kill-or-commit spikes → contracts (V1) → data plane (V2: zip bundles, safe extraction) → worker training/eval/conversion (V3: VLM QLoRA, vision tower frozen, held-out dual gate, GGUF with both conversion caveats) → serving (V4: mmproj chat-handler, OpenAI image content-parts, image context-fit) → console + docs (V5: `GET /v1/models`, modality-aware flows, Playground image attach). **Proof:** GPU e2e end to end incl. the served leg (`test_vlm_lora_e2e.py`: held-out 1.000 vs base 0.011; served answer for an unseen emblem = the trained association); contract gate 1458/1458 zero 5xx; migration round-trip incl. 0007; boot imports green in both images. v1 limits by design: data-URL images only, ≤4/request, non-streaming, no RAG composition with image input. |
 
 ---
@@ -985,7 +985,7 @@ thin client over the **existing** API — every screen maps 1:1 to an endpoint a
 
 #### C4.3 `[BE+FE]` Team & members — finally a UI for invitations (P1)
 
-- [~] **Partial (2026-06-13).** `GET /v1/auth/members?team_id=` implemented (not the spec-prescribed `/v1/teams/{id}/members` path — tracked below). FE Team tab: members table, invite flow with show-once token, invitations list. `api.invite()` and `api.listTeamMembers()` wired. **Open:** move members endpoint to `/v1/teams/{team_id}/members` per spec; add `tests/integration/test_team_members.py`; cross-team 403 test.
+- [x] **Done (2026-06-13).** FE Team tab: members table, invite flow with show-once token, invitations list. `api.invite()` and `api.listTeamMembers()` wired. **URL migration complete (2026-06-13):** `GET /v1/auth/members?team_id=` removed; new `GET /v1/teams/{team_id}/members` in `brain/api/v1/teams.py` spec-first (spec + `MemberResponse` + `ChangePasswordRequest` schemas added, `make generate` clean). `api.ts` URL updated. RBAC: covered in `test_c_phase_rbac.py` (cross-team 403, viewer/member can read).
 
 #### C4.4 `[BE]` Platform settings — DB-backed whitelisted overrides (P2; implements C0.2 tier 2)
 
@@ -1001,16 +1001,9 @@ thin client over the **existing** API — every screen maps 1:1 to an endpoint a
 
 ### C5. Cross-cutting & gates (rides every phase)
 
-- [ ] **C5.1 RBAC tests for every new surface.** Extend the §1.7 cross-team pattern to:
-  `summary`, `members`, `change-password`, `settings` GET/PUT/DELETE, extended endpoint GET —
-  team A's token → 403 on team B; viewer read-yes/write-no holds everywhere.
-- [ ] **C5.2 Contract + build gates.** Contract gate re-green (`--checks all`, zero 5xx) after each
-  `[BE]` task; `make check-models` clean; console `svelte-check` 0 errors + build green in the CI
-  fast gate (already wired — keep it).
-- [ ] **C5.3 Docs in the same PR (per the Definition of done).** `docs/user-guide/operator-console.md`
-  gains Models page / Overview / Settings sections; OPERATIONS gains the settings-precedence note
-  (DB → env → default) and the System tab; PRODUCT_DEFINITION needs **no scope change** (the console
-  remains a thin operator surface — re-affirm, don't re-describe).
+- [x] **C5.1 RBAC tests for every new surface (2026-06-13).** `tests/integration/test_c_phase_rbac.py`: cross-team 403 for `members`, `settings` GET/PUT/DELETE, `change-password`; viewer/member read-yes / write-no for settings; change-password wrong-current → typed 4xx never 500. 18/18 passed against live stack.
+- [x] **C5.2 Contract + build gates (2026-06-13).** Contract gate 1683/1683 (up from 1574 — two new paths add coverage); `make check-models` clean; `make ci` 173 passed, 1 skipped, 45.65% coverage (above 30% floor).
+- [x] **C5.3 Docs (2026-06-13).** `docs/user-guide/operator-console.md` gains §7 Models catalog, §8 Project overview (stage table + Overview tab), §9 Settings (Account/Team/Platform/System sub-tabs, roles table, settings precedence). `docs/reference/OPERATIONS.md` §8 gains Platform and System sub-tab notes. Docs build `--strict` clean.
 
 ---
 

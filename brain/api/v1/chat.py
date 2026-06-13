@@ -30,6 +30,7 @@ router = APIRouter(tags=["chat"])
 # OpenAI-compatible request / response schemas
 # ---------------------------------------------------------------------------
 
+
 class TextPart(BaseModel):
     type: Literal["text"]
     text: str
@@ -55,7 +56,7 @@ class ChatMessage(BaseModel):
 
 
 class ChatCompletionRequest(BaseModel):
-    model: str                          # endpoint slug
+    model: str  # endpoint slug
     messages: List[ChatMessage]
     temperature: Optional[float] = None
     max_tokens: Optional[int] = None
@@ -67,7 +68,10 @@ class ChatCompletionRequest(BaseModel):
 # Key auth dependency
 # ---------------------------------------------------------------------------
 
-async def _resolve_endpoint(request: Request, db: AsyncSession = Depends(get_db)) -> tuple[Endpoint, Project]:
+
+async def _resolve_endpoint(
+    request: Request, db: AsyncSession = Depends(get_db)
+) -> tuple[Endpoint, Project]:
     """
     Validate scoped API key from Authorization header.
     Returns (endpoint, project).
@@ -79,7 +83,9 @@ async def _resolve_endpoint(request: Request, db: AsyncSession = Depends(get_db)
 
     # Find matching key by prefix
     prefix = raw_key[:8]
-    result = await db.execute(select(ApiKey).where(ApiKey.key_prefix == prefix, ApiKey.is_active.is_(True)))
+    result = await db.execute(
+        select(ApiKey).where(ApiKey.key_prefix == prefix, ApiKey.is_active.is_(True))
+    )
     keys = result.scalars().all()
 
     matched: Optional[ApiKey] = None
@@ -111,6 +117,7 @@ async def _resolve_endpoint(request: Request, db: AsyncSession = Depends(get_db)
 # Chat endpoint
 # ---------------------------------------------------------------------------
 
+
 @router.post("/chat/completions")
 async def chat_completions(
     request_body: ChatCompletionRequest,
@@ -135,8 +142,7 @@ async def chat_completions(
         {
             "role": m.role,
             "content": (
-                m.content if isinstance(m.content, str)
-                else [p.model_dump() for p in m.content]
+                m.content if isinstance(m.content, str) else [p.model_dump() for p in m.content]
             ),
         }
         for m in request_body.messages

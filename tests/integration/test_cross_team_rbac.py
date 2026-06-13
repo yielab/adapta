@@ -36,8 +36,12 @@ async def _make_project(client, headers, team_id) -> str:
     r = await client.post(
         "/v1/projects",
         headers=headers,
-        json={"name": "team-a secret", "type": "finetune",
-              "base_model": "qwen2.5-3b-instruct", "team_id": team_id},
+        json={
+            "name": "team-a secret",
+            "type": "finetune",
+            "base_model": "qwen2.5-3b-instruct",
+            "team_id": team_id,
+        },
     )
     assert r.status_code == 201, r.text
     return r.json()["id"]
@@ -62,8 +66,12 @@ async def test_cross_team_isolation(client, admin):
         await client.post(
             "/v1/projects",
             headers=b_headers,
-            json={"name": "intruder", "type": "rag",
-                  "base_model": "qwen2.5-3b-instruct", "team_id": a_team},
+            json={
+                "name": "intruder",
+                "type": "rag",
+                "base_model": "qwen2.5-3b-instruct",
+                "team_id": a_team,
+            },
         ),
         "create project in foreign team",
     )
@@ -83,12 +91,24 @@ async def test_cross_team_isolation(client, admin):
         ("list keys", await client.get(f"/v1/projects/{a_pid}/keys", headers=b_headers)),
         ("get usage", await client.get(f"/v1/projects/{a_pid}/usage", headers=b_headers)),
         ("create endpoint", await client.post(f"/v1/projects/{a_pid}/endpoint", headers=b_headers)),
-        ("create key", await client.post(
-            f"/v1/projects/{a_pid}/keys", headers=b_headers, json={"name": "stolen"})),
-        ("enqueue job", await client.post(
-            f"/v1/projects/{a_pid}/jobs", headers=b_headers, json={"dataset_id": "x"})),
-        ("synthesize", await client.post(
-            f"/v1/projects/{a_pid}/datasets/synthesize", headers=b_headers, json={})),
+        (
+            "create key",
+            await client.post(
+                f"/v1/projects/{a_pid}/keys", headers=b_headers, json={"name": "stolen"}
+            ),
+        ),
+        (
+            "enqueue job",
+            await client.post(
+                f"/v1/projects/{a_pid}/jobs", headers=b_headers, json={"dataset_id": "x"}
+            ),
+        ),
+        (
+            "synthesize",
+            await client.post(
+                f"/v1/projects/{a_pid}/datasets/synthesize", headers=b_headers, json={}
+            ),
+        ),
     ]:
         _assert_forbidden(resp, what)
 

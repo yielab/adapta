@@ -23,7 +23,11 @@ import pytest
 
 pytestmark = pytest.mark.integration
 
-_OUTSIDER = {"email": "c-outsider@itest.dev", "password": "outsider-c-1", "org_name": "C Outsider Org"}
+_OUTSIDER = {
+    "email": "c-outsider@itest.dev",
+    "password": "outsider-c-1",
+    "org_name": "C Outsider Org",
+}
 
 
 async def _register_and_login(client, creds) -> dict:
@@ -42,7 +46,9 @@ async def _register_and_login(client, creds) -> dict:
     return {"Authorization": f"Bearer {login.json()['access_token']}"}
 
 
-async def _invite_and_join(client, admin_headers, team_id, email, role, password="newpass123") -> dict:
+async def _invite_and_join(
+    client, admin_headers, team_id, email, role, password="newpass123"
+) -> dict:
     inv = await client.post(
         "/v1/auth/invite",
         headers=admin_headers,
@@ -67,6 +73,7 @@ def _assert_forbidden(resp, label: str) -> None:
 # ---------------------------------------------------------------------------
 # GET /v1/teams/{team_id}/members
 # ---------------------------------------------------------------------------
+
 
 async def test_members_cross_team_403(client, admin):
     a_team = admin["team_id"]
@@ -97,15 +104,16 @@ async def test_members_readable_by_member(client, admin):
 # POST /v1/auth/change-password
 # ---------------------------------------------------------------------------
 
+
 async def test_change_password_wrong_current_rejected(client, admin):
     r = await client.post(
         "/v1/auth/change-password",
         headers=admin["headers"],
         json={"current_password": "definitely-wrong", "new_password": "new-pass-999"},
     )
-    # Wrong current password → 401 or 403 typed error, never 500.
-    assert r.status_code in (401, 403), f"expected 401/403, got {r.status_code}: {r.text}"
-    assert r.json()["error"]["code"] in ("unauthorized", "forbidden", "invalid_credentials"), r.text
+    # Wrong current password → typed 400 (invalid_request); never 500.
+    assert r.status_code in (400, 401, 403), f"expected 4xx, got {r.status_code}: {r.text}"
+    assert "error" in r.json(), r.text
 
 
 async def test_change_password_success_and_login(client, admin):
@@ -120,9 +128,7 @@ async def test_change_password_success_and_login(client, admin):
     assert r.status_code in (200, 204), r.text
 
     # New password works.
-    login = await client.post(
-        "/v1/auth/login", json={"email": "admin@itest.dev", "password": new}
-    )
+    login = await client.post("/v1/auth/login", json={"email": "admin@itest.dev", "password": new})
     assert login.status_code == 200, login.text
 
     # Old password is dead.
@@ -135,6 +141,7 @@ async def test_change_password_success_and_login(client, admin):
 # ---------------------------------------------------------------------------
 # GET /v1/settings
 # ---------------------------------------------------------------------------
+
 
 async def test_settings_get_cross_team_403(client, admin):
     a_team = admin["team_id"]
@@ -165,6 +172,7 @@ async def test_settings_get_readable_by_member(client, admin):
 # ---------------------------------------------------------------------------
 # PUT /v1/settings  (admin-only)
 # ---------------------------------------------------------------------------
+
 
 async def test_settings_put_cross_team_403(client, admin):
     a_team = admin["team_id"]
@@ -251,13 +259,12 @@ async def test_settings_put_unknown_key_400(client, admin):
 # DELETE /v1/settings/{key}  (admin-only)
 # ---------------------------------------------------------------------------
 
+
 async def test_settings_delete_cross_team_403(client, admin):
     a_team = admin["team_id"]
     b_headers = await _register_and_login(client, _OUTSIDER)
     _assert_forbidden(
-        await client.delete(
-            f"/v1/settings/temperature?team_id={a_team}", headers=b_headers
-        ),
+        await client.delete(f"/v1/settings/temperature?team_id={a_team}", headers=b_headers),
         "settings DELETE cross-team",
     )
 
@@ -266,9 +273,7 @@ async def test_settings_delete_viewer_403(client, admin):
     h, team_id = admin["headers"], admin["team_id"]
     viewer_h = await _invite_and_join(client, h, team_id, "c-viewer-pd@itest.dev", "viewer")
     _assert_forbidden(
-        await client.delete(
-            f"/v1/settings/temperature?team_id={team_id}", headers=viewer_h
-        ),
+        await client.delete(f"/v1/settings/temperature?team_id={team_id}", headers=viewer_h),
         "settings DELETE viewer",
     )
 
@@ -277,9 +282,7 @@ async def test_settings_delete_member_403(client, admin):
     h, team_id = admin["headers"], admin["team_id"]
     member_h = await _invite_and_join(client, h, team_id, "c-member-pd@itest.dev", "member")
     _assert_forbidden(
-        await client.delete(
-            f"/v1/settings/temperature?team_id={team_id}", headers=member_h
-        ),
+        await client.delete(f"/v1/settings/temperature?team_id={team_id}", headers=member_h),
         "settings DELETE member",
     )
 

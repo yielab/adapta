@@ -34,6 +34,7 @@ class LoRATrainer:
             import peft  # noqa: F401
             import torch  # noqa: F401
             import transformers  # noqa: F401
+
             self.dependencies_available = True
             logger.info("Training dependencies available")
         except ImportError as e:
@@ -245,7 +246,9 @@ class LoRATrainer:
                 train_dataset=tokenized_dataset["train"],
                 eval_dataset=tokenized_dataset.get("validation"),
                 data_collator=data_collator,
-                callbacks=[ProgressCallback(progress_callback, job_id)] if progress_callback else [],
+                callbacks=(
+                    [ProgressCallback(progress_callback, job_id)] if progress_callback else []
+                ),
             )
 
             # Start training
@@ -366,7 +369,8 @@ class LoRATrainer:
             model = get_peft_model(model, lora_config)
             model.print_trainable_parameters()
             offenders = [
-                n for n, p in model.named_parameters()
+                n
+                for n, p in model.named_parameters()
                 if p.requires_grad and "language_model" not in n and "lm_head" not in n
             ]
             if offenders:
@@ -387,19 +391,25 @@ class LoRATrainer:
                 img = Image.open(bundle_dir / row["images"][0]).convert("RGB")
                 messages = []
                 if row.get("system"):
-                    messages.append({"role": "system", "content": [{"type": "text", "text": row["system"]}]})
-                messages.append({
-                    "role": "user",
-                    "content": [{"type": "image"}, {"type": "text", "text": row["prompt"]}],
-                })
-                messages.append({"role": "assistant", "content": [{"type": "text", "text": row["response"]}]})
+                    messages.append(
+                        {"role": "system", "content": [{"type": "text", "text": row["system"]}]}
+                    )
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": [{"type": "image"}, {"type": "text", "text": row["prompt"]}],
+                    }
+                )
+                messages.append(
+                    {"role": "assistant", "content": [{"type": "text", "text": row["response"]}]}
+                )
                 text = processor.apply_chat_template(messages, tokenize=False)
                 inputs = processor(text=[text], images=[img], return_tensors="pt")
                 labels = inputs["input_ids"].clone()
                 ids = inputs["input_ids"][0].tolist()
                 start = None
                 for i in range(len(ids) - len(marker), -1, -1):
-                    if ids[i:i + len(marker)] == marker:
+                    if ids[i : i + len(marker)] == marker:
                         start = i + len(marker)
                         break
                 if start is None:
@@ -432,8 +442,11 @@ class LoRATrainer:
                     # Awaited directly (unlike the HF-Trainer text path) so Redis
                     # progress + the worker heartbeat actually run between epochs.
                     await progress_callback(
-                        job_id=job_id, step=step, epoch=float(epoch + 1),
-                        loss=avg, learning_rate=config.learning_rate,
+                        job_id=job_id,
+                        step=step,
+                        epoch=float(epoch + 1),
+                        loss=avg,
+                        learning_rate=config.learning_rate,
                     )
 
             logger.info("Saving vision adapter to %s", adapter_path)

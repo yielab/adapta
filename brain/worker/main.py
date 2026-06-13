@@ -216,6 +216,7 @@ async def _run_job(meta: dict) -> None:
     await progress(0.95, "Running evaluation...")
     try:
         from brain.training.evaluator import evaluator
+
         # Score on the HELD-OUT split (eval_path), never the rows we trained on.
         if modality == "vision":
             result = await evaluator.evaluate_adapter_vision(
@@ -257,12 +258,16 @@ async def _run_job(meta: dict) -> None:
     if result.base_score is not None:
         logger.info(
             "Eval score: %.4f (threshold=%.4f) | base=%.4f delta=%+.4f (held-out, response-only)",
-            eval_score, settings.eval_score_threshold, result.base_score, result.score_delta,
+            eval_score,
+            settings.eval_score_threshold,
+            result.base_score,
+            result.score_delta,
         )
     else:
         logger.info(
             "Eval score: %.4f (threshold=%.4f) (held-out, response-only)",
-            eval_score, settings.eval_score_threshold,
+            eval_score,
+            settings.eval_score_threshold,
         )
 
     if not eval_passed:
@@ -276,8 +281,11 @@ async def _run_job(meta: dict) -> None:
             error=(
                 f"Eval score {eval_score:.3f} did not pass the gate "
                 f"(needs ≥ {settings.eval_score_threshold:.3f}, or a clear improvement over base"
-                + (f"; base={result.base_score:.3f} delta={result.score_delta:+.3f})"
-                   if result.base_score is not None else ")")
+                + (
+                    f"; base={result.base_score:.3f} delta={result.score_delta:+.3f})"
+                    if result.base_score is not None
+                    else ")"
+                )
             ),
         )
         return
@@ -290,6 +298,7 @@ async def _run_job(meta: dict) -> None:
     adapter_gguf_path = None
     try:
         from brain.core.adapter_conversion import convert_peft_to_gguf
+
         gguf_path = await convert_peft_to_gguf(
             output_dir, base_model_id=hf_base_model, vision=(modality == "vision")
         )
@@ -300,8 +309,11 @@ async def _run_job(meta: dict) -> None:
         # gate keeps serving blocked rather than silently falling back to base.
         logger.exception("Adapter GGUF conversion failed for job %s", job_id)
         await _set_status(
-            queue, job_id, status="failed",
-            eval_score=eval_score, eval_passed=eval_passed,
+            queue,
+            job_id,
+            status="failed",
+            eval_score=eval_score,
+            eval_passed=eval_passed,
             error=f"Adapter conversion for serving failed: {exc}",
         )
         return
@@ -366,13 +378,17 @@ def _log_gpu_banner() -> None:
     if cuda.usable:
         logger.info(
             "GPU ready: %s | torch %s (CUDA %s)",
-            cuda.device_name, cuda.torch_version, cuda.cuda_version,
+            cuda.device_name,
+            cuda.torch_version,
+            cuda.cuda_version,
         )
     else:
         logger.warning(
             "No usable training GPU: %s | torch %s (CUDA build: %s). "
             "Jobs will be rejected with 'GPU required'.",
-            cuda.reason, cuda.torch_version, cuda.cuda_version,
+            cuda.reason,
+            cuda.torch_version,
+            cuda.cuda_version,
         )
 
 
@@ -387,6 +403,7 @@ async def worker_loop() -> None:
     # worker from serving the live queue, so it's best-effort.
     try:
         from brain.services.training import recover_orphaned_jobs
+
         await recover_orphaned_jobs()
     except Exception:
         logger.exception("Crash-recovery reconciliation failed (continuing to serve queue)")

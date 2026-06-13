@@ -30,11 +30,18 @@ async def test_invite_accept_member_can_write(client, admin):
 
     member_h = await _accept_and_login(client, inv.json()["token"], "member@itest.dev")
     # member can read AND write
-    assert (await client.get(f"/v1/projects?team_id={team_id}", headers=member_h)).status_code == 200
+    assert (
+        await client.get(f"/v1/projects?team_id={team_id}", headers=member_h)
+    ).status_code == 200
     created = await client.post(
         "/v1/projects",
         headers=member_h,
-        json={"name": "by-member", "type": "rag", "base_model": "qwen2.5-3b-instruct", "team_id": team_id},
+        json={
+            "name": "by-member",
+            "type": "rag",
+            "base_model": "qwen2.5-3b-instruct",
+            "team_id": team_id,
+        },
     )
     assert created.status_code == 201, created.text
 
@@ -46,12 +53,19 @@ async def test_viewer_is_read_only(client, admin):
     viewer_h = await _accept_and_login(client, inv.json()["token"], "viewer@itest.dev")
 
     # viewer can read
-    assert (await client.get(f"/v1/projects?team_id={team_id}", headers=viewer_h)).status_code == 200
+    assert (
+        await client.get(f"/v1/projects?team_id={team_id}", headers=viewer_h)
+    ).status_code == 200
     # ...but not mutate
     blocked = await client.post(
         "/v1/projects",
         headers=viewer_h,
-        json={"name": "by-viewer", "type": "rag", "base_model": "qwen2.5-3b-instruct", "team_id": team_id},
+        json={
+            "name": "by-viewer",
+            "type": "rag",
+            "base_model": "qwen2.5-3b-instruct",
+            "team_id": team_id,
+        },
     )
     assert blocked.status_code == 403, blocked.text
     assert blocked.json()["error"]["code"] in ("forbidden", "insufficient_permissions")
@@ -76,5 +90,7 @@ async def test_list_invitations_hides_token(client, admin):
 
 
 async def test_accept_invalid_token_404(client):
-    r = await client.post("/v1/auth/accept-invite", json={"token": "nope", "password": "longenough1"})
+    r = await client.post(
+        "/v1/auth/accept-invite", json={"token": "nope", "password": "longenough1"}
+    )
     assert r.status_code == 404

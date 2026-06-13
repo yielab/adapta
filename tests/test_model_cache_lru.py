@@ -29,9 +29,9 @@ def test_lru_eviction_drops_least_recently_used(monkeypatch):
     # Simulate inserting a third, new model: evict down to make room.
     mgr._evict_lru_if_needed()
 
-    assert "b" not in mgr._models          # LRU evicted
-    assert "a" in mgr._models              # recently used kept
-    assert "b" not in mgr._infer_locks     # its lock dropped too
+    assert "b" not in mgr._models  # LRU evicted
+    assert "a" in mgr._models  # recently used kept
+    assert "b" not in mgr._infer_locks  # its lock dropped too
     assert len(mgr._models) < settings.max_loaded_models
 
 

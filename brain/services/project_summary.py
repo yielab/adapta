@@ -103,9 +103,7 @@ def _derive_stage(
     return "awaiting_data"
 
 
-async def compute_summaries(
-    db: AsyncSession, project_ids: List[str]
-) -> Dict[str, ProjectSummary]:
+async def compute_summaries(db: AsyncSession, project_ids: List[str]) -> Dict[str, ProjectSummary]:
     """Compute ProjectSummary for a list of project IDs in O(1) extra queries."""
     if not project_ids:
         return {}
@@ -117,9 +115,9 @@ async def compute_summaries(
         select(
             ProjectFile.project_id,
             func.count(ProjectFile.id).label("total"),
-            func.sum(
-                case((ProjectFile.status == FileStatus.indexed.value, 1), else_=0)
-            ).label("indexed"),
+            func.sum(case((ProjectFile.status == FileStatus.indexed.value, 1), else_=0)).label(
+                "indexed"
+            ),
             func.coalesce(func.sum(ProjectFile.num_chunks), 0).label("chunks"),
         )
         .where(ProjectFile.project_id.in_(pid_set))
@@ -138,9 +136,9 @@ async def compute_summaries(
         select(
             Dataset.project_id,
             func.count(Dataset.id).label("total"),
-            func.sum(
-                case((Dataset.status == DatasetStatus.valid.value, 1), else_=0)
-            ).label("valid"),
+            func.sum(case((Dataset.status == DatasetStatus.valid.value, 1), else_=0)).label(
+                "valid"
+            ),
         )
         .where(Dataset.project_id.in_(pid_set))
         .group_by(Dataset.project_id)
@@ -157,9 +155,9 @@ async def compute_summaries(
         select(
             TrainingJob.project_id,
             func.count(TrainingJob.id).label("total"),
-            func.sum(
-                case((TrainingJob.status == JobStatus.running.value, 1), else_=0)
-            ).label("running"),
+            func.sum(case((TrainingJob.status == JobStatus.running.value, 1), else_=0)).label(
+                "running"
+            ),
         )
         .where(TrainingJob.project_id.in_(pid_set))
         .group_by(TrainingJob.project_id)
@@ -174,9 +172,7 @@ async def compute_summaries(
         .where(
             and_(
                 TrainingJob.project_id.in_(pid_set),
-                TrainingJob.status.in_(
-                    [JobStatus.succeeded.value, JobStatus.failed.value]
-                ),
+                TrainingJob.status.in_([JobStatus.succeeded.value, JobStatus.failed.value]),
             )
         )
         .order_by(TrainingJob.created_at.desc())
@@ -191,15 +187,11 @@ async def compute_summaries(
             js.gate_passed = job.eval_passed
 
     # ── endpoints ───────────────────────────────────────────────────────────
-    ep_rows = await db.execute(
-        select(Endpoint).where(Endpoint.project_id.in_(pid_set))
-    )
+    ep_rows = await db.execute(select(Endpoint).where(Endpoint.project_id.in_(pid_set)))
     ep_map: Dict[str, EndpointSummary] = {}
     for ep in ep_rows.scalars():
         status_val = ep.status.value if hasattr(ep.status, "value") else str(ep.status)
-        ep_map[ep.project_id] = EndpointSummary(
-            exists=True, slug=ep.slug, status=status_val
-        )
+        ep_map[ep.project_id] = EndpointSummary(exists=True, slug=ep.slug, status=status_val)
 
     # ── active keys (via endpoints) ─────────────────────────────────────────
     key_rows = await db.execute(
@@ -241,9 +233,7 @@ async def compute_summaries(
 
     # ── project type lookup ─────────────────────────────────────────────────
     proj_rows = await db.execute(
-        select(Project.id, Project.type, Project.updated_at).where(
-            Project.id.in_(pid_set)
-        )
+        select(Project.id, Project.type, Project.updated_at).where(Project.id.in_(pid_set))
     )
     proj_type_map: Dict[str, tuple] = {
         row.id: (row.type.value if hasattr(row.type, "value") else str(row.type), row.updated_at)

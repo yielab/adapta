@@ -35,22 +35,31 @@ async def _seed_rag_endpoint_project(org_id: str, user_id: str, tag: str) -> str
         team_id = str(uuid.uuid4())
         await conn.execute(
             "INSERT INTO teams (id, org_id, name) VALUES ($1, $2, $3)",
-            team_id, org_id, f"ScopeTeam-{tag}",
+            team_id,
+            org_id,
+            f"ScopeTeam-{tag}",
         )
         await conn.execute(
             "INSERT INTO team_members (id, team_id, user_id, role) VALUES ($1, $2, $3, 'admin')",
-            str(uuid.uuid4()), team_id, user_id,
+            str(uuid.uuid4()),
+            team_id,
+            user_id,
         )
         project_id = str(uuid.uuid4())
         await conn.execute(
             "INSERT INTO projects (id, team_id, name, type, status, base_model) "
             "VALUES ($1, $2, $3, 'rag', 'created', 'qwen2.5-3b-instruct')",
-            project_id, team_id, f"ScopeProject-{tag}",
+            project_id,
+            team_id,
+            f"ScopeProject-{tag}",
         )
         await conn.execute(
             "INSERT INTO collections (id, project_id, chroma_collection_name, "
             "embedding_model, num_documents, num_chunks) VALUES ($1, $2, $3, $4, 1, 5)",
-            str(uuid.uuid4()), project_id, f"col_{project_id}", "all-MiniLM-L6-v2",
+            str(uuid.uuid4()),
+            project_id,
+            f"col_{project_id}",
+            "all-MiniLM-L6-v2",
         )
         return project_id
     finally:
@@ -68,6 +77,7 @@ async def _org_id_for_user(user_id: str) -> str:
 # ---------------------------------------------------------------------------
 # §5.12 acceptance tests
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_key_cannot_drive_foreign_endpoint(client, admin):
@@ -137,9 +147,9 @@ async def test_revoked_key_is_rejected(client, admin):
         headers={"Authorization": f"Bearer {key}"},
         json={"model": "nonexistent-slug", "messages": [{"role": "user", "content": "hi"}]},
     )
-    assert r_before.status_code == 403, (
-        f"valid key should give 403 (not 401) on wrong slug; got {r_before.status_code}"
-    )
+    assert (
+        r_before.status_code == 403
+    ), f"valid key should give 403 (not 401) on wrong slug; got {r_before.status_code}"
 
     # Revoke
     del_r = await client.delete(
@@ -154,7 +164,7 @@ async def test_revoked_key_is_rejected(client, admin):
         headers={"Authorization": f"Bearer {key}"},
         json={"model": "nonexistent-slug", "messages": [{"role": "user", "content": "hi"}]},
     )
-    assert r_after.status_code == 401, (
-        f"revoked key should be rejected with 401; got {r_after.status_code}: {r_after.text}"
-    )
+    assert (
+        r_after.status_code == 401
+    ), f"revoked key should be rejected with 401; got {r_after.status_code}: {r_after.text}"
     assert r_after.json()["error"]["code"] == "unauthorized"

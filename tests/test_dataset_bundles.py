@@ -65,6 +65,7 @@ def test_bundle_must_have_exactly_one_manifest(tmp_path):
 
 def test_bundle_file_count_cap(tmp_path, monkeypatch):
     from brain.config import settings
+
     monkeypatch.setattr(settings, "max_bundle_files", 2)
     zpath = _bundle(tmp_path, ROWS, images=["images/a.png", "images/b.png", "images/c.png"])
     with pytest.raises(BundleError, match="at most 2"):

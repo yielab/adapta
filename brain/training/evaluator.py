@@ -34,6 +34,7 @@ class ModelEvaluator:
             import peft  # noqa: F401
             import torch  # noqa: F401
             import transformers  # noqa: F401
+
             self.dependencies_available = True
             logger.info("Evaluation dependencies available")
         except ImportError as e:
@@ -79,7 +80,10 @@ class ModelEvaluator:
 
         prompt_ids = tokenizer(prompt_text, add_special_tokens=False)["input_ids"]
         full = tokenizer(
-            full_text, return_tensors="pt", truncation=True, max_length=2048,
+            full_text,
+            return_tensors="pt",
+            truncation=True,
+            max_length=2048,
             add_special_tokens=False,
         )
         input_ids = full["input_ids"]
@@ -235,7 +239,9 @@ class ModelEvaluator:
                     if idx >= num_samples:
                         break
                     prompt_text, target_text = self._render_prompt_and_target(example["messages"])
-                    input_ids = tokenizer(prompt_text, return_tensors="pt", truncation=True, max_length=2048)
+                    input_ids = tokenizer(
+                        prompt_text, return_tensors="pt", truncation=True, max_length=2048
+                    )
                     input_ids = {k: v.to(model.device) for k, v in input_ids.items()}
                     generated_ids = model.generate(
                         **input_ids,
@@ -245,14 +251,16 @@ class ModelEvaluator:
                         pad_token_id=tokenizer.pad_token_id,
                     )
                     prediction = tokenizer.decode(
-                        generated_ids[0][input_ids["input_ids"].shape[1]:],
+                        generated_ids[0][input_ids["input_ids"].shape[1] :],
                         skip_special_tokens=True,
                     )
-                    sample_predictions.append({
-                        "input": prompt_text,
-                        "expected": target_text,
-                        "predicted": prediction,
-                    })
+                    sample_predictions.append(
+                        {
+                            "input": prompt_text,
+                            "expected": target_text,
+                            "predicted": prediction,
+                        }
+                    )
 
             # Eval is the last consumer of the model in this worker job. PeftModel↔base
             # is a reference cycle: without an explicit collect the CUDA tensors stay
@@ -313,9 +321,15 @@ class ModelEvaluator:
             logger.info(
                 "Evaluation %s completed (held-out, response-only): "
                 "loss=%.4f ppl=%.2f score=%.4f%s duration=%.1fs",
-                eval_id, adapter_loss, perplexity, score,
-                (f" | base_score={base_score:.4f} delta={score_delta:+.4f}"
-                 if base_score is not None else ""),
+                eval_id,
+                adapter_loss,
+                perplexity,
+                score,
+                (
+                    f" | base_score={base_score:.4f} delta={score_delta:+.4f}"
+                    if base_score is not None
+                    else ""
+                ),
                 duration,
             )
 
@@ -393,13 +407,19 @@ class ModelEvaluator:
             img = Image.open(bundle_dir / row["images"][0]).convert("RGB")
             messages = []
             if row.get("system"):
-                messages.append({"role": "system", "content": [{"type": "text", "text": row["system"]}]})
-            messages.append({
-                "role": "user",
-                "content": [{"type": "image"}, {"type": "text", "text": row["prompt"]}],
-            })
+                messages.append(
+                    {"role": "system", "content": [{"type": "text", "text": row["system"]}]}
+                )
+            messages.append(
+                {
+                    "role": "user",
+                    "content": [{"type": "image"}, {"type": "text", "text": row["prompt"]}],
+                }
+            )
             if include_response:
-                messages.append({"role": "assistant", "content": [{"type": "text", "text": row["response"]}]})
+                messages.append(
+                    {"role": "assistant", "content": [{"type": "text", "text": row["response"]}]}
+                )
             text = processor.apply_chat_template(
                 messages, tokenize=False, add_generation_prompt=not include_response
             )
@@ -409,7 +429,7 @@ class ModelEvaluator:
                 ids = inputs["input_ids"][0].tolist()
                 start = None
                 for i in range(len(ids) - len(marker), -1, -1):
-                    if ids[i:i + len(marker)] == marker:
+                    if ids[i : i + len(marker)] == marker:
                         start = i + len(marker)
                         break
                 if start is None:
@@ -446,13 +466,15 @@ class ModelEvaluator:
                 inputs = _encode(row, include_response=False).to(model.device)
                 generated = model.generate(**inputs, max_new_tokens=64, do_sample=False)
                 prediction = processor.tokenizer.decode(
-                    generated[0][inputs["input_ids"].shape[1]:], skip_special_tokens=True
+                    generated[0][inputs["input_ids"].shape[1] :], skip_special_tokens=True
                 )
-                sample_predictions.append({
-                    "input": row["prompt"] + f" [image: {row['images'][0]}]",
-                    "expected": row["response"],
-                    "predicted": prediction,
-                })
+                sample_predictions.append(
+                    {
+                        "input": row["prompt"] + f" [image: {row['images'][0]}]",
+                        "expected": row["response"],
+                        "predicted": prediction,
+                    }
+                )
 
         # Same hygiene as the text path: break the PeftModel↔base cycle and release
         # the ~2.5 GiB of 4-bit CUDA tensors now, or the next vision job OOMs on an
@@ -474,8 +496,12 @@ class ModelEvaluator:
         metrics = EvaluationMetrics(
             loss=adapter_loss,
             perplexity=perplexity,
-            accuracy=None, exact_match=None, token_accuracy=None,
-            bleu_score=None, coherence_score=None, fluency_score=None,
+            accuracy=None,
+            exact_match=None,
+            token_accuracy=None,
+            bleu_score=None,
+            coherence_score=None,
+            fluency_score=None,
             base_loss=base_loss,
             base_perplexity=base_perplexity,
             loss_improvement=loss_improvement,
@@ -501,9 +527,15 @@ class ModelEvaluator:
         logger.info(
             "Vision evaluation %s completed (held-out, response-only): "
             "loss=%.4f ppl=%.2f score=%.4f%s duration=%.1fs",
-            eval_id, adapter_loss, perplexity, score,
-            (f" | base_score={base_score:.4f} delta={score_delta:+.4f}"
-             if base_score is not None else ""),
+            eval_id,
+            adapter_loss,
+            perplexity,
+            score,
+            (
+                f" | base_score={base_score:.4f} delta={score_delta:+.4f}"
+                if base_score is not None
+                else ""
+            ),
             duration,
         )
         return result

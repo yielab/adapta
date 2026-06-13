@@ -23,6 +23,7 @@ def registry(tmp_path):
 # Threshold enforcement
 # ---------------------------------------------------------------------------
 
+
 def test_register_below_threshold_raises(registry):
     with pytest.raises(EvalGateFailed) as exc_info:
         registry.register(
@@ -68,12 +69,18 @@ def test_register_above_threshold_succeeds(registry):
 # beats the base on the held-out split is promotable; a marginal/garbage one is not.
 # ---------------------------------------------------------------------------
 
+
 def test_register_improvement_path_succeeds(registry):
     # Below the absolute 0.6, but more than doubles base and clears the floor.
     entry = registry.register(
-        adapter_id="imp1", project_id="p1", job_id="ji1",
-        adapter_path="/data/adapters/imp1", eval_score=0.30,
-        base_model="qwen2.5-0.5b-instruct", base_score=0.10, score_delta=0.20,
+        adapter_id="imp1",
+        project_id="p1",
+        job_id="ji1",
+        adapter_path="/data/adapters/imp1",
+        eval_score=0.30,
+        base_model="qwen2.5-0.5b-instruct",
+        base_score=0.10,
+        score_delta=0.20,
     )
     assert entry["adapter_id"] == "imp1"
     assert entry["base_score"] == 0.10 and entry["score_delta"] == 0.20
@@ -83,9 +90,14 @@ def test_register_marginal_improvement_blocked(registry):
     # Beats base, but by less than the min improvement margin → blocked.
     with pytest.raises(EvalGateFailed):
         registry.register(
-            adapter_id="imp2", project_id="p1", job_id="ji2",
-            adapter_path="/data/adapters/imp2", eval_score=0.30,
-            base_model="qwen2.5-0.5b-instruct", base_score=0.28, score_delta=0.02,
+            adapter_id="imp2",
+            project_id="p1",
+            job_id="ji2",
+            adapter_path="/data/adapters/imp2",
+            eval_score=0.30,
+            base_model="qwen2.5-0.5b-instruct",
+            base_score=0.28,
+            score_delta=0.02,
         )
 
 
@@ -93,19 +105,24 @@ def test_register_below_floor_blocked(registry):
     # Big relative gain but the absolute score is still essentially garbage → blocked.
     with pytest.raises(EvalGateFailed):
         registry.register(
-            adapter_id="imp3", project_id="p1", job_id="ji3",
-            adapter_path="/data/adapters/imp3", eval_score=0.04,
-            base_model="qwen2.5-0.5b-instruct", base_score=0.001, score_delta=0.039,
+            adapter_id="imp3",
+            project_id="p1",
+            job_id="ji3",
+            adapter_path="/data/adapters/imp3",
+            eval_score=0.04,
+            base_model="qwen2.5-0.5b-instruct",
+            base_score=0.001,
+            score_delta=0.039,
         )
 
 
 def test_passes_eval_gate_logic():
     from brain.training.models import passes_eval_gate
 
-    assert passes_eval_gate(0.6) is True                       # absolute
+    assert passes_eval_gate(0.6) is True  # absolute
     assert passes_eval_gate(0.95) is True
-    assert passes_eval_gate(0.3) is False                      # sub-floor, no base info
-    assert passes_eval_gate(0.3, base_score=0.1, score_delta=0.2) is True   # improvement
+    assert passes_eval_gate(0.3) is False  # sub-floor, no base info
+    assert passes_eval_gate(0.3, base_score=0.1, score_delta=0.2) is True  # improvement
     assert passes_eval_gate(0.3, base_score=0.28, score_delta=0.02) is False  # marginal
     assert passes_eval_gate(0.04, base_score=0.0, score_delta=0.04) is False  # below floor
 
@@ -137,6 +154,7 @@ def test_register_just_below_threshold_raises(registry):
 # ---------------------------------------------------------------------------
 # Persistence — registry survives across instances (filesystem-backed)
 # ---------------------------------------------------------------------------
+
 
 def test_registered_adapter_persists(tmp_path):
     reg1 = AdapterRegistry(adapters_dir=tmp_path / "adapters")
@@ -173,6 +191,7 @@ def test_failed_adapter_not_stored(registry):
 # Lookup helpers
 # ---------------------------------------------------------------------------
 
+
 def test_get_unknown_adapter_raises_not_found(registry):
     with pytest.raises(NotFound):
         registry.get("does_not_exist")
@@ -200,6 +219,7 @@ def test_get_adapter_path(registry):
 # ---------------------------------------------------------------------------
 # Dataset schema validation blocks job enqueue (Pillar 3 — dataset contract)
 # ---------------------------------------------------------------------------
+
 
 def test_invalid_dataset_rejected_before_enqueue(tmp_path):
     """A dataset that violates training_dataset.schema.json must be rejected."""
@@ -229,6 +249,7 @@ def test_valid_dataset_passes_schema(tmp_path):
 # eval set, so the gate would only measure memorization. Reject before enqueue.
 # ---------------------------------------------------------------------------
 
+
 def test_below_min_samples_rejected():
     import pytest
 
@@ -250,6 +271,7 @@ def test_at_min_samples_allowed():
     import pytest
 
     from brain.domain.errors import InvalidRequest
+
     with pytest.raises(InvalidRequest):
         check_min_training_samples(None)
 
@@ -258,22 +280,23 @@ def test_at_min_samples_allowed():
 # Hyperparameter bounds (A4.12) — reject runaway configs before they tie up a GPU.
 # ---------------------------------------------------------------------------
 
+
 def test_training_config_bounds():
     import pytest
 
     from brain.domain.errors import InvalidRequest
     from brain.services.training import validate_training_config
 
-    validate_training_config(None)            # no config → ok
-    validate_training_config({})              # empty → ok
+    validate_training_config(None)  # no config → ok
+    validate_training_config({})  # empty → ok
     validate_training_config({"num_epochs": 3, "learning_rate": 2e-4})  # in range → ok
 
     for bad in (
-        {"num_epochs": 1000},                 # way over the cap
-        {"learning_rate": 1.0},               # divergent
-        {"batch_size": 100000},               # OOM
-        {"lora_dropout": 5},                  # nonsensical
-        {"num_epochs": "lots"},               # wrong type
+        {"num_epochs": 1000},  # way over the cap
+        {"learning_rate": 1.0},  # divergent
+        {"batch_size": 100000},  # OOM
+        {"lora_dropout": 5},  # nonsensical
+        {"num_epochs": "lots"},  # wrong type
     ):
         with pytest.raises(InvalidRequest):
             validate_training_config(bad)
@@ -326,8 +349,13 @@ def test_evaluation_result_carries_real_score_not_zero():
     """The regression guard: a finished eval produces a real score the gate reads."""
     avg_loss = 0.3
     result = EvaluationResult(
-        eval_id="e1", job_id="j1", agent_id="a1", adapter_name="ad1",
-        adapter_path="/p", dataset_path="/d", num_examples=4,
+        eval_id="e1",
+        job_id="j1",
+        agent_id="a1",
+        adapter_name="ad1",
+        adapter_path="/p",
+        dataset_path="/d",
+        num_examples=4,
         metrics=EvaluationMetrics(loss=avg_loss, perplexity=math.exp(avg_loss)),
         score=score_from_loss(avg_loss),
     )
@@ -395,9 +423,16 @@ class TestResponseOnlyMasking:
                 out.append(self._vocab.setdefault(tok, len(self._vocab) + 1))
             return out
 
-        def __call__(self, text, return_tensors=None, truncation=False,
-                     max_length=None, add_special_tokens=True):
+        def __call__(
+            self,
+            text,
+            return_tensors=None,
+            truncation=False,
+            max_length=None,
+            add_special_tokens=True,
+        ):
             import torch
+
             ids = self._ids(text)
             if return_tensors == "pt":
                 return {"input_ids": torch.tensor([ids])}
@@ -405,6 +440,7 @@ class TestResponseOnlyMasking:
 
     def test_render_prompt_ends_with_assistant_cue_without_answer(self):
         from brain.training.evaluator import ModelEvaluator
+
         messages = [
             {"role": "system", "content": "be terse"},
             {"role": "user", "content": "hi"},
@@ -419,6 +455,7 @@ class TestResponseOnlyMasking:
         import torch
 
         from brain.training.evaluator import ModelEvaluator
+
         ev = ModelEvaluator()
         tok = self._FakeTokenizer()
         messages = [
@@ -449,14 +486,23 @@ class TestBaseVsAdapterDelta:
         score = score_from_loss(adapter_loss)
         base_score = score_from_loss(base_loss)
         result = EvaluationResult(
-            eval_id="e2", job_id="j2", agent_id="a2", adapter_name="ad2",
-            adapter_path="/p", dataset_path="/eval", num_examples=4,
+            eval_id="e2",
+            job_id="j2",
+            agent_id="a2",
+            adapter_name="ad2",
+            adapter_path="/p",
+            dataset_path="/eval",
+            num_examples=4,
             metrics=EvaluationMetrics(
-                loss=adapter_loss, perplexity=math.exp(adapter_loss),
-                base_loss=base_loss, base_perplexity=math.exp(base_loss),
+                loss=adapter_loss,
+                perplexity=math.exp(adapter_loss),
+                base_loss=base_loss,
+                base_perplexity=math.exp(base_loss),
                 loss_improvement=base_loss - adapter_loss,
             ),
-            score=score, base_score=base_score, score_delta=score - base_score,
+            score=score,
+            base_score=base_score,
+            score_delta=score - base_score,
             held_out=True,
         )
         # Fine-tune helped (lower loss → higher score → positive delta).
@@ -480,7 +526,10 @@ class TestBaseVsAdapterDelta:
         assert score == pytest.approx(0.5)
         with pytest.raises(EvalGateFailed):
             registry.register(
-                adapter_id="d1", project_id="p1", job_id="jd1",
-                adapter_path="/data/adapters/d1", eval_score=score,
+                adapter_id="d1",
+                project_id="p1",
+                job_id="jd1",
+                adapter_path="/data/adapters/d1",
+                eval_score=score,
                 base_model="qwen2.5-3b",
             )

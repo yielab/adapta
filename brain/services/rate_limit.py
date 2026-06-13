@@ -46,7 +46,9 @@ async def enforce(
     if not identifier:
         return
     limit = limit if limit is not None else settings.auth_rate_limit_max
-    window_seconds = window_seconds if window_seconds is not None else settings.auth_rate_limit_window_seconds
+    window_seconds = (
+        window_seconds if window_seconds is not None else settings.auth_rate_limit_window_seconds
+    )
     if limit <= 0:
         return  # disabled (e.g. BRAIN_AUTH_RATE_LIMIT_MAX=0)
 

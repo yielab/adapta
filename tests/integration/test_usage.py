@@ -22,18 +22,22 @@ async def _seed_endpoint_with_usage(project_id: str) -> None:
         await conn.execute(
             "INSERT INTO endpoints (id, project_id, slug, status, base_model, created_at, updated_at) "
             "VALUES ($1, $2, $3, 'active', 'x', now(), now())",
-            ep_id, project_id, f"slug-{ep_id[:8]}",
+            ep_id,
+            project_id,
+            f"slug-{ep_id[:8]}",
         )
         # two distinct days
         await conn.execute(
             "INSERT INTO usage_events (id, endpoint_id, day, prompt_tokens, completion_tokens, request_count) "
             "VALUES ($1, $2, CURRENT_DATE, 100, 200, 3)",
-            str(uuid.uuid4()), ep_id,
+            str(uuid.uuid4()),
+            ep_id,
         )
         await conn.execute(
             "INSERT INTO usage_events (id, endpoint_id, day, prompt_tokens, completion_tokens, request_count) "
             "VALUES ($1, $2, CURRENT_DATE - 1, 10, 20, 1)",
-            str(uuid.uuid4()), ep_id,
+            str(uuid.uuid4()),
+            ep_id,
         )
     finally:
         await conn.close()
@@ -44,7 +48,12 @@ async def test_usage_aggregation(client, admin):
     proj = await client.post(
         "/v1/projects",
         headers=h,
-        json={"name": "U", "type": "finetune", "base_model": "qwen2.5-3b-instruct", "team_id": team_id},
+        json={
+            "name": "U",
+            "type": "finetune",
+            "base_model": "qwen2.5-3b-instruct",
+            "team_id": team_id,
+        },
     )
     pid = proj.json()["id"]
 

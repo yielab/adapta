@@ -29,6 +29,7 @@ def _dsn() -> str:
 @pytest.fixture
 async def clean_db():
     from brain.db.session import engine
+
     await engine.dispose()  # fresh pool in this test's loop (see conftest note)
     conn = await asyncpg.connect(_dsn())
     try:
@@ -50,7 +51,8 @@ async def _seed_project() -> str:
         await conn.execute(
             "INSERT INTO projects (id, team_id, name, type, status, base_model) "
             "VALUES ($1, $2, 'SweepProject', 'rag', 'created', 'qwen2.5-3b-instruct')",
-            project_id, team_id,
+            project_id,
+            team_id,
         )
         return project_id
     finally:
@@ -66,12 +68,14 @@ async def test_sweep_fails_stuck_file_and_dataset(clean_db):
         await conn.execute(
             "INSERT INTO project_files (id, project_id, filename, content_type, size_bytes, "
             "storage_path, status) VALUES ($1, $2, 'doc.pdf', 'application/pdf', 10, '/tmp/d.pdf', 'processing')",
-            file_id, project_id,
+            file_id,
+            project_id,
         )
         await conn.execute(
             "INSERT INTO datasets (id, project_id, name, storage_path, status) "
             "VALUES ($1, $2, 'd.jsonl', '/tmp/d.jsonl', 'validating')",
-            ds_id, project_id,
+            ds_id,
+            project_id,
         )
     finally:
         await conn.close()

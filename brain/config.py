@@ -89,7 +89,7 @@ class Settings(BaseSettings):
     # Auth brute-force rate limiting (A4.9). Fixed-window per-IP and per-email cap on
     # the unauthenticated auth endpoints (login/register/accept-invite). Fail-open: a
     # limiter (Redis) outage must never lock everyone out of auth.
-    auth_rate_limit_max: int = 20            # allowed attempts per window per key
+    auth_rate_limit_max: int = 20  # allowed attempts per window per key
     auth_rate_limit_window_seconds: int = 60
 
     # Training — eval gate. An adapter is promotable if EITHER it clears the absolute
@@ -99,9 +99,9 @@ class Settings(BaseSettings):
     # a small base model can't reach 0.6 even on an ideal task, yet a fine-tune that
     # reliably doubles the base score has clearly learned something. Gating on
     # improvement (not just an absolute bar) was anticipated by §A3.2.
-    eval_score_threshold: float = 0.6   # absolute "strong adapter" pass
+    eval_score_threshold: float = 0.6  # absolute "strong adapter" pass
     eval_min_improvement: float = 0.05  # min score gain over base for the improvement path
-    eval_min_floor: float = 0.05        # sanity floor for the improvement path (not garbage)
+    eval_min_floor: float = 0.05  # sanity floor for the improvement path (not garbage)
     # Minimum dataset size to start a training job (A4.6). Below this the held-out
     # eval split collapses (e.g. 1 row → 0 held out → the gate scores the training
     # rows and only measures memorization), so we reject the job up front.
@@ -142,6 +142,7 @@ class Settings(BaseSettings):
         secret = values.get("secret_key", "CHANGE_ME_IN_PRODUCTION_use_openssl_rand_hex_32")
         if "CHANGE_ME" in str(secret):
             import warnings
+
             warnings.warn(
                 "BRAIN_SECRET_KEY is still the default placeholder. "
                 "Set a strong secret with: openssl rand -hex 32",
@@ -169,7 +170,13 @@ class Settings(BaseSettings):
         return values
 
     def ensure_dirs(self) -> None:
-        for d in [self.data_dir, self.models_dir, self.uploads_dir, self.adapters_dir, self.datasets_dir]:
+        for d in [
+            self.data_dir,
+            self.models_dir,
+            self.uploads_dir,
+            self.adapters_dir,
+            self.datasets_dir,
+        ]:
             d.mkdir(parents=True, exist_ok=True)
 
 

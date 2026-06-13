@@ -39,6 +39,7 @@ def _uuid() -> str:
 # Enums
 # ---------------------------------------------------------------------------
 
+
 class Role(str, enum.Enum):
     admin = "admin"
     member = "member"
@@ -58,9 +59,9 @@ class ProjectType(str, enum.Enum):
 
 class ProjectStatus(str, enum.Enum):
     created = "created"
-    indexing = "indexing"       # RAG: building collection
+    indexing = "indexing"  # RAG: building collection
     ready = "ready"
-    training = "training"       # finetune: job running
+    training = "training"  # finetune: job running
     failed = "failed"
 
 
@@ -87,7 +88,7 @@ class JobStatus(str, enum.Enum):
 
 
 class EndpointStatus(str, enum.Enum):
-    pending = "pending"    # not yet servable
+    pending = "pending"  # not yet servable
     active = "active"
     disabled = "disabled"
 
@@ -96,6 +97,7 @@ class EndpointStatus(str, enum.Enum):
 # Org / Team / User
 # ---------------------------------------------------------------------------
 
+
 class Org(Base):
     __tablename__ = "orgs"
 
@@ -103,20 +105,28 @@ class Org(Base):
     name: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
-    teams: Mapped[list[Team]] = relationship("Team", back_populates="org", cascade="all, delete-orphan")
+    teams: Mapped[list[Team]] = relationship(
+        "Team", back_populates="org", cascade="all, delete-orphan"
+    )
 
 
 class Team(Base):
     __tablename__ = "teams"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
-    org_id: Mapped[str] = mapped_column(String(36), ForeignKey("orgs.id", ondelete="CASCADE"), nullable=False)
+    org_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("orgs.id", ondelete="CASCADE"), nullable=False
+    )
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     org: Mapped[Org] = relationship("Org", back_populates="teams")
-    members: Mapped[list[TeamMember]] = relationship("TeamMember", back_populates="team", cascade="all, delete-orphan")
-    projects: Mapped[list[Project]] = relationship("Project", back_populates="team", cascade="all, delete-orphan")
+    members: Mapped[list[TeamMember]] = relationship(
+        "TeamMember", back_populates="team", cascade="all, delete-orphan"
+    )
+    projects: Mapped[list[Project]] = relationship(
+        "Project", back_populates="team", cascade="all, delete-orphan"
+    )
 
     __table_args__ = (UniqueConstraint("org_id", "name", name="uq_team_org_name"),)
 
@@ -125,23 +135,33 @@ class User(Base):
     __tablename__ = "users"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
-    org_id: Mapped[str] = mapped_column(String(36), ForeignKey("orgs.id", ondelete="CASCADE"), nullable=False)
+    org_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("orgs.id", ondelete="CASCADE"), nullable=False
+    )
     email: Mapped[str] = mapped_column(String(256), nullable=False, unique=True)
     hashed_password: Mapped[str] = mapped_column(String(256), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     org: Mapped[Org] = relationship("Org")
-    memberships: Mapped[list[TeamMember]] = relationship("TeamMember", back_populates="user", cascade="all, delete-orphan")
+    memberships: Mapped[list[TeamMember]] = relationship(
+        "TeamMember", back_populates="user", cascade="all, delete-orphan"
+    )
 
 
 class TeamMember(Base):
     __tablename__ = "team_members"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
-    team_id: Mapped[str] = mapped_column(String(36), ForeignKey("teams.id", ondelete="CASCADE"), nullable=False)
-    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    role: Mapped[Role] = mapped_column(Enum(Role, native_enum=False, length=16), nullable=False, default=Role.member)
+    team_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("teams.id", ondelete="CASCADE"), nullable=False
+    )
+    user_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    role: Mapped[Role] = mapped_column(
+        Enum(Role, native_enum=False, length=16), nullable=False, default=Role.member
+    )
     joined_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     team: Mapped[Team] = relationship("Team", back_populates="members")
@@ -154,40 +174,67 @@ class TeamMember(Base):
 # Projects
 # ---------------------------------------------------------------------------
 
+
 class Project(Base):
     __tablename__ = "projects"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
-    team_id: Mapped[str] = mapped_column(String(36), ForeignKey("teams.id", ondelete="CASCADE"), nullable=False)
+    team_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("teams.id", ondelete="CASCADE"), nullable=False
+    )
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    type: Mapped[ProjectType] = mapped_column(Enum(ProjectType, native_enum=False, length=16), nullable=False)
-    status: Mapped[ProjectStatus] = mapped_column(Enum(ProjectStatus, native_enum=False, length=16), nullable=False, default=ProjectStatus.created)
+    type: Mapped[ProjectType] = mapped_column(
+        Enum(ProjectType, native_enum=False, length=16), nullable=False
+    )
+    status: Mapped[ProjectStatus] = mapped_column(
+        Enum(ProjectStatus, native_enum=False, length=16),
+        nullable=False,
+        default=ProjectStatus.created,
+    )
     base_model: Mapped[str] = mapped_column(String(128), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
     team: Mapped[Team] = relationship("Team", back_populates="projects")
-    files: Mapped[list[ProjectFile]] = relationship("ProjectFile", back_populates="project", cascade="all, delete-orphan")
-    collection: Mapped[Optional[Collection]] = relationship("Collection", back_populates="project", uselist=False, cascade="all, delete-orphan")
-    datasets: Mapped[list[Dataset]] = relationship("Dataset", back_populates="project", cascade="all, delete-orphan")
-    jobs: Mapped[list[TrainingJob]] = relationship("TrainingJob", back_populates="project", cascade="all, delete-orphan")
-    endpoint: Mapped[Optional[Endpoint]] = relationship("Endpoint", back_populates="project", uselist=False, cascade="all, delete-orphan")
+    files: Mapped[list[ProjectFile]] = relationship(
+        "ProjectFile", back_populates="project", cascade="all, delete-orphan"
+    )
+    collection: Mapped[Optional[Collection]] = relationship(
+        "Collection", back_populates="project", uselist=False, cascade="all, delete-orphan"
+    )
+    datasets: Mapped[list[Dataset]] = relationship(
+        "Dataset", back_populates="project", cascade="all, delete-orphan"
+    )
+    jobs: Mapped[list[TrainingJob]] = relationship(
+        "TrainingJob", back_populates="project", cascade="all, delete-orphan"
+    )
+    endpoint: Mapped[Optional[Endpoint]] = relationship(
+        "Endpoint", back_populates="project", uselist=False, cascade="all, delete-orphan"
+    )
 
 
 class ProjectFile(Base):
     __tablename__ = "project_files"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
-    project_id: Mapped[str] = mapped_column(String(36), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
+    project_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
+    )
     filename: Mapped[str] = mapped_column(String(256), nullable=False)
     content_type: Mapped[str] = mapped_column(String(128), nullable=False)
     size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
     storage_path: Mapped[str] = mapped_column(String(512), nullable=False)
-    status: Mapped[FileStatus] = mapped_column(Enum(FileStatus, native_enum=False, length=16), nullable=False, default=FileStatus.pending)
+    status: Mapped[FileStatus] = mapped_column(
+        Enum(FileStatus, native_enum=False, length=16), nullable=False, default=FileStatus.pending
+    )
     num_chunks: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    uploaded_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
 
     project: Mapped[Project] = relationship("Project", back_populates="files")
 
@@ -196,18 +243,24 @@ class ProjectFile(Base):
 # RAG: Collection
 # ---------------------------------------------------------------------------
 
+
 class Collection(Base):
     """Per-project ChromaDB collection reference."""
+
     __tablename__ = "collections"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
-    project_id: Mapped[str] = mapped_column(String(36), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, unique=True)
+    project_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, unique=True
+    )
     chroma_collection_name: Mapped[str] = mapped_column(String(256), nullable=False, unique=True)
     embedding_model: Mapped[str] = mapped_column(String(128), nullable=False)
     num_documents: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     num_chunks: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
     project: Mapped[Project] = relationship("Project", back_populates="collection")
 
@@ -216,19 +269,28 @@ class Collection(Base):
 # Fine-tuning: Dataset / TrainingJob
 # ---------------------------------------------------------------------------
 
+
 class Dataset(Base):
     __tablename__ = "datasets"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
-    project_id: Mapped[str] = mapped_column(String(36), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
+    project_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
+    )
     name: Mapped[str] = mapped_column(String(256), nullable=False)
     storage_path: Mapped[str] = mapped_column(String(512), nullable=False)
     num_samples: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     # §V image-understanding fine-tunes: "text" | "vision". Vision bundles also
     # record how many images they carry (NULL for text datasets).
-    modality: Mapped[str] = mapped_column(String(16), nullable=False, default="text", server_default="text")
+    modality: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="text", server_default="text"
+    )
     num_images: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    status: Mapped[DatasetStatus] = mapped_column(Enum(DatasetStatus, native_enum=False, length=16), nullable=False, default=DatasetStatus.uploaded)
+    status: Mapped[DatasetStatus] = mapped_column(
+        Enum(DatasetStatus, native_enum=False, length=16),
+        nullable=False,
+        default=DatasetStatus.uploaded,
+    )
     validation_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
@@ -240,9 +302,13 @@ class TrainingJob(Base):
     __tablename__ = "training_jobs"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
-    project_id: Mapped[str] = mapped_column(String(36), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
+    project_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
+    )
     dataset_id: Mapped[str] = mapped_column(String(36), ForeignKey("datasets.id"), nullable=False)
-    status: Mapped[JobStatus] = mapped_column(Enum(JobStatus, native_enum=False, length=16), nullable=False, default=JobStatus.queued)
+    status: Mapped[JobStatus] = mapped_column(
+        Enum(JobStatus, native_enum=False, length=16), nullable=False, default=JobStatus.queued
+    )
     progress: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     logs: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     adapter_path: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
@@ -269,38 +335,55 @@ class TrainingJob(Base):
 # Endpoint / ApiKey
 # ---------------------------------------------------------------------------
 
+
 class Endpoint(Base):
     """The servable model for a project. Created when the project is ready."""
+
     __tablename__ = "endpoints"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
-    project_id: Mapped[str] = mapped_column(String(36), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, unique=True)
+    project_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, unique=True
+    )
     slug: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
-    status: Mapped[EndpointStatus] = mapped_column(Enum(EndpointStatus, native_enum=False, length=16), nullable=False, default=EndpointStatus.pending)
-    adapter_path: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)  # null = base only (RAG)
+    status: Mapped[EndpointStatus] = mapped_column(
+        Enum(EndpointStatus, native_enum=False, length=16),
+        nullable=False,
+        default=EndpointStatus.pending,
+    )
+    adapter_path: Mapped[Optional[str]] = mapped_column(
+        String(512), nullable=True
+    )  # null = base only (RAG)
     base_model: Mapped[str] = mapped_column(String(128), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
     project: Mapped[Project] = relationship("Project", back_populates="endpoint")
-    keys: Mapped[list[ApiKey]] = relationship("ApiKey", back_populates="endpoint", cascade="all, delete-orphan")
+    keys: Mapped[list[ApiKey]] = relationship(
+        "ApiKey", back_populates="endpoint", cascade="all, delete-orphan"
+    )
 
 
 class ApiKey(Base):
     """Scoped key for a specific endpoint."""
+
     __tablename__ = "api_keys"
     # Every /v1/chat/completions call looks a key up by (key_prefix, is_active) —
     # the hottest query in the product. Index it so auth stays O(index) not O(table)
     # as key count grows (A4.4).
-    __table_args__ = (
-        Index("ix_apikey_prefix_active", "key_prefix", "is_active"),
-    )
+    __table_args__ = (Index("ix_apikey_prefix_active", "key_prefix", "is_active"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
-    endpoint_id: Mapped[str] = mapped_column(String(36), ForeignKey("endpoints.id", ondelete="CASCADE"), nullable=False)
+    endpoint_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("endpoints.id", ondelete="CASCADE"), nullable=False
+    )
     name: Mapped[str] = mapped_column(String(128), nullable=False)
-    key_prefix: Mapped[str] = mapped_column(String(8), nullable=False)   # first 8 chars shown to user
-    key_hash: Mapped[str] = mapped_column(String(64), nullable=False)    # SHA-256 of full key
+    key_prefix: Mapped[str] = mapped_column(
+        String(8), nullable=False
+    )  # first 8 chars shown to user
+    key_hash: Mapped[str] = mapped_column(String(64), nullable=False)  # SHA-256 of full key
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     last_used_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -315,18 +398,29 @@ class Invitation(Base):
     and sets a password (`POST /v1/auth/accept-invite`), which creates the user
     and the team membership without re-bootstrapping the org.
     """
+
     __tablename__ = "invitations"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
-    org_id: Mapped[str] = mapped_column(String(36), ForeignKey("orgs.id", ondelete="CASCADE"), nullable=False)
-    team_id: Mapped[str] = mapped_column(String(36), ForeignKey("teams.id", ondelete="CASCADE"), nullable=False)
+    org_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("orgs.id", ondelete="CASCADE"), nullable=False
+    )
+    team_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("teams.id", ondelete="CASCADE"), nullable=False
+    )
     email: Mapped[str] = mapped_column(String(255), nullable=False)
-    role: Mapped[Role] = mapped_column(Enum(Role, native_enum=False, length=16), nullable=False, default=Role.member)
+    role: Mapped[Role] = mapped_column(
+        Enum(Role, native_enum=False, length=16), nullable=False, default=Role.member
+    )
     token: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
     status: Mapped[InvitationStatus] = mapped_column(
-        Enum(InvitationStatus, native_enum=False, length=16), nullable=False, default=InvitationStatus.pending
+        Enum(InvitationStatus, native_enum=False, length=16),
+        nullable=False,
+        default=InvitationStatus.pending,
     )
-    invited_by: Mapped[str] = mapped_column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    invited_by: Mapped[str] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     accepted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -338,6 +432,7 @@ class UsageEvent(Base):
     Written off the response path after each served completion via an upsert that
     increments the counters, so `GET .../usage` aggregates cheaply by day.
     """
+
     __tablename__ = "usage_events"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
@@ -366,7 +461,9 @@ class AppSetting(Base):
     __tablename__ = "app_settings"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
-    team_id: Mapped[str] = mapped_column(String(36), ForeignKey("teams.id", ondelete="CASCADE"), nullable=False)
+    team_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("teams.id", ondelete="CASCADE"), nullable=False
+    )
     key: Mapped[str] = mapped_column(String(64), nullable=False)
     value: Mapped[str] = mapped_column(Text, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(

@@ -124,6 +124,7 @@ async def synthesize_dataset(
     await db.commit()
 
     from brain.config import settings
+
     background_tasks.add_task(
         _run_synthesis,
         project_id=project_id,

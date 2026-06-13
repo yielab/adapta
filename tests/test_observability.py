@@ -34,8 +34,13 @@ async def test_metrics_endpoint_exposes_prometheus(app):
 
 def test_json_log_formatter_emits_valid_json():
     rec = logging.LogRecord(
-        name="brain.test", level=logging.INFO, pathname=__file__, lineno=1,
-        msg="hello %s", args=("world",), exc_info=None,
+        name="brain.test",
+        level=logging.INFO,
+        pathname=__file__,
+        lineno=1,
+        msg="hello %s",
+        args=("world",),
+        exc_info=None,
     )
     out = json.loads(JsonLogFormatter().format(rec))
     assert out["level"] == "INFO"

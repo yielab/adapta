@@ -32,6 +32,7 @@ async def _retrieve(rag_service, project_id: str, query: str, top_k: int) -> lis
     except asyncio.TimeoutError as exc:
         raise Timeout(message="Document retrieval timed out", internal_detail=str(exc)) from exc
 
+
 logger = logging.getLogger(__name__)
 
 # Minimum tokens reserved for the answer when fitting a prompt to the context
@@ -53,8 +54,7 @@ def flatten_text(content) -> str:
         return content
     if isinstance(content, list):
         return " ".join(
-            p.get("text", "") for p in content
-            if isinstance(p, dict) and p.get("type") == "text"
+            p.get("text", "") for p in content if isinstance(p, dict) and p.get("type") == "text"
         ).strip()
     return ""
 
@@ -191,8 +191,15 @@ def _build_system(base_system: Optional[str], rag_service, rag_chunks: list) -> 
     return combined or None
 
 
-def _fit_context(*, count_fn, n_ctx: int, base_system: Optional[str], rag_service,
-                 rag_chunks: list, max_tokens: int):
+def _fit_context(
+    *,
+    count_fn,
+    n_ctx: int,
+    base_system: Optional[str],
+    rag_service,
+    rag_chunks: list,
+    max_tokens: int,
+):
     """Fit the prompt into the model's context window (A4.3).
 
     llama-cpp silently truncates an over-long prompt — and since RAG context is
@@ -277,7 +284,9 @@ async def chat(
     if project_id:
         rag_service = get_rag_service()
         query = flatten_text(messages[-1].get("content", "")) if messages else ""
-        rag_chunks = await _retrieve(rag_service, project_id, query, top_k_rag or settings.rag_top_k)
+        rag_chunks = await _retrieve(
+            rag_service, project_id, query, top_k_rag or settings.rag_top_k
+        )
 
     # Content may be a parts array (all-text on the text path); flatten to the
     # plain string the manual prompt formatter expects.
@@ -362,9 +371,7 @@ async def _chat_vision(
     # Context fit (§V4.3): text tokens via the real tokenizer + a conservative
     # per-image estimate. An unfittable image+prompt is a typed 422, never a
     # silent truncation.
-    text_messages = [
-        Message(role=m["role"], content=flatten_text(m["content"])) for m in messages
-    ]
+    text_messages = [Message(role=m["role"], content=flatten_text(m["content"])) for m in messages]
     n_ctx = inference_engine.context_size(model_obj)
     n_prompt = inference_engine.count_prompt_tokens(model_obj, text_messages, None) + image_tokens
     if n_prompt + min(_MIN_GEN_RESERVE, max_tokens) > n_ctx:
@@ -450,7 +457,9 @@ async def chat_stream(
     if project_id:
         rag_service = get_rag_service()
         query = flatten_text(messages[-1].get("content", "")) if messages else ""
-        rag_chunks = await _retrieve(rag_service, project_id, query, top_k_rag or settings.rag_top_k)
+        rag_chunks = await _retrieve(
+            rag_service, project_id, query, top_k_rag or settings.rag_top_k
+        )
 
     inference_messages = [
         Message(role=m["role"], content=flatten_text(m["content"])) for m in messages
@@ -520,9 +529,12 @@ async def chat_stream(
         # this runs after the last byte is yielded). §3.2 / A4.11.
         if endpoint_id:
             from brain.services.usage import record_usage
+
             await record_usage(endpoint_id, prompt_tokens, completion_tokens)
 
     except DomainError:
         raise  # Timeout (504) and other typed errors keep their status — don't mask as 500.
     except Exception as exc:
-        raise InferenceFailed(message="Streaming inference failed", internal_detail=str(exc)) from exc
+        raise InferenceFailed(
+            message="Streaming inference failed", internal_detail=str(exc)
+        ) from exc

@@ -92,7 +92,9 @@ async def test_rag_upload_index_serve_cited(client, admin):
         headers={"Authorization": f"Bearer {brn}"},
         json={
             "model": slug,
-            "messages": [{"role": "user", "content": "What is the name of Project Nimbus's mascot?"}],
+            "messages": [
+                {"role": "user", "content": "What is the name of Project Nimbus's mascot?"}
+            ],
             "max_tokens": 64,
         },
     )

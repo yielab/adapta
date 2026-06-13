@@ -175,5 +175,114 @@ endpoint, so you can see consumption over time.
 
 ---
 
+---
+
+## 7. Models catalog
+
+The **Models** page (sidebar → *Models*) shows every base model the server knows
+about and — crucially — whether it is **available** (the GGUF file is present on
+the server). One entry per model, with:
+
+- **Modality badge** — `text` or `vision`.
+- **Purpose** (use-case line) and **Best for** chips — e.g. *knowledge retention*,
+  *code*, *vision*.
+- **Resource requirements** — approximate VRAM needed to train and RAM needed to
+  serve, derived from the model's spec entry.
+- **Availability status** — green *Ready* if the GGUF is on disk; amber *Not
+  available* if the model is in the catalog but the file hasn't been downloaded
+  yet (see [Downloading models](../reference/OPERATIONS.md)).
+
+When you select a base model in the **New project** dialog the same information
+appears as a live detail panel below the dropdown, so you can check requirements
+before committing. Models that are not available are listed as disabled options —
+they appear in the picker so you can see what's on offer, but the *Create* button
+stays disabled until you choose one that is ready.
+
+---
+
+## 8. Project overview
+
+Every project card on the Projects page carries a **stage indicator** — a
+colored dot and label derived from the project's current state:
+
+| Stage | Meaning |
+| --- | --- |
+| **Setting up** | Project just created, no data yet. |
+| **Awaiting data** | No files or datasets uploaded. |
+| **Indexing** | Documents processing in the background. |
+| **Training** | A training job is running. |
+| **Gate blocked** | Training finished but the eval gate was not passed. |
+| **Ready to serve** | A gate-passed adapter exists; endpoint not yet created. |
+| **Live** | Endpoint is active and serving. |
+
+A **next-action hint** below the label tells you what to do next ("Upload
+documents", "Start a training job", etc.).
+
+Inside the project, the **Overview** tab gives the full picture at a glance:
+
+- **Pipeline checklist** — which steps are done (documents indexed, dataset
+  uploaded, job run, gate passed, endpoint created, key generated). Each
+  incomplete step has a call-to-action link to the right tab.
+- **Latest training job** verdict — eval score, gate outcome (absolute or
+  improvement), and improvement over base if applicable.
+- **Endpoint snapshot** — slug, status, model composition (base + adapter + retrieval
+  layer), indexed-chunk count, active-key count.
+- **7-day usage** — request and token totals.
+
+The Overview tab is always visible, even for an empty project, so you can orient
+yourself and find the next step without hunting through tabs.
+
+---
+
+## 9. Settings
+
+The **Settings** section (sidebar → *Settings*) has four tabs.
+
+### Account
+
+Change your password. Enter your current password to confirm, then set a new one
+(minimum 8 characters). The change takes effect immediately.
+
+### Team
+
+- **Members table** — all users in the team, their email addresses, roles, and
+  join date. Anyone in the team can see this; only admins can invite people.
+- **Invite a member** — enter an email, pick a role (`admin`, `member`, or
+  `viewer`), and click *Send invite*. A one-time token is shown. Deliver it
+  out-of-band to the new user; they redeem it at the console's *Accept invite*
+  screen to set their password and join the team.
+- **Pending invitations** — tokens that have been issued but not yet redeemed,
+  with their expiry times.
+
+**Roles:**
+
+| Role | Projects | Files / datasets / jobs | Endpoint / keys | Platform settings |
+| --- | --- | --- | --- | --- |
+| admin | read + write | read + write | read + write | read + write |
+| member | read + write | read + write | read + write | read-only |
+| viewer | read-only | read-only | read-only | read-only |
+
+### Platform settings
+
+Per-team inference knobs (temperature, top-k, chunk size, RAG hit count, etc.).
+Each setting shows its current value, the *source* (override you set here,
+environment variable, or built-in default), and the allowed range.
+
+Admins can set an override that replaces the env/default for this team's
+endpoint. Click *Reset* to remove the override and fall back to the env value or
+default. The settings page deliberately **does not expose the eval-gate threshold**
+— that is a platform invariant, not an operator knob.
+
+Priority order: DB override > environment variable > built-in default.
+
+### System
+
+Read-only status dashboard: Postgres, Redis, Chroma connectivity, disk usage,
+and memory usage — the same signals as `GET /health/deep` presented visually.
+GPU detection result is also shown here, so you can confirm that the worker has
+the accelerator it needs without opening logs.
+
+---
+
 Next: **[Consuming the API](consuming-the-api.md)** — wiring a real application
 to the endpoint.

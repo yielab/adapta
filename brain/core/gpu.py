@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class GPUInfo:
     """GPU information"""
+
     name: str
     memory_total: int  # MB
     memory_free: int  # MB
@@ -23,6 +24,7 @@ class GPUInfo:
 @dataclass
 class GPUConfig:
     """GPU configuration for model loading"""
+
     available: bool
     gpu_type: str  # 'cuda', 'metal', 'none'
     gpu_layers: int  # Number of layers to offload to GPU
@@ -57,11 +59,11 @@ class GPUDetector:
         # No GPU available
         self.config = GPUConfig(
             available=False,
-            gpu_type='none',
+            gpu_type="none",
             gpu_layers=0,
             device_count=0,
             gpus=[],
-            recommended_layers=0
+            recommended_layers=0,
         )
         logger.info("No GPU detected, using CPU")
 
@@ -70,6 +72,7 @@ class GPUDetector:
         try:
             # Try importing torch to check CUDA
             import torch
+
             if torch.cuda.is_available():
                 device_count = torch.cuda.device_count()
                 gpus = []
@@ -107,11 +110,11 @@ class GPUDetector:
 
                 return GPUConfig(
                     available=True,
-                    gpu_type='cuda',
+                    gpu_type="cuda",
                     gpu_layers=recommended_layers,
                     device_count=device_count,
                     gpus=gpus,
-                    recommended_layers=recommended_layers
+                    recommended_layers=recommended_layers,
                 )
 
         except ImportError:
@@ -120,22 +123,26 @@ class GPUDetector:
         # Fallback: try nvidia-smi
         try:
             result = subprocess.run(
-                ['nvidia-smi', '--query-gpu=name,memory.total,memory.free', '--format=csv,noheader,nounits'],
+                [
+                    "nvidia-smi",
+                    "--query-gpu=name,memory.total,memory.free",
+                    "--format=csv,noheader,nounits",
+                ],
                 capture_output=True,
                 text=True,
-                timeout=5
+                timeout=5,
             )
 
             if result.returncode == 0:
-                lines = result.stdout.strip().split('\n')
+                lines = result.stdout.strip().split("\n")
                 gpus = []
                 for line in lines:
-                    parts = line.split(', ')
+                    parts = line.split(", ")
                     if len(parts) >= 3:
                         gpu_info = GPUInfo(
                             name=parts[0],
                             memory_total=int(float(parts[1])),
-                            memory_free=int(float(parts[2]))
+                            memory_free=int(float(parts[2])),
                         )
                         gpus.append(gpu_info)
 
@@ -151,55 +158,52 @@ class GPUDetector:
 
                 return GPUConfig(
                     available=True,
-                    gpu_type='cuda',
+                    gpu_type="cuda",
                     gpu_layers=recommended_layers,
                     device_count=len(gpus),
                     gpus=gpus,
-                    recommended_layers=recommended_layers
+                    recommended_layers=recommended_layers,
                 )
         except (subprocess.TimeoutExpired, FileNotFoundError):
             logger.debug("nvidia-smi not available")
 
         return GPUConfig(
             available=False,
-            gpu_type='none',
+            gpu_type="none",
             gpu_layers=0,
             device_count=0,
             gpus=[],
-            recommended_layers=0
+            recommended_layers=0,
         )
 
     def _detect_metal(self) -> GPUConfig:
         """Detect Apple Metal GPU (Apple Silicon)"""
-        if platform.system() != 'Darwin':  # macOS
+        if platform.system() != "Darwin":  # macOS
             return GPUConfig(
                 available=False,
-                gpu_type='none',
+                gpu_type="none",
                 gpu_layers=0,
                 device_count=0,
                 gpus=[],
-                recommended_layers=0
+                recommended_layers=0,
             )
 
         try:
             # Check if running on Apple Silicon
             result = subprocess.run(
-                ['sysctl', '-n', 'machdep.cpu.brand_string'],
+                ["sysctl", "-n", "machdep.cpu.brand_string"],
                 capture_output=True,
                 text=True,
-                timeout=5
+                timeout=5,
             )
 
             cpu_brand = result.stdout.strip()
-            is_apple_silicon = 'Apple' in cpu_brand
+            is_apple_silicon = "Apple" in cpu_brand
 
             if is_apple_silicon:
                 # Try to get memory info
                 mem_result = subprocess.run(
-                    ['sysctl', '-n', 'hw.memsize'],
-                    capture_output=True,
-                    text=True,
-                    timeout=5
+                    ["sysctl", "-n", "hw.memsize"], capture_output=True, text=True, timeout=5
                 )
 
                 total_memory = int(mem_result.stdout.strip()) // (1024 * 1024)  # Convert to MB
@@ -207,11 +211,7 @@ class GPUDetector:
                 # Apple Silicon shares memory, assume 50% available for GPU
                 gpu_memory = total_memory // 2
 
-                gpu_info = GPUInfo(
-                    name=cpu_brand,
-                    memory_total=gpu_memory,
-                    memory_free=gpu_memory
-                )
+                gpu_info = GPUInfo(name=cpu_brand, memory_total=gpu_memory, memory_free=gpu_memory)
 
                 # Metal can handle more layers efficiently
                 if gpu_memory >= 16000:
@@ -223,11 +223,11 @@ class GPUDetector:
 
                 return GPUConfig(
                     available=True,
-                    gpu_type='metal',
+                    gpu_type="metal",
                     gpu_layers=recommended_layers,
                     device_count=1,
                     gpus=[gpu_info],
-                    recommended_layers=recommended_layers
+                    recommended_layers=recommended_layers,
                 )
 
         except (subprocess.TimeoutExpired, FileNotFoundError, ValueError):
@@ -235,11 +235,11 @@ class GPUDetector:
 
         return GPUConfig(
             available=False,
-            gpu_type='none',
+            gpu_type="none",
             gpu_layers=0,
             device_count=0,
             gpus=[],
-            recommended_layers=0
+            recommended_layers=0,
         )
 
     def get_config(self) -> GPUConfig:
@@ -250,26 +250,26 @@ class GPUDetector:
         """Get kwargs for llama-cpp model loading"""
         if not self.config.available:
             return {
-                'n_gpu_layers': 0,
-                'n_ctx': 2048,
+                "n_gpu_layers": 0,
+                "n_ctx": 2048,
             }
 
         n_gpu_layers = override_layers if override_layers is not None else self.config.gpu_layers
 
         kwargs = {
-            'n_gpu_layers': n_gpu_layers,
-            'n_ctx': 4096,  # Larger context when GPU available
+            "n_gpu_layers": n_gpu_layers,
+            "n_ctx": 4096,  # Larger context when GPU available
         }
 
         # Add CUDA-specific settings
-        if self.config.gpu_type == 'cuda':
-            kwargs['n_batch'] = 512
-            kwargs['n_threads'] = 4  # Let GPU do the work
+        if self.config.gpu_type == "cuda":
+            kwargs["n_batch"] = 512
+            kwargs["n_threads"] = 4  # Let GPU do the work
 
         # Add Metal-specific settings
-        elif self.config.gpu_type == 'metal':
-            kwargs['n_batch'] = 512
-            kwargs['f16_kv'] = True  # Use FP16 for KV cache
+        elif self.config.gpu_type == "metal":
+            kwargs["n_batch"] = 512
+            kwargs["f16_kv"] = True  # Use FP16 for KV cache
 
         return kwargs
 
@@ -319,6 +319,7 @@ def get_model_kwargs(override_layers: Optional[int] = None) -> dict:
 @dataclass
 class TorchCudaStatus:
     """Strict torch-level CUDA readiness — what QLoRA training actually requires."""
+
     usable: bool
     reason: str
     torch_version: Optional[str] = None

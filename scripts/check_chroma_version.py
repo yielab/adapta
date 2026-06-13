@@ -17,13 +17,13 @@ ROOT = Path(__file__).resolve().parent.parent
 
 def _client_version() -> str | None:
     text = (ROOT / "pyproject.toml").read_text()
-    m = re.search(r'chromadb==([0-9][0-9A-Za-z.\-]*)', text)
+    m = re.search(r"chromadb==([0-9][0-9A-Za-z.\-]*)", text)
     return m.group(1) if m else None
 
 
 def _server_version() -> str | None:
     text = (ROOT / "docker-compose.yml").read_text()
-    m = re.search(r'chromadb/chroma:([0-9][0-9A-Za-z.\-]*)', text)
+    m = re.search(r"chromadb/chroma:([0-9][0-9A-Za-z.\-]*)", text)
     return m.group(1) if m else None
 
 

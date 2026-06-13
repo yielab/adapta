@@ -110,6 +110,7 @@ async def synthesize_from_project(
     # Pull chunks from ChromaDB
     from brain.config import settings
     from brain.services.rag import _get_chroma_client, collection_name_for
+
     coll_name = collection_name_for(project_id)
     try:
         chroma = _get_chroma_client()
@@ -123,7 +124,9 @@ async def synthesize_from_project(
 
     documents: List[str] = result.get("documents") or []
     if not documents:
-        raise InvalidRequest(message="No indexed chunks found for this project. Upload files first.")
+        raise InvalidRequest(
+            message="No indexed chunks found for this project. Upload files first."
+        )
 
     # Generate pairs per chunk using the chat service (avoids direct inference engine coupling)
     from brain.services.chat import chat
@@ -181,6 +184,7 @@ async def synthesize_from_project(
 
     # Write JSONL
     from brain.config import settings
+
     datasets_dir = Path(settings.datasets_dir)
     datasets_dir.mkdir(parents=True, exist_ok=True)
     output_path = datasets_dir / f"synthesis_{project_id}_{uuid.uuid4().hex[:8]}.jsonl"
@@ -190,6 +194,10 @@ async def synthesize_from_project(
 
     logger.info(
         "Synthesis complete: project=%s chunks=%d pairs=%d errors=%d path=%s",
-        project_id, len(documents), len(all_pairs), errors, output_path,
+        project_id,
+        len(documents),
+        len(all_pairs),
+        errors,
+        output_path,
     )
     return output_path, len(all_pairs)

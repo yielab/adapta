@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class Counter:
     """Simple counter metric"""
+
     name: str
     help: str
     value: float = 0.0
@@ -38,6 +39,7 @@ class Counter:
 @dataclass
 class Gauge:
     """Simple gauge metric"""
+
     name: str
     help: str
     value: float = 0.0
@@ -59,9 +61,12 @@ class Gauge:
 @dataclass
 class Histogram:
     """Simple histogram metric"""
+
     name: str
     help: str
-    buckets: List[float] = field(default_factory=lambda: [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0])
+    buckets: List[float] = field(
+        default_factory=lambda: [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0]
+    )
     observations: List[float] = field(default_factory=list)
     labels: Dict[str, str] = field(default_factory=dict)
 
@@ -85,13 +90,13 @@ class Histogram:
     def get_bucket_counts(self) -> Dict[float, int]:
         """Get count of observations in each bucket"""
         counts = {bucket: 0 for bucket in self.buckets}
-        counts[float('inf')] = 0
+        counts[float("inf")] = 0
 
         for obs in self.observations:
             for bucket in self.buckets:
                 if obs <= bucket:
                     counts[bucket] += 1
-            counts[float('inf')] += 1
+            counts[float("inf")] += 1
 
         return counts
 
@@ -113,30 +118,24 @@ class MetricsCollector:
         """Initialize metrics collector"""
         # Request metrics
         self.request_latency = Histogram(
-            name="brain_request_duration_seconds",
-            help="HTTP request latency in seconds"
+            name="brain_request_duration_seconds", help="HTTP request latency in seconds"
         )
         self.request_count = Counter(
-            name="brain_requests_total",
-            help="Total number of HTTP requests"
+            name="brain_requests_total", help="Total number of HTTP requests"
         )
         self.request_errors = Counter(
-            name="brain_request_errors_total",
-            help="Total number of failed requests"
+            name="brain_request_errors_total", help="Total number of failed requests"
         )
 
         # Inference metrics
         self.inference_latency = Histogram(
-            name="brain_inference_duration_seconds",
-            help="Model inference latency in seconds"
+            name="brain_inference_duration_seconds", help="Model inference latency in seconds"
         )
         self.inference_count = Counter(
-            name="brain_inference_total",
-            help="Total number of inference requests"
+            name="brain_inference_total", help="Total number of inference requests"
         )
         self.inference_tokens = Counter(
-            name="brain_inference_tokens_total",
-            help="Total number of tokens generated"
+            name="brain_inference_tokens_total", help="Total number of tokens generated"
         )
 
         # Model-specific metrics
@@ -148,45 +147,26 @@ class MetricsCollector:
         )
 
         # Queue metrics
-        self.queue_depth = Gauge(
-            name="brain_queue_depth",
-            help="Number of requests in queue"
-        )
+        self.queue_depth = Gauge(name="brain_queue_depth", help="Number of requests in queue")
         self.queue_processing = Gauge(
-            name="brain_queue_processing",
-            help="Number of requests being processed"
+            name="brain_queue_processing", help="Number of requests being processed"
         )
         self.queue_completed = Counter(
-            name="brain_queue_completed_total",
-            help="Total completed queue requests"
+            name="brain_queue_completed_total", help="Total completed queue requests"
         )
         self.queue_failed = Counter(
-            name="brain_queue_failed_total",
-            help="Total failed queue requests"
+            name="brain_queue_failed_total", help="Total failed queue requests"
         )
 
         # Cache metrics
-        self.cache_hits = Counter(
-            name="brain_cache_hits_total",
-            help="Total cache hits"
-        )
-        self.cache_misses = Counter(
-            name="brain_cache_misses_total",
-            help="Total cache misses"
-        )
-        self.cache_size = Gauge(
-            name="brain_cache_entries",
-            help="Number of entries in cache"
-        )
+        self.cache_hits = Counter(name="brain_cache_hits_total", help="Total cache hits")
+        self.cache_misses = Counter(name="brain_cache_misses_total", help="Total cache misses")
+        self.cache_size = Gauge(name="brain_cache_entries", help="Number of entries in cache")
 
         # System metrics
-        self.gpu_memory_used = Gauge(
-            name="brain_gpu_memory_bytes",
-            help="GPU memory used in bytes"
-        )
+        self.gpu_memory_used = Gauge(name="brain_gpu_memory_bytes", help="GPU memory used in bytes")
         self.system_memory_used = Gauge(
-            name="brain_system_memory_bytes",
-            help="System memory used in bytes"
+            name="brain_system_memory_bytes", help="System memory used in bytes"
         )
 
         # Timing helpers
@@ -252,7 +232,7 @@ class MetricsCollector:
         lines.append(f"# TYPE {self.request_latency.name} histogram")
         bucket_counts = self.request_latency.get_bucket_counts()
         for bucket, count in sorted(bucket_counts.items()):
-            if bucket == float('inf'):
+            if bucket == float("inf"):
                 lines.append(f'{self.request_latency.name}_bucket{{le="+Inf"}} {count}')
             else:
                 lines.append(f'{self.request_latency.name}_bucket{{le="{bucket}"}} {count}')
@@ -277,7 +257,7 @@ class MetricsCollector:
         lines.append(f"# TYPE {self.inference_latency.name} histogram")
         bucket_counts = self.inference_latency.get_bucket_counts()
         for bucket, count in sorted(bucket_counts.items()):
-            if bucket == float('inf'):
+            if bucket == float("inf"):
                 lines.append(f'{self.inference_latency.name}_bucket{{le="+Inf"}} {count}')
             else:
                 lines.append(f'{self.inference_latency.name}_bucket{{le="{bucket}"}} {count}')

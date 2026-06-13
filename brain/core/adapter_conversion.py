@@ -58,9 +58,7 @@ def _stage_vision_adapter(adapter_dir: Path) -> Path:
     tensors = load_file(str(src))
     renamed = {k.replace(".language_model.layers.", ".layers."): v for k, v in tensors.items()}
     save_file(renamed, str(staged / "adapter_model.safetensors"))
-    (staged / "adapter_config.json").write_bytes(
-        (adapter_dir / "adapter_config.json").read_bytes()
-    )
+    (staged / "adapter_config.json").write_bytes((adapter_dir / "adapter_config.json").read_bytes())
     return staged
 
 
@@ -130,8 +128,10 @@ async def convert_peft_to_gguf(
     cmd = [
         sys.executable,
         str(script),
-        "--outfile", str(out_path),
-        "--outtype", settings.lora_outtype,
+        "--outfile",
+        str(out_path),
+        "--outtype",
+        settings.lora_outtype,
         *base_args,
         str(src_dir),
     ]

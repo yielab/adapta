@@ -71,7 +71,11 @@ def extract_bundle(zip_path: Path, dest_dir: Path) -> Path:
             name = m.filename
             # Zip-slip / absolute-path / drive-letter protection: the resolved
             # destination must stay inside dest_dir.
-            if name.startswith(("/", "\\")) or ".." in Path(name).parts or ":" in name.split("/")[0]:
+            if (
+                name.startswith(("/", "\\"))
+                or ".." in Path(name).parts
+                or ":" in name.split("/")[0]
+            ):
                 raise BundleError(f"Unsafe path in bundle: {name!r}")
             resolved = (dest_dir / name).resolve()
             if not resolved.is_relative_to(dest_dir):
@@ -88,7 +92,8 @@ def extract_bundle(zip_path: Path, dest_dir: Path) -> Path:
             elif ext not in ALLOWED_IMAGE_EXTENSIONS:
                 raise BundleError(
                     f"Disallowed file type in bundle: {name!r} (allowed: one root .jsonl + "
-                    + "/".join(sorted(e.lstrip('.') for e in ALLOWED_IMAGE_EXTENSIONS)) + ")"
+                    + "/".join(sorted(e.lstrip(".") for e in ALLOWED_IMAGE_EXTENSIONS))
+                    + ")"
                 )
 
         if len(manifests) != 1:
@@ -164,14 +169,20 @@ def validate_dataset(
 
                 images = obj.get("images") or []
                 if images and bundle_dir is None:
-                    return False, (
-                        f"Line {i}: rows with 'images' must be uploaded as a .zip "
-                        "bundle (one root .jsonl manifest + the image files), not "
-                        "a plain .jsonl."
-                    ), 0, 0
+                    return (
+                        False,
+                        (
+                            f"Line {i}: rows with 'images' must be uploaded as a .zip "
+                            "bundle (one root .jsonl manifest + the image files), not "
+                            "a plain .jsonl."
+                        ),
+                        0,
+                        0,
+                    )
 
                 if schema:
                     import jsonschema
+
                     try:
                         jsonschema.validate(obj, schema)
                     except jsonschema.ValidationError as e:
@@ -325,12 +336,16 @@ async def recover_orphaned_jobs(max_attempts: int = 1) -> tuple[int, int]:
 
     async with AsyncSessionLocal() as db:
         rows = (
-            await db.execute(
-                select(TrainingJob).where(
-                    TrainingJob.status.in_([_JobStatus.running, _JobStatus.queued])
+            (
+                await db.execute(
+                    select(TrainingJob).where(
+                        TrainingJob.status.in_([_JobStatus.running, _JobStatus.queued])
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
 
         for row in rows:
             # A `queued` job that's still in the Redis queue is legitimately waiting.
@@ -350,7 +365,9 @@ async def recover_orphaned_jobs(max_attempts: int = 1) -> tuple[int, int]:
                 await db.execute(select(Project).where(Project.id == row.project_id))
             ).scalar_one_or_none()
 
-            give_up = (is_crash and row.attempts > max_attempts) or dataset is None or project is None
+            give_up = (
+                (is_crash and row.attempts > max_attempts) or dataset is None or project is None
+            )
             if give_up:
                 reason = (
                     "dataset or project no longer exists"
@@ -383,7 +400,9 @@ async def recover_orphaned_jobs(max_attempts: int = 1) -> tuple[int, int]:
             requeued += 1
             logger.warning(
                 "Requeued orphaned job %s (was %s, attempt %d)",
-                row.id, "running" if is_crash else "queued-lost", row.attempts,
+                row.id,
+                "running" if is_crash else "queued-lost",
+                row.attempts,
             )
 
     if requeued or failed:
@@ -400,7 +419,10 @@ async def enqueue_training_job(
 ) -> TrainingJob:
     """Create a TrainingJob record and push it to the Redis queue."""
     from sqlalchemy import select
-    result = await db.execute(select(Dataset).where(Dataset.id == dataset_id, Dataset.project_id == project_id))
+
+    result = await db.execute(
+        select(Dataset).where(Dataset.id == dataset_id, Dataset.project_id == project_id)
+    )
     dataset: Optional[Dataset] = result.scalar_one_or_none()
     if not dataset:
         raise NotFound(message="Dataset not found")

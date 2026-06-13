@@ -65,6 +65,18 @@ class InvitationResponse(BaseModel):
     expires_at: str | None = None
 
 
+class MemberResponse(BaseModel):
+    user_id: str | None = None
+    email: str | None = None
+    role: Role | None = None
+    joined_at: AwareDatetime | None = None
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: Annotated[str, Field(min_length=8)]
+
+
 class Type(Enum):
     rag = "rag"
     finetune = "finetune"
@@ -238,7 +250,7 @@ class SynthesizeResponse(BaseModel):
     message: str | None = None
 
 
-class Role3(Enum):
+class Role4(Enum):
     system = "system"
     user = "user"
     assistant = "assistant"
@@ -344,7 +356,7 @@ class Content(RootModel[list[ChatContentPart1 | ChatContentPart2]]):
 
 
 class Message(BaseModel):
-    role: Role3
+    role: Role4
     content: str | Content
     """
     Plain text, or an OpenAI content-parts array (text and/or image_url parts; images as data: URLs, vision endpoints only).

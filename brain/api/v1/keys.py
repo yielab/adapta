@@ -26,9 +26,10 @@ class KeyCreateRequest(BaseModel):
 
 class KeyCreatedResponse(BaseModel):
     """Returned once on creation — the full key is shown only now."""
+
     id: str
     name: str
-    key: str   # full key — show once, never again
+    key: str  # full key — show once, never again
     prefix: str
 
 
@@ -116,7 +117,9 @@ async def revoke_key(
     await require_team_writer(db, current_user.id, project.team_id)
     endpoint = await _get_active_endpoint(db, project_id)
 
-    result = await db.execute(select(ApiKey).where(ApiKey.id == key_id, ApiKey.endpoint_id == endpoint.id))
+    result = await db.execute(
+        select(ApiKey).where(ApiKey.id == key_id, ApiKey.endpoint_id == endpoint.id)
+    )
     key = result.scalar_one_or_none()
     if not key:
         raise NotFound(message="Key not found")

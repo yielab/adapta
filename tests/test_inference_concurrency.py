@@ -75,6 +75,7 @@ def _req(stream: bool) -> InferenceRequest:
 # Serialization
 # ---------------------------------------------------------------------------
 
+
 async def test_generate_serialized_under_concurrency():
     fake = FakeLlama(delay=0.02)
     lock = asyncio.Lock()
@@ -111,6 +112,7 @@ async def test_stream_serialized_under_concurrency():
 # ---------------------------------------------------------------------------
 # Timeout
 # ---------------------------------------------------------------------------
+
 
 async def test_generate_times_out(monkeypatch):
     monkeypatch.setattr(settings, "inference_timeout_seconds", 0.05)

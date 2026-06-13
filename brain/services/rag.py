@@ -24,6 +24,7 @@ class RetrievedChunk:
 
 def _get_chroma_client():
     import chromadb
+
     return chromadb.HttpClient(host=settings.chroma_host, port=settings.chroma_port)
 
 
@@ -71,7 +72,9 @@ class RAGService:
         collection = client.get_or_create_collection(name=name, metadata={"hnsw:space": "cosine"})
 
         ids = [f"{file_id}_{c.index}" for c in chunks]
-        metadatas = [{"source": c.source, "chunk_index": c.index, "file_id": file_id} for c in chunks]
+        metadatas = [
+            {"source": c.source, "chunk_index": c.index, "file_id": file_id} for c in chunks
+        ]
 
         collection.upsert(ids=ids, documents=texts, embeddings=embeddings, metadatas=metadatas)
         return len(chunks)

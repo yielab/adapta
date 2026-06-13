@@ -38,23 +38,32 @@ async def _seed_team_with_rag_project(
         team_id = str(uuid.uuid4())
         await conn.execute(
             "INSERT INTO teams (id, org_id, name) VALUES ($1, $2, $3)",
-            team_id, org_id, team_name,
+            team_id,
+            org_id,
+            team_name,
         )
         await conn.execute(
             "INSERT INTO team_members (id, team_id, user_id, role) VALUES ($1, $2, $3, 'admin')",
-            str(uuid.uuid4()), team_id, user_id,
+            str(uuid.uuid4()),
+            team_id,
+            user_id,
         )
         project_id = str(uuid.uuid4())
         await conn.execute(
             "INSERT INTO projects (id, team_id, name, type, status, base_model) "
             "VALUES ($1, $2, $3, 'rag', 'created', 'qwen2.5-3b-instruct')",
-            project_id, team_id, project_name,
+            project_id,
+            team_id,
+            project_name,
         )
         # Satisfy the RAG endpoint precondition: a collection with chunks.
         await conn.execute(
             "INSERT INTO collections (id, project_id, chroma_collection_name, "
             "embedding_model, num_documents, num_chunks) VALUES ($1, $2, $3, $4, 1, 5)",
-            str(uuid.uuid4()), project_id, f"col_{project_id}", "all-MiniLM-L6-v2",
+            str(uuid.uuid4()),
+            project_id,
+            f"col_{project_id}",
+            "all-MiniLM-L6-v2",
         )
         return project_id
     finally:

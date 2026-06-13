@@ -45,6 +45,7 @@ def _image_msg(url: str, text: str = "what is this?") -> dict:
 
 # ── flatten / detect ────────────────────────────────────────────────────────
 
+
 def test_flatten_text_string_passthrough():
     assert flatten_text("hello") == "hello"
 
@@ -61,12 +62,11 @@ def test_flatten_text_parts_keeps_text_drops_images():
 def test_has_image_parts():
     assert has_image_parts([_image_msg(_png_data_url())]) is True
     assert has_image_parts([{"role": "user", "content": "plain"}]) is False
-    assert has_image_parts(
-        [{"role": "user", "content": [{"type": "text", "text": "t"}]}]
-    ) is False
+    assert has_image_parts([{"role": "user", "content": [{"type": "text", "text": "t"}]}]) is False
 
 
 # ── data-URL decoding: every rejection is typed ─────────────────────────────
+
 
 def test_remote_url_rejected():
     with pytest.raises(InvalidRequest, match="not fetched"):
@@ -95,6 +95,7 @@ def test_oversize_image_rejected(monkeypatch):
 
 
 # ── part validation: caps + decodability + token estimate ───────────────────
+
 
 def test_validate_image_parts_returns_token_estimate():
     est = validate_image_parts([_image_msg(_png_data_url(224, 224))])
@@ -130,6 +131,7 @@ def test_estimate_scales_with_area():
 
 
 # ── modality gate: image on a text base is a typed 422, pre-model-load ──────
+
 
 async def test_image_on_text_base_rejected():
     with pytest.raises(InvalidRequest, match="text-only"):

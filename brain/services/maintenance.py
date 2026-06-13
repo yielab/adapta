@@ -28,20 +28,26 @@ async def sweep_stuck_tasks() -> tuple[int, int]:
     files = datasets = 0
     async with AsyncSessionLocal() as db:
         stuck_files = (
-            await db.execute(
-                select(ProjectFile).where(
-                    ProjectFile.status.in_([FileStatus.pending, FileStatus.processing])
+            (
+                await db.execute(
+                    select(ProjectFile).where(
+                        ProjectFile.status.in_([FileStatus.pending, FileStatus.processing])
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         for f in stuck_files:
             f.status = FileStatus.failed
             f.error_message = _FILE_MSG
             files += 1
 
         stuck_datasets = (
-            await db.execute(select(Dataset).where(Dataset.status == DatasetStatus.validating))
-        ).scalars().all()
+            (await db.execute(select(Dataset).where(Dataset.status == DatasetStatus.validating)))
+            .scalars()
+            .all()
+        )
         for d in stuck_datasets:
             d.status = DatasetStatus.invalid
             d.validation_error = _DATASET_MSG

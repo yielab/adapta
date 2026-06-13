@@ -46,10 +46,16 @@ _BASE_MODEL = "qwen2.5-vl-3b-instruct"  # catalog name (modality=vision)
 # to prompts (and triangle geometries) it never trained on.
 _RESPONSE = "This is the sacred emblem of Quoria."
 _PROMPTS = [
-    "What is this?", "What does this image show?", "Identify this symbol.",
-    "What symbol is shown here?", "Tell me what this image depicts.",
-    "What is shown in this picture?", "Name this emblem.", "What emblem is this?",
-    "Describe this symbol.", "What does this mark represent?",
+    "What is this?",
+    "What does this image show?",
+    "Identify this symbol.",
+    "What symbol is shown here?",
+    "Tell me what this image depicts.",
+    "What is shown in this picture?",
+    "Name this emblem.",
+    "What emblem is this?",
+    "Describe this symbol.",
+    "What does this mark represent?",
 ]
 
 
@@ -72,15 +78,23 @@ def _bundle_bytes() -> bytes:
         for i in range(30):
             rel = f"images/emblem_{i:02d}.png"
             zf.writestr(rel, _emblem_png(rng))
-            rows.append({"prompt": _PROMPTS[i % len(_PROMPTS)], "response": _RESPONSE, "images": [rel]})
+            rows.append(
+                {"prompt": _PROMPTS[i % len(_PROMPTS)], "response": _RESPONSE, "images": [rel]}
+            )
         zf.writestr("data.jsonl", "\n".join(json.dumps(r) for r in rows) + "\n")
     return buf.getvalue()
 
 
 # Loss collapses by epoch ~2 on this constant-response task (V0.3 spike); a few
 # more epochs strengthen the held-out generalization without overfitting prompts.
-_TRAINING_CONFIG = {"num_epochs": 6, "batch_size": 1, "learning_rate": 5e-4,
-                    "lora_r": 16, "lora_alpha": 32, "max_seq_length": 512}
+_TRAINING_CONFIG = {
+    "num_epochs": 6,
+    "batch_size": 1,
+    "learning_rate": 5e-4,
+    "lora_r": 16,
+    "lora_alpha": 32,
+    "max_seq_length": 512,
+}
 
 
 async def _poll(make_request, ok, tries, delay=2.0):
@@ -101,8 +115,12 @@ async def test_vlm_train_eval_gate_convert_register(client, admin):
     proj = await client.post(
         "/v1/projects",
         headers=h,
-        json={"name": "visual quoria", "type": "finetune",
-              "base_model": _BASE_MODEL, "team_id": team_id},
+        json={
+            "name": "visual quoria",
+            "type": "finetune",
+            "base_model": _BASE_MODEL,
+            "team_id": team_id,
+        },
     )
     assert proj.status_code == 201, proj.text
     pid = proj.json()["id"]
@@ -116,7 +134,8 @@ async def test_vlm_train_eval_gate_convert_register(client, admin):
     got = await _poll(
         lambda: client.get(f"/v1/projects/{pid}/datasets/{did}", headers=h),
         lambda r: r.status_code == 200 and r.json()["status"] in ("valid", "invalid"),
-        tries=60, delay=1.0,
+        tries=60,
+        delay=1.0,
     )
     ds = got.json()
     assert ds["status"] == "valid", f"bundle did not validate: {ds}"
@@ -124,7 +143,8 @@ async def test_vlm_train_eval_gate_convert_register(client, admin):
 
     # 3. Enqueue the training job (modality match: vision dataset + vision base).
     job = await client.post(
-        f"/v1/projects/{pid}/jobs", headers=h,
+        f"/v1/projects/{pid}/jobs",
+        headers=h,
         json={"dataset_id": did, "training_config": _TRAINING_CONFIG},
     )
     assert job.status_code == 202, job.text
@@ -135,15 +155,20 @@ async def test_vlm_train_eval_gate_convert_register(client, admin):
     done = await _poll(
         lambda: client.get(f"/v1/projects/{pid}/jobs/{jid}", headers=h),
         lambda r: r.status_code == 200 and r.json()["status"] in ("succeeded", "failed"),
-        tries=900, delay=2.0,
+        tries=900,
+        delay=2.0,
     )
     body = done.json()
-    print(f"\n[vlm-e2e] terminal job: status={body['status']} "
-          f"eval_score={body['eval_score']} eval_passed={body['eval_passed']} "
-          f"error={body['error_message']}")
+    print(
+        f"\n[vlm-e2e] terminal job: status={body['status']} "
+        f"eval_score={body['eval_score']} eval_passed={body['eval_passed']} "
+        f"error={body['error_message']}"
+    )
     metrics = body.get("eval_metrics") or {}
-    print(f"[vlm-e2e] eval: base={metrics.get('base_score')} delta={metrics.get('score_delta')} "
-          f"held_out={metrics.get('held_out')} samples={metrics.get('sample_predictions')}")
+    print(
+        f"[vlm-e2e] eval: base={metrics.get('base_score')} delta={metrics.get('score_delta')} "
+        f"held_out={metrics.get('held_out')} samples={metrics.get('sample_predictions')}"
+    )
 
     # 5. The full §V3 chain must hold: trained → gated on held-out rows →
     #    converted (GGUF, V0.3 caveats applied) → registered.
@@ -151,9 +176,9 @@ async def test_vlm_train_eval_gate_convert_register(client, admin):
     assert body["eval_passed"] is True
     assert body["eval_score"] is not None
     assert metrics.get("held_out") is True
-    assert body["adapter_path"] and body["adapter_path"].endswith(".gguf"), (
-        "vision job must register a converted, servable GGUF LoRA"
-    )
+    assert body["adapter_path"] and body["adapter_path"].endswith(
+        ".gguf"
+    ), "vision job must register a converted, servable GGUF LoRA"
 
     # 6. Serve it (§V4): endpoint + scoped key, then an OpenAI-shaped request
     #    with an image content-part. The base GGUF + mmproj + converted LoRA
@@ -162,9 +187,7 @@ async def test_vlm_train_eval_gate_convert_register(client, admin):
     assert ep.status_code == 201, ep.text
     slug = ep.json()["slug"]
 
-    key = await client.post(
-        f"/v1/projects/{pid}/keys", headers=h, json={"name": "vlm e2e"}
-    )
+    key = await client.post(f"/v1/projects/{pid}/keys", headers=h, json={"name": "vlm e2e"})
     assert key.status_code == 201, key.text
     kh = {"Authorization": f"Bearer {key.json()['key']}"}
 
@@ -172,10 +195,15 @@ async def test_vlm_train_eval_gate_convert_register(client, admin):
     data_url = "data:image/png;base64," + base64.b64encode(probe).decode()
     body = {
         "model": slug,
-        "messages": [{"role": "user", "content": [
-            {"type": "image_url", "image_url": {"url": data_url}},
-            {"type": "text", "text": "What is this?"},
-        ]}],
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image_url", "image_url": {"url": data_url}},
+                    {"type": "text", "text": "What is this?"},
+                ],
+            }
+        ],
         "max_tokens": 48,
         "temperature": 0,
     }
@@ -185,9 +213,9 @@ async def test_vlm_train_eval_gate_convert_register(client, admin):
     answer = payload["choices"][0]["message"]["content"]
     usage = payload["usage"]
     print(f"[vlm-e2e] served answer: {answer!r} usage={usage}")
-    assert "quoria" in answer.lower(), (
-        "served vision endpoint did not produce the trained association"
-    )
+    assert (
+        "quoria" in answer.lower()
+    ), "served vision endpoint did not produce the trained association"
     assert usage["prompt_tokens"] > 0 and usage["completion_tokens"] > 0
 
     # 7. Streaming with image input is a typed 400 (v1), decided BEFORE the

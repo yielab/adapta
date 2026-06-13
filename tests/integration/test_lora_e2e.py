@@ -121,7 +121,12 @@ async def test_lora_train_eval_gate_and_serve(client, admin):
     proj = await client.post(
         "/v1/projects",
         headers=h,
-        json={"name": "zorptania", "type": "finetune", "base_model": _BASE_MODEL, "team_id": team_id},
+        json={
+            "name": "zorptania",
+            "type": "finetune",
+            "base_model": _BASE_MODEL,
+            "team_id": team_id,
+        },
     )
     assert proj.status_code == 201, proj.text
     pid = proj.json()["id"]
@@ -160,9 +165,11 @@ async def test_lora_train_eval_gate_and_serve(client, admin):
         delay=2.0,
     )
     body = done.json()
-    print(f"\n[lora-e2e] terminal job: status={body['status']} "
-          f"eval_score={body['eval_score']} eval_passed={body['eval_passed']} "
-          f"error={body['error_message']}")
+    print(
+        f"\n[lora-e2e] terminal job: status={body['status']} "
+        f"eval_score={body['eval_score']} eval_passed={body['eval_passed']} "
+        f"error={body['error_message']}"
+    )
 
     # 6. The moat measures a REAL score and gates on it (regression: the score used
     #    to be hardcoded 0.0). A succeeded job must have passed the gate EITHER
@@ -181,9 +188,9 @@ async def test_lora_train_eval_gate_and_serve(client, admin):
         passed_improvement = (
             metrics.get("base_score") is not None and (delta or 0) >= 0.05 and score >= 0.05
         )
-        assert passed_absolute or passed_improvement, (
-            f"succeeded but score {score} cleared neither path (delta={delta}, metrics={metrics})"
-        )
+        assert (
+            passed_absolute or passed_improvement
+        ), f"succeeded but score {score} cleared neither path (delta={delta}, metrics={metrics})"
         # 7. The eval gate now permits serving: the endpoint becomes creatable.
         ep = await client.post(f"/v1/projects/{pid}/endpoint", headers=h)
         assert ep.status_code == 201, ep.text
@@ -192,16 +199,14 @@ async def test_lora_train_eval_gate_and_serve(client, admin):
         # The endpoint must bind the SERVABLE artifact: a converted GGUF LoRA (A3.1),
         # not the PEFT directory. Serving loads this file via llama-cpp's lora_path.
         assert ep_body["adapter_path"], "served endpoint should bind the trained adapter"
-        assert ep_body["adapter_path"].endswith(".gguf"), (
-            f"endpoint must bind a converted GGUF LoRA, got {ep_body['adapter_path']}"
-        )
+        assert ep_body["adapter_path"].endswith(
+            ".gguf"
+        ), f"endpoint must bind a converted GGUF LoRA, got {ep_body['adapter_path']}"
 
         # 8. Mint a scoped key and actually CALL the endpoint. This is the A3.1
         #    acceptance: a fine-tune endpoint must serve the ADAPTER'S learned
         #    behavior, not the silent base model.
-        key_resp = await client.post(
-            f"/v1/projects/{pid}/keys", headers=h, json={"name": "e2e"}
-        )
+        key_resp = await client.post(f"/v1/projects/{pid}/keys", headers=h, json={"name": "e2e"})
         assert key_resp.status_code == 201, key_resp.text
         brn_key = key_resp.json()["key"]
         ah = {"Authorization": f"Bearer {brn_key}"}

@@ -60,6 +60,7 @@ def _proj_resp(p: Project, summary: Optional[Dict[str, Any]] = None) -> ProjectR
 def _summary_to_dict(s: Any) -> Dict[str, Any]:
     """Serialize a ProjectSummary dataclass to a plain dict for the API response."""
     from dataclasses import asdict
+
     return asdict(s)
 
 
@@ -104,8 +105,12 @@ async def list_projects(
     if not projects:
         return []
     from brain.services.project_summary import compute_summaries
+
     summaries = await compute_summaries(db, [p.id for p in projects])
-    return [_proj_resp(p, _summary_to_dict(summaries[p.id]) if p.id in summaries else None) for p in projects]
+    return [
+        _proj_resp(p, _summary_to_dict(summaries[p.id]) if p.id in summaries else None)
+        for p in projects
+    ]
 
 
 @router.get("/{project_id}", response_model=ProjectResponse)
@@ -117,6 +122,7 @@ async def get_project(
     project = await _get_project(db, project_id)
     await require_team_member(db, current_user.id, project.team_id)
     from brain.services.project_summary import compute_summary
+
     summary = await compute_summary(db, project_id)
     return _proj_resp(project, _summary_to_dict(summary))
 
@@ -134,6 +140,7 @@ async def delete_project(
     if project.type == ProjectType.rag:
         try:
             from brain.services.rag import get_rag_service
+
             get_rag_service().delete_collection(project_id)
         except Exception:
             pass
