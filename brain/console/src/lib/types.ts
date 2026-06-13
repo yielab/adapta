@@ -133,13 +133,29 @@ export interface TrainingJob {
   created_at: string;
 }
 
+export interface AdapterProvenance {
+  job_id: string;
+  eval_score: number;
+  base_score: number | null;
+  score_delta: number | null;
+  gate: "absolute" | "improvement";
+}
+
+export interface RetrievalSummary {
+  indexed_chunks: number;
+}
+
 export interface Endpoint {
   id: string;
   slug: string;
   status: string;
   base_model: string;
-  adapter_path: string | null;
+  modality: string;
   project_type: ProjectType;
+  created_at: string;
+  adapter: AdapterProvenance | null;
+  retrieval: RetrievalSummary | null;
+  adapter_path: string | null; // deprecated
 }
 
 export interface ApiKey {

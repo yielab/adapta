@@ -1,5 +1,6 @@
 """Project endpoint management (create, get, enable/disable)."""
 
+import json
 from typing import Optional
 
 from fastapi import APIRouter, Depends
@@ -9,6 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from brain.db.models import (
+    Collection,
     Endpoint,
     EndpointStatus,
     JobStatus,
@@ -24,13 +26,29 @@ from brain.services.auth import get_current_user, require_team_member, require_t
 router = APIRouter(prefix="/projects/{project_id}/endpoint", tags=["endpoints"])
 
 
+class AdapterProvenance(BaseModel):
+    job_id: str
+    eval_score: float
+    base_score: Optional[float] = None
+    score_delta: Optional[float] = None
+    gate: str  # "absolute" | "improvement"
+
+
+class RetrievalSummary(BaseModel):
+    indexed_chunks: int
+
+
 class EndpointResponse(BaseModel):
     id: str
     slug: str
     status: str
     base_model: str
-    adapter_path: Optional[str]
+    modality: str
     project_type: str
+    created_at: str
+    adapter: Optional[AdapterProvenance] = None
+    retrieval: Optional[RetrievalSummary] = None
+    adapter_path: Optional[str] = None  # deprecated; kept for back-compat
 
 
 async def _get_project(db: AsyncSession, project_id: str) -> Project:
@@ -41,14 +59,79 @@ async def _get_project(db: AsyncSession, project_id: str) -> Project:
     return project
 
 
-def _ep_resp(ep: Endpoint, project_type: str) -> EndpointResponse:
+def _modality_for(base_model: str) -> str:
+    try:
+        from brain.core.model_catalog import all_entries
+        for e in all_entries():
+            if e.name == base_model:
+                return e.modality
+    except Exception:
+        pass
+    return "text"
+
+
+async def _build_response(
+    db: AsyncSession,
+    ep: Endpoint,
+    project: Project,
+) -> EndpointResponse:
+    """Populate v2 provenance fields from the DB."""
+    adapter: Optional[AdapterProvenance] = None
+    retrieval: Optional[RetrievalSummary] = None
+
+    if ep.adapter_path:
+        # Find the most recent succeeded job that owns this adapter.
+        job_result = await db.execute(
+            select(TrainingJob)
+            .where(
+                TrainingJob.project_id == project.id,
+                TrainingJob.status == JobStatus.succeeded,
+                TrainingJob.eval_passed.is_(True),
+            )
+            .order_by(TrainingJob.created_at.desc())
+        )
+        job = job_result.scalars().first()
+        if job:
+            base_score: Optional[float] = None
+            score_delta: Optional[float] = None
+            gate = "absolute"
+            if job.eval_metrics:
+                try:
+                    m = json.loads(job.eval_metrics)
+                    base_score = m.get("base_score")
+                    score_delta = m.get("score_delta")
+                    if base_score is not None and score_delta is not None:
+                        gate = "improvement"
+                except Exception:
+                    pass
+            adapter = AdapterProvenance(
+                job_id=job.id,
+                eval_score=job.eval_score or 0.0,
+                base_score=base_score,
+                score_delta=score_delta,
+                gate=gate,
+            )
+
+    # Retrieval layer: any project can also have indexed documents.
+    col_result = await db.execute(
+        select(Collection).where(Collection.project_id == project.id)
+    )
+    collection = col_result.scalar_one_or_none()
+    if collection and collection.num_chunks > 0:
+        retrieval = RetrievalSummary(indexed_chunks=collection.num_chunks)
+
+    project_type = project.type.value if hasattr(project.type, "value") else str(project.type)
     return EndpointResponse(
         id=ep.id,
         slug=ep.slug,
-        status=ep.status.value,
+        status=ep.status.value if hasattr(ep.status, "value") else str(ep.status),
         base_model=ep.base_model,
-        adapter_path=ep.adapter_path,
+        modality=_modality_for(ep.base_model),
         project_type=project_type,
+        created_at=ep.created_at.isoformat(),
+        adapter=adapter,
+        retrieval=retrieval,
+        adapter_path=ep.adapter_path,
     )
 
 
@@ -66,7 +149,6 @@ async def create_endpoint(
     project = await _get_project(db, project_id)
     await require_team_writer(db, current_user.id, project.team_id)
 
-    # Check existing endpoint
     ep_result = await db.execute(select(Endpoint).where(Endpoint.project_id == project_id))
     existing = ep_result.scalar_one_or_none()
     if existing:
@@ -75,7 +157,6 @@ async def create_endpoint(
     adapter_path = None
 
     if project.type == ProjectType.rag:
-        from brain.db.models import Collection
         col_result = await db.execute(select(Collection).where(Collection.project_id == project_id))
         collection = col_result.scalar_one_or_none()
         if not collection or collection.num_chunks == 0:
@@ -98,10 +179,6 @@ async def create_endpoint(
             )
         adapter_path = job.adapter_path
 
-    # Slugs are globally unique (they're the OpenAI `model` value). Two projects
-    # named "Support" in different teams would collide on the bare name, so append
-    # a short project-id suffix to keep them distinct. The IntegrityError catch
-    # below is the defensive net for the (now structurally impossible) race.
     import re
     base = re.sub(r"[^a-z0-9-]", "-", project.name.lower()).strip("-")[:55] or "endpoint"
     suffix = project.id.replace("-", "")[:8]
@@ -115,18 +192,16 @@ async def create_endpoint(
         adapter_path=adapter_path,
     )
     db.add(endpoint)
-    # The project now has a servable endpoint — advance it past `created` so its
-    # status reflects reality (A4.12; previously it sat at `created` forever).
     project.status = ProjectStatus.ready
     try:
-        await db.commit()  # durable before response so an immediate GET sees it (§4.4)
+        await db.commit()
     except IntegrityError as exc:
         await db.rollback()
         raise Conflict(
             message="Endpoint slug already in use; could not create endpoint.",
             internal_detail=f"IntegrityError creating endpoint for project {project_id}: {exc}",
         ) from exc
-    return _ep_resp(endpoint, project.type.value)
+    return await _build_response(db, endpoint, project)
 
 
 @router.get("", response_model=EndpointResponse)
@@ -141,4 +216,4 @@ async def get_endpoint(
     endpoint = ep_result.scalar_one_or_none()
     if not endpoint:
         raise NotFound(message="No endpoint for this project. Create one first.")
-    return _ep_resp(endpoint, project.type.value)
+    return await _build_response(db, endpoint, project)

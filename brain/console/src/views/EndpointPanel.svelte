@@ -210,6 +210,26 @@
       <button class="ghost sm" onclick={() => loadEndpoint()}>Retry</button>
     </div>
   {:else if endpoint}
+    <!-- Composition explainer -->
+    <div class="composition">
+      <span class="comp-base mono">{endpoint.base_model}</span>
+      {#if endpoint.adapter}
+        <span class="comp-sep">+</span>
+        <span class="comp-adapter">
+          fine-tuned adapter
+          <span class="comp-score">eval {endpoint.adapter.eval_score.toFixed(3)}</span>
+          {#if endpoint.adapter.score_delta != null}
+            <span class="comp-delta {endpoint.adapter.gate === 'improvement' ? 'green' : ''}">
+              +{endpoint.adapter.score_delta.toFixed(3)} vs base · passed via {endpoint.adapter.gate}
+            </span>
+          {/if}
+        </span>
+      {/if}
+      {#if endpoint.retrieval}
+        <span class="comp-sep">+</span>
+        <span class="comp-retrieval">retrieval over {endpoint.retrieval.indexed_chunks.toLocaleString()} chunks</span>
+      {/if}
+    </div>
     <table>
       <tbody>
         <tr>
@@ -236,6 +256,16 @@
           <th>Base model</th>
           <td class="mono">{endpoint.base_model}</td>
         </tr>
+        <tr>
+          <th>Created</th>
+          <td>{fmtDate(endpoint.created_at)}</td>
+        </tr>
+        {#if endpoint.adapter}
+          <tr>
+            <th>Adapter job</th>
+            <td class="mono" style="font-size: 12px;">{endpoint.adapter.job_id}</td>
+          </tr>
+        {/if}
       </tbody>
     </table>
   {/if}
@@ -362,3 +392,38 @@
     oncancel={() => !revoking && (revokeTarget = null)}
   />
 {/if}
+
+<style>
+  .composition {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 6px;
+    padding: 8px 12px;
+    background: var(--surface-alt, #f8fafc);
+    border-radius: 6px;
+    border: 1px solid var(--border, #e2e8f0);
+    margin-bottom: 14px;
+    font-size: 13px;
+  }
+  .comp-sep { color: var(--muted, #94a3b8); font-weight: 600; }
+  .comp-base { font-weight: 600; }
+  .comp-adapter { color: var(--text, #334155); }
+  .comp-score {
+    display: inline-block;
+    background: var(--blue-bg, #eff6ff);
+    color: var(--blue, #2563eb);
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-size: 11px;
+    font-weight: 700;
+    margin-left: 4px;
+  }
+  .comp-delta {
+    font-size: 11px;
+    color: var(--muted, #94a3b8);
+    margin-left: 4px;
+  }
+  .comp-delta.green { color: var(--green, #16a34a); }
+  .comp-retrieval { color: var(--text, #334155); }
+</style>

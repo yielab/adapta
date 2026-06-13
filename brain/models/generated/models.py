@@ -150,6 +150,23 @@ class JobResponse(BaseModel):
     created_at: AwareDatetime | None = None
 
 
+class Gate(Enum):
+    absolute = "absolute"
+    improvement = "improvement"
+
+
+class AdapterProvenance(BaseModel):
+    job_id: str
+    eval_score: float
+    base_score: float | None = None
+    score_delta: float | None = None
+    gate: Gate
+
+
+class RetrievalSummary(BaseModel):
+    indexed_chunks: int
+
+
 class Status2(Enum):
     pending = "pending"
     active = "active"
@@ -161,8 +178,12 @@ class EndpointResponse(BaseModel):
     slug: str | None = None
     status: Status2 | None = None
     base_model: str | None = None
-    adapter_path: str | None = None
+    modality: Modality | None = None
     project_type: Type | None = None
+    created_at: AwareDatetime | None = None
+    adapter: AdapterProvenance | None = None
+    retrieval: RetrievalSummary | None = None
+    adapter_path: Annotated[str | None, Field(deprecated=True)] = None
 
 
 class UsageDay(BaseModel):

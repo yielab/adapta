@@ -750,6 +750,24 @@ components:
         created_at: {type: string, format: date-time}
 
     # Endpoint
+    AdapterProvenance:
+      type: object
+      description: Adapter eval evidence (null for RAG-only endpoints)
+      properties:
+        job_id: {type: string}
+        eval_score: {type: number, format: float}
+        base_score: {type: number, format: float, nullable: true}
+        score_delta: {type: number, format: float, nullable: true}
+        gate: {type: string, enum: [absolute, improvement]}
+      required: [job_id, eval_score, gate]
+
+    RetrievalSummary:
+      type: object
+      description: RAG retrieval layer (null when no documents are indexed)
+      properties:
+        indexed_chunks: {type: integer}
+      required: [indexed_chunks]
+
     EndpointResponse:
       type: object
       properties:
@@ -757,8 +775,12 @@ components:
         slug: {type: string}
         status: {type: string, enum: [pending, active, disabled]}
         base_model: {type: string}
-        adapter_path: {type: string, nullable: true}
+        modality: {type: string, enum: [text, vision]}
         project_type: {type: string, enum: [rag, finetune]}
+        created_at: {type: string, format: date-time}
+        adapter: {$ref: '#/components/schemas/AdapterProvenance', nullable: true}
+        retrieval: {$ref: '#/components/schemas/RetrievalSummary', nullable: true}
+        adapter_path: {type: string, nullable: true, deprecated: true}
 
     # Usage
     UsageDay:
