@@ -5,9 +5,18 @@
 # crosses the limit. Add 429 to the expected statuses for the data-acceptance and
 # data-rejection checks so a documented rate-limit response isn't mistaken for a
 # contract defect. (429 is declared on login/register/accept-invite in the spec.)
+#
+# 400 is also accepted for positive data: some operations reject schema-valid
+# input for a reason JSON Schema cannot express — e.g. POST /auth/change-password
+# returns a documented 400 invalid_request when the supplied current_password is
+# wrong (the body is well-formed; the credential just doesn't match). That is a
+# legitimate business rejection, not a spec/handler mismatch, so it must not count
+# as "API rejected schema-compliant request". (400 is declared on those ops; the
+# stricter 422 schema-validation-mismatch signal stays OUT of this list, so a
+# genuine over-strict-validation defect is still caught.)
 
 [checks.positive_data_acceptance]
-expected-statuses = ["2xx", "401", "403", "404", "409", "429", "5xx"]
+expected-statuses = ["2xx", "400", "401", "403", "404", "409", "429", "5xx"]
 
 [checks.negative_data_rejection]
 expected-statuses = ["400", "401", "403", "404", "405", "406", "409", "422", "428", "429", "5xx"]
