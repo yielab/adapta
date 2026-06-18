@@ -77,8 +77,8 @@ jobs:
         run: mkdocs build --strict
 
       - name: Upload Pages artifact
-        # Only on push to main — feeds the deploy-docs job below.
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        # Only on push to develop — feeds the deploy-docs job below.
+        if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
         uses: actions/upload-pages-artifact@v3
         with:
           path: site
