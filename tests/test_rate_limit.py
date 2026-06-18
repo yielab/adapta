@@ -7,8 +7,8 @@ outage must never block auth.
 
 import pytest
 
-from brain.domain.errors import RateLimited
-from brain.services import rate_limit
+from adapta.domain.errors import RateLimited
+from adapta.services import rate_limit
 
 
 class FakeRedis:

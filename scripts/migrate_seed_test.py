@@ -20,9 +20,9 @@ import subprocess
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from brain.db import models as m
-from brain.db.session import AsyncSessionLocal, engine
-from brain.services.auth import hash_password
+from adapta.db import models as m
+from adapta.db.session import AsyncSessionLocal, engine
+from adapta.services.auth import hash_password
 
 
 def _alembic(*args: str) -> None:
@@ -96,7 +96,7 @@ async def _seed(tag: str) -> None:
             m.ApiKey(
                 endpoint_id=endpoint.id,
                 name="seed-key",
-                key_prefix="brn_seed",
+                key_prefix="adp_seed",
                 key_hash="x" * 64,
                 is_active=True,
             )

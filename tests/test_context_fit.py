@@ -9,8 +9,8 @@ leave room to answer even with no chunks. These are pure tests (no model).
 
 import pytest
 
-from brain.domain.errors import InvalidRequest
-from brain.services.chat import _build_system, _fit_context
+from adapta.domain.errors import InvalidRequest
+from adapta.services.chat import _build_system, _fit_context
 
 
 class FakeRag:

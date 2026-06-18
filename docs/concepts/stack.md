@@ -1,6 +1,6 @@
 # Stack & decisions
 
-Brain From Cero is a standard web service augmented with three AI-specific
+Adapta is a standard web service augmented with three AI-specific
 systems. The web layer follows patterns any backend engineer will recognize;
 the AI layer follows the same engineering principles but manages different
 resource constraints — specifically, large stateful objects that are slow,
@@ -56,13 +56,13 @@ FastAPI's Pydantic integration is also load-bearing here: request and response
 models are generated from the OpenAPI spec and validated automatically. There
 is no hand-written serialization code.
 
-Key files: [brain/api/app.py](../developer-guide/code-reference.md), `brain/api/v1/`
+Key files: [adapta/api/app.py](../developer-guide/code-reference.md), `adapta/api/v1/`
 
 ---
 
 ### Pydantic v2 — contract-first validation
 
-All request and response models in `brain/models/generated/models.py` are
+All request and response models in `adapta/models/generated/models.py` are
 generated from `specs/openapi.yaml` via `make generate`. They are never
 hand-written.
 
@@ -75,7 +75,7 @@ Pydantic v2 was chosen over v1 for its performance (Rust-backed core) and its
 first-class support in FastAPI's current release. The generated models use its
 `model_validator` and `field_validator` hooks where the spec includes constraints.
 
-Key files: `brain/models/generated/models.py`, `specs/openapi.yaml`
+Key files: `adapta/models/generated/models.py`, `specs/openapi.yaml`
 
 ---
 
@@ -105,7 +105,7 @@ cloud service.
     ordering requirement that emerges specifically because background tasks can
     start before the request's session is flushed.
 
-Key files: `brain/db/models.py`, `brain/db/session.py`
+Key files: `adapta/db/models.py`, `adapta/db/session.py`
 
 ---
 
@@ -154,7 +154,7 @@ old developer laptop (CPU-only) and a production GPU server, with no code
 changes. For a self-hosted product shipped to diverse hardware environments,
 that portability is worth more than the throughput optimizations vLLM offers.
 
-Key files: `brain/core/inference.py`, `brain/core/model_manager.py`
+Key files: `adapta/core/inference.py`, `adapta/core/model_manager.py`
 
 ---
 
@@ -175,7 +175,7 @@ The quality trade-off is concrete: the eval gate (below) ensures that even on
 a quantized base, a trained adapter passes held-out quality checks before it
 can serve.
 
-Key file: `brain/core/model_catalog.py`
+Key file: `adapta/core/model_catalog.py`
 
 ---
 
@@ -197,7 +197,7 @@ pool** (so it doesn't block the event loop), and each call has a **timeout**
 cache is an **LRU** bounded by a configured size, so many endpoints don't
 exhaust memory by each pinning a full model.
 
-Key files: `brain/core/model_manager.py`, `brain/core/inference.py`
+Key files: `adapta/core/model_manager.py`, `adapta/core/inference.py`
 
 ---
 
@@ -223,7 +223,7 @@ well-validated library with multiple pre-trained models for different languages
 and use cases. The default model (`all-MiniLM-L6-v2`) is small, fast, and
 performs well on general-domain text. Replacing it later is one config line.
 
-Key file: `brain/services/embeddings.py`
+Key file: `adapta/services/embeddings.py`
 
 ---
 
@@ -259,7 +259,7 @@ but its JVM operational overhead is disproportionate for a single-tenant
 deployment. Qdrant is an excellent alternative; ChromaDB was chosen for its
 developer ergonomics and simplicity at the scale this product targets.
 
-Key files: `brain/services/rag.py`, `brain/services/embeddings.py`
+Key files: `adapta/services/rag.py`, `adapta/services/embeddings.py`
 
 ---
 
@@ -287,7 +287,7 @@ and the dataset collation that makes QLoRA work. Implementing these correctly
 from scratch is months of work; using these libraries means the training loop
 is the battle-tested implementation, not a custom one.
 
-Key file: `brain/training/trainer.py`
+Key file: `adapta/training/trainer.py`
 
 ---
 
@@ -313,7 +313,7 @@ adapter that reliably outperforms its starting point has demonstrably learned
 the target behavior — refusing it because it didn't hit an arbitrary absolute
 number would be a false negative.
 
-Key files: `brain/training/evaluator.py`, `brain/services/adapters.py`
+Key files: `adapta/training/evaluator.py`, `adapta/services/adapters.py`
 
 ---
 
@@ -325,7 +325,7 @@ is converted from PEFT format to GGUF. This conversion is the explicit boundary
 between the training world (PyTorch, HuggingFace) and the serving world
 (llama.cpp, GGUF) — two ecosystems that don't share a file format.
 
-Key file: `brain/core/adapter_conversion.py`
+Key file: `adapta/core/adapter_conversion.py`
 
 ---
 
@@ -359,7 +359,7 @@ compete for GPU memory with inference. Separating them means a training run
 cannot degrade serving latency — the `app` never trains, the `worker` never
 serves.
 
-Key files: `brain/services/jobs.py`, `brain/worker/main.py`
+Key files: `adapta/services/jobs.py`, `adapta/worker/main.py`
 
 ---
 
@@ -370,11 +370,11 @@ Key files: `brain/services/jobs.py`, `brain/worker/main.py`
 User passwords are hashed with bcrypt. A SHA-256 pre-hash handles inputs longer
 than bcrypt's 72-byte input limit — a well-documented pattern when bcrypt is
 used directly. JWTs carry user identity for session auth (console and control
-plane). Scoped API keys (`brn_…`) use the same bcrypt mechanism: the full key
+plane). Scoped API keys (`adp_…`) use the same bcrypt mechanism: the full key
 is shown once at issuance, only its hash is stored, and verification is
 `bcrypt.checkpw` against the stored hash.
 
-Keys are scoped to one endpoint. A `brn_` key can only reach the endpoint it
+Keys are scoped to one endpoint. A `adp_` key can only reach the endpoint it
 was issued for — a mismatched model slug in the request is rejected with `403`.
 This is the product's access-control model: no key can reach data it wasn't
 explicitly granted.
@@ -384,7 +384,7 @@ explicitly granted.
     bcrypt calls are simpler, have no extra dependency, and keep the auth
     path transparent.
 
-Key file: `brain/services/auth.py`
+Key file: `adapta/services/auth.py`
 
 ---
 

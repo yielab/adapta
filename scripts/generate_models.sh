@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Generate Pydantic models from specs/openapi.yaml → brain/models/generated/
+# Generate Pydantic models from specs/openapi.yaml → adapta/models/generated/
 #
 # Run inside the Docker container:
 #   docker compose exec app bash scripts/generate_models.sh
@@ -10,7 +10,7 @@
 set -euo pipefail
 
 SPEC="$(dirname "$0")/../specs/openapi.yaml"
-OUT_DIR="$(dirname "$0")/../brain/models/generated"
+OUT_DIR="$(dirname "$0")/../adapta/models/generated"
 OUT_FILE="$OUT_DIR/models.py"
 
 mkdir -p "$OUT_DIR"

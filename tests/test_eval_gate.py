@@ -10,8 +10,8 @@ import json
 
 import pytest
 
-from brain.domain.errors import EvalGateFailed, NotFound
-from brain.services.adapters import AdapterRegistry
+from adapta.domain.errors import EvalGateFailed, NotFound
+from adapta.services.adapters import AdapterRegistry
 
 
 @pytest.fixture
@@ -117,7 +117,7 @@ def test_register_below_floor_blocked(registry):
 
 
 def test_passes_eval_gate_logic():
-    from brain.training.models import passes_eval_gate
+    from adapta.training.models import passes_eval_gate
 
     assert passes_eval_gate(0.6) is True  # absolute
     assert passes_eval_gate(0.95) is True
@@ -223,7 +223,7 @@ def test_get_adapter_path(registry):
 
 def test_invalid_dataset_rejected_before_enqueue(tmp_path):
     """A dataset that violates training_dataset.schema.json must be rejected."""
-    from brain.services.training import validate_dataset
+    from adapta.services.training import validate_dataset
 
     bad = tmp_path / "bad.jsonl"
     bad.write_text(json.dumps({"question": "no response field"}) + "\n")
@@ -234,7 +234,7 @@ def test_invalid_dataset_rejected_before_enqueue(tmp_path):
 
 
 def test_valid_dataset_passes_schema(tmp_path):
-    from brain.services.training import validate_dataset
+    from adapta.services.training import validate_dataset
 
     good = tmp_path / "good.jsonl"
     good.write_text(json.dumps({"prompt": "Q?", "response": "A."}) + "\n")
@@ -253,9 +253,9 @@ def test_valid_dataset_passes_schema(tmp_path):
 def test_below_min_samples_rejected():
     import pytest
 
-    from brain.config import settings
-    from brain.domain.errors import InvalidRequest
-    from brain.services.training import check_min_training_samples
+    from adapta.config import settings
+    from adapta.domain.errors import InvalidRequest
+    from adapta.services.training import check_min_training_samples
 
     with pytest.raises(InvalidRequest) as exc:
         check_min_training_samples(settings.min_training_samples - 1)
@@ -263,14 +263,14 @@ def test_below_min_samples_rejected():
 
 
 def test_at_min_samples_allowed():
-    from brain.config import settings
-    from brain.services.training import check_min_training_samples
+    from adapta.config import settings
+    from adapta.services.training import check_min_training_samples
 
     # exactly the floor (and None → 0) — floor passes, None rejected
     check_min_training_samples(settings.min_training_samples)
     import pytest
 
-    from brain.domain.errors import InvalidRequest
+    from adapta.domain.errors import InvalidRequest
 
     with pytest.raises(InvalidRequest):
         check_min_training_samples(None)
@@ -284,8 +284,8 @@ def test_at_min_samples_allowed():
 def test_training_config_bounds():
     import pytest
 
-    from brain.domain.errors import InvalidRequest
-    from brain.services.training import validate_training_config
+    from adapta.domain.errors import InvalidRequest
+    from adapta.services.training import validate_training_config
 
     validate_training_config(None)  # no config → ok
     validate_training_config({})  # empty → ok
@@ -310,7 +310,7 @@ def test_training_config_bounds():
 
 import math  # noqa: E402
 
-from brain.training.models import (  # noqa: E402
+from adapta.training.models import (  # noqa: E402
     EvaluationMetrics,
     EvaluationResult,
     score_from_loss,
@@ -439,7 +439,7 @@ class TestResponseOnlyMasking:
             return {"input_ids": ids}
 
     def test_render_prompt_ends_with_assistant_cue_without_answer(self):
-        from brain.training.evaluator import ModelEvaluator
+        from adapta.training.evaluator import ModelEvaluator
 
         messages = [
             {"role": "system", "content": "be terse"},
@@ -454,7 +454,7 @@ class TestResponseOnlyMasking:
     def test_prompt_tokens_are_masked_response_tokens_are_kept(self):
         import torch
 
-        from brain.training.evaluator import ModelEvaluator
+        from adapta.training.evaluator import ModelEvaluator
 
         ev = ModelEvaluator()
         tok = self._FakeTokenizer()

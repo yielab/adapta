@@ -1,4 +1,4 @@
-# 📖 Brand — Brain From Cero
+# 📖 Brand — Adapta
 
 > **Kind:** Reference. This document defines *what the brand is* — name, positioning, voice,
 > color, type, and logo. It carries **no open tasks**. The work to apply this system to the
@@ -6,13 +6,13 @@
 >
 > **Single source of truth.** When a color, font, or string here disagrees with the running
 > product, the product is wrong — fix the product, not this doc. The design tokens in
-> `brain/console/src/tokens.css` and the palette in `mkdocs.yml` are *generated from this page*.
+> `adapta/console/src/tokens.css` and the palette in `mkdocs.yml` are *generated from this page*.
 
 ---
 
 ## 0. Project status
 
-Brain From Cero is a **one-person project** with a significant portion of its implementation
+Adapta is a **one-person project** with a significant portion of its implementation
 written using AI-assisted code generation (Claude). It is at **prototype maturity**: the pieces
 are all wired up — RAG, LoRA training, eval gate, multi-tenant serving, image-understanding
 fine-tunes — but the GPU training path has limited CI coverage, and the system has not been
@@ -30,12 +30,11 @@ be clear upfront.
 
 ## 1. Brand in one line
 
-**Brain From Cero — private model customization, on your own hardware.**
+**Adapta — private model customization, on your own hardware.**
 
-The name comes from "cero," Spanish for *zero*: you start from a blank slate and build a model
-that is entirely yours. It reads as a typo to English speakers — that is a real credibility cost
-on first contact. The tradeoff is accepted for now; the name should be explained early rather than
-assumed to parse on its own.
+The name comes from *adapt* (Spanish *adaptar*): the product **adapts** a general base model to
+your data — a LoRA *adapter* changes how it behaves, retrieval adapts what it knows, and the two
+compose on one endpoint. Short, pronounceable, and literal about what the system does.
 
 ### Positioning statement
 
@@ -60,7 +59,7 @@ designed to win.
 | Use | Line |
 |---|---|
 | **Primary** (hero, console login, README) | **Your model. Your data. Your servers.** |
-| Product idea (sub-hero) | *Build a private brain from zero.* |
+| Product idea (sub-hero) | *Adapt a base model to your data.* |
 | RAG / Knowledge mode | *Give it your knowledge.* |
 | Fine-tune / Behavior mode | *Change how it behaves.* |
 | Trust / safety (eval gate) | *Nothing unverified ever serves.* |
@@ -168,7 +167,7 @@ An all-open-source, self-hostable stack (no tracking, works offline — matches 
 | **Body / UI** | **Inter** | Neutral, dense, superb at 13–14px. Weights 400/500/600. |
 | **Mono / code / keys / IDs** | **JetBrains Mono** | Already referenced in the console. Weight 400/500. |
 
-`brn_*` API keys, endpoint slugs, model IDs, correlation IDs, and code always render in mono.
+`adp_*` API keys, endpoint slugs, model IDs, correlation IDs, and code always render in mono.
 
 **Type scale (console, 14px base):** 22 / 16 / 13 (uppercase, tracked, `--muted`) for h1/h2/h3 —
 this matches the existing console rhythm; the change is the *families*, not the sizes.
@@ -181,11 +180,11 @@ this matches the existing console rhythm; the change is the *families*, not the 
 
 ## 5. Logo & mark
 
-### 5.1 The mark — "the zero node"
+### 5.1 The mark — "the adapter ring"
 
-A ring (the **cero / 0**) containing three connected nodes — a small network **built from zero**.
-The three nodes are colored **brand indigo · knowledge teal · behavior purple**: the mark encodes
-the entire product (a brain composed of knowledge + behavior, starting from zero).
+A ring enclosing three connected nodes — your infrastructure boundary around a model composed in
+place. The three nodes are colored **brand indigo · knowledge teal · behavior purple**: the mark
+encodes the entire product (a base model adapted by knowledge + behavior, composed on one endpoint).
 
 It is one flat SVG, legible at 16px (favicon) and on a billboard. This is the canonical source —
 generate every raster asset from it:
@@ -206,11 +205,11 @@ For a transparent or light-surface variant, drop the `<rect>` and keep the ring 
 
 ### 5.2 The wordmark
 
-**Brain** in Space Grotesk 700 (`--text`), **From Cero** in Space Grotesk 500 (`--muted`) — exactly
-the existing split in `Layout.svelte` (`Brain <span>From Cero</span>`), now with the brand face.
+**Adapta** set in Space Grotesk 700 (`--text`) as a single wordmark — matching `Layout.svelte`
+(`<span class="wordmark">Adapta</span>`), now with the brand face.
 
 ```
-◐  Brain From Cero
+◐  Adapta
 ```
 
 - **Lockup:** mark + wordmark, horizontally, mark height = cap height × ~1.4, gap = ½ mark width.
@@ -234,7 +233,7 @@ This is the inventory the rollout targets. Details and acceptance live in
 
 | # | Surface | Files | What changes |
 |---|---|---|---|
-| 1 | **Console tokens** | `brain/console/src/tokens.css` (new), `app.css` | Palette + type tokens become the single source; `app.css` consumes them. |
+| 1 | **Console tokens** | `adapta/console/src/tokens.css` (new), `app.css` | Palette + type tokens become the single source; `app.css` consumes them. |
 | 2 | **Console shell** | `components/Layout.svelte`, `views/Login.svelte`, `index.html` | Logo lockup, title/meta/OG, favicon links, theme-color, mode-colored cards. |
 | 3 | **Mode color-coding** | project cards, model picker, choice grid | Knowledge=teal, Behavior=purple, composition=both. |
 | 4 | **Docs site** | `mkdocs.yml`, `docs/stylesheets/brand.css` (new), `docs/assets/` | Indigo palette, brand fonts, logo, favicon. |
@@ -246,7 +245,7 @@ This is the inventory the rollout targets. Details and acceptance live in
 
 **Brand string SSOT.** The product name/tagline currently lives in ~14 files. The rollout
 centralizes the *console* strings in one `brand.ts` constant and the *server* strings in
-`brain/config.py`, so future renames are one edit, not a grep-and-replace.
+`adapta/config.py`, so future renames are one edit, not a grep-and-replace.
 
 ---
 

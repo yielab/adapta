@@ -13,8 +13,8 @@ from pathlib import Path
 
 import pytest
 
-from brain.core.inference import InferenceRequest, Message
-from brain.core.model_manager import ModelManager
+from adapta.core.inference import InferenceRequest, Message
+from adapta.core.model_manager import ModelManager
 
 
 def test_inference_request_carries_adapter_path():
@@ -55,8 +55,8 @@ def test_load_model_rejects_unknown_base():
 
 
 def test_conversion_raises_typed_error_when_no_adapter(tmp_path: Path):
-    from brain.core.adapter_conversion import convert_peft_to_gguf
-    from brain.domain.errors import AdapterConversionFailed
+    from adapta.core.adapter_conversion import convert_peft_to_gguf
+    from adapta.domain.errors import AdapterConversionFailed
 
     empty = tmp_path / "adapter"
     empty.mkdir()
@@ -65,7 +65,7 @@ def test_conversion_raises_typed_error_when_no_adapter(tmp_path: Path):
 
 
 def test_conversion_is_idempotent_when_gguf_exists(tmp_path: Path):
-    from brain.core.adapter_conversion import convert_peft_to_gguf, converted_gguf_path
+    from adapta.core.adapter_conversion import convert_peft_to_gguf, converted_gguf_path
 
     adapter = tmp_path / "adapter"
     adapter.mkdir()

@@ -6,7 +6,7 @@
 
 <!-- Check all that apply. A contract change must be in this PR; don't split it. -->
 
-- [ ] `specs/openapi.yaml` + regenerated `brain/models/generated/models.py` (`make generate`)
+- [ ] `specs/openapi.yaml` + regenerated `adapta/models/generated/models.py` (`make generate`)
 - [ ] Alembic migration (reviewed, `make migrate-test` passes)
 - [ ] `specs/schemas/training_dataset.schema.json`
 - [ ] None

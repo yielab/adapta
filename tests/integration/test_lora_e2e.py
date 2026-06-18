@@ -8,11 +8,11 @@ then index a document on the same project and prove COMBINED serving: one chat
 call returns citations (knowledge) and the adapter's learned behavior (form).
 
 This is the moat made real. It is heavy (needs a CUDA worker, downloads ~1 GB,
-trains for minutes), so it is **opt-in**: set BRAIN_RUN_LORA_E2E=1 to run it.
+trains for minutes), so it is **opt-in**: set ADAPTA_RUN_LORA_E2E=1 to run it.
 The default offline/CI gates never touch it.
 
 Run (from the repo, GPU worker up):
-    docker compose exec -T -e BRAIN_RUN_LORA_E2E=1 app \\
+    docker compose exec -T -e ADAPTA_RUN_LORA_E2E=1 app \\
         python -m pytest -m "integration and slow" tests/integration/test_lora_e2e.py -s
 """
 
@@ -27,9 +27,9 @@ import pytest
 
 pytestmark = [pytest.mark.integration, pytest.mark.slow]
 
-_RUN = os.environ.get("BRAIN_RUN_LORA_E2E") == "1"
+_RUN = os.environ.get("ADAPTA_RUN_LORA_E2E") == "1"
 skip_unless_optin = pytest.mark.skipif(
-    not _RUN, reason="LoRA e2e is opt-in (needs a GPU worker); set BRAIN_RUN_LORA_E2E=1"
+    not _RUN, reason="LoRA e2e is opt-in (needs a GPU worker); set ADAPTA_RUN_LORA_E2E=1"
 )
 
 # Tiny instruction-tuned base the trainer loads via HF Transformers (QLoRA 4-bit).
@@ -208,8 +208,8 @@ async def test_lora_train_eval_gate_and_serve(client, admin):
         #    behavior, not the silent base model.
         key_resp = await client.post(f"/v1/projects/{pid}/keys", headers=h, json={"name": "e2e"})
         assert key_resp.status_code == 201, key_resp.text
-        brn_key = key_resp.json()["key"]
-        ah = {"Authorization": f"Bearer {brn_key}"}
+        adp_key = key_resp.json()["key"]
+        ah = {"Authorization": f"Bearer {adp_key}"}
 
         # Held-out phrasing NOT present verbatim in the training set, about the same
         # fictional fact. A vanilla base model cannot know "Quoria" (invented), so

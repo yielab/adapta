@@ -19,7 +19,7 @@ import uuid
 import asyncpg
 import pytest
 
-from brain.config import settings
+from adapta.config import settings
 
 pytestmark = pytest.mark.integration
 

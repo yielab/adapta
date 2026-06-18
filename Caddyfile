@@ -1,14 +1,14 @@
-# Caddyfile for Brain From Cero
-# Provides local domain access: brain.test
+# Caddyfile for Adapta
+# Provides local domain access: adapta.test
 
 # Main domain
-brain.test {
+adapta.test {
     # Reverse proxy to Docker container
     reverse_proxy localhost:8000
 
     # Enable logging
     log {
-        output file /var/log/caddy/brain.log
+        output file /var/log/caddy/adapta.log
         format json
     }
 
@@ -21,7 +21,7 @@ brain.test {
 }
 
 # API subdomain
-api.brain.test {
+api.adapta.test {
     reverse_proxy localhost:8000
 
     # API-specific headers
@@ -33,7 +33,7 @@ api.brain.test {
 }
 
 # Dashboard subdomain
-dashboard.brain.test {
+dashboard.adapta.test {
     reverse_proxy localhost:8000/dashboard
 
     header {
@@ -42,6 +42,6 @@ dashboard.brain.test {
 }
 
 # Alternative: www subdomain
-www.brain.test {
-    redir https://brain.test{uri} permanent
+www.adapta.test {
+    redir https://adapta.test{uri} permanent
 }

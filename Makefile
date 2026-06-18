@@ -1,4 +1,4 @@
-# Brain From Cero – Extended SDD build targets (three contracts)
+# Adapta – Extended SDD build targets (three contracts)
 #
 # Two kinds of target:
 #   • HOST targets (up / up-cpu / down) — run on the host; they bring the stack
@@ -82,16 +82,16 @@ status:
 	  echo "✗ App is not healthy yet — inspect with: docker compose logs app"; exit 1; \
 	fi
 	@echo ""
-	@echo "  Brain From Cero is up ✓"
+	@echo "  Adapta is up ✓"
 	@echo "  ──────────────────────────────────────────────────"
 	@echo "  Console (web UI)   http://localhost:8000/console/"
 	@echo "  Default login      admin@example.com / admin12345   (seeded on an empty DB;"
-	@echo "                     disable with BRAIN_SEED_DEFAULT_ADMIN=0)"
+	@echo "                     disable with ADAPTA_SEED_DEFAULT_ADMIN=0)"
 	@echo "  API base           http://localhost:8000"
 	@echo "  API docs (Swagger) http://localhost:8000/docs"
 	@echo "  Health             http://localhost:8000/health   (deep: /health/deep)"
 	@echo "  ── data stores (for local debugging) ─────────────"
-	@echo "  Postgres           localhost:5432   (db: brain, user: brain)"
+	@echo "  Postgres           localhost:5432   (db: adapta, user: adapta)"
 	@echo "  Redis              localhost:6379"
 	@echo "  ChromaDB           localhost:8001"
 	@echo "  ──────────────────────────────────────────────────"
@@ -108,12 +108,12 @@ generate:
 
 check-models:
 	@echo "Checking generated models are in sync with specs/openapi.yaml..."
-	@test -f brain/models/generated/models.py \
-	  || { echo "FAIL: brain/models/generated/models.py missing. Run 'make generate' and commit."; exit 1; }
-	@cp brain/models/generated/models.py /tmp/.models_committed.py
+	@test -f adapta/models/generated/models.py \
+	  || { echo "FAIL: adapta/models/generated/models.py missing. Run 'make generate' and commit."; exit 1; }
+	@cp adapta/models/generated/models.py /tmp/.models_committed.py
 	@bash scripts/generate_models.sh >/dev/null
-	@if ! diff -q /tmp/.models_committed.py brain/models/generated/models.py >/dev/null; then \
-	  echo "FAIL: brain/models/generated/models.py is stale vs specs/openapi.yaml. Run 'make generate' and commit."; \
+	@if ! diff -q /tmp/.models_committed.py adapta/models/generated/models.py >/dev/null; then \
+	  echo "FAIL: adapta/models/generated/models.py is stale vs specs/openapi.yaml. Run 'make generate' and commit."; \
 	  exit 1; \
 	fi
 	@echo "✓ Generated models match the spec"
@@ -124,7 +124,7 @@ validate-spec:
 
 test-contracts:
 	@echo "Starting contract tests against http://localhost:8000/v1 ..."
-	# schemathesis 4.x CLI. BRAIN_BEARER_TOKEN (a bootstrap JWT) is injected as a
+	# schemathesis 4.x CLI. ADAPTA_BEARER_TOKEN (a bootstrap JWT) is injected as a
 	# Bearer header so authenticated operations are exercised, not just their 401s.
 	# `unsupported_method` is excluded: GET /datasets/synthesize legitimately matches
 	# the GET /datasets/{dataset_id} route (id="synthesize") and returns 404, not 405 —
@@ -142,7 +142,7 @@ test-contracts:
 	  --suppress-health-check filter_too_much \
 	  --generation-allow-x00 false \
 	  --max-examples 30 \
-	  -H "Authorization: Bearer $(BRAIN_BEARER_TOKEN)" \
+	  -H "Authorization: Bearer $(ADAPTA_BEARER_TOKEN)" \
 	  $(SCHEMATHESIS_ARGS)
 
 migrate:
@@ -161,21 +161,21 @@ test:
 	pytest tests/ -v
 
 coverage:
-	pytest tests/ -v --cov=brain --cov-report=term-missing --cov-fail-under=30
+	pytest tests/ -v --cov=adapta --cov-report=term-missing --cov-fail-under=30
 
 lint:
-	ruff check brain/ tests/
-	mypy brain/
+	ruff check adapta/ tests/
+	mypy adapta/
 
 lint-imports:
 	lint-imports
 
 fmt:
-	black brain/ tests/ scripts/
+	black adapta/ tests/ scripts/
 
 check-leaks:
 	@echo "Scanning for HTTPException(detail=str(e)) leak sites..."
-	@if grep -rn --include="*.py" 'detail=str(e)' brain/; then \
+	@if grep -rn --include="*.py" 'detail=str(e)' adapta/; then \
 	  echo "FAIL: raw exception strings must not reach clients. Raise a DomainError instead."; \
 	  exit 1; \
 	else \

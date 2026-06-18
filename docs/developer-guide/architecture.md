@@ -59,18 +59,18 @@ overlap:
 The codebase is layered, and the layering is **enforced** (`make lint-imports`):
 
 ```
-brain/api/v1/*      HTTP routers  — translate HTTP ⇄ services, no business logic
+adapta/api/v1/*      HTTP routers  — translate HTTP ⇄ services, no business logic
       │
-brain/services/*    business logic — the real work; raises DomainError
+adapta/services/*    business logic — the real work; raises DomainError
       │
-brain/core/*        engine wrappers — inference, model cache, health, GPU
-brain/domain/*      errors + pure types — imports nothing from brain
-brain/db/*          SQLAlchemy ORM + session
+adapta/core/*        engine wrappers — inference, model cache, health, GPU
+adapta/domain/*      errors + pure types — imports nothing from adapta
+adapta/db/*          SQLAlchemy ORM + session
 ```
 
-- `brain.domain` may not import `brain.api` / `brain.services` / `brain.core` /
+- `adapta.domain` may not import `adapta.api` / `adapta.services` / `adapta.core` /
   `fastapi`. It's the dependency-free core.
-- `brain.services` may not import `brain.api`.
+- `adapta.services` may not import `adapta.api`.
 
 If you've worked with hexagonal/clean architecture, this is the same idea:
 dependencies point inward, the domain is pure.
@@ -97,8 +97,8 @@ volume holds uploaded files and adapter artifacts.
 
 This is the path worth tracing end to end, because it touches the most pieces:
 
-1. **Auth** — `POST /v1/chat/completions` arrives with a `brn_` key. The handler
-   ([`brain/api/v1/chat.py`](code-reference.md)) looks up the key by its prefix
+1. **Auth** — `POST /v1/chat/completions` arrives with a `adp_` key. The handler
+   ([`adapta/api/v1/chat.py`](code-reference.md)) looks up the key by its prefix
    (indexed) and bcrypt-verifies it, resolving it to **its** endpoint. The
    client-supplied `model` slug must match — otherwise `403`.
 2. **Retrieve** — `ChatService` embeds the user's question and queries the
@@ -114,7 +114,7 @@ This is the path worth tracing end to end, because it touches the most pieces:
    answer returns with citations and usage.
 
 Every error along the way is a typed [`DomainError`](code-reference.md) that the
-single boundary handler in `brain/api/app.py` turns into the safe
+single boundary handler in `adapta/api/app.py` turns into the safe
 `{error:{code,message,correlation_id}}` envelope. A raw exception never reaches
 the client.
 
@@ -158,7 +158,7 @@ not a parallel system:
 - **Serve** — the same llama-cpp runtime loads the base GGUF **plus** an
   `mmproj` (vision projector) via a multimodal chat handler; requests carry
   OpenAI `image_url` content-parts (inline data-URLs only). The catalog
-  (`brain/core/model_catalog.py`) is the single place a base model declares its
+  (`adapta/core/model_catalog.py`) is the single place a base model declares its
   HF repo, GGUF, modality, and mmproj — so a base that trains can always serve.
 
 ---

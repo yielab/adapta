@@ -1,8 +1,8 @@
-site_name: Brain From Cero
+site_name: Adapta
 site_description: Self-hosted RAG + LoRA model-customization platform — documentation
 site_author: Santiago Yie
-repo_url: https://github.com/santiagoyie/brainFromCero
-repo_name: santiagoyie/brainFromCero
+repo_url: https://github.com/santiagoyie/adapta
+repo_name: santiagoyie/adapta
 edit_uri: edit/main/docs/
 copyright: MIT License — Santiago Yie
 

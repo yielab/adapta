@@ -1,4 +1,4 @@
-/* ── Brain From Cero — Docs brand overrides ────────────────────────────────
+/* ── Adapta — Docs brand overrides ────────────────────────────────
  * Applied on top of mkdocs-material. Aligns the docs site with the console.
  * SSOT: docs/reference/BRAND.md §3–§4
  *
@@ -13,7 +13,7 @@
  * NOTE: The @import above is a build-time convenience for the docs site
  * (served on GitHub Pages, which has outbound internet). Self-hosted / air-gap
  * deployments should replace these with @font-face rules pointing at local
- * woff2 files, matching the console's brain/console/public/fonts/ setup.
+ * woff2 files, matching the console's adapta/console/public/fonts/ setup.
  */
 
 /* ── Material palette overrides (dark) ───────────────────────────────────── */

@@ -15,9 +15,9 @@ import time
 
 import pytest
 
-from brain.config import settings
-from brain.core.inference import InferenceEngine, InferenceRequest, Message
-from brain.domain.errors import Timeout
+from adapta.config import settings
+from adapta.core.inference import InferenceEngine, InferenceRequest, Message
+from adapta.domain.errors import Timeout
 
 
 class FakeLlama:

@@ -9,7 +9,7 @@ Marked integration + slow; skipped unless a GGUF is present (the offline gate
 ships no model). The first index downloads the embedding model, so the poll uses
 a generous timeout.
 
-Run:  docker compose exec app env BRAIN_BASE_URL=http://localhost:8000 \
+Run:  docker compose exec app env ADAPTA_BASE_URL=http://localhost:8000 \
           pytest -m "integration and slow" tests/integration/test_rag_e2e.py
 """
 
@@ -20,7 +20,7 @@ import io
 
 import pytest
 
-from brain.config import settings
+from adapta.config import settings
 
 pytestmark = [pytest.mark.integration, pytest.mark.slow]
 

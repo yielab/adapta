@@ -9,11 +9,11 @@ OpenAI-shaped image content-part request is served through base GGUF + mmproj
 + the converted LoRA (§V4) and returns the trained association.
 
 Heavy (CUDA worker, ~7 GB base download on first run, minutes of training) —
-opt-in: BRAIN_RUN_VLM_E2E=1.
+opt-in: ADAPTA_RUN_VLM_E2E=1.
 
 Run (GPU worker up):
-    docker compose exec -T -e BRAIN_RUN_VLM_E2E=1 app \\
-        env BRAIN_BASE_URL=http://localhost:8000 \\
+    docker compose exec -T -e ADAPTA_RUN_VLM_E2E=1 app \\
+        env ADAPTA_BASE_URL=http://localhost:8000 \\
         python -m pytest -m "integration and slow" tests/integration/test_vlm_lora_e2e.py -s
 """
 
@@ -32,9 +32,9 @@ from PIL import Image, ImageDraw
 
 pytestmark = [pytest.mark.integration, pytest.mark.slow]
 
-_RUN = os.environ.get("BRAIN_RUN_VLM_E2E") == "1"
+_RUN = os.environ.get("ADAPTA_RUN_VLM_E2E") == "1"
 skip_unless_optin = pytest.mark.skipif(
-    not _RUN, reason="VLM e2e is opt-in (needs a GPU worker); set BRAIN_RUN_VLM_E2E=1"
+    not _RUN, reason="VLM e2e is opt-in (needs a GPU worker); set ADAPTA_RUN_VLM_E2E=1"
 )
 
 _BASE_MODEL = "qwen2.5-vl-3b-instruct"  # catalog name (modality=vision)

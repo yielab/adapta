@@ -7,7 +7,7 @@ import json
 
 import pytest
 
-from brain.domain.errors import (
+from adapta.domain.errors import (
     Conflict,
     EmbeddingFailed,
     EvalGateFailed,
@@ -48,7 +48,7 @@ async def test_domain_error_http_status_and_code(error_cls, expected_status, exp
     """Each DomainError subclass must produce the correct HTTP status + code envelope."""
     from httpx import ASGITransport, AsyncClient
 
-    from brain.api.app import create_app
+    from adapta.api.app import create_app
 
     app = create_app()
 
@@ -78,7 +78,7 @@ async def test_internal_detail_never_in_response(error_cls, expected_status, exp
     """internal_detail must NEVER appear in the serialized response."""
     from httpx import ASGITransport, AsyncClient
 
-    from brain.api.app import create_app
+    from adapta.api.app import create_app
 
     app = create_app()
 
@@ -103,7 +103,7 @@ async def test_correlation_id_header_echoed():
     """X-Correlation-ID header must be present and consistent in the response."""
     from httpx import ASGITransport, AsyncClient
 
-    from brain.api.app import create_app
+    from adapta.api.app import create_app
 
     app = create_app()
 
@@ -125,7 +125,7 @@ async def test_unhandled_exception_returns_generic_message():
     """RuntimeError (not a DomainError) must return 500 with a generic message."""
     from httpx import ASGITransport, AsyncClient
 
-    from brain.api.app import create_app
+    from adapta.api.app import create_app
 
     app = create_app()
 

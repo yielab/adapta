@@ -1,15 +1,15 @@
-# ![Brain From Cero](docs/assets/logo.svg) Brain From Cero
+# ![Adapta](docs/assets/logo.svg) Adapta
 
 Self-hosted RAG + LoRA model customization — give a model your knowledge (cited retrieval) and your behavior (trained adapter), served behind one OpenAI-compatible endpoint, on hardware you control.
 
-[![CI](https://github.com/santiagoyie/brainFromCero/actions/workflows/ci.yml/badge.svg)](https://github.com/santiagoyie/brainFromCero/actions/workflows/ci.yml)
+[![CI](https://github.com/santiagoyie/adapta/actions/workflows/ci.yml/badge.svg)](https://github.com/santiagoyie/adapta/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.11](https://img.shields.io/badge/python-3.11-blue.svg)](https://www.python.org/downloads/release/python-3110/)
 [![Docker](https://img.shields.io/badge/docker-compose-2496ED?logo=docker&logoColor=white)](docker-compose.yml)
 [![Self-hosted](https://img.shields.io/badge/deployment-self--hosted-green.svg)](#architecture)
 [![OpenAI-compatible](https://img.shields.io/badge/API-OpenAI--compatible-412991?logo=openai&logoColor=white)](#api-consumption)
 
-![Brain From Cero console walkthrough](docs/screenshots/hero.gif)
+![Adapta console walkthrough](docs/screenshots/hero.gif)
 
 <details>
 <summary>Screenshots — console views</summary>
@@ -62,14 +62,14 @@ Self-hosted RAG + LoRA model customization — give a model your knowledge (cite
 
 ## What it does
 
-Brain From Cero is on-premise software. A team deploys it on its own server. Inside that deployment, they create Projects; each project produces a private model endpoint consumed with a scoped API key.
+Adapta is on-premise software. A team deploys it on its own server. Inside that deployment, they create Projects; each project produces a private model endpoint consumed with a scoped API key.
 
 Two real needs, no good private answer today:
 
 1. *"Make a model that answers from our internal documents"* — without sending those documents to a cloud API.
 2. *"Make a model that behaves the way we need"* — fine-tuned on our data, on our hardware.
 
-Brain From Cero does both, behind one OpenAI-compatible API, entirely on infrastructure you control.
+Adapta does both, behind one OpenAI-compatible API, entirely on infrastructure you control.
 
 > **Framing:** RAG and fine-tuning are different mechanisms, not two kinds of "training." The UI asks **"How do you want to specialize your model?"** → *Give it knowledge* (RAG) vs *Change how it behaves* (fine-tuning).
 
@@ -88,7 +88,7 @@ This is the **model-customization-and-serving layer**: upload data, specialize a
 
 ## How it compares
 
-| Capability | Dify / RAGFlow / AnythingLLM | Unsloth / LLaMA-Factory | Brain From Cero |
+| Capability | Dify / RAGFlow / AnythingLLM | Unsloth / LLaMA-Factory | Adapta |
 | --- | --- | --- | --- |
 | Self-hosted RAG with citations | ✅ | — | ✅ |
 | Integrated LoRA fine-tuning | — | ✅ | ✅ |
@@ -140,8 +140,8 @@ RAG works without a GPU. Start here; add fine-tuning later if you need it.
 ### 1. Clone
 
 ```bash
-git clone https://github.com/santiagoyie/brainFromCero
-cd brainFromCero
+git clone https://github.com/santiagoyie/adapta
+cd adapta
 ```
 
 ### 2. Start the stack
@@ -159,7 +159,7 @@ docker compose -f docker-compose.yml -f docker-compose.cpu.yml up -d    # CPU-on
 
 The `app` container runs `alembic upgrade head` on startup — no manual migration step needed. Postgres, Redis, and Chroma are healthchecked before the app starts. The repo is bind-mounted, so code edits hot-reload.
 
-To override any setting (JWT secret, Postgres password, model settings), copy `.env.example` to `.env` and edit it. **If the stack is reachable beyond localhost, set a real `BRAIN_SECRET_KEY` (`openssl rand -hex 32`) and change the default Postgres password.** See [Security & hardening](#security--hardening).
+To override any setting (JWT secret, Postgres password, model settings), copy `.env.example` to `.env` and edit it. **If the stack is reachable beyond localhost, set a real `ADAPTA_SECRET_KEY` (`openssl rand -hex 32`) and change the default Postgres password.** See [Security & hardening](#security--hardening).
 
 ### 3. Verify the stack is up
 
@@ -171,7 +171,7 @@ To override any setting (JWT secret, Postgres password, model settings), copy `.
 | API base | <http://localhost:8000> |
 | API docs (Swagger) | <http://localhost:8000/docs> |
 | Health | <http://localhost:8000/health> (deep: `/health/deep`) |
-| Postgres | `localhost:5432` (db `brain`, user `brain`) |
+| Postgres | `localhost:5432` (db `adapta`, user `adapta`) |
 | Redis | `localhost:6379` |
 | ChromaDB | `localhost:8001` |
 
@@ -215,7 +215,7 @@ Supported base models (see [OPERATIONS.md §6](docs/reference/OPERATIONS.md) for
 
 Sign in with the seeded development admin: `admin@example.com` / `admin12345` — or register (each registration creates a new organization with that account as its admin).
 
-**This credential is well-known from a public repository. Change the password before the stack is reachable from outside localhost, or disable seeding with `BRAIN_SEED_DEFAULT_ADMIN=0`.** See [Security & hardening](#security--hardening).
+**This credential is well-known from a public repository. Change the password before the stack is reachable from outside localhost, or disable seeding with `ADAPTA_SEED_DEFAULT_ADMIN=0`.** See [Security & hardening](#security--hardening).
 
 From the console:
 
@@ -282,7 +282,7 @@ docker compose logs worker | grep "GPU ready"
 To run the full fine-tune pipeline end-to-end (trains a real LoRA, checks the eval gate, confirms the adapter serves):
 
 ```bash
-docker compose exec -e BRAIN_RUN_LORA_E2E=1 app \
+docker compose exec -e ADAPTA_RUN_LORA_E2E=1 app \
   python -m pytest -m "integration and slow" tests/integration/test_lora_e2e.py -s
 ```
 
@@ -291,7 +291,7 @@ This downloads the base model's HuggingFace weights for training, trains for a f
 The vision equivalent (~5 minutes once the base is cached; set `HF_TOKEN` on the worker to avoid throttling):
 
 ```bash
-docker compose exec -e BRAIN_RUN_VLM_E2E=1 app \
+docker compose exec -e ADAPTA_RUN_VLM_E2E=1 app \
   python -m pytest -m "integration and slow" tests/integration/test_vlm_lora_e2e.py -s
 ```
 
@@ -308,7 +308,7 @@ from openai import OpenAI
 
 client = OpenAI(
     base_url="http://localhost:8000/v1",
-    api_key="brn_xxxx…",            # scoped to one project endpoint
+    api_key="adp_xxxx…",            # scoped to one project endpoint
 )
 
 resp = client.chat.completions.create(
@@ -385,9 +385,9 @@ The project's pitch is data privacy — your data stays on your hardware. That p
 
 **Before running beyond localhost:**
 
-- **`BRAIN_SECRET_KEY`**: set this to a real random value (`openssl rand -hex 32`). The default is empty. Running without it on an accessible server signs JWTs with a predictable key.
+- **`ADAPTA_SECRET_KEY`**: set this to a real random value (`openssl rand -hex 32`). The default is empty. Running without it on an accessible server signs JWTs with a predictable key.
 - **`POSTGRES_PASSWORD`**: change from the compose default.
-- **Default admin account**: `admin@example.com` / `admin12345` is a well-known credential from a public repository. Change the password on first login, or disable seeding entirely with `BRAIN_SEED_DEFAULT_ADMIN=0`. Not optional if the stack is network-accessible.
+- **Default admin account**: `admin@example.com` / `admin12345` is a well-known credential from a public repository. Change the password on first login, or disable seeding entirely with `ADAPTA_SEED_DEFAULT_ADMIN=0`. Not optional if the stack is network-accessible.
 - **Reverse proxy + TLS**: the stack binds to 0.0.0.0 by default. Put it behind nginx, Caddy, or equivalent with HTTPS before exposing to any network.
 - **Network isolation**: Postgres and Redis are exposed on localhost by default (development convenience). In production, they should not be reachable outside the compose network.
 
@@ -401,9 +401,9 @@ See [OPERATIONS.md](docs/reference/OPERATIONS.md) for the full production-harden
 
 **What to audit yourself (prototype caveat):**
 
-- JWT generation and bcrypt paths (`brain/services/auth.py`)
+- JWT generation and bcrypt paths (`adapta/services/auth.py`)
 - Invite token handling and expiry
-- Eval gate threshold logic (`brain/services/adapters.py`)
+- Eval gate threshold logic (`adapta/services/adapters.py`)
 - Injection surface on the synthesis endpoint (the platform generates training data via an LLM call)
 
 ---
@@ -454,7 +454,7 @@ make validate-spec   # lint the OpenAPI spec
 make check-leaks     # fail if detail=str(e) reappears
 make migrate         # alembic upgrade head
 make migrate-test    # up → down → up round-trip (Pillar 2 gate)
-make test-contracts  # schemathesis vs a live server (set BRAIN_BEARER_TOKEN first)
+make test-contracts  # schemathesis vs a live server (set ADAPTA_BEARER_TOKEN first)
 ```
 
 Two additional targets run **on the host** (not in the container) and require the stack to be up:

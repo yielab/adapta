@@ -9,10 +9,10 @@ It is deliberately kept in one file rather than duplicated here, so it cannot
 drift out of sync. The current build status is summarized in that file's
 "Status snapshot" section.
 
-[:material-github: View the roadmap (TODO.md) on GitHub](https://github.com/santiagoyie/brainFromCero/blob/main/TODO.md){ .md-button .md-button--primary }
+[:material-github: View the roadmap (TODO.md) on GitHub](https://github.com/santiagoyie/adapta/blob/main/TODO.md){ .md-button .md-button--primary }
 
 !!! note "Why it isn't embedded here"
-    `TODO.md` links extensively to source files (`brain/…`) and other
+    `TODO.md` links extensively to source files (`adapta/…`) and other
     repository documents. Rendering it inside this site would either break those
     links or require duplicating the file — both of which defeat the
     single-source principle. Linking to the canonical file keeps one

@@ -1,12 +1,12 @@
 # User Guide
 
-This guide is for the **operator** — the technical person who runs Brain From
-Cero and sets it up for their organization. You do **not** need to read the
+This guide is for the **operator** — the technical person who runs Adapta
+and sets it up for their organization. You do **not** need to read the
 codebase to use it.
 
 If you are deploying the stack for the first time (installing Docker, the GPU
 toolkit, downloading a base model), start with the
-[README quick start](https://github.com/santiagoyie/brainFromCero#quick-start) —
+[README quick start](https://github.com/santiagoyie/adapta#quick-start) —
 that covers getting the containers running. This guide picks up **once the stack
 is up** and walks through actually using it.
 

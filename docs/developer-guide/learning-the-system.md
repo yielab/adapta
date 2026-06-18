@@ -111,8 +111,8 @@ The `llama-cpp` model object maintains mutable internal state during generation
     engine but to require that callers **take turns**.
 
 That is exactly what the implementation does: a **per-model `asyncio.Lock`**
-serializes generation on each model instance (`brain/core/model_manager.py`,
-`brain/core/inference.py`), generation itself runs on a **bounded thread pool**
+serializes generation on each model instance (`adapta/core/model_manager.py`,
+`adapta/core/inference.py`), generation itself runs on a **bounded thread pool**
 so it does not block the asynchronous event loop, and a **timeout** caps each
 call. The model cache is a bounded LRU, so a large number of endpoints cannot
 exhaust memory by each pinning a full model in RAM. None of this is specific to
@@ -174,7 +174,7 @@ near one another in that vector space.
     scatters similar inputs to unrelated outputs; an embedding maps similar inputs
     to nearby outputs.
 
-In this codebase, `brain/services/embeddings.py` wraps a `sentence-transformers`
+In this codebase, `adapta/services/embeddings.py` wraps a `sentence-transformers`
 model that produces these vectors, loaded lazily as a singleton.
 
 ### Vector store — a database indexed by meaning
@@ -192,7 +192,7 @@ embedding." This platform uses **ChromaDB**, with one collection per project.
 
 ### The complete RAG cycle
 
-Combining these pieces (`brain/services/rag.py`, `brain/services/chat.py`):
+Combining these pieces (`adapta/services/rag.py`, `adapta/services/chat.py`):
 
 ```text
 INDEX TIME (once, when a file is uploaded):
@@ -241,7 +241,7 @@ not a new copy of the whole model.
 during training (the image-compression analogy from §1 applies again). This is
 what allows a genuine fine-tune to fit on an 8 GB consumer GPU: gradients are
 computed only for the small adapter, while the large base model is held in its
-compressed form. `brain/training/trainer.py` performs this using PEFT and TRL.
+compressed form. `adapta/training/trainer.py` performs this using PEFT and TRL.
 
 ### The dataset — labeled examples
 
@@ -291,8 +291,8 @@ and deployment is refused if it fails. That is the role of the evaluation gate.
     grading an examination with the answer key in view, which reveals nothing
     about generalization.
 
-How the score is computed (`brain/training/evaluator.py`,
-`brain/training/models.py`):
+How the score is computed (`adapta/training/evaluator.py`,
+`adapta/training/models.py`):
 
 1. **Held-out split.** The final ~20% of rows are reserved; training uses the
    remainder. Only the held-out rows are scored.

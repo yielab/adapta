@@ -8,20 +8,20 @@ alembic upgrade head
 echo "[entrypoint] Migrations complete."
 
 # Development convenience: seed a default admin on an EMPTY database so the
-# console is usable immediately. Gated by BRAIN_SEED_DEFAULT_ADMIN; a no-op if
+# console is usable immediately. Gated by ADAPTA_SEED_DEFAULT_ADMIN; a no-op if
 # any organization already exists (never clobbers a real bootstrap).
-python -m brain.db.seed
+python -m adapta.db.seed
 
-if [ "${BRAIN_RELOAD:-0}" = "1" ]; then
+if [ "${ADAPTA_RELOAD:-0}" = "1" ]; then
     echo "[entrypoint] Starting API server (reload mode)..."
-    exec uvicorn brain.api.app:app \
-        --host "${BRAIN_HOST:-0.0.0.0}" \
-        --port "${BRAIN_PORT:-8000}" \
+    exec uvicorn adapta.api.app:app \
+        --host "${ADAPTA_HOST:-0.0.0.0}" \
+        --port "${ADAPTA_PORT:-8000}" \
         --reload
 else
     echo "[entrypoint] Starting API server..."
-    exec uvicorn brain.api.app:app \
-        --host "${BRAIN_HOST:-0.0.0.0}" \
-        --port "${BRAIN_PORT:-8000}" \
-        --workers "${BRAIN_WORKERS:-1}"
+    exec uvicorn adapta.api.app:app \
+        --host "${ADAPTA_HOST:-0.0.0.0}" \
+        --port "${ADAPTA_PORT:-8000}" \
+        --workers "${ADAPTA_WORKERS:-1}"
 fi

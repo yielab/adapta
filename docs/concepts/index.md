@@ -1,6 +1,6 @@
 # AI Infrastructure Guide
 
-Brain From Cero is a conventional web service augmented with three AI-specific
+Adapta is a conventional web service augmented with three AI-specific
 systems. The web layer — FastAPI, PostgreSQL, Redis, Docker — follows patterns
 any backend engineer will recognize. The AI layer — an inference engine, a
 vector store, and a fine-tuning pipeline — follows the same engineering

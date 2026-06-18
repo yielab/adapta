@@ -1,5 +1,5 @@
 """
-Unit tests for the Redis-backed training job queue (brain/services/jobs.py).
+Unit tests for the Redis-backed training job queue (adapta/services/jobs.py).
 
 Infrastructure is mocked at the boundary with an in-memory fake Redis so these
 run in the offline gate. Notably covers the idle-poll path: an idle BLPOP that
@@ -12,7 +12,7 @@ import json
 import pytest
 from redis.exceptions import TimeoutError as RedisTimeoutError
 
-from brain.services.jobs import JOB_KEY_PREFIX, QUEUE_KEY, JobQueue
+from adapta.services.jobs import JOB_KEY_PREFIX, QUEUE_KEY, JobQueue
 
 
 class _FakePipeline:

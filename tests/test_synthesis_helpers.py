@@ -1,11 +1,11 @@
 """
-Unit tests for the pure synthesis helpers (brain/services/synthesis.py):
+Unit tests for the pure synthesis helpers (adapta/services/synthesis.py):
 parsing LLM output into Q/A pairs and converting them to the training-dataset
 schema. The async synthesize_from_project flow (needs Chroma + inference) is left
 to integration tests.
 """
 
-from brain.services.synthesis import _extract_pairs, _to_instruction_pair
+from adapta.services.synthesis import _extract_pairs, _to_instruction_pair
 
 
 def test_extract_pairs_plain_json_array():

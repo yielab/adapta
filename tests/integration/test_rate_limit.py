@@ -9,14 +9,14 @@ fresh window.
 
 import pytest
 
-from brain.config import settings
+from adapta.config import settings
 
 pytestmark = pytest.mark.integration
 
 
 async def test_login_is_rate_limited(client):
     if settings.auth_rate_limit_max <= 0:
-        pytest.skip("auth rate limiting disabled (BRAIN_AUTH_RATE_LIMIT_MAX<=0)")
+        pytest.skip("auth rate limiting disabled (ADAPTA_AUTH_RATE_LIMIT_MAX<=0)")
     seen_429 = False
     # A few over the cap guarantees we cross it even counting this IP's prior hits=0.
     for _ in range(settings.auth_rate_limit_max + 5):

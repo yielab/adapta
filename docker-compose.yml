@@ -1,10 +1,14 @@
-# Brain From Cero — local stack. One way to run it: `docker compose up -d --build`
+# Adapta — local stack. One way to run it: `docker compose up -d --build`
 # (or `make up`). The repo is bind-mounted into app and worker, so host edits are
 # live (uvicorn hot-reloads); the toolchain is baked into the app image, so
 # `docker compose exec app make ci` works with zero setup.
 #
 # GPU is the DEFAULT: the worker reserves the host GPU for QLoRA training. On a
 # host without the NVIDIA Container Toolkit, layer docker-compose.cpu.yml.
+
+# Pin the compose project name so image/volume/network prefixes are stable
+# (`adapta_*`) regardless of the checkout directory name.
+name: adapta
 
 # Shared log-rotation policy — keeps container logs from growing unbounded (§4.4).
 x-logging: &default-logging
@@ -22,23 +26,23 @@ services:
       context: .
       dockerfile: Dockerfile
       target: app
-    container_name: brain-app
+    container_name: adapta-app
     ports:
       - "8000:8000"
     volumes:
-      # Live source: host edits restart the server (BRAIN_RELOAD). /app/data
+      # Live source: host edits restart the server (ADAPTA_RELOAD). /app/data
       # rides along — uploads/models/adapters/datasets live in ./data on the host.
       - .:/app
     environment:
-      - BRAIN_DATABASE_URL=postgresql+asyncpg://brain:${POSTGRES_PASSWORD:-brain}@postgres:5432/brain
-      - BRAIN_REDIS_URL=redis://redis:6379/0
-      - BRAIN_SECRET_KEY=${BRAIN_SECRET_KEY:-CHANGE_ME_IN_PRODUCTION_use_openssl_rand_hex_32}
-      - BRAIN_RELOAD=1
+      - ADAPTA_DATABASE_URL=postgresql+asyncpg://adapta:${POSTGRES_PASSWORD:-adapta}@postgres:5432/adapta
+      - ADAPTA_REDIS_URL=redis://redis:6379/0
+      - ADAPTA_SECRET_KEY=${ADAPTA_SECRET_KEY:-CHANGE_ME_IN_PRODUCTION_use_openssl_rand_hex_32}
+      - ADAPTA_RELOAD=1
       # Seed a default admin (admin@example.com / admin12345) on an empty DB so
       # the console works on first boot. Set 0 to use the register flow instead.
-      - BRAIN_SEED_DEFAULT_ADMIN=${BRAIN_SEED_DEFAULT_ADMIN:-1}
-      - BRAIN_N_GPU_LAYERS=${BRAIN_N_GPU_LAYERS:-0}
-      - BRAIN_N_THREADS=${BRAIN_N_THREADS:-8}
+      - ADAPTA_SEED_DEFAULT_ADMIN=${ADAPTA_SEED_DEFAULT_ADMIN:-1}
+      - ADAPTA_N_GPU_LAYERS=${ADAPTA_N_GPU_LAYERS:-0}
+      - ADAPTA_N_THREADS=${ADAPTA_N_THREADS:-8}
     restart: unless-stopped
     deploy:
       resources:
@@ -59,7 +63,7 @@ services:
       chroma:
         condition: service_started
     networks:
-      - brain-network
+      - adapta-network
 
   # ──────────────────────────────────────────────
   # Training worker: consumes Redis queue, runs QLoRA on the GPU (the default).
@@ -71,13 +75,13 @@ services:
       context: .
       dockerfile: Dockerfile
       target: worker
-    container_name: brain-worker
+    container_name: adapta-worker
     volumes:
       - .:/app  # live source for worker code too
     environment:
-      - BRAIN_DATABASE_URL=postgresql+asyncpg://brain:${POSTGRES_PASSWORD:-brain}@postgres:5432/brain
-      - BRAIN_REDIS_URL=redis://redis:6379/0
-      - BRAIN_SECRET_KEY=${BRAIN_SECRET_KEY:-CHANGE_ME_IN_PRODUCTION_use_openssl_rand_hex_32}
+      - ADAPTA_DATABASE_URL=postgresql+asyncpg://adapta:${POSTGRES_PASSWORD:-adapta}@postgres:5432/adapta
+      - ADAPTA_REDIS_URL=redis://redis:6379/0
+      - ADAPTA_SECRET_KEY=${ADAPTA_SECRET_KEY:-CHANGE_ME_IN_PRODUCTION_use_openssl_rand_hex_32}
     restart: unless-stopped
     # Graceful shutdown: the worker requeues its in-flight job on SIGTERM, so give
     # it time to cancel cleanly before Docker SIGKILLs it (§4.4).
@@ -85,7 +89,7 @@ services:
     healthcheck:
       # A silently dead/hung worker still looks `Up`; the heartbeat key it refreshes
       # in Redis expires if it stops looping, flipping this red (§4.4).
-      test: ["CMD", "python", "-m", "brain.worker.main", "--healthcheck"]
+      test: ["CMD", "python", "-m", "adapta.worker.main", "--healthcheck"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -110,7 +114,7 @@ services:
       redis:
         condition: service_healthy
     networks:
-      - brain-network
+      - adapta-network
 
   # ──────────────────────────────────────────────
   # PostgreSQL: metadata store
@@ -119,19 +123,19 @@ services:
     # Pinned to a specific minor for reproducible installs (A4.12);
     # patch upgrades within 15.x are data-compatible.
     image: postgres:15.17-alpine
-    container_name: brain-postgres
+    container_name: adapta-postgres
     environment:
-      POSTGRES_USER: brain
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-brain}
-      POSTGRES_DB: brain
+      POSTGRES_USER: adapta
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-adapta}
+      POSTGRES_DB: adapta
     volumes:
       - postgres-data:/var/lib/postgresql/data
     ports:
       - "5432:5432"  # published for local debugging (psql from the host)
     networks:
-      - brain-network
+      - adapta-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U brain"]
+      test: ["CMD-SHELL", "pg_isready -U adapta"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -143,14 +147,14 @@ services:
   # ──────────────────────────────────────────────
   redis:
     image: redis:7.4-alpine  # pinned minor for reproducible installs (A4.12)
-    container_name: brain-redis
+    container_name: adapta-redis
     command: redis-server --appendonly yes
     volumes:
       - redis-data:/data
     ports:
       - "6379:6379"  # published for local debugging (redis-cli from the host)
     networks:
-      - brain-network
+      - adapta-network
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -161,14 +165,14 @@ services:
 
   # ──────────────────────────────────────────────
   # ChromaDB: per-project vector collections (RAG)
-  # Pinned version — update in sync with brain/services/rag.py client usage.
+  # Pinned version — update in sync with adapta/services/rag.py client usage.
   # ──────────────────────────────────────────────
   chroma:
     # Pinned in sync with the chromadb client in pyproject.toml — a client/server
     # API skew (e.g. 1.x client vs 0.6.x server) breaks collection creation with
     # KeyError('_type'). Keep these two versions equal.
     image: chromadb/chroma:1.5.9
-    container_name: brain-chroma
+    container_name: adapta-chroma
     environment:
       IS_PERSISTENT: "TRUE"
       PERSIST_DIRECTORY: /chroma/data
@@ -178,7 +182,7 @@ services:
     ports:
       - "8001:8000"  # published for local debugging (Chroma API from the host)
     networks:
-      - brain-network
+      - adapta-network
     # No container healthcheck: the chroma 1.x image ships only the `chroma`
     # binary (no curl/wget/python), so it can't self-probe its own HTTP heartbeat.
     # Dependents gate on `service_started` instead; the app connects to Chroma
@@ -192,7 +196,7 @@ services:
   # ──────────────────────────────────────────────
   prometheus:
     image: prom/prometheus:v2.54.1
-    container_name: brain-prometheus
+    container_name: adapta-prometheus
     profiles: [observability]
     volumes:
       - ./deploy/observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
@@ -200,13 +204,13 @@ services:
     ports:
       - "9090:9090"
     networks:
-      - brain-network
+      - adapta-network
     restart: unless-stopped
     logging: *default-logging
 
   grafana:
     image: grafana/grafana:11.2.0
-    container_name: brain-grafana
+    container_name: adapta-grafana
     profiles: [observability]
     environment:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
@@ -219,12 +223,12 @@ services:
     depends_on:
       - prometheus
     networks:
-      - brain-network
+      - adapta-network
     restart: unless-stopped
     logging: *default-logging
 
 networks:
-  brain-network:
+  adapta-network:
     driver: bridge
 
 volumes:

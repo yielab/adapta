@@ -20,9 +20,9 @@ import uuid
 import asyncpg
 import pytest
 
-from brain.config import settings
-from brain.services import jobs as jobs_mod
-from brain.services.training import recover_orphaned_jobs
+from adapta.config import settings
+from adapta.services import jobs as jobs_mod
+from adapta.services.training import recover_orphaned_jobs
 
 pytestmark = pytest.mark.integration
 
@@ -118,7 +118,7 @@ async def queue(monkeypatch):
     # so reusing the singletons across tests raises "event loop is closed" (see the
     # conftest note). Dispose the engine and install a fresh JobQueue bound to THIS
     # loop, pointing the module singleton at it so recover_orphaned_jobs uses it.
-    from brain.db.session import engine
+    from adapta.db.session import engine
 
     await engine.dispose()
 
@@ -129,7 +129,7 @@ async def queue(monkeypatch):
     # Unique queue key so the live worker (BLPOP-ing the real key) can't steal our
     # jobs. recover_orphaned_jobs reads the module constant at call time, so the
     # monkeypatch reaches it too.
-    test_key = f"brain:training_queue:test:{uuid.uuid4().hex}"
+    test_key = f"adapta:training_queue:test:{uuid.uuid4().hex}"
     monkeypatch.setattr(jobs_mod, "QUEUE_KEY", test_key)
 
     q = jobs_mod.JobQueue(settings.redis_url)

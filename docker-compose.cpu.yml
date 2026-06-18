@@ -9,7 +9,7 @@
 #   docker compose -f docker-compose.yml -f docker-compose.cpu.yml up -d
 #
 # The worker then starts but rejects LoRA jobs fast with a clear "GPU required"
-# message (its runtime guard — brain/core/gpu.py:torch_cuda_status). RAG serving
+# message (its runtime guard — adapta/core/gpu.py:torch_cuda_status). RAG serving
 # is unaffected; it never needed a GPU.
 #
 # `!reset` is required: a plain override can't subtract a list item — Docker

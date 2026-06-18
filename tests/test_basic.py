@@ -10,7 +10,7 @@ import pytest
 
 
 def test_error_taxonomy():
-    from brain.domain.errors import (
+    from adapta.domain.errors import (
         EvalGateFailed,
         Forbidden,
         InferenceFailed,
@@ -31,7 +31,7 @@ def test_error_taxonomy():
 
 def test_error_internal_detail_not_exposed():
     """internal_detail must not appear in the serialisable fields."""
-    from brain.domain.errors import InternalError
+    from adapta.domain.errors import InternalError
 
     err = InternalError(message="oops", internal_detail="secret stack trace")
     assert err.internal_detail == "secret stack trace"
@@ -47,7 +47,7 @@ def test_error_internal_detail_not_exposed():
 
 
 def test_chunk_text_splits_correctly():
-    from brain.services.documents import chunk_text
+    from adapta.services.documents import chunk_text
 
     text = "Hello world. " * 200
     chunks = chunk_text(text, source="doc.txt", chunk_size=256, chunk_overlap=32)
@@ -58,7 +58,7 @@ def test_chunk_text_splits_correctly():
 
 
 def test_chunk_text_index_is_sequential():
-    from brain.services.documents import chunk_text
+    from adapta.services.documents import chunk_text
 
     text = "Sentence one. Sentence two. " * 100
     chunks = chunk_text(text, source="s.txt", chunk_size=128, chunk_overlap=16)
@@ -67,7 +67,7 @@ def test_chunk_text_index_is_sequential():
 
 
 def test_chunk_text_short_text_single_chunk():
-    from brain.services.documents import chunk_text
+    from adapta.services.documents import chunk_text
 
     text = "Short."
     chunks = chunk_text(text, source="s.txt", chunk_size=512, chunk_overlap=64)
@@ -76,7 +76,7 @@ def test_chunk_text_short_text_single_chunk():
 
 
 def test_extract_text_plaintext(tmp_path):
-    from brain.services.documents import extract_text
+    from adapta.services.documents import extract_text
 
     f = tmp_path / "note.txt"
     f.write_text("Hello plain text.")
@@ -85,7 +85,7 @@ def test_extract_text_plaintext(tmp_path):
 
 
 def test_extract_text_markdown(tmp_path):
-    from brain.services.documents import extract_text
+    from adapta.services.documents import extract_text
 
     f = tmp_path / "doc.md"
     f.write_text("# Title\n\nSome **bold** content.")
@@ -95,7 +95,7 @@ def test_extract_text_markdown(tmp_path):
 
 
 def test_extract_text_html_strips_tags(tmp_path):
-    from brain.services.documents import extract_text
+    from adapta.services.documents import extract_text
 
     f = tmp_path / "page.html"
     f.write_text("<html><body><p>Hello <b>world</b></p></body></html>")
@@ -110,7 +110,7 @@ def test_extract_text_html_strips_tags(tmp_path):
 
 
 def test_dataset_validation_valid(tmp_path):
-    from brain.services.training import validate_dataset
+    from adapta.services.training import validate_dataset
 
     ds = tmp_path / "data.jsonl"
     ds.write_text(
@@ -126,7 +126,7 @@ def test_dataset_validation_valid(tmp_path):
 
 
 def test_dataset_validation_with_optional_fields(tmp_path):
-    from brain.services.training import validate_dataset
+    from adapta.services.training import validate_dataset
 
     ds = tmp_path / "data.jsonl"
     ds.write_text(
@@ -148,7 +148,7 @@ def test_dataset_validation_with_optional_fields(tmp_path):
 def test_dataset_validation_image_rows_require_bundle(tmp_path):
     """Image rows in a PLAIN .jsonl upload are rejected with a clear pointer to
     the .zip bundle path (§V2.1) — images can't ride a bare manifest."""
-    from brain.services.training import validate_dataset
+    from adapta.services.training import validate_dataset
 
     ds = tmp_path / "data.jsonl"
     ds.write_text(
@@ -164,7 +164,7 @@ def test_dataset_validation_image_rows_require_bundle(tmp_path):
 
 
 def test_dataset_validation_missing_response(tmp_path):
-    from brain.services.training import validate_dataset
+    from adapta.services.training import validate_dataset
 
     ds = tmp_path / "bad.jsonl"
     ds.write_text(json.dumps({"prompt": "Hello?"}) + "\n")
@@ -174,7 +174,7 @@ def test_dataset_validation_missing_response(tmp_path):
 
 
 def test_dataset_validation_empty_prompt(tmp_path):
-    from brain.services.training import validate_dataset
+    from adapta.services.training import validate_dataset
 
     ds = tmp_path / "bad.jsonl"
     ds.write_text(json.dumps({"prompt": "", "response": "A"}) + "\n")
@@ -183,7 +183,7 @@ def test_dataset_validation_empty_prompt(tmp_path):
 
 
 def test_dataset_validation_empty(tmp_path):
-    from brain.services.training import validate_dataset
+    from adapta.services.training import validate_dataset
 
     ds = tmp_path / "empty.jsonl"
     ds.write_text("")
@@ -192,7 +192,7 @@ def test_dataset_validation_empty(tmp_path):
 
 
 def test_dataset_validation_bad_json(tmp_path):
-    from brain.services.training import validate_dataset
+    from adapta.services.training import validate_dataset
 
     ds = tmp_path / "bad.jsonl"
     ds.write_text("not json\n")
@@ -207,7 +207,7 @@ def test_dataset_validation_bad_json(tmp_path):
 
 
 def test_synthesis_extract_pairs_valid():
-    from brain.services.synthesis import _extract_pairs
+    from adapta.services.synthesis import _extract_pairs
 
     raw = '[{"question": "What is X?", "answer": "X is Y."}]'
     pairs = _extract_pairs(raw)
@@ -217,7 +217,7 @@ def test_synthesis_extract_pairs_valid():
 
 
 def test_synthesis_extract_pairs_with_fence():
-    from brain.services.synthesis import _extract_pairs
+    from adapta.services.synthesis import _extract_pairs
 
     raw = '```json\n[{"question": "Q?", "answer": "A."}]\n```'
     pairs = _extract_pairs(raw)
@@ -225,7 +225,7 @@ def test_synthesis_extract_pairs_with_fence():
 
 
 def test_synthesis_extract_pairs_empty_fields_skipped():
-    from brain.services.synthesis import _extract_pairs
+    from adapta.services.synthesis import _extract_pairs
 
     raw = '[{"question": "", "answer": "A."}, {"question": "Q?", "answer": ""}]'
     pairs = _extract_pairs(raw)
@@ -233,14 +233,14 @@ def test_synthesis_extract_pairs_empty_fields_skipped():
 
 
 def test_synthesis_extract_pairs_malformed_returns_empty():
-    from brain.services.synthesis import _extract_pairs
+    from adapta.services.synthesis import _extract_pairs
 
     assert _extract_pairs("not json at all") == []
     assert _extract_pairs("") == []
 
 
 def test_synthesis_to_instruction_pair():
-    from brain.services.synthesis import _to_instruction_pair
+    from adapta.services.synthesis import _to_instruction_pair
 
     record = _to_instruction_pair({"question": "Q?", "answer": "A."})
     assert record["prompt"] == "Q?"
@@ -249,7 +249,7 @@ def test_synthesis_to_instruction_pair():
 
 
 def test_synthesis_to_instruction_pair_with_system():
-    from brain.services.synthesis import _to_instruction_pair
+    from adapta.services.synthesis import _to_instruction_pair
 
     record = _to_instruction_pair({"question": "Q?", "answer": "A."}, system="Be concise.")
     assert record["system"] == "Be concise."
@@ -264,7 +264,7 @@ def test_synthesis_to_instruction_pair_with_system():
 async def test_health_endpoint():
     from httpx import ASGITransport, AsyncClient
 
-    from brain.api.app import app
+    from adapta.api.app import app
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         resp = await client.get("/health")
@@ -277,7 +277,7 @@ async def test_unhandled_error_returns_correlation_id():
     """Global exception handler must return correlation_id, never a raw traceback."""
     from httpx import ASGITransport, AsyncClient
 
-    from brain.api.app import create_app
+    from adapta.api.app import create_app
 
     app = create_app()
 
@@ -305,8 +305,8 @@ async def test_domain_error_serialisation():
     """DomainError must serialise message + code, never internal_detail."""
     from httpx import ASGITransport, AsyncClient
 
-    from brain.api.app import create_app
-    from brain.domain.errors import InvalidRequest
+    from adapta.api.app import create_app
+    from adapta.domain.errors import InvalidRequest
 
     app = create_app()
 

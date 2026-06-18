@@ -6,8 +6,8 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from brain.config import settings
-from brain.db.models import Base
+from adapta.config import settings
+from adapta.db.models import Base
 
 config = context.config
 config.set_main_option("sqlalchemy.url", settings.database_url)

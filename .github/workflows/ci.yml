@@ -51,18 +51,18 @@ jobs:
         # NOT exercised by the test suite, so this is its only fast guard. Training
         # deps are imported lazily, so this works without the [training] extras.
         run: |
-          python -c "import brain.api.app, brain.worker.main; print('import OK - app and worker')"
+          python -c "import adapta.api.app, adapta.worker.main; print('import OK - app and worker')"
 
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
           cache: "npm"
-          cache-dependency-path: brain/console/package-lock.json
+          cache-dependency-path: adapta/console/package-lock.json
 
       - name: Build operator console (§5.11 C3)
         # Validates the Svelte/TS source compiles clean on every push — a broken
         # build would otherwise only surface at `docker compose build production`.
-        working-directory: brain/console
+        working-directory: adapta/console
         run: npm ci --no-audit && npm run build:fast
 
       - name: Install docs toolchain
@@ -103,9 +103,9 @@ jobs:
         # Pinned in sync with docker-compose.yml (A4.12 image pinning).
         image: postgres:15.17-alpine
         env:
-          POSTGRES_USER: brain
-          POSTGRES_PASSWORD: brain
-          POSTGRES_DB: brain
+          POSTGRES_USER: adapta
+          POSTGRES_PASSWORD: adapta
+          POSTGRES_DB: adapta
         ports: ["5432:5432"]
         options: >-
           --health-cmd pg_isready
@@ -132,14 +132,14 @@ jobs:
         ports: ["8001:8000"]
 
     env:
-      BRAIN_DATABASE_URL: postgresql+asyncpg://brain:brain@localhost:5432/brain
-      BRAIN_REDIS_URL: redis://localhost:6379/0
-      BRAIN_CHROMA_HOST: localhost
-      BRAIN_CHROMA_PORT: "8001"
-      BRAIN_SECRET_KEY: ci-secret-key-not-for-production
+      ADAPTA_DATABASE_URL: postgresql+asyncpg://adapta:adapta@localhost:5432/adapta
+      ADAPTA_REDIS_URL: redis://localhost:6379/0
+      ADAPTA_CHROMA_HOST: localhost
+      ADAPTA_CHROMA_PORT: "8001"
+      ADAPTA_SECRET_KEY: ci-secret-key-not-for-production
       # Point all data dirs at a writable tmp path — the CI runner has no /app.
       # Subdirs (models, uploads, adapters, datasets) derive automatically from this.
-      BRAIN_DATA_DIR: /tmp/brain-ci-data
+      ADAPTA_DATA_DIR: /tmp/adapta-ci-data
 
     steps:
       - uses: actions/checkout@v4
@@ -170,16 +170,16 @@ jobs:
         with:
           node-version: "22"
           cache: "npm"
-          cache-dependency-path: brain/console/package-lock.json
+          cache-dependency-path: adapta/console/package-lock.json
 
       - name: Build operator console (for StaticFiles mount + smoke)
-        working-directory: brain/console
+        working-directory: adapta/console
         run: npm ci --no-audit && npm run build:fast
 
       - name: Boot smoke test (app + worker)
         run: |
           # --- App: boots and serves ---
-          uvicorn brain.api.app:app --host 0.0.0.0 --port 8000 &
+          uvicorn adapta.api.app:app --host 0.0.0.0 --port 8000 &
           SERVER_PID=$!
           echo "App PID: $SERVER_PID"
           echo "Waiting for /health to return 200..."
@@ -197,11 +197,11 @@ jobs:
           done
 
           # --- Worker: boots and stays alive ---
-          # `python -m brain.worker.main` connects to Redis and BLPOP-blocks. A boot
+          # `python -m adapta.worker.main` connects to Redis and BLPOP-blocks. A boot
           # regression (import error / removed setting / bad URL) makes it exit
           # immediately with a non-zero code, which this catches. Training deps load
           # lazily per-job, so no GPU/[training] extras are needed just to boot.
-          python -m brain.worker.main &
+          python -m adapta.worker.main &
           WORKER_PID=$!
           echo "Worker PID: $WORKER_PID"
 
@@ -249,7 +249,7 @@ jobs:
           import httpx
           # NOTE: reserved TLDs (.local/.example/.test) are rejected by email-validator,
           # so use a normal domain for the bootstrap user.
-          creds = {"email": "ci@braincorp.dev", "password": "ci-password-123"}
+          creds = {"email": "ci@adaptacorp.dev", "password": "ci-password-123"}
           httpx.post("http://localhost:8000/v1/auth/register",
                      json={**creds, "org_name": "CI Org"})
           r2 = httpx.post("http://localhost:8000/v1/auth/login", json=creds)
@@ -257,7 +257,7 @@ jobs:
           print(r2.json()["access_token"])
           EOF
           )
-          BRAIN_BEARER_TOKEN="$TOKEN" make test-contracts
+          ADAPTA_BEARER_TOKEN="$TOKEN" make test-contracts
 
       - name: Integration tests
         run: pytest tests/ -v -m integration

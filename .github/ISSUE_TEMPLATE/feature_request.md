@@ -21,7 +21,7 @@ assignees: ""
 ## Contracts that would change
 
 <!-- Does this touch the OpenAPI spec? A DB migration? The training dataset schema?
-     Brain From Cero is contract-driven — any of the three contracts must change before the code. -->
+     Adapta is contract-driven — any of the three contracts must change before the code. -->
 
 - [ ] `specs/openapi.yaml` (API contract)
 - [ ] Alembic migration (DB schema)

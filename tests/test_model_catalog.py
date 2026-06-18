@@ -8,8 +8,8 @@ and a GGUF serving name, declared once per entry. These tests do not load any mo
 
 from __future__ import annotations
 
-import brain.core.model_catalog as mc
-from brain.core.model_manager import ModelManager
+import adapta.core.model_catalog as mc
+from adapta.core.model_manager import ModelManager
 
 
 def test_allowed_names_nonempty_and_unique():

@@ -19,7 +19,7 @@ A **single-tenant, self-hosted** application. A company runs it on their own inf
         Company's own server (Docker Compose)
    ┌──────────────────────────────────────────────┐
    │  Control-plane API  ──────────────► Postgres  │
-   │  (brain/api/app.py)                           │
+   │  (adapta/api/app.py)                           │
    │         │                                     │
    │ ┌───────┴────────────┐                        │
    │ RAG service          Fine-tune service         │
@@ -69,7 +69,7 @@ Serving **composes the project's artifacts** rather than switching on its type. 
 
 - Self-hosted deploy via Docker Compose, customer-operated.
 - Multi-user within one org: users, teams, roles (admin/member), real JWT auth.
-- Projects (type = `rag` | `finetune`), each → one served endpoint + scoped API keys (`brn_*`).
+- Projects (type = `rag` | `finetune`), each → one served endpoint + scoped API keys (`adp_*`).
 - RAG: document upload, parsing, chunking, real sentence-transformers embeddings, per-project ChromaDB collections, cited answers.
 - LoRA: JSONL dataset upload + validation, async training jobs with progress, QLoRA via worker, adapter registry + eval gate, serving.
 - Dataset **synthesis** (documents → instruction pairs) — `POST /v1/projects/{id}/datasets/synthesize`.
@@ -132,7 +132,7 @@ Endpoint ─< ApiKey (key_prefix, key_hash, is_active)
 
 ### Two end-to-end flows
 
-**RAG:** `POST /v1/projects/{id}/files` → background parse+chunk+embed → ChromaDB collection → `POST /v1/projects/{id}/endpoint` → `POST /v1/chat/completions (model=slug, key=brn_*)` → retrieve top-k → generate → cited answer
+**RAG:** `POST /v1/projects/{id}/files` → background parse+chunk+embed → ChromaDB collection → `POST /v1/projects/{id}/endpoint` → `POST /v1/chat/completions (model=slug, key=adp_*)` → retrieve top-k → generate → cited answer
 
 **LoRA:** `POST /v1/projects/{id}/datasets` (JSONL upload) or `POST /v1/projects/{id}/datasets/synthesize` → `POST /v1/projects/{id}/jobs` → worker trains QLoRA → eval gate → `POST /v1/projects/{id}/endpoint` → `POST /v1/chat/completions`
 
@@ -140,7 +140,7 @@ Endpoint ─< ApiKey (key_prefix, key_hash, is_active)
 
 GPU strategy (customer-provided hardware):
 
-- Detect via `brain/core/gpu.py`.
+- Detect via `adapta/core/gpu.py`.
 - **RAG: CPU is fine** — ships and runs anywhere.
 - **LoRA: require a GPU**, fail fast with a clear message if absent. QLoRA 4-bit to fit a 3B base in ~8–12 GB VRAM.
 - Training runs in the **separate worker**, never in the request path.

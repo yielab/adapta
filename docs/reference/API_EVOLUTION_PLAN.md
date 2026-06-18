@@ -18,21 +18,21 @@ These were found by reading the repository at the start of the rebuild. Each was
 
 ### 0.1 RESOLVED — the orchestration layer returned mock text
 
-`brain/core/unified_router.py:491-493` — the "Unified Router" did **not** call inference:
+`adapta/core/unified_router.py:491-493` — the "Unified Router" did **not** call inference:
 
 ```python
 # Call model (mock for now - would integrate with actual inference)
 response_text = f"[Generated response using {model}]"
 ```
 
-**Fix:** `unified_router.py` was deleted in full. The single real serving path is `brain/services/chat.py` → `brain/core/inference.py`. No mock string exists anywhere in the codebase.
+**Fix:** `unified_router.py` was deleted in full. The single real serving path is `adapta/services/chat.py` → `adapta/core/inference.py`. No mock string exists anywhere in the codebase.
 
 ### 0.2 RESOLVED — error handling leaked internals
 
 - **63** occurrences of `raise HTTPException(status_code=500, detail=str(e))` — raw exception text returned to clients.
 - **0** custom exception classes, **0** global handlers.
 
-**Fix:** `brain/domain/errors.py` — typed `DomainError` taxonomy (see §3). All 63 sites replaced. `make check-leaks` CI gate prevents reintroduction.
+**Fix:** `adapta/domain/errors.py` — typed `DomainError` taxonomy (see §3). All 63 sites replaced. `make check-leaks` CI gate prevents reintroduction.
 
 ### 0.3 RESOLVED — triple build configuration
 
@@ -50,10 +50,10 @@ response_text = f"[Generated response using {model}]"
 
 | Location | Issue | Resolution |
 |---|---|---|
-| `brain/memory/memory_manager.py:492` | Placeholder embedding vector | Module deleted; real embeddings in `brain/services/embeddings.py` |
-| `brain/rag/advanced/hybrid_search.py:273` | Placeholder embedding integration | Module deleted; real RAG in `brain/services/rag.py` |
-| `brain/api/auth.py:318` | Hard-coded `"dummy"` API key | Module replaced by `brain/services/auth.py` — bcrypt + JWT |
-| `brain/core/adapter_manager.py:308` | Adapter merge was a manual process | Adapter registry fully implemented in `brain/services/adapters.py` |
+| `adapta/memory/memory_manager.py:492` | Placeholder embedding vector | Module deleted; real embeddings in `adapta/services/embeddings.py` |
+| `adapta/rag/advanced/hybrid_search.py:273` | Placeholder embedding integration | Module deleted; real RAG in `adapta/services/rag.py` |
+| `adapta/api/auth.py:318` | Hard-coded `"dummy"` API key | Module replaced by `adapta/services/auth.py` — bcrypt + JWT |
+| `adapta/core/adapter_manager.py:308` | Adapter merge was a manual process | Adapter registry fully implemented in `adapta/services/adapters.py` |
 
 ### 0.6 RESOLVED — no test infrastructure
 
@@ -67,9 +67,9 @@ response_text = f"[Generated response using {model}]"
 
 The architecture described here has been built. The key decisions:
 
-1. **One inference path.** The mock in `unified_router` is deleted. `brain/services/chat.py` (`ChatService`) is the only orchestrator and calls `brain/core/inference.py` (real llama-cpp). There is no second path.
+1. **One inference path.** The mock in `unified_router` is deleted. `adapta/services/chat.py` (`ChatService`) is the only orchestrator and calls `adapta/core/inference.py` (real llama-cpp). There is no second path.
 2. **OpenAI-compatible serving is the only external protocol.** No native-first, no Anthropic, no MCP — deferred indefinitely.
-3. **Domain errors are typed and never leak.** `brain/domain/errors.py` taxonomy; global handlers in `brain/api/app.py`; no `str(e)` to clients.
+3. **Domain errors are typed and never leak.** `adapta/domain/errors.py` taxonomy; global handlers in `adapta/api/app.py`; no `str(e)` to clients.
 
 ---
 
@@ -92,7 +92,7 @@ The architecture described here has been built. The key decisions:
 
 The rule: **no exception ever reaches a client as a raw string.**
 
-### 3.1 Domain error taxonomy — `brain/domain/errors.py`
+### 3.1 Domain error taxonomy — `adapta/domain/errors.py`
 
 Every error has a stable machine `code`, an HTTP `status`, a safe client `message`, and an optional `internal_detail` that is **logged, never serialized**.
 
@@ -121,7 +121,7 @@ class DomainError(Exception):
 # InternalError     internal_error        500
 ```
 
-### 3.2 Single boundary translation — `brain/api/app.py`
+### 3.2 Single boundary translation — `adapta/api/app.py`
 
 ```python
 @app.exception_handler(DomainError)
@@ -150,7 +150,7 @@ Middleware stamps `request.state.cid` (UUID) on every request, echoes it in `X-C
 
 ### 3.4 CI grep gate
 
-`make check-leaks` fails the build if `detail=str(e)` reappears anywhere in `brain/`.
+`make check-leaks` fails the build if `detail=str(e)` reappears anywhere in `adapta/`.
 
 ---
 
@@ -158,7 +158,7 @@ Middleware stamps `request.state.cid` (UUID) on every request, echoes it in `X-C
 
 | Action | Target | Status |
 |---|---|---|
-| Delete | `brain/core/unified_router.py` mock | Done |
+| Delete | `adapta/core/unified_router.py` mock | Done |
 | Delete | `archive/` (288 KB) | Done |
 | Delete | `setup.py` | Done |
 | Delete | `requirements.txt`, `requirements-training.txt` | Done |
@@ -169,11 +169,11 @@ Middleware stamps `request.state.cid` (UUID) on every request, echoes it in `X-C
 | Delete | Multi-protocol ambitions (Anthropic/MCP/Responses) | Done |
 | Delete | Drupal scraper | Done |
 | ~~Delete~~ Reinstate | Operator console (thin web UI) | Reversed 2026-06-09 — a thin operator console is back **in scope** (operator convenience over the existing API, not a new protocol); see PRODUCT_DEFINITION §3 + TODO §5 |
-| Replace | Dummy `"dummy"` API key | Done — bcrypt + JWT in `brain/services/auth.py` |
-| Replace | Placeholder embeddings | Done — real sentence-transformers in `brain/services/embeddings.py` |
-| Implement | Async training jobs + worker | Done — `brain/services/jobs.py` + `brain/worker/main.py` |
-| Implement | Adapter registry + eval gate | Done — `brain/services/adapters.py` |
-| Implement | Dataset synthesis | Done — `brain/services/synthesis.py` + `POST /v1/projects/{id}/datasets/synthesize` |
+| Replace | Dummy `"dummy"` API key | Done — bcrypt + JWT in `adapta/services/auth.py` |
+| Replace | Placeholder embeddings | Done — real sentence-transformers in `adapta/services/embeddings.py` |
+| Implement | Async training jobs + worker | Done — `adapta/services/jobs.py` + `adapta/worker/main.py` |
+| Implement | Adapter registry + eval gate | Done — `adapta/services/adapters.py` |
+| Implement | Dataset synthesis | Done — `adapta/services/synthesis.py` + `POST /v1/projects/{id}/datasets/synthesize` |
 
 ---
 
@@ -215,7 +215,7 @@ POST /v1/projects/{id}/keys               generate scoped key (shown once)
 GET  /v1/projects/{id}/keys               list
 DELETE /v1/projects/{id}/keys/{kid}       revoke
 
-POST /v1/chat/completions                 OpenAI-compatible serving (scoped brn_* key)
+POST /v1/chat/completions                 OpenAI-compatible serving (scoped adp_* key)
 ```
 
 Contract SSOT: `specs/openapi.yaml`.
@@ -232,7 +232,7 @@ The architecture is described here; the **state of each test/gate and the open w
 - In-process suites: `tests/test_basic.py`, `tests/test_error_boundary.py`, `tests/test_eval_gate.py`.
 - Live-stack suite: `tests/test_api_contracts.py` (schemathesis, `@pytest.mark.contract`).
 - Gates: `make ci` (offline: check-leaks + lint + coverage floor + validate-spec + check-models) and the `full` gate (migrate-test + boot smoke + contract + integration), wired in `.github/workflows/ci.yml`.
-- Generated DTOs: `brain/models/generated/models.py` is committed and kept in sync with the spec by `make check-models` (regenerate-and-diff). As of 2026-06-08 the contract gate passes `--checks all` against the live server (1260/1260, zero 5xx).
+- Generated DTOs: `adapta/models/generated/models.py` is committed and kept in sync with the spec by `make check-models` (regenerate-and-diff). As of 2026-06-08 the contract gate passes `--checks all` against the live server (1260/1260, zero 5xx).
 
 > For what's done vs open across the three SDD pillars, see [TODO.md](../roadmap.md) "Status snapshot" and §A.
 

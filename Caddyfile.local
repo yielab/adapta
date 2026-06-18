@@ -1,9 +1,9 @@
 # Managed by global /home/ox/Sites/Caddyfile — do NOT add a global {} block here
-brain.test {
+adapta.test {
     reverse_proxy localhost:8000
 
     log {
-        output file /var/log/caddy/brain.log
+        output file /var/log/caddy/adapta.log
         format console
         level INFO
     }
@@ -12,14 +12,14 @@ brain.test {
         Access-Control-Allow-Origin *
         Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
         Access-Control-Allow-Headers "Content-Type, Authorization"
-        X-Powered-By "Brain From Cero"
+        X-Powered-By "Adapta"
     }
 }
 
-api.brain.test {
+api.adapta.test {
     reverse_proxy localhost:8000
 }
 
-www.brain.test {
-    redir https://brain.test{uri} permanent
+www.adapta.test {
+    redir https://adapta.test{uri} permanent
 }

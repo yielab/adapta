@@ -9,8 +9,8 @@ cap evicts the least-recently-used entry and drops its inference lock.
 
 import asyncio
 
-from brain.config import settings
-from brain.core.model_manager import ModelManager
+from adapta.config import settings
+from adapta.core.model_manager import ModelManager
 
 
 def test_lru_eviction_drops_least_recently_used(monkeypatch):

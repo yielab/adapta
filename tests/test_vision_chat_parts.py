@@ -14,9 +14,9 @@ import io
 import pytest
 from PIL import Image
 
-from brain.config import settings
-from brain.domain.errors import InvalidRequest
-from brain.services.chat import (
+from adapta.config import settings
+from adapta.domain.errors import InvalidRequest
+from adapta.services.chat import (
     _decode_data_url,
     _estimate_image_tokens,
     chat,

@@ -1,7 +1,7 @@
 """
 Integration tests — §5.12 key-scoping audit.
 
-A ``brn_*`` API key is scoped to exactly one endpoint.  These tests confirm:
+A ``adp_*`` API key is scoped to exactly one endpoint.  These tests confirm:
 
 1. A valid key + the *correct* endpoint slug → auth passes (downstream may fail
    without a GGUF model, but it's not a 401/403).
@@ -19,7 +19,7 @@ import uuid
 import asyncpg
 import pytest
 
-from brain.config import settings
+from adapta.config import settings
 
 pytestmark = pytest.mark.integration
 

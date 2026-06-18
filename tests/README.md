@@ -1,6 +1,6 @@
 # Testing Guide
 
-This directory contains test scripts for Brain From Cero.
+This directory contains test scripts for Adapta.
 
 ## Test Scripts
 
@@ -9,7 +9,7 @@ This directory contains test scripts for Brain From Cero.
 Tests the Docker deployment and basic functionality.
 
 ```bash
-cd /path/to/brainFromCero
+cd /path/to/adapta
 ./tests/test_docker.sh
 ```
 
@@ -157,7 +157,7 @@ Check if training dependencies are installed:
 
 ```bash
 # In Docker
-docker-compose exec brain pip list | grep torch
+docker-compose exec app pip list | grep torch
 
 # Locally
 pip list | grep torch

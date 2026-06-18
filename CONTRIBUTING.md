@@ -1,6 +1,6 @@
-# Contributing to Brain From Cero
+# Contributing to Adapta
 
-Brain From Cero is a self-hosted RAG + LoRA model-customization platform in early active development. Contributions are welcome — read this guide before opening a PR.
+Adapta is a self-hosted RAG + LoRA model-customization platform in early active development. Contributions are welcome — read this guide before opening a PR.
 
 ---
 
@@ -9,8 +9,8 @@ Brain From Cero is a self-hosted RAG + LoRA model-customization platform in earl
 > **All Python/pip operations run inside the Docker container — never on the host.**
 
 ```bash
-git clone https://github.com/santiagoyie/brainFromCero
-cd brainFromCero
+git clone https://github.com/santiagoyie/adapta
+cd adapta
 
 # Start the stack: one image with the toolchain (ruff/mypy/pytest/codegen) baked
 # in, source bind-mounted, hot reload. There is no separate dev/prod mode.
@@ -53,13 +53,13 @@ Never run `pip install` on the host or add `requirements*.txt` files — `pyproj
 Steps for an API change:
 
 1. Edit `specs/openapi.yaml` — paths, schemas, status codes.
-2. `make generate` → regenerated `brain/models/generated/models.py` (never hand-edit this).
+2. `make generate` → regenerated `adapta/models/generated/models.py` (never hand-edit this).
 3. Write handler/service code against the new DTOs.
 4. `make validate-spec` + `make test-contracts` (needs server running).
 
 Steps for a schema change:
 
-1. Edit `brain/db/models.py`.
+1. Edit `adapta/db/models.py`.
 2. `docker compose exec app alembic revision --autogenerate -m "description"`.
 3. Review the generated migration; test with `make migrate-test`.
 4. Commit both the model change and the migration in the same PR.
@@ -68,10 +68,10 @@ Steps for a schema change:
 
 ## Hard constraints
 
-1. **Do NOT rewrite inference engine internals.** `brain/core/inference.py`, `brain/core/model_manager.py`, and `brain/training/trainer.py` are wrapped/called, not modified.
-2. **No raw exceptions to clients.** Never write `raise HTTPException(status_code=500, detail=str(e))`. Raise a typed `DomainError` subclass from `brain/domain/errors.py`. The `make check-leaks` gate enforces this.
+1. **Do NOT rewrite inference engine internals.** `adapta/core/inference.py`, `adapta/core/model_manager.py`, and `adapta/training/trainer.py` are wrapped/called, not modified.
+2. **No raw exceptions to clients.** Never write `raise HTTPException(status_code=500, detail=str(e))`. Raise a typed `DomainError` subclass from `adapta/domain/errors.py`. The `make check-leaks` gate enforces this.
 3. **No pip on the host.** All dependency changes go through `pyproject.toml` + container rebuild.
-4. **Never hand-edit generated files.** `brain/models/generated/models.py` is auto-generated from the spec.
+4. **Never hand-edit generated files.** `adapta/models/generated/models.py` is auto-generated from the spec.
 
 ---
 

@@ -17,8 +17,8 @@ schemathesis = pytest.importorskip(
 pytestmark = pytest.mark.contract
 
 SPEC_PATH = os.path.join(os.path.dirname(__file__), "..", "specs", "openapi.yaml")
-BASE_URL = os.environ.get("BRAIN_BASE_URL", "http://localhost:8000/v1")
-BEARER_TOKEN = os.environ.get("BRAIN_BEARER_TOKEN", "")
+BASE_URL = os.environ.get("ADAPTA_BASE_URL", "http://localhost:8000/v1")
+BEARER_TOKEN = os.environ.get("ADAPTA_BEARER_TOKEN", "")
 
 try:
     # schemathesis 4.x moved loaders to schemathesis.openapi.*
@@ -28,7 +28,7 @@ except Exception as _e:
 
 
 @schema.auth()
-class BrainBearerAuth:
+class AdaptaBearerAuth:
     """Inject JWT Bearer token on every request that declares BearerAuth security."""
 
     def get(self, case, context):

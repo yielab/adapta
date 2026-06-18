@@ -1,4 +1,4 @@
-# Brain From Cero
+# Adapta
 
 **A self-hosted platform for customizing and serving private language models.**
 Upload documents or train a fine-tuned adapter on your own GPU — then expose
@@ -62,7 +62,7 @@ building or studying AI infrastructure on a real, production-grade codebase.
 
 ## What the platform does
 
-A company deploys Brain From Cero on its own server with Docker Compose.
+A company deploys Adapta on its own server with Docker Compose.
 Inside that deployment, teams create **Projects**. Each project ends in a
 private model **endpoint** consumed with a scoped API key:
 
@@ -83,7 +83,7 @@ retrieval with citations, tone and structure from the fine-tune.
 
 The `POST /v1/chat/completions` endpoint is the only protocol customer
 applications call. If your code already calls OpenAI, it already calls
-Brain From Cero.
+Adapta.
 
 !!! tip "New to RAG, LoRA, GGUF, or embeddings?"
     The [AI Infrastructure Guide](concepts/index.md) explains every concept in

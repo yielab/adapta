@@ -1,5 +1,5 @@
 """
-Unit tests for the infra-free auth helpers (brain/services/auth.py):
+Unit tests for the infra-free auth helpers (adapta/services/auth.py):
 password hashing (direct bcrypt + SHA-256 pre-hash), JWT round-trip, and scoped
 API-key generation/verification. These are security-critical and pure, so they
 belong in the offline gate. DB-touching helpers (create_user, authenticate_user)
@@ -8,8 +8,8 @@ are exercised by integration tests.
 
 import pytest
 
-from brain.domain.errors import Unauthorized
-from brain.services.auth import (
+from adapta.domain.errors import Unauthorized
+from adapta.services.auth import (
     create_access_token,
     decode_access_token,
     generate_api_key,
@@ -77,7 +77,7 @@ def test_decode_rejects_garbage():
 
 def test_generate_api_key_shape_and_verify():
     raw, prefix, stored_hash = generate_api_key()
-    assert raw.startswith("brn_")
+    assert raw.startswith("adp_")
     assert prefix == raw[:8]
     assert stored_hash != raw  # only the hash is persisted
     assert verify_api_key(raw, stored_hash)

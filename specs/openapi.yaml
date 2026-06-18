@@ -1,10 +1,10 @@
 openapi: 3.1.0
 info:
-  title: Brain From Cero API
+  title: Adapta API
   description: |
     **Your model. Your data. Your servers.**
 
-    Brain From Cero is a self-hosted model-customization platform. Technical teams deploy
+    Adapta is a self-hosted model-customization platform. Technical teams deploy
     it on their own infrastructure to specialize and serve private language models two ways,
     each behind an OpenAI-compatible API. Your data never leaves your servers.
 
@@ -21,18 +21,18 @@ info:
     ---
 
     **Auth:** management endpoints require a JWT Bearer token from `POST /v1/auth/login`.
-    The `POST /v1/chat/completions` endpoint uses a scoped project API key (`brn_*` prefix).
+    The `POST /v1/chat/completions` endpoint uses a scoped project API key (`adp_*` prefix).
 
   version: 0.1.0
   license:
     name: MIT
-    url: https://github.com/santiagoyie/brainFromCero/blob/main/LICENSE
+    url: https://github.com/santiagoyie/adapta/blob/main/LICENSE
   contact:
-    name: Brain From Cero
-    url: https://github.com/santiagoyie/brainFromCero
+    name: Adapta
+    url: https://github.com/santiagoyie/adapta
   x-logo:
     url: /console/logo.svg
-    altText: Brain From Cero
+    altText: Adapta
 
 servers:
   - url: /v1
@@ -590,7 +590,7 @@ paths:
       tags: [chat]
       summary: OpenAI-compatible chat completion
       description: |
-        Authenticate with a scoped project API key (Authorization: Bearer brn_...).
+        Authenticate with a scoped project API key (Authorization: Bearer adp_...).
         The `model` field is the endpoint slug.
         Serving composes the project's artifacts: if the project has indexed
         documents, retrieved context is injected and `citations` returned; if the
@@ -636,7 +636,7 @@ components:
     ApiKeyAuth:
       type: http
       scheme: bearer
-      description: Scoped project API key (brn_...)
+      description: Scoped project API key (adp_...)
 
   parameters:
     ProjectId:
@@ -796,7 +796,7 @@ components:
         dataset_id: {type: string}
         training_config:
           # Bounds mirror the server's enqueue-time validation (A4.12,
-          # brain/services/training.py _HYPERPARAM_BOUNDS) — out-of-range
+          # adapta/services/training.py _HYPERPARAM_BOUNDS) — out-of-range
           # values are rejected with 422 before a job is created.
           type: object
           nullable: true

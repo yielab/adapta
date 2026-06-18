@@ -11,8 +11,8 @@ import uuid
 import asyncpg
 import pytest
 
-from brain.config import settings
-from brain.services.maintenance import sweep_stuck_tasks
+from adapta.config import settings
+from adapta.services.maintenance import sweep_stuck_tasks
 
 pytestmark = pytest.mark.integration
 
@@ -28,7 +28,7 @@ def _dsn() -> str:
 
 @pytest.fixture
 async def clean_db():
-    from brain.db.session import engine
+    from adapta.db.session import engine
 
     await engine.dispose()  # fresh pool in this test's loop (see conftest note)
     conn = await asyncpg.connect(_dsn())

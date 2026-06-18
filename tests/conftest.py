@@ -7,7 +7,7 @@ Unit tests mock infrastructure at the boundary.
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from brain.api.app import app
+from adapta.api.app import app
 
 
 @pytest.fixture

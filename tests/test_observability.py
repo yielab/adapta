@@ -8,8 +8,8 @@ import logging
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from brain.api.app import create_app
-from brain.core.logging_config import JsonLogFormatter, configure_logging
+from adapta.api.app import create_app
+from adapta.core.logging_config import JsonLogFormatter, configure_logging
 
 
 @pytest.fixture
@@ -27,14 +27,14 @@ async def test_metrics_endpoint_exposes_prometheus(app):
     assert r.status_code == 200
     assert "text/plain" in r.headers["content-type"]
     body = r.text
-    assert "brain_requests_total" in body
-    assert "brain_request_duration_seconds" in body
-    assert "# TYPE brain_request_duration_seconds histogram" in body
+    assert "adapta_requests_total" in body
+    assert "adapta_request_duration_seconds" in body
+    assert "# TYPE adapta_request_duration_seconds histogram" in body
 
 
 def test_json_log_formatter_emits_valid_json():
     rec = logging.LogRecord(
-        name="brain.test",
+        name="adapta.test",
         level=logging.INFO,
         pathname=__file__,
         lineno=1,
@@ -44,7 +44,7 @@ def test_json_log_formatter_emits_valid_json():
     )
     out = json.loads(JsonLogFormatter().format(rec))
     assert out["level"] == "INFO"
-    assert out["logger"] == "brain.test"
+    assert out["logger"] == "adapta.test"
     assert out["message"] == "hello world"
 
 

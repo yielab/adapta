@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-Brain From Cero is pre-1.0 software. Security fixes are applied to the `main` branch only.
+Adapta is pre-1.0 software. Security fixes are applied to the `main` branch only.
 
 ---
 
@@ -10,7 +10,7 @@ Brain From Cero is pre-1.0 software. Security fixes are applied to the `main` br
 
 **Do not open a public GitHub issue for security vulnerabilities.**
 
-Report privately via the [GitHub Security Advisory](https://github.com/santiagoyie/brainFromCero/security/advisories/new) feature. Include:
+Report privately via the [GitHub Security Advisory](https://github.com/santiagoyie/adapta/security/advisories/new) feature. Include:
 
 - A description of the vulnerability and its impact
 - Steps to reproduce
@@ -23,18 +23,18 @@ You can expect an initial response within 5 business days.
 
 ## Security model
 
-Brain From Cero is **single-tenant, on-premises software**. Your organization operates the server; no data leaves your infrastructure.
+Adapta is **single-tenant, on-premises software**. Your organization operates the server; no data leaves your infrastructure.
 
 ### Authentication
 
-- **Operators** (the console and control-plane API) authenticate via **JWT** issued at `POST /v1/auth/login`. Tokens expire; the secret is set in `.env` (`BRAIN_SECRET_KEY`).
+- **Operators** (the console and control-plane API) authenticate via **JWT** issued at `POST /v1/auth/login`. Tokens expire; the secret is set in `.env` (`ADAPTA_SECRET_KEY`).
 - **Passwords** are hashed with **bcrypt** (direct bcrypt, SHA-256 pre-hash to handle long inputs). No plaintext passwords are stored.
-- **Client applications** authenticate with **scoped `brn_*` API keys**, each bound to a single project endpoint. Keys are bcrypt-hashed in the database; the raw key is shown once at generation time.
+- **Client applications** authenticate with **scoped `adp_*` API keys**, each bound to a single project endpoint. Keys are bcrypt-hashed in the database; the raw key is shown once at generation time.
 
 ### Authorization
 
 - RBAC with two roles: **admin** (full project and team management) and **viewer** (read-only).
-- A `brn_*` key cannot drive any endpoint other than the one it was issued for — the auth layer enforces this before any inference runs.
+- A `adp_*` key cannot drive any endpoint other than the one it was issued for — the auth layer enforces this before any inference runs.
 
 ### Network exposure
 
@@ -47,7 +47,7 @@ Brain From Cero is **single-tenant, on-premises software**. Your organization op
 Generate a strong JWT secret before first run:
 
 ```bash
-sed -i "s|^BRAIN_SECRET_KEY=.*|BRAIN_SECRET_KEY=$(openssl rand -hex 32)|" .env
+sed -i "s|^ADAPTA_SECRET_KEY=.*|ADAPTA_SECRET_KEY=$(openssl rand -hex 32)|" .env
 ```
 
 Set a strong `POSTGRES_PASSWORD` in `.env`. The `.env` file is gitignored — never commit it.
@@ -65,7 +65,7 @@ Everything is on-premises by design:
 ## Security best practices for contributors
 
 1. **Never commit secrets** — API keys, passwords, tokens, or `.env` files.
-2. **Never write `raise HTTPException(detail=str(e))`** — use the typed `DomainError` taxonomy in `brain/domain/errors.py`. The `make check-leaks` CI gate enforces this.
+2. **Never write `raise HTTPException(detail=str(e))`** — use the typed `DomainError` taxonomy in `adapta/domain/errors.py`. The `make check-leaks` CI gate enforces this.
 3. **Use parameterized queries** — SQLAlchemy ORM is the only way to touch the database; raw SQL is prohibited.
 4. **Validate at system boundaries** — all external inputs are validated by Pydantic models generated from `specs/openapi.yaml`.
 5. Run `make check-leaks` before every PR.

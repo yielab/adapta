@@ -3,7 +3,7 @@
 Once a project has an endpoint and a key, your applications talk to it through
 the **OpenAI-compatible** chat completions API. This is the **only** protocol
 customer applications use — if your code already talks to OpenAI, it already
-talks to Brain From Cero.
+talks to Adapta.
 
 ## The three things you need
 
@@ -11,7 +11,7 @@ talks to Brain From Cero.
 |---|---|---|
 | **Base URL** | Your server, e.g. `http://your-server:8000/v1` | OpenAI client `base_url` |
 | **Endpoint slug** | The Endpoint tab in the console | the `model` field |
-| **Scoped key** (`brn_…`) | The Keys tab (shown once) | the `api_key` |
+| **Scoped key** (`adp_…`) | The Keys tab (shown once) | the `api_key` |
 
 ## Python (OpenAI SDK)
 
@@ -20,7 +20,7 @@ from openai import OpenAI
 
 client = OpenAI(
     base_url="http://your-server:8000/v1",
-    api_key="brn_xxxx…",            # scoped to one project endpoint
+    api_key="adp_xxxx…",            # scoped to one project endpoint
 )
 
 resp = client.chat.completions.create(
@@ -34,7 +34,7 @@ print(resp.choices[0].message.content)
 
 ```bash
 curl http://your-server:8000/v1/chat/completions \
-  -H "Authorization: Bearer brn_xxxx…" \
+  -H "Authorization: Bearer adp_xxxx…" \
   -H "Content-Type: application/json" \
   -d '{
     "model": "support-kb-a1b2c3d4",
@@ -44,7 +44,7 @@ curl http://your-server:8000/v1/chat/completions \
 
 ## What's different from vanilla OpenAI
 
-- **The key picks the endpoint, not the `model` field.** Each `brn_` key is
+- **The key picks the endpoint, not the `model` field.** Each `adp_` key is
   bound to exactly one endpoint. The `model` slug you pass must match the key's
   endpoint — a mismatched slug is rejected (`403`). This means a key can never
   reach an endpoint it wasn't issued for.

@@ -1,4 +1,4 @@
-"""Tests for the strict torch-CUDA training guard (brain.core.gpu.torch_cuda_status).
+"""Tests for the strict torch-CUDA training guard (adapta.core.gpu.torch_cuda_status).
 
 These lock the CPU fail-fast contract: on a CPU-only build (the app/dev image),
 the worker must refuse LoRA jobs with a clear, non-leaky reason rather than
@@ -10,7 +10,7 @@ from __future__ import annotations
 import sys
 import types
 
-from brain.core.gpu import TorchCudaStatus, torch_cuda_status
+from adapta.core.gpu import TorchCudaStatus, torch_cuda_status
 
 
 def _install_fake_torch(monkeypatch, *, cuda_build, cuda_available, device_name="Fake GPU"):

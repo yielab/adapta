@@ -15,9 +15,9 @@ modules worth knowing; the full source is the ultimate reference.
 ## Domain — errors & pure types
 
 The dependency-free core. Every exception a service raises is one of these; the
-boundary handler in `brain/api/app.py` is the only place they're serialized.
+boundary handler in `adapta/api/app.py` is the only place they're serialized.
 
-::: brain.domain.errors
+::: adapta.domain.errors
     options:
       heading_level: 3
       show_root_heading: false
@@ -30,7 +30,7 @@ boundary handler in `brain/api/app.py` is the only place they're serialized.
 All settings (DB/Redis URLs, JWT secret, directories, thresholds, the eval-gate
 knobs) flow through one pydantic-settings object.
 
-::: brain.config
+::: adapta.config
     options:
       heading_level: 3
       show_root_heading: false
@@ -45,35 +45,35 @@ knobs) flow through one pydantic-settings object.
 The single real serving path: RAG retrieval + context fitting + inference +
 usage metering. See the [request lifecycle](architecture.md#request-lifecycle-a-rag-chat-completion).
 
-::: brain.services.chat
+::: adapta.services.chat
     options:
       heading_level: 4
       show_root_heading: false
 
 ### RAG (retrieval)
 
-::: brain.services.rag
+::: adapta.services.rag
     options:
       heading_level: 4
       show_root_heading: false
 
 ### Embeddings
 
-::: brain.services.embeddings
+::: adapta.services.embeddings
     options:
       heading_level: 4
       show_root_heading: false
 
 ### Training (validation & enqueue)
 
-::: brain.services.training
+::: adapta.services.training
     options:
       heading_level: 4
       show_root_heading: false
 
 ### Adapters (registry + eval gate)
 
-::: brain.services.adapters
+::: adapta.services.adapters
     options:
       heading_level: 4
       show_root_heading: false
@@ -85,7 +85,7 @@ usage metering. See the [request lifecycle](architecture.md#request-lifecycle-a-
 The gate's score math and the dual (absolute-or-improvement) gate live here. See
 [the eval gate explained](learning-the-system.md#the-eval-gate-ci-for-a-model).
 
-::: brain.training.models
+::: adapta.training.models
     options:
       heading_level: 3
       show_root_heading: false
@@ -99,14 +99,14 @@ The gate's score math and the dual (absolute-or-improvement) gate live here. See
 Wraps llama-cpp. The per-model lock, bounded executor, and streaming bridge live
 here. **Do not rewrite the engine internals** — wrap and call.
 
-::: brain.core.inference
+::: adapta.core.inference
     options:
       heading_level: 4
       show_root_heading: false
 
 ### Model manager (cache + locks)
 
-::: brain.core.model_manager
+::: adapta.core.model_manager
     options:
       heading_level: 4
       show_root_heading: false

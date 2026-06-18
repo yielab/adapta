@@ -1,6 +1,6 @@
 # 📖 Operations Runbook
 
-Reference for operators running Brain From Cero on their own infrastructure.
+Reference for operators running Adapta on their own infrastructure.
 Describes what *is* — no open tasks (those live in [TODO.md](../roadmap.md)).
 
 Covers: backup/restore, upgrades & migrations, horizontal scaling, image/registry
@@ -27,18 +27,18 @@ Redis is a transient queue; a graceful worker shutdown requeues in-flight jobs
 
 ## 2. Backup & restore (§3.3)
 
-> **Scripted:** [`scripts/backup.sh`](https://github.com/santiagoyie/brainFromCero/blob/main/scripts/backup.sh) runs all three backups
+> **Scripted:** [`scripts/backup.sh`](https://github.com/santiagoyie/adapta/blob/main/scripts/backup.sh) runs all three backups
 > below from one window and prunes old files (`RETENTION_DAYS`, default 14). Cron it:
-> `0 3 * * * cd /opt/brainFromCero && scripts/backup.sh >> backup/backup.log 2>&1`.
+> `0 3 * * * cd /opt/adapta && scripts/backup.sh >> backup/backup.log 2>&1`.
 
 **Backup** (stop nothing — `pg_dump` and file copies are online-safe):
 
 ```bash
 # Postgres (schema + data)
-docker compose exec -T postgres pg_dump -U brain brain | gzip > backup/brain-$(date +%F).sql.gz
+docker compose exec -T postgres pg_dump -U adapta adapta | gzip > backup/adapta-$(date +%F).sql.gz
 
 # ChromaDB volume (tar the named volume)
-docker run --rm -v brainfromcero_chroma-data:/data -v "$PWD/backup:/out" \
+docker run --rm -v adapta_chroma-data:/data -v "$PWD/backup:/out" \
   alpine tar czf /out/chroma-$(date +%F).tgz -C /data .
 
 # Adapters + uploads + datasets (host bind-mounts)
@@ -49,17 +49,17 @@ tar czf backup/artifacts-$(date +%F).tgz data/adapters data/uploads data/dataset
 
 ```bash
 # Postgres — DB must exist and be empty (compose creates it on first boot)
-gunzip -c backup/brain-YYYY-MM-DD.sql.gz | docker compose exec -T postgres psql -U brain brain
+gunzip -c backup/adapta-YYYY-MM-DD.sql.gz | docker compose exec -T postgres psql -U adapta adapta
 
 # ChromaDB
-docker run --rm -v brainfromcero_chroma-data:/data -v "$PWD/backup:/in" \
+docker run --rm -v adapta_chroma-data:/data -v "$PWD/backup:/in" \
   alpine sh -c "cd /data && tar xzf /in/chroma-YYYY-MM-DD.tgz"
 
 # Artifacts
 tar xzf backup/artifacts-YYYY-MM-DD.tgz
 ```
 
-> The named-volume prefix is the compose project name (`brainfromcero`). Confirm
+> The named-volume prefix is the compose project name (`adapta`). Confirm
 > with `docker volume ls | grep chroma`.
 
 **Consistency:** back up Postgres and Chroma/adapters from the same window. A
@@ -71,7 +71,7 @@ both or an endpoint can reference a missing adapter.
 ## 3. Upgrades & migrations
 
 The `app` container runs `alembic upgrade head` on startup (in
-[entrypoint.sh](https://github.com/santiagoyie/brainFromCero/blob/main/entrypoint.sh)) **before** serving, gated by compose
+[entrypoint.sh](https://github.com/santiagoyie/adapta/blob/main/entrypoint.sh)) **before** serving, gated by compose
 `depends_on: postgres (healthy)`. So the upgrade flow is:
 
 ```bash
@@ -124,10 +124,10 @@ the host:
 
 - **Tag by version + git SHA**, not just `latest`, so a rollback is a tag change:
   ```bash
-  docker build --target app    -t registry.example.com/brain-app:1.4.0-$(git rev-parse --short HEAD) .
-  docker build --target worker -t registry.example.com/brain-worker:1.4.0-$(git rev-parse --short HEAD) .
-  docker push registry.example.com/brain-app:1.4.0-...
-  docker push registry.example.com/brain-worker:1.4.0-...
+  docker build --target app    -t registry.example.com/adapta-app:1.4.0-$(git rev-parse --short HEAD) .
+  docker build --target worker -t registry.example.com/adapta-worker:1.4.0-$(git rev-parse --short HEAD) .
+  docker push registry.example.com/adapta-app:1.4.0-...
+  docker push registry.example.com/adapta-worker:1.4.0-...
   ```
 - **Pin the deployed tag** in an env-substituted compose override on the host;
   upgrade = change the tag + `up -d` (which re-runs migrations, §3).
@@ -184,7 +184,7 @@ default 2000), and the existing free-disk preflight covers training writes.
 The GPU is the default: the worker reserves the host GPU, so a bare
 `docker compose up` expects a CUDA GPU + the NVIDIA Container Toolkit. A GPU-less
 host serves RAG fine — `make up` detects the missing GPU and automatically layers
-[docker-compose.cpu.yml](https://github.com/santiagoyie/brainFromCero/blob/main/docker-compose.cpu.yml)
+[docker-compose.cpu.yml](https://github.com/santiagoyie/adapta/blob/main/docker-compose.cpu.yml)
 (`-f docker-compose.yml -f docker-compose.cpu.yml`) to drop the reservation; LoRA
 jobs are then rejected fast with a clear "GPU required" message. See the README
 "GPU" section and TODO §4.2b.
@@ -192,7 +192,7 @@ jobs are then rejected fast with a clear "GPU required" message. See the README
 ### 6.3 Base-model catalog (§3.4)
 
 A project's `base_model` is **validated against a single catalog** at creation
-(`brain/core/model_catalog.py` — the SSOT). Each entry declares **both** meanings
+(`adapta/core/model_catalog.py` — the SSOT). Each entry declares **both** meanings
 of the base in one place: the HuggingFace repo id the trainer/evaluator load and
 the GGUF the serving runtime loads. This guarantees a base that is selected can
 both train **and** serve — an unknown value is rejected with `400 invalid_request`
@@ -225,12 +225,12 @@ test, `tests/test_model_catalog.py`, asserts the two agree).
 
 ## 7. Observability (optional)
 
-- **Logs:** set `BRAIN_LOG_FORMAT=json` for structured JSON logs (app + worker);
+- **Logs:** set `ADAPTA_LOG_FORMAT=json` for structured JSON logs (app + worker);
   default is human-readable text. Container logs are rotated (`json-file`,
   10 MB × 5) — see §1 / compose `x-logging`.
 - **Metrics:** the app serves `GET /metrics` in Prometheus text format
   (request latency/count/errors + live queue depth). Toggle with
-  `BRAIN_METRICS_ENABLED`.
+  `ADAPTA_METRICS_ENABLED`.
 - **Prometheus + Grafana** ship as an **opt-in** compose profile (off by default):
   ```bash
   docker compose --profile observability up -d
@@ -249,12 +249,12 @@ builder stage) served same-origin via FastAPI `StaticFiles`.
 
 - **URL:** `http://<host>:8000/console/` (the bare `/` redirects there).
 - **First-run:** sign in with the seeded development admin (`admin@example.com`
-  / `admin12345`, gated by `BRAIN_SEED_DEFAULT_ADMIN`), or register — each
+  / `admin12345`, gated by `ADAPTA_SEED_DEFAULT_ADMIN`), or register — each
   registration creates a new organization with that account as its admin;
   teammates join an existing org via the invite flow (`POST /v1/auth/invite` →
   `accept-invite`).
 - **What it's for:** an operator drives the whole lifecycle — projects, file/
-  dataset upload, training + the eval gate, endpoints + `brn_` keys, a test
+  dataset upload, training + the eval gate, endpoints + `adp_` keys, a test
   playground, usage — in the browser. It is a thin client over the existing API;
   **the OpenAI-compatible API remains the only protocol customer *applications*
   call** (the console is not a second product surface).

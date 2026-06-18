@@ -5,7 +5,7 @@ Pure tests (no GPU/training): the record must pin the exact dataset bytes and th
 seed so a run can be reproduced/audited later.
 """
 
-from brain.training.provenance import build_provenance, sha256_file
+from adapta.training.provenance import build_provenance, sha256_file
 
 
 def test_dataset_hash_is_content_addressed(tmp_path):

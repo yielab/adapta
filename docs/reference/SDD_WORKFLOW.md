@@ -35,7 +35,7 @@ Every change to the HTTP API **must** follow this sequence. No exceptions.
 Validate before committing: `make validate-spec`.
 
 ### Step 2 — Generate models
-`make generate` writes Pydantic models to `brain/models/generated/models.py`. **Never hand-edit generated code** — fix the spec and regenerate. Commit the generated file.
+`make generate` writes Pydantic models to `adapta/models/generated/models.py`. **Never hand-edit generated code** — fix the spec and regenerate. Commit the generated file.
 
 ### Step 3 — Write logic
 Only after models exist, write handlers/services against the generated DTOs. Protocol adapters map + serialize only; business logic lives in services (see [API_EVOLUTION_PLAN.md](API_EVOLUTION_PLAN.md)).
@@ -92,7 +92,7 @@ specs/
 migrations/
 └── versions/*.py                        ← Pillar 2: schema contract (SSOT)
 
-brain/
+adapta/
 ├── models/generated/models.py           ← AUTO-GENERATED (Pillar 1) — do not edit
 ├── db/models.py                          ← SQLAlchemy models (Pillar 2 intent)
 └── training/                             ← training pipeline (Pillar 3)

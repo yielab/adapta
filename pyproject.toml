@@ -3,7 +3,7 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "brain-from-cero"
+name = "adapta"
 version = "0.1.0"
 description = "Self-hosted RAG + LoRA model-customization platform — your data never leaves your infrastructure"
 readme = "README.md"
@@ -46,9 +46,9 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/santiagoyie/brainFromCero"
-Repository = "https://github.com/santiagoyie/brainFromCero"
-Issues = "https://github.com/santiagoyie/brainFromCero/issues"
+Homepage = "https://github.com/santiagoyie/adapta"
+Repository = "https://github.com/santiagoyie/adapta"
+Issues = "https://github.com/santiagoyie/adapta/issues"
 
 [project.optional-dependencies]
 training = [
@@ -84,7 +84,7 @@ dev = [
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["brain*"]
+include = ["adapta*"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
@@ -120,12 +120,12 @@ ignore_missing_imports = true
 # Protected internals — wrapped, not rewritten (hard constraint #1)
 [[tool.mypy.overrides]]
 module = [
-    "brain.core.inference",
-    "brain.core.model_manager",
-    "brain.training.trainer",
-    "brain.training.evaluator",
-    "brain.core.gpu",
-    "brain.core.metrics",
+    "adapta.core.inference",
+    "adapta.core.model_manager",
+    "adapta.training.trainer",
+    "adapta.training.evaluator",
+    "adapta.core.gpu",
+    "adapta.core.metrics",
 ]
 ignore_errors = true
 
@@ -133,17 +133,17 @@ ignore_errors = true
 # Keeps the dependency arrows pointing inward: the domain core stays free of the
 # web/service layers, and services never reach up into the API layer.
 [tool.importlinter]
-root_package = "brain"
+root_package = "adapta"
 include_external_packages = true
 
 [[tool.importlinter.contracts]]
 name = "Domain is dependency-free of the outer layers"
 type = "forbidden"
-source_modules = ["brain.domain"]
-forbidden_modules = ["brain.api", "brain.services", "brain.core", "fastapi"]
+source_modules = ["adapta.domain"]
+forbidden_modules = ["adapta.api", "adapta.services", "adapta.core", "fastapi"]
 
 [[tool.importlinter.contracts]]
 name = "Services must not import the API layer"
 type = "forbidden"
-source_modules = ["brain.services"]
-forbidden_modules = ["brain.api"]
+source_modules = ["adapta.services"]
+forbidden_modules = ["adapta.api"]

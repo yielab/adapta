@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import pytest
 
-from brain.config import settings
+from adapta.config import settings
 
 pytestmark = pytest.mark.slow
 
@@ -26,7 +26,7 @@ skip_no_model = pytest.mark.skipif(not _HAS_MODEL, reason="no GGUF model present
 
 @skip_no_model
 async def test_chat_returns_completion_with_usage():
-    from brain.services.chat import chat
+    from adapta.services.chat import chat
 
     result = await chat(
         model_name=_MODEL_NAME,
@@ -46,7 +46,7 @@ async def test_chat_returns_completion_with_usage():
 
 @skip_no_model
 async def test_chat_stream_yields_tokens_and_usage():
-    from brain.services.chat import chat_stream
+    from adapta.services.chat import chat_stream
 
     chunks = []
     async for sse in chat_stream(

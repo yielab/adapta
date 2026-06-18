@@ -16,7 +16,7 @@ calls — the console is a convenience over the same API your applications use.
 
 The first screen offers **Sign in** and **Register**. On a development stack a
 default admin is already seeded (`admin@example.com` / `admin12345` — disable
-with `BRAIN_SEED_DEFAULT_ADMIN=0`), so you can sign in immediately.
+with `ADAPTA_SEED_DEFAULT_ADMIN=0`), so you can sign in immediately.
 
 Registering creates a **new organization with you as its admin** — fill in an
 org name, email, and password. After that, you land on the **Projects** page.
@@ -148,7 +148,7 @@ In the **Endpoint & keys** tab:
 
 - The **endpoint card** shows the endpoint **slug** — this is the value your
   application passes as the OpenAI `model` name.
-- **Create a key** — you get a `brn_…` key. **The full key is shown exactly
+- **Create a key** — you get a `adp_…` key. **The full key is shown exactly
   once**, on creation. Copy it then; afterward only a masked prefix is visible.
   Keys are scoped to this one endpoint.
 - A **copy-paste OpenAI SDK snippet** is generated with this server's URL, the

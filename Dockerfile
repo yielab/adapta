@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 # ──────────────────────────────────────────────────────────────────────────────
-# Brain From Cero — single multi-stage image (one source of truth).
+# Adapta — single multi-stage image (one source of truth).
 #
 #   base            OS + curl; venv on PATH (shared by every stage)
 #   builder         + compilers; venv with CPU-only torch + runtime deps + the
@@ -63,12 +63,12 @@ RUN pip install --no-cache-dir -e ".[dev]" --config-settings editable_mode=compa
 
 # ===== console-builder (thin operator console — Vite + Svelte) ================
 # Builds the static SPA to dist/, baked into the app image below. With the repo
-# bind-mounted, the host's brain/console/dist (from `npm run build`) wins instead.
+# bind-mounted, the host's adapta/console/dist (from `npm run build`) wins instead.
 FROM node:22-slim AS console-builder
 WORKDIR /build
-COPY brain/console/package.json brain/console/package-lock.json ./
+COPY adapta/console/package.json adapta/console/package-lock.json ./
 RUN npm ci --no-audit --prefer-offline
-COPY brain/console/ ./
+COPY adapta/console/ ./
 RUN npm run build:fast
 
 # ===== app ====================================================================
@@ -77,14 +77,14 @@ RUN npm run build:fast
 # the repo bind-mount shadows /app and uvicorn hot-reloads on edits.
 FROM base AS app
 COPY --from=builder /opt/venv /opt/venv
-COPY brain/ ./brain/
-COPY --from=console-builder /build/dist ./brain/console/dist/
+COPY adapta/ ./adapta/
+COPY --from=console-builder /build/dist ./adapta/console/dist/
 COPY specs/ ./specs/
 COPY migrations/ ./migrations/
 COPY alembic.ini entrypoint.sh Makefile pyproject.toml ./
 RUN chmod +x /app/entrypoint.sh \
     && mkdir -p /app/data/models /app/data/uploads /app/data/adapters /app/data/datasets
-ENV BRAIN_HOST=0.0.0.0 BRAIN_PORT=8000
+ENV ADAPTA_HOST=0.0.0.0 ADAPTA_PORT=8000
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
@@ -125,8 +125,8 @@ RUN git clone --depth 1 --branch ${LLAMA_CPP_TAG} https://github.com/ggerganov/l
 FROM base AS worker
 COPY --from=worker-builder /opt/venv /opt/venv
 COPY --from=worker-builder /opt/llamacpp /opt/llamacpp
-COPY brain/ ./brain/
+COPY adapta/ ./adapta/
 COPY migrations/ ./migrations/
 COPY alembic.ini ./
 RUN mkdir -p /app/data/models /app/data/adapters /app/data/datasets
-CMD ["python", "-m", "brain.worker.main"]
+CMD ["python", "-m", "adapta.worker.main"]
