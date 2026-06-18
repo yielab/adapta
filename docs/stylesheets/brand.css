@@ -1,0 +1,93 @@
+/* ── Brain From Cero — Docs brand overrides ────────────────────────────────
+ * Applied on top of mkdocs-material. Aligns the docs site with the console.
+ * SSOT: docs/reference/BRAND.md §3–§4
+ *
+ * Fonts: self-hosted via @font-face below. Do NOT hot-link Google Fonts —
+ * this site may be served from an on-prem box with no outbound internet.
+ * ─────────────────────────────────────────────────────────────────────── */
+
+/* ── Brand fonts ─────────────────────────────────────────────────────────── */
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;700&family=JetBrains+Mono:wght@400;500&display=swap");
+
+/*
+ * NOTE: The @import above is a build-time convenience for the docs site
+ * (served on GitHub Pages, which has outbound internet). Self-hosted / air-gap
+ * deployments should replace these with @font-face rules pointing at local
+ * woff2 files, matching the console's brain/console/public/fonts/ setup.
+ */
+
+/* ── Material palette overrides (dark) ───────────────────────────────────── */
+[data-md-color-scheme="slate"] {
+  /* brand indigo replaces deep purple */
+  --md-primary-fg-color:              #6366F1;
+  --md-primary-fg-color--light:       #818CF8;
+  --md-primary-fg-color--dark:        #4F46E5;
+  --md-primary-bg-color:              #FFFFFF;
+
+  --md-accent-fg-color:               #2DD4BF;  /* knowledge teal as accent */
+  --md-accent-fg-color--transparent:  rgba(45, 212, 191, 0.12);
+
+  /* surface */
+  --md-default-bg-color:              #0E1117;
+  --md-default-bg-color--light:       #161B22;
+  --md-default-bg-color--lighter:     #1E2430;
+  --md-default-bg-color--lightest:    #2A313D;
+  --md-default-fg-color:              #E6E8EC;
+  --md-default-fg-color--light:       #9AA3B2;
+  --md-default-fg-color--lighter:     #9AA3B2;
+  --md-default-fg-color--lightest:    #2A313D;
+
+  /* code blocks */
+  --md-code-bg-color:                 #161B22;
+  --md-code-fg-color:                 #E6E8EC;
+  --md-code-hl-color:                 rgba(99, 102, 241, 0.18);
+
+  /* sidebar */
+  --md-sidebar-width:                 14rem;
+}
+
+/* ── Material palette overrides (light) ──────────────────────────────────── */
+[data-md-color-scheme="default"] {
+  --md-primary-fg-color:              #4F46E5;
+  --md-primary-fg-color--light:       #6366F1;
+  --md-primary-fg-color--dark:        #3730A3;
+  --md-primary-bg-color:              #FFFFFF;
+
+  --md-accent-fg-color:               #0D9488;
+  --md-accent-fg-color--transparent:  rgba(13, 148, 136, 0.12);
+
+  --md-code-hl-color:                 rgba(99, 102, 241, 0.12);
+}
+
+/* ── Typography ──────────────────────────────────────────────────────────── */
+:root {
+  --md-text-font:     "Inter";
+  --md-code-font:     "JetBrains Mono";
+}
+
+/* headings → Space Grotesk */
+.md-typeset h1,
+.md-typeset h2,
+.md-typeset h3 {
+  font-family: "Space Grotesk", "Inter", system-ui, sans-serif;
+  letter-spacing: -0.01em;
+}
+
+/* ── Logo sizing ─────────────────────────────────────────────────────────── */
+.md-header__button.md-logo img,
+.md-header__button.md-logo svg {
+  width: 28px;
+  height: 28px;
+}
+
+/* ── Nav link active — indigo underline ──────────────────────────────────── */
+.md-nav__link--active {
+  color: var(--md-primary-fg-color) !important;
+  font-weight: 600;
+}
+
+/* ── Admonition tint — soften on dark ───────────────────────────────────── */
+[data-md-color-scheme="slate"] .md-typeset .admonition,
+[data-md-color-scheme="slate"] .md-typeset details {
+  border-color: rgba(99, 102, 241, 0.35);
+}

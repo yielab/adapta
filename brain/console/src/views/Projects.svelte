@@ -223,11 +223,11 @@
     {#each projects as p (p.id)}
       {@const stage = p.summary?.stage}
       {@const hint = stageHint(p)}
-      <div class="card project">
+      <div class="card project {p.type}">
         <button class="open" onclick={() => navigate("/projects/" + p.id)} aria-label={"Open " + p.name}>
           <div class="row between" style="margin-bottom: 8px;">
             <span class="name">{p.name}</span>
-            <span class="badge {p.type === 'rag' ? 'blue' : 'amber'}">{typeLabel(p.type)}</span>
+            <span class="badge {p.type === 'rag' ? 'knowledge' : 'behavior'}">{typeLabel(p.type)}</span>
           </div>
           <!-- C2.2: stage as primary status line -->
           <div class="stage-row {stageCls(stage)}">
@@ -271,7 +271,7 @@
       <h2 style="margin: 0;">How do you want to specialize your model?</h2>
       <div class="choice-grid">
         <button
-          class="choice"
+          class="choice knowledge"
           class:selected={createType === "rag"}
           aria-pressed={createType === "rag"}
           onclick={() => (createType = "rag")}
@@ -280,7 +280,7 @@
           <div class="d">Answers grounded in your documents, with citations. The weights don't change.</div>
         </button>
         <button
-          class="choice"
+          class="choice behavior"
           class:selected={createType === "finetune"}
           aria-pressed={createType === "finetune"}
           onclick={() => (createType = "finetune")}
@@ -386,6 +386,9 @@
     gap: 14px;
   }
   .project { padding: 16px; }
+  /* mode left-border stripe — the visual signature of knowledge vs behavior */
+  .project.rag      { border-left: 3px solid var(--knowledge); }
+  .project.finetune { border-left: 3px solid var(--behavior); }
   .open {
     display: block;
     width: 100%;
@@ -398,7 +401,7 @@
   .open:hover:not(:disabled) { border-color: transparent; }
   .name { font-size: 15px; font-weight: 600; }
 
-  /* Stage row (C2.2) */
+  /* Stage row (C2.2) — colors aligned to brand tokens */
   .stage-row {
     display: flex;
     align-items: center;
@@ -412,16 +415,16 @@
     background: currentColor;
   }
   .stage-label { font-size: 12px; font-weight: 600; }
-  .stage-live      { color: #16a34a; }
-  .stage-ready     { color: #2563eb; }
-  .stage-training  { color: #7c3aed; }
-  .stage-blocked   { color: #dc2626; }
-  .stage-indexing  { color: #d97706; }
-  .stage-waiting   { color: #94a3b8; }
+  .stage-live      { color: var(--green); }
+  .stage-ready     { color: var(--brand); }
+  .stage-training  { color: var(--behavior); }
+  .stage-blocked   { color: var(--red); }
+  .stage-indexing  { color: var(--amber); }
+  .stage-waiting   { color: var(--muted); }
 
   .hint {
     font-size: 11.5px;
-    color: #64748b;
+    color: var(--muted);
     margin: 2px 0 6px;
   }
   .counts {
@@ -432,8 +435,9 @@
   }
   .counts span {
     font-size: 11px;
-    color: #64748b;
-    background: #f1f5f9;
+    color: var(--muted);
+    background: var(--panel-2);
+    border: 1px solid var(--border);
     border-radius: 4px;
     padding: 1px 6px;
   }
@@ -443,22 +447,22 @@
     font-size: 11px;
     font-weight: 400;
     margin-left: 8px;
-    color: var(--accent, #4f46e5);
+    color: var(--accent);
     text-decoration: none;
   }
   .model-detail {
     margin-top: 8px;
     padding: 10px 12px;
-    background: #f8fafc;
-    border: 1px solid #e2e8f0;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
     border-radius: 6px;
     font-size: 12.5px;
   }
   .avail-ok {
     display: inline-block;
-    background: #f0fdf4;
-    color: #16a34a;
-    border: 1px solid #bbf7d0;
+    background: var(--green-weak);
+    color: var(--green);
+    border: 1px solid var(--green);
     border-radius: 4px;
     padding: 1px 7px;
     font-size: 11px;
@@ -466,27 +470,27 @@
     margin-bottom: 6px;
   }
   .avail-warn {
-    background: #fef2f2;
-    color: #dc2626;
-    border: 1px solid #fecaca;
+    background: var(--red-weak);
+    color: var(--red);
+    border: 1px solid var(--red);
     border-radius: 4px;
     padding: 5px 8px;
     font-size: 11.5px;
     margin-bottom: 6px;
   }
-  .use-case-line { margin: 0 0 6px; color: #334155; }
+  .use-case-line { margin: 0 0 6px; color: var(--text); }
   .model-meta {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: 8px;
   }
-  .meta-group { display: flex; align-items: center; gap: 4px; color: #475569; }
-  .meta-item { color: #64748b; }
+  .meta-group { display: flex; align-items: center; gap: 4px; color: var(--muted); }
+  .meta-item { color: var(--muted); }
   .chip {
     display: inline-block;
-    background: #eff6ff;
-    color: #1d4ed8;
+    background: var(--brand-weak);
+    color: var(--brand);
     border-radius: 4px;
     padding: 1px 6px;
     font-size: 11px;

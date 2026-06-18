@@ -10,8 +10,8 @@
 
   let { project }: { project: Project } = $props();
 
-  const DOCS_URL =
-    "https://github.com/santiagoyie/brainFromCero/blob/main/docs/user-guide/operator-console.md";
+  import { BRAND } from "../lib/brand";
+  const DOCS_URL = BRAND.docs;
 
   let files = $state<ProjectFile[]>([]);
   let loading = $state(true);

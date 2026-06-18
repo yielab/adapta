@@ -13,18 +13,21 @@ strict: true
 
 theme:
   name: material
+  logo: assets/logo.svg
+  favicon: assets/favicon.svg
+  font: false   # fonts loaded in stylesheets/brand.css (Space Grotesk / Inter / JetBrains Mono)
   palette:
     - media: "(prefers-color-scheme: dark)"
       scheme: slate
-      primary: deep purple
-      accent: purple
+      primary: deep purple     # named color (brand.css overrides to exact #6366F1 via CSS vars)
+      accent: teal
       toggle:
         icon: material/weather-night
         name: Switch to light mode
     - media: "(prefers-color-scheme: light)"
       scheme: default
       primary: deep purple
-      accent: purple
+      accent: teal
       toggle:
         icon: material/weather-sunny
         name: Switch to dark mode
@@ -39,6 +42,9 @@ theme:
     - content.code.annotate
     - search.highlight
     - search.suggest
+
+extra_css:
+  - stylesheets/brand.css
 
 plugins:
   - search
@@ -99,6 +105,7 @@ nav:
       - Code reference: developer-guide/code-reference.md
   - Reference:
       - Product definition: reference/PRODUCT_DEFINITION.md
+      - Brand: reference/BRAND.md
       - API reference: reference/api.md
       - Operations runbook: reference/OPERATIONS.md
       - SDD workflow: reference/SDD_WORKFLOW.md

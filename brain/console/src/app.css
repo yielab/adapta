@@ -1,21 +1,4 @@
-:root {
-  --bg: #0f1115;
-  --panel: #171a21;
-  --panel-2: #1e222b;
-  --border: #2a2f3a;
-  --text: #e6e8ec;
-  --muted: #9aa3b2;
-  --accent: #5b8cff;
-  --accent-weak: #1c2740;
-  --green: #36c08a;
-  --green-weak: #12302440;
-  --red: #ff5d6c;
-  --red-weak: #3a1a20;
-  --amber: #e0a93b;
-  --radius: 10px;
-  --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
-  --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-}
+@import './tokens.css';
 
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; }
@@ -28,8 +11,8 @@ body {
 }
 a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
-h1 { font-size: 22px; margin: 0 0 4px; }
-h2 { font-size: 16px; margin: 0 0 12px; font-weight: 600; }
+h1 { font-size: 22px; margin: 0 0 4px; font-family: var(--display); font-weight: 700; }
+h2 { font-size: 16px; margin: 0 0 12px; font-weight: 600; font-family: var(--display); }
 h3 { font-size: 13px; margin: 0 0 8px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
 p { margin: 0 0 10px; }
 small, .muted { color: var(--muted); }
@@ -91,6 +74,9 @@ label { display: block; font-size: 13px; color: var(--muted); margin: 0 0 5px; }
 .badge.red { color: var(--red); border-color: var(--red); background: var(--red-weak); }
 .badge.amber { color: var(--amber); border-color: var(--amber); }
 .badge.blue { color: var(--accent); border-color: var(--accent); background: var(--accent-weak); }
+/* mode badges */
+.badge.knowledge { color: var(--knowledge); border-color: var(--knowledge); background: var(--knowledge-weak); }
+.badge.behavior  { color: var(--behavior);  border-color: var(--behavior);  background: var(--behavior-weak); }
 .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
 
 .mono { font-family: var(--mono); font-size: 13px; }
@@ -146,6 +132,9 @@ details.help .help-body code {
   border: 1px solid var(--border); border-radius: var(--radius); background: var(--panel-2);
 }
 .choice.selected { border-color: var(--accent); background: var(--accent-weak); }
+/* mode-specific choice selection */
+.choice.knowledge.selected { border-color: var(--knowledge); background: var(--knowledge-weak); }
+.choice.behavior.selected  { border-color: var(--behavior);  background: var(--behavior-weak); }
 .choice .t { font-size: 15px; font-weight: 600; color: var(--text); margin-bottom: 4px; }
 .choice .d { font-size: 13px; color: var(--muted); }
 

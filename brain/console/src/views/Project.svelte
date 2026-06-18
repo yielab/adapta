@@ -73,7 +73,7 @@
     <div>
       <div class="row" style="gap: 10px;">
         <h1 style="margin: 0;">{project.name}</h1>
-        <span class="badge {project.type === 'rag' ? 'blue' : 'amber'}">{typeLabel(project.type)}</span>
+        <span class="badge {project.type === 'rag' ? 'knowledge' : 'behavior'}">{typeLabel(project.type)}</span>
         <StatusBadge status={project.status} />
       </div>
       <p class="muted" style="margin: 6px 0 0;">

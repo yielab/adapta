@@ -1009,6 +1009,133 @@ thin client over the **existing** API — every screen maps 1:1 to an endpoint a
 
 ---
 
+## B. Brand rollout — apply the Brain From Cero brand system ✅ DONE (2026-06-15)
+
+> **Contract for this workstream:** the brand is defined in [docs/reference/BRAND.md](docs/reference/BRAND.md)
+> (📖 Reference, the SSOT for color/type/voice/logo). These tasks *apply* it; if a value needs to
+> change, change `BRAND.md` first, then the code — same discipline as the three SDD contracts.
+>
+> **Why P1, not P0:** nothing here blocks a trustworthy `main` (no gate fails today). But the
+> console, docs, and API currently disagree visually — console accent `#5b8cff`, docs deep-purple,
+> no logo, name hardcoded in ~14 files — and this is the first-impression surface for the first
+> customer. Ship it before that customer sees it.
+>
+> **Sequencing:** B1 (tokens) is the keystone — do it first; B2–B5 consume the tokens and can then
+> run in parallel. B6 is the gate that closes the workstream. No new runtime deps; webfonts are
+> self-hosted woff2 (on-prem boxes may have no outbound internet — never hot-link Google Fonts).
+
+### B1. `[FE]` Design tokens — one source for color & type (P1) — ✅ DONE (2026-06-15)
+
+- **Context.** The console palette is hardcoded in `brain/console/src/app.css` (`--accent:#5b8cff`,
+  `--green:#36c08a`, …). The brand unifies on Indigo `#6366F1`, adds the two **mode** hues
+  (Knowledge teal `#2DD4BF`, Behavior purple `#A855F7`), and switches the type stack to
+  Space Grotesk / Inter / JetBrains Mono. See [BRAND.md §3–§4, §7](docs/reference/BRAND.md).
+- **Scope.** Token plumbing + webfont self-hosting only. No component restyling yet (that's B2/B3);
+  existing `var(--accent)`/`var(--green)` call sites keep working via back-compat aliases.
+- **Steps.**
+  1. Create `brain/console/src/tokens.css` with the full token block from [BRAND.md §7](docs/reference/BRAND.md)
+     (keep `--accent`/`--accent-weak` as aliases of `--brand` so no call site breaks).
+  2. Import `tokens.css` at the top of `app.css`; delete the old `:root` block from `app.css`.
+  3. Self-host woff2 for Space Grotesk (500/700), Inter (400/500/600), JetBrains Mono (400/500)
+     under `brain/console/public/fonts/`; add `@font-face` rules (`font-display: swap`).
+  4. Set `body { font-family: var(--sans) }`, headings/`.brand` to `var(--display)`.
+- **Files.** `brain/console/src/tokens.css` (new), `brain/console/src/app.css`, `brain/console/public/fonts/*`.
+- **Contract impact.** None (UI-only).
+- **Acceptance.** `make up` → console renders in Indigo + Inter/Space Grotesk with fonts served
+  from `/fonts/` (no network calls to Google in devtools); every existing view still styled (no
+  unstyled/again-default elements); `--accent` aliases resolve.
+
+### B2. `[FE]` Logo, favicon & shell — the lockup everywhere a user looks (P1) — ✅ DONE (2026-06-15)
+
+- **Context.** No logo exists; the brand is text-only in `Layout.svelte:36` and `Login.svelte:89`;
+  `index.html` has no favicon, theme-color, or social/OG tags.
+- **Scope.** The "zero node" mark + wordmark lockup, favicon/touch-icon set, and head metadata.
+- **Steps.**
+  1. Save the canonical mark from [BRAND.md §5.1](docs/reference/BRAND.md) as
+     `brain/console/public/logo.svg`; derive `favicon.svg`, `favicon.ico` (32), `apple-touch-icon.png`
+     (180), `icon-512.png` (maskable).
+  2. `index.html`: add `<link rel="icon">` (svg + ico), `apple-touch-icon`, `<meta name="theme-color" content="#0E1117">`,
+     and Open Graph/Twitter tags (title, description, `og:image` = a 1200×630 brand card).
+  3. `Layout.svelte`: replace the text `.brand` with the mark + wordmark lockup; style per [BRAND.md §5.2](docs/reference/BRAND.md).
+  4. `Login.svelte`: hero with mark + wordmark + primary tagline *"Your model. Your data. Your servers."*
+- **Files.** `brain/console/public/*`, `brain/console/index.html`, `brain/console/src/components/Layout.svelte`,
+  `brain/console/src/views/Login.svelte`.
+- **Contract impact.** None.
+- **Acceptance.** Favicon shows in the browser tab; login + sidebar show the lockup; sharing the
+  console URL unfurls a branded card (validate OG tags); Lighthouse "has a valid theme-color" passes.
+
+### B3. `[FE]` Mode color-coding — make "knowledge vs behavior" visible (P1) — ✅ DONE (2026-06-15)
+
+- **Context.** The product's core shape is *give it knowledge (RAG)* vs *change how it behaves
+  (fine-tune)*, but the UI renders both in the same neutral/blue. The brand encodes the two modes
+  as teal vs purple (and composition as both) — see [BRAND.md §3.2](docs/reference/BRAND.md).
+- **Scope.** Apply mode hues to the surfaces that already distinguish the modes: project cards
+  (stage-aware, from §C2.2), the `.choice` grid (the "specialize your model" picker), model picker,
+  and the endpoint composition explainer (§C3.2).
+- **Steps.** Add `.mode-knowledge` / `.mode-behavior` / `.mode-both` accent classes (left-border +
+  badge tint using `--knowledge*/--behavior*`); apply on project cards and the choice grid; keep the
+  locked copy — *Give it knowledge* / *Change how it behaves* — unchanged ([BRAND.md §2 rule 4](docs/reference/BRAND.md)).
+- **Files.** `brain/console/src/app.css`, project list/card components, the RAG-vs-fine-tune choice
+  view, endpoint/composition view.
+- **Contract impact.** None.
+- **Acceptance.** A glance at the projects list distinguishes knowledge / behavior / composed
+  projects by color; the choice grid color-previews each path; no copy calls RAG "training."
+
+### B4. `[DOCS]` Docs site — match the console (P1) — ✅ DONE (2026-06-15)
+
+- **Context.** `mkdocs.yml` uses Material's `deep purple`; no logo/favicon/custom CSS. It should
+  read as the same product as the console.
+- **Scope.** MkDocs palette + brand fonts + logo/favicon via a custom stylesheet. Keep `strict: true`.
+- **Steps.**
+  1. Add `docs/stylesheets/brand.css` overriding Material's `--md-primary-fg-color` /
+     `--md-accent-fg-color` to Indigo and `--md-code-*` neutrals to the brand surfaces; pull in the
+     three brand webfonts (self-hosted under `docs/assets/fonts/`).
+  2. `mkdocs.yml`: `extra_css: [stylesheets/brand.css]`, set `theme.logo` + `theme.favicon` to the
+     mark, retune the `palette` primary/accent toward indigo, set `theme.font: false` (self-hosted).
+  3. Wire `BRAND.md` into the nav (`Reference → Brand`).
+- **Files.** `mkdocs.yml`, `docs/stylesheets/brand.css` (new), `docs/assets/*`, nav entry.
+- **Contract impact.** Docs build is a CI gate — `mkdocs build --strict` must stay green.
+- **Acceptance.** `make docs-serve` shows indigo theme + brand fonts + logo + favicon; `BRAND.md`
+  reachable from nav; `mkdocs build --strict` passes (no broken links).
+
+### B5. `[BE+DOCS]` API, README & package metadata — branded touchpoints (P1) — ✅ DONE (2026-06-15)
+
+- **Context.** `specs/openapi.yaml info` block, the README header, and `pyproject.toml` carry the
+  bare functional name. These are external first-impressions (Swagger UI, GitHub front door, PyPI).
+- **Scope.** Copy/title/description + Swagger UI branding. No endpoint/schema changes.
+- **Steps.**
+  1. `specs/openapi.yaml`: keep `title: Brain From Cero API`; expand `info.description` with the
+     positioning line + two-mode framing from [BRAND.md §1](docs/reference/BRAND.md); add
+     `info.contact`/`info.x-logo` (Swagger UI / redoc logo). Run `make generate` + `make validate-spec`.
+  2. README: branded header (logo, primary tagline, positioning line) above the existing badges;
+     keep the technical body verbatim ([BRAND.md §2](docs/reference/BRAND.md) voice — don't add hype).
+  3. `pyproject.toml`: align `description` to the positioning line.
+- **Files.** `specs/openapi.yaml`, `brain/models/generated/models.py` (regenerated), `README.md`, `pyproject.toml`.
+- **Contract impact.** **Pillar 1** — spec is the SSOT. Change spec → `make generate` →
+  `make check-models` must be clean → `make test-contracts` stays green (zero 5xx).
+- **Acceptance.** `make ci` green incl. `check-models`; Swagger UI at `/docs` (or the rendered API
+  page) shows the brand logo + the new description; README header on-brand; no `detail=str(e)` introduced.
+
+### B6. `[FE]` Voice pass + brand QA gate — closes the workstream (P1) — ✅ DONE (2026-06-15)
+
+- **Context.** Tokens and assets aren't a brand until the *copy* matches the voice and the result is
+  verified across themes/sizes.
+- **Scope.** Microcopy/empty-state/error voice pass + accessibility & cross-surface QA.
+- **Steps.**
+  1. Sweep console empty states, button labels, and toast/error copy against [BRAND.md §2](docs/reference/BRAND.md)
+     (verbs not adverbs; honest typed-error messages; locked two-mode framing).
+  2. Centralize the product name/tagline: `brain/console/src/lib/brand.ts` (console) + reuse
+     `brain/config.py` for server strings; replace the ~14 hardcoded occurrences.
+  3. QA: AA contrast on every text/bg pair (BRAND.md §3.4), keyboard focus visible in indigo, dark
+     **and** light correctness, 720px responsive breakpoint, favicon across Chrome/Firefox/Safari.
+- **Files.** `brain/console/src/lib/brand.ts` (new), console views/components, `brain/config.py`.
+- **Contract impact.** None.
+- **Acceptance.** No off-brand hype copy remains (spot-check list in PR); name/tagline come from one
+  constant; axe/Lighthouse a11y ≥ 95 with no contrast failures; screenshots of login, projects (all
+  three mode colors), endpoint, and docs attached to the PR showing one coherent brand.
+
+---
+
 ## 6. Future — deferred, not promised
 
 - [ ] Multimodal RAG (CLIP image *retrieval*) — distinct from §V (which is image *understanding* via VLM fine-tune); revisit after §V ships

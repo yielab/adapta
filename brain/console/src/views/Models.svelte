@@ -132,18 +132,18 @@
 
   .page-header { margin-bottom: 1.5rem; }
   .page-header h1 { font-size: 1.5rem; font-weight: 700; margin: 0 0 .4rem; }
-  .page-sub { color: var(--text-muted); margin: 0; font-size: .875rem; }
+  .page-sub { color: var(--muted); margin: 0; font-size: .875rem; }
 
   .center { display: flex; justify-content: center; padding: 3rem; }
-  .error-box { background: #3d1515; border: 1px solid #7f2828; color: #f98080; padding: .75rem 1rem; border-radius: 6px; }
+  .error-box { background: var(--red-weak); border: 1px solid var(--red); color: var(--red); padding: .75rem 1rem; border-radius: 6px; }
 
   .picker-guide {
-    background: var(--surface-2, #1e2030);
-    border: 1px solid var(--border, #2d3148);
+    background: var(--panel-2);
+    border: 1px solid var(--border);
     border-radius: 8px;
     padding: .85rem 1.1rem;
     font-size: .85rem;
-    color: var(--text-muted);
+    color: var(--muted);
     margin-bottom: 1.5rem;
     line-height: 1.6;
   }
@@ -153,8 +153,8 @@
   .model-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 1rem; }
 
   .model-card {
-    background: var(--surface-1, #161720);
-    border: 1px solid var(--border, #2d3148);
+    background: var(--panel);
+    border: 1px solid var(--border);
     border-radius: 10px;
     padding: 1.1rem 1.2rem;
     display: flex;
@@ -170,23 +170,23 @@
 
   .modality-badge {
     font-size: .7rem; padding: .15rem .45rem; border-radius: 4px;
-    background: #1e3a5f; color: #7ec8f5;
+    background: var(--knowledge-weak); color: var(--knowledge);
     text-transform: uppercase; letter-spacing: .04em;
   }
-  .modality-badge.vision { background: #3d2b00; color: #f5c842; }
+  .modality-badge.vision { background: var(--behavior-weak); color: var(--behavior); }
 
   .type-badge {
     font-size: .7rem; padding: .15rem .45rem; border-radius: 4px;
-    background: var(--surface-2, #1e2030); color: var(--text-muted);
-    border: 1px solid var(--border, #2d3148);
+    background: var(--panel-2); color: var(--muted);
+    border: 1px solid var(--border);
   }
 
   .avail-badge {
     font-size: .72rem; font-weight: 600; padding: .2rem .55rem; border-radius: 5px;
     white-space: nowrap; flex-shrink: 0;
   }
-  .avail-badge.available { background: #0f2e1a; color: #4caf82; border: 1px solid #1e5c38; }
-  .avail-badge.missing   { background: #2e1a0f; color: #e0936a; border: 1px solid #5c3a1e; }
+  .avail-badge.available { background: var(--green-weak); color: var(--green); border: 1px solid var(--green); }
+  .avail-badge.missing   { background: var(--red-weak); color: var(--amber); border: 1px solid var(--amber); }
 
   .use-case { margin: 0; font-size: .875rem; color: var(--text); line-height: 1.5; }
 
@@ -194,25 +194,25 @@
   .chip {
     font-size: .7rem; padding: .18rem .5rem; border-radius: 4px; font-weight: 500;
   }
-  .chip-blue   { background: #1e3a5f; color: #7ec8f5; }
-  .chip-purple { background: #2e1a5c; color: #b89df5; }
-  .chip-green  { background: #0f2e1a; color: #4caf82; }
-  .chip-orange { background: #3d2b00; color: #f5c842; }
+  .chip-blue   { background: var(--knowledge-weak); color: var(--knowledge); }
+  .chip-purple { background: var(--behavior-weak);  color: var(--behavior); }
+  .chip-green  { background: var(--green-weak);     color: var(--green); }
+  .chip-orange { background: var(--behavior-weak);  color: var(--amber); }
 
   .resources { display: flex; flex-wrap: wrap; gap: .75rem; }
   .resource-item { display: flex; flex-direction: column; gap: .1rem; }
-  .resource-label { font-size: .68rem; text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted); }
+  .resource-label { font-size: .68rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
   .resource-val { font-size: .8rem; font-weight: 600; color: var(--text); }
 
-  .notes { margin: 0; font-size: .78rem; color: var(--text-muted); font-style: italic; }
+  .notes { margin: 0; font-size: .78rem; color: var(--muted); font-style: italic; }
 
   .download-hint {
     margin: 0; font-size: .78rem;
-    background: #2e1a0f; border: 1px solid #5c3a1e; color: #e0936a;
+    background: var(--amber-weak); border: 1px solid var(--amber); color: var(--amber);
     padding: .5rem .75rem; border-radius: 5px;
   }
-  .download-hint a { color: #f5a87c; }
+  .download-hint a { color: var(--amber); }
 
   .hf-id { display: flex; align-items: center; gap: .5rem; }
-  .hf-id code { font-size: .75rem; color: var(--text-muted); }
+  .hf-id code { font-size: .75rem; color: var(--muted); }
 </style>

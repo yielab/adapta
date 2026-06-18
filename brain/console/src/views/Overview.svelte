@@ -222,7 +222,7 @@
   .pipeline { display: flex; flex-direction: column; gap: .5rem; }
   .pipeline-step {
     display: flex; align-items: flex-start; gap: .75rem;
-    padding: .65rem .85rem; border-radius: 7px; border: 1px solid var(--border, #2d3148);
+    padding: .65rem .85rem; border-radius: 7px; border: 1px solid var(--border);
   }
   .step-icon { font-size: 1rem; flex-shrink: 0; width: 1.1rem; text-align: center; margin-top: .05rem; }
   .step-body { display: flex; flex-direction: column; gap: .2rem; flex: 1; }
@@ -231,24 +231,24 @@
   .step-cta {
     margin-top: .2rem; font-size: .78rem;
     background: none; border: none; padding: 0;
-    color: var(--accent, #4a7cf7); cursor: pointer; text-align: left;
+    color: var(--accent); cursor: pointer; text-align: left;
     text-decoration: underline;
   }
   .step-cta:hover { opacity: .8; }
 
-  .step-done    { background: #0f2e1a18; }
-  .step-done .step-icon { color: #4caf82; }
-  .step-partial { background: #1e3a5f18; }
-  .step-partial .step-icon { color: #7ec8f5; }
+  .step-done    { background: var(--green-weak); }
+  .step-done .step-icon { color: var(--green); }
+  .step-partial { background: var(--brand-weak); }
+  .step-partial .step-icon { color: var(--brand); }
   .step-pending { background: transparent; }
   .step-pending .step-icon { color: var(--muted); }
-  .step-blocked { background: #3d151518; border-color: #7f282855; }
-  .step-blocked .step-icon { color: #f98080; }
+  .step-blocked { background: var(--red-weak); border-color: var(--red); }
+  .step-blocked .step-icon { color: var(--red); }
 
   /* Snapshot */
   .snapshot-card {
-    background: var(--surface-1, #161720);
-    border: 1px solid var(--border, #2d3148);
+    background: var(--panel);
+    border: 1px solid var(--border);
     border-radius: 8px; padding: .85rem 1rem;
     display: flex; flex-direction: column; gap: .45rem;
   }
@@ -261,7 +261,7 @@
   .data-chips { display: flex; flex-wrap: wrap; gap: .5rem; }
   .data-chip {
     font-size: .8rem; padding: .35rem .65rem; border-radius: 5px;
-    background: var(--panel-2, #1e2030); border: 1px solid var(--border, #2d3148);
+    background: var(--panel-2); border: 1px solid var(--border);
     color: var(--muted);
   }
   .data-chip strong { color: var(--text); }

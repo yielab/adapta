@@ -390,8 +390,7 @@
                 <tr>
                   <td style="font-size: .8rem; text-transform: capitalize;">{name.replace(/_/g, " ")}</td>
                   <td>
-                    <span class="role-badge role-{check.status === 'ok' ? 'admin' : 'viewer'}"
-                      style={check.status !== 'ok' ? 'background:#3d1515;color:#f98080;' : ''}>
+                    <span class="role-badge {check.status === 'ok' ? 'role-admin' : 'health-fail'}">
                       {check.status}
                     </span>
                   </td>
@@ -455,8 +454,8 @@
     display: flex;
     flex-direction: column;
     gap: .25rem;
-    background: var(--surface-1, #161720);
-    border: 1px solid var(--border, #2d3148);
+    background: var(--panel);
+    border: 1px solid var(--border);
     border-radius: 8px;
     padding: .5rem;
   }
@@ -472,54 +471,55 @@
     font-size: .875rem;
     transition: background .15s, color .15s;
   }
-  .tab-btn:hover { background: var(--panel-2, #1e2030); color: var(--text); }
-  .tab-btn.active { background: var(--accent-weak, #1e2a50); color: var(--text); font-weight: 600; }
+  .tab-btn:hover { background: var(--panel-2); color: var(--text); }
+  .tab-btn.active { background: var(--accent-weak); color: var(--text); font-weight: 600; }
 
   .tab-content {
-    background: var(--surface-1, #161720);
-    border: 1px solid var(--border, #2d3148);
+    background: var(--panel);
+    border: 1px solid var(--border);
     border-radius: 8px;
     padding: 1.5rem;
     min-height: 200px;
   }
 
-  .coming-soon { color: var(--text-muted, #888); font-size: .875rem; }
+  .coming-soon { color: var(--muted); font-size: .875rem; }
 
   .section-h { font-size: 1rem; font-weight: 700; margin: 0 0 1rem; }
   .sub-h { font-size: .875rem; font-weight: 600; margin: 1.25rem 0 .65rem; color: var(--text); }
 
   .info-row {
     display: flex; align-items: center; gap: .75rem;
-    padding: .55rem 0; border-bottom: 1px solid var(--border, #2d3148); margin-bottom: .5rem;
+    padding: .55rem 0; border-bottom: 1px solid var(--border); margin-bottom: .5rem;
   }
   .info-label { font-size: .72rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); width: 80px; flex-shrink: 0; }
 
   .form-stack { display: flex; flex-direction: column; gap: .75rem; max-width: 380px; }
   .field { display: flex; flex-direction: column; gap: .3rem; }
   .field label { font-size: .8rem; color: var(--muted); }
-  .field-error { font-size: .78rem; color: #f98080; margin: -.3rem 0 0; }
+  .field-error { font-size: .78rem; color: var(--red); margin: -.3rem 0 0; }
 
   .members-table { width: 100%; border-collapse: collapse; margin-bottom: .75rem; }
-  .members-table th { font-size: .72rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); padding: .4rem .5rem; text-align: left; border-bottom: 1px solid var(--border, #2d3148); }
-  .members-table td { padding: .5rem; border-bottom: 1px solid var(--border, #2d314820); }
+  .members-table th { font-size: .72rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); padding: .4rem .5rem; text-align: left; border-bottom: 1px solid var(--border); }
+  .members-table td { padding: .5rem; border-bottom: 1px solid var(--border); }
   .role-badge { font-size: .72rem; padding: .15rem .45rem; border-radius: 4px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
-  .role-admin  { background: #1a2a1a; color: #6fcf97; }
-  .role-member { background: #1e2030; color: var(--muted); }
-  .role-viewer { background: #1e2030; color: var(--muted); opacity: .7; }
+  .role-admin  { background: var(--green-weak); color: var(--green); }
+  .role-member { background: var(--panel-2); color: var(--muted); }
+  .role-viewer { background: var(--panel-2); color: var(--muted); opacity: .7; }
+  .health-fail { background: var(--red-weak); color: var(--red); }
 
   .token-box {
     margin-top: 1rem; padding: .85rem 1rem;
-    background: #1c1a0e; border: 1px solid #5c4a0055; border-radius: 8px;
+    background: var(--amber-weak); border: 1px solid var(--border); border-radius: 8px;
     display: flex; flex-direction: column; gap: .55rem;
   }
-  .token-label { font-size: .75rem; color: #e2c97e; font-weight: 600; }
+  .token-label { font-size: .75rem; color: var(--amber); font-weight: 600; }
   .token-value { font-size: .78rem; word-break: break-all; color: var(--text); }
 
   /* Platform settings */
   .section-note { font-size: .8rem; color: var(--muted); margin: -.25rem 0 1.25rem; line-height: 1.5; }
   .setting-row {
     display: flex; align-items: flex-start; gap: .85rem;
-    padding: .65rem 0; border-bottom: 1px solid var(--border, #2d314820);
+    padding: .65rem 0; border-bottom: 1px solid var(--border);
   }
   .setting-meta { flex: 1; }
   .setting-label { font-size: .82rem; font-weight: 600; display: flex; align-items: center; gap: .45rem; }
@@ -528,16 +528,16 @@
   .setting-ctrl  { display: flex; align-items: center; gap: .4rem; flex-shrink: 0; }
   .setting-input {
     width: 80px; padding: .3rem .45rem; border-radius: 5px; font-size: .82rem;
-    background: var(--surface-2, #1e2030); border: 1px solid var(--border, #2d3148);
+    background: var(--panel-2); border: 1px solid var(--border);
     color: var(--text); text-align: right;
   }
   .source-badge {
     font-size: .65rem; padding: .1rem .35rem; border-radius: 3px;
     font-weight: 600; text-transform: uppercase; letter-spacing: .04em;
   }
-  .source-default  { background: #1e2030; color: var(--muted); }
-  .source-env      { background: #1e2a0e; color: #a6d477; }
-  .source-override { background: #1e1e3a; color: #7ec8f5; }
+  .source-default  { background: var(--panel-2); color: var(--muted); }
+  .source-env      { background: var(--green-weak); color: var(--green); }
+  .source-override { background: var(--brand-weak); color: var(--brand); }
   .env-lock { font-size: .75rem; }
 
   @media (max-width: 640px) {

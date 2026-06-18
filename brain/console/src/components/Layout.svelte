@@ -3,6 +3,7 @@
   import { session, setActiveTeam, clearSession } from "../lib/session";
   import { route, navigate } from "../lib/router";
   import type { TeamSummary } from "../lib/types";
+  import Logo from "./Logo.svelte";
 
   let { children }: { children?: Snippet } = $props();
 
@@ -33,7 +34,10 @@
 
 <div class="shell">
   <aside class="sidebar">
-    <a href="#/projects" class="brand">Brain <span>From Cero</span></a>
+    <a href="#/projects" class="brand" aria-label="Brain From Cero — home">
+      <Logo size={22} />
+      <span class="wordmark">Brain <span class="sub">From Cero</span></span>
+    </a>
     <nav class="stack">
       <a href="#/projects" class="navlink" class:active={onProjects}>Projects</a>
       <a href="#/models"   class="navlink" class:active={onModels}>Models</a>
@@ -85,14 +89,21 @@
     gap: 22px;
   }
   .brand {
-    font-weight: 700;
-    font-size: 16px;
-    color: var(--text);
+    display: flex;
+    align-items: center;
+    gap: 9px;
     text-decoration: none;
-    line-height: 1.3;
   }
-  .brand span { color: var(--muted); font-weight: 600; }
   .brand:hover { text-decoration: none; }
+  .wordmark {
+    font-family: var(--display);
+    font-weight: 700;
+    font-size: 15px;
+    color: var(--text);
+    line-height: 1.2;
+    letter-spacing: -0.01em;
+  }
+  .wordmark .sub { color: var(--muted); font-weight: 500; }
   .navlink {
     display: block;
     padding: 8px 10px;

@@ -2,13 +2,37 @@ openapi: 3.1.0
 info:
   title: Brain From Cero API
   description: |
-    Self-hosted RAG + LoRA model-customization platform.
-    OpenAI-compatible serving is the only external protocol.
-    All management endpoints require a JWT Bearer token from /v1/auth/login.
-    The /v1/chat/completions endpoint uses a scoped project API key.
+    **Your model. Your data. Your servers.**
+
+    Brain From Cero is a self-hosted model-customization platform. Technical teams deploy
+    it on their own infrastructure to specialize and serve private language models two ways,
+    each behind an OpenAI-compatible API. Your data never leaves your servers.
+
+    **Give it knowledge (RAG)** — upload documents, embed them, and get answers grounded in
+    your content, with citations. Weights never change. CPU-only.
+
+    **Change how it behaves (fine-tuning / LoRA)** — train a QLoRA adapter on instruction
+    data; the adapter only serves once it passes the eval gate (score ≥ 0.6 or a clear
+    improvement over the base model). Requires a GPU.
+
+    **Composed endpoints** — a single project endpoint can serve both: retrieved context
+    with citations (RAG) and trained tone/format (the LoRA adapter) in one call.
+
+    ---
+
+    **Auth:** management endpoints require a JWT Bearer token from `POST /v1/auth/login`.
+    The `POST /v1/chat/completions` endpoint uses a scoped project API key (`brn_*` prefix).
+
   version: 0.1.0
   license:
     name: MIT
+    url: https://github.com/santiagoyie/brainFromCero/blob/main/LICENSE
+  contact:
+    name: Brain From Cero
+    url: https://github.com/santiagoyie/brainFromCero
+  x-logo:
+    url: /console/logo.svg
+    altText: Brain From Cero
 
 servers:
   - url: /v1

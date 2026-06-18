@@ -32,8 +32,8 @@
 
   // Minimum valid rows the backend accepts before a dataset can train.
   const MIN_SAMPLES = 10;
-  const DOCS_URL =
-    "https://github.com/santiagoyie/brainFromCero/blob/main/docs/user-guide/operator-console.md";
+  import { BRAND } from "../lib/brand";
+  const DOCS_URL = BRAND.docs;
 
   // ---- Documents (optional knowledge + synthesis source) -------------------
   let files = $state<ProjectFile[]>([]);

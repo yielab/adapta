@@ -1,0 +1,14 @@
+{
+  "name": "brain-e2e",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Local-only screenshot and GIF capture for the Brain From Cero console. Not part of CI.",
+  "scripts": {
+    "screenshots": "playwright test screenshots.spec.ts --reporter=line",
+    "gif": "playwright test hero-gif.spec.ts --reporter=line"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.52.0"
+  }
+}

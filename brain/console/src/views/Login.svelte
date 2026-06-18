@@ -4,6 +4,7 @@
   import { navigate } from "../lib/router";
   import { toastError } from "../lib/toast";
   import Spinner from "../components/Spinner.svelte";
+  import Logo from "../components/Logo.svelte";
 
   type Tab = "login" | "register";
 
@@ -86,8 +87,13 @@
 
 <div class="wrap">
   <div class="card" style="max-width: 380px; width: 100%;">
-    <h1>Brain From Cero</h1>
-    <p class="muted">Operator console.</p>
+    <div class="hero">
+      <Logo size={44} />
+      <div>
+        <h1><span class="brain">Brain</span> <span class="cero">From Cero</span></h1>
+        <p class="tagline">Your model. Your data. Your servers.</p>
+      </div>
+    </div>
 
     <div class="tabs" role="tablist">
       <button
@@ -195,7 +201,29 @@
     justify-content: center;
     padding: 20px;
   }
-  /* Center the Spinner's label inside the full-width primary button. */
+  .hero {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 22px;
+  }
+  .hero h1 {
+    font-family: var(--display);
+    font-size: 20px;
+    font-weight: 700;
+    margin: 0 0 3px;
+    line-height: 1.2;
+    letter-spacing: -0.01em;
+  }
+  .brain  { color: var(--text); }
+  .cero   { color: var(--muted); font-weight: 500; }
+  .tagline {
+    margin: 0;
+    font-size: 12.5px;
+    color: var(--muted);
+    letter-spacing: 0.01em;
+  }
+  /* center Spinner label inside the full-width primary button */
   button.primary :global(.row) {
     justify-content: center;
   }

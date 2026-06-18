@@ -103,3 +103,7 @@ monitoring/
 site/
 docs/reference/openapi.yaml
 .venv-docs/
+
+# e2e — local screenshot/GIF tooling (not CI)
+e2e/node_modules/
+e2e/videos/

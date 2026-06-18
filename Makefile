@@ -26,7 +26,8 @@ GPU_AVAILABLE := $(shell command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi >/d
 COMPOSE := $(if $(GPU_AVAILABLE),docker compose,$(CPU_COMPOSE))
 
 .PHONY: help up up-cpu status down generate validate-spec test-contracts migrate migration migrate-test \
-        test coverage lint fmt check-leaks check-chroma docs-install docs-build docs-serve ci ci-full
+        test coverage lint fmt check-leaks check-chroma docs-install docs-build docs-serve ci ci-full \
+        screenshots gif
 
 help:
 	@echo "Available targets:"
@@ -55,6 +56,9 @@ help:
 	@echo "  -- documentation (MkDocs, run on the HOST) --"
 	@echo "  docs-serve      Live-reload docs preview at http://localhost:8000"
 	@echo "  docs-build      Build the docs site (--strict; fails on broken links)"
+	@echo "  -- media (LOCAL ONLY, run on the HOST, not in CI) --"
+	@echo "  screenshots     Capture console views as PNGs → docs/screenshots/"
+	@echo "  gif             Record hero walkthrough → docs/screenshots/hero.gif"
 
 # ── HOST targets — bring the stack up/down (run these on the host, not in a container) ──
 up:
@@ -207,4 +211,17 @@ ci: check-leaks check-chroma lint lint-imports coverage validate-spec check-mode
 
 ci-full: ci migrate-test test-contracts
 	@pytest tests/ -v -m integration || true
+
+# ── Media capture (HOST, LOCAL ONLY — not part of CI) ───────────────────────
+# Requires: stack up (`make up`), Playwright browsers, ffmpeg.
+# Install deps once: cd e2e && npm install && npx playwright install chromium
+screenshots:
+	@echo "→ Seeding demo data and capturing console screenshots…"
+	cd e2e && npm install --silent && npx playwright test screenshots.spec.ts --reporter=line
+	@echo "✓ Screenshots saved to docs/screenshots/"
+
+gif:
+	@echo "→ Recording hero walkthrough and converting to GIF…"
+	cd e2e && npm install --silent && npx playwright test hero-gif.spec.ts --reporter=line
+	@echo "✓ GIF saved to docs/screenshots/hero.gif"
 	@echo "✓ Full CI gate passed"

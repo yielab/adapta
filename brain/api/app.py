@@ -166,7 +166,7 @@ def create_app() -> FastAPI:
 
     app = FastAPI(
         title="Brain From Cero",
-        description="Self-hosted RAG + LoRA model-customization platform",
+        description="Self-hosted RAG + LoRA model-customization platform — your data never leaves your infrastructure",
         version=__version__,
         lifespan=lifespan,
     )
