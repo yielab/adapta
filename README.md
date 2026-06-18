@@ -457,14 +457,26 @@ make migrate-test    # up → down → up round-trip (Pillar 2 gate)
 make test-contracts  # schemathesis vs a live server (set ADAPTA_BEARER_TOKEN first)
 ```
 
-Two additional targets run **on the host** (not in the container) and require the stack to be up:
+### Visual documentation (LOCAL ONLY — not part of CI)
+
+`make screenshots` and `make gif` run Playwright against the live stack to regenerate the console screenshots and hero GIF committed under `docs/screenshots/`. Re-run them whenever you change the console UI.
+
+**Prerequisites (one-time, on the host):**
 
 ```bash
-make screenshots     # capture console views as PNGs → docs/screenshots/  (needs Playwright + ffmpeg)
-make gif             # record hero walkthrough → docs/screenshots/hero.gif  (needs Playwright + ffmpeg)
+# Node.js 18+ required
+cd e2e && npm install && npx playwright install chromium
+# ffmpeg must be on PATH (brew install ffmpeg / apt install ffmpeg)
 ```
 
-These are local-only media targets — not part of CI. First-time setup: `cd e2e && npm install && npx playwright install chromium`.
+**Usage (stack must be up — `make up`):**
+
+```bash
+make screenshots   # seeds demo data, captures 9 PNGs at 1440×900 → docs/screenshots/
+make gif           # seeds demo data, records walkthrough, converts webm → GIF → docs/screenshots/hero.gif
+```
+
+Both targets wipe and re-seed demo projects on each run — the DB is left in a clean 3-project state. Commit the updated files in `docs/screenshots/` alongside any console change.
 
 Full doc: [docs/reference/SDD_WORKFLOW.md](docs/reference/SDD_WORKFLOW.md).
 
