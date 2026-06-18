@@ -472,11 +472,12 @@ cd e2e && npm install && npx playwright install chromium
 **Usage (stack must be up — `make up`):**
 
 ```bash
-make screenshots   # seeds demo data, captures 9 PNGs at 1440×900 → docs/screenshots/
-make gif           # seeds demo data, records walkthrough, converts webm → GIF → docs/screenshots/hero.gif
+make console-build  # rebuild adapta/console/dist/ after any console source change
+make screenshots    # console-build + seed data + capture 9 PNGs at 1440×900 → docs/screenshots/
+make gif            # console-build + seed data + record walkthrough → docs/screenshots/hero.gif
 ```
 
-Both targets wipe and re-seed demo projects on each run — the DB is left in a clean 3-project state. Commit the updated files in `docs/screenshots/` alongside any console change.
+`make screenshots` and `make gif` both run `console-build` automatically — you only need it standalone when debugging the UI without running the full capture. Both targets wipe and re-seed demo projects on each run. Commit the updated `docs/screenshots/` files alongside any console change.
 
 Full doc: [docs/reference/SDD_WORKFLOW.md](docs/reference/SDD_WORKFLOW.md).
 

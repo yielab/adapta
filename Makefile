@@ -27,7 +27,7 @@ COMPOSE := $(if $(GPU_AVAILABLE),docker compose,$(CPU_COMPOSE))
 
 .PHONY: help up up-cpu status down generate validate-spec test-contracts migrate migration migrate-test \
         test coverage lint fmt check-leaks check-chroma docs-install docs-build docs-serve ci ci-full \
-        screenshots gif
+        console-build screenshots gif
 
 help:
 	@echo "Available targets:"
@@ -57,8 +57,9 @@ help:
 	@echo "  docs-serve      Live-reload docs preview at http://localhost:8000"
 	@echo "  docs-build      Build the docs site (--strict; fails on broken links)"
 	@echo "  -- media (LOCAL ONLY, run on the HOST, not in CI) --"
-	@echo "  screenshots     Capture console views as PNGs → docs/screenshots/"
-	@echo "  gif             Record hero walkthrough → docs/screenshots/hero.gif"
+	@echo "  console-build   Build operator console Svelte SPA → adapta/console/dist/"
+	@echo "  screenshots     Build console + seed data + capture PNGs → docs/screenshots/"
+	@echo "  gif             Build console + seed data + record walkthrough → docs/screenshots/hero.gif"
 
 # ── HOST targets — bring the stack up/down (run these on the host, not in a container) ──
 up:
@@ -215,13 +216,19 @@ ci-full: ci migrate-test test-contracts
 # ── Media capture (HOST, LOCAL ONLY — not part of CI) ───────────────────────
 # Requires: stack up (`make up`), Playwright browsers, ffmpeg.
 # Install deps once: cd e2e && npm install && npx playwright install chromium
-screenshots:
+# The console must be built before capturing (adapta/console/dist/ is what the
+# running container serves). Run `make console-build` whenever console source changes.
+console-build:
+	@echo "→ Building operator console (Vite + Svelte)…"
+	cd adapta/console && npm install --silent && npm run build:fast
+	@echo "✓ Console dist rebuilt at adapta/console/dist/"
+
+screenshots: console-build
 	@echo "→ Seeding demo data and capturing console screenshots…"
 	cd e2e && npm install --silent && npx playwright test screenshots.spec.ts --reporter=line
 	@echo "✓ Screenshots saved to docs/screenshots/"
 
-gif:
+gif: console-build
 	@echo "→ Recording hero walkthrough and converting to GIF…"
 	cd e2e && npm install --silent && npx playwright test hero-gif.spec.ts --reporter=line
 	@echo "✓ GIF saved to docs/screenshots/hero.gif"
-	@echo "✓ Full CI gate passed"

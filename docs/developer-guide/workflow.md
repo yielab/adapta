@@ -25,7 +25,7 @@ This product has three sources of truth that are protected. Each has a
 change-it-first rule and a CI gate:
 
 | Contract | Source of truth | After you change it | Gate |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **API** | `specs/openapi.yaml` | `make generate` → regenerates Pydantic models | `make test-contracts` (schemathesis) |
 | **DB schema** | Alembic migrations | `alembic upgrade head` | `make migrate-test` (up/down round-trip) |
 | **Model/training** | `specs/schemas/training_dataset.schema.json` + the eval gate | a training run registers an adapter | the **eval gate** (held-out score) |
@@ -100,13 +100,17 @@ cd e2e && npm install && npx playwright install chromium
 **Usage (stack must be up):**
 
 ```bash
-make screenshots   # 9 PNGs at 1440×900, dark theme → docs/screenshots/
-make gif           # guided walkthrough → docs/screenshots/hero.gif (~1–2 MB)
+make console-build  # rebuild adapta/console/dist/ (always needed after source changes)
+make screenshots    # console-build + seed + capture 9 PNGs at 1440×900 → docs/screenshots/
+make gif            # console-build + seed + record walkthrough → docs/screenshots/hero.gif
 ```
 
-Both seed demo data fresh on each run (wipes existing projects → creates 3). Commit the
-updated `docs/screenshots/` files alongside the console change. These targets are
-**host-only and never run in CI**.
+`make screenshots` and `make gif` both depend on `console-build` and run it
+automatically — the console is a compiled Svelte SPA and the container serves the
+pre-built `adapta/console/dist/` directory, so a stale build produces screenshots
+with stale content. Both seed demo data fresh on each run (wipes existing projects →
+creates 3). Commit the updated `docs/screenshots/` files alongside the console change.
+These targets are **host-only and never run in CI**.
 
 For coding style, branch/commit conventions, and the contributor checklist, see
 [CONTRIBUTING.md](https://github.com/santiagoyie/brainFromCero/blob/main/CONTRIBUTING.md).
