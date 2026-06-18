@@ -55,6 +55,7 @@ Thumbs.db
 .coverage
 htmlcov/
 .tox/
+qa-report.html
 
 # MyPy
 .mypy_cache/

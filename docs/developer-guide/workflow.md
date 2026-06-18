@@ -113,4 +113,4 @@ creates 3). Commit the updated `docs/screenshots/` files alongside the console c
 These targets are **host-only and never run in CI**.
 
 For coding style, branch/commit conventions, and the contributor checklist, see
-[CONTRIBUTING.md](https://github.com/santiagoyie/brainFromCero/blob/main/CONTRIBUTING.md).
+[CONTRIBUTING.md](https://github.com/santiagoyie/adapta/blob/main/CONTRIBUTING.md).
