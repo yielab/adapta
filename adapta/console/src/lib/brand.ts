@@ -19,5 +19,5 @@ export const BRAND = {
       description: "Teach it a style, format, or skill by fine-tuning.",
     },
   },
-  docs: "https://github.com/santiagoyie/adapta/blob/main/docs/user-guide/operator-console.md",
+  docs: "https://github.com/yielab/Adapta/blob/main/docs/user-guide/operator-console.md",
 } as const;

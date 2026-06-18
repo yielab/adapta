@@ -6,7 +6,7 @@ codebase to use it.
 
 If you are deploying the stack for the first time (installing Docker, the GPU
 toolkit, downloading a base model), start with the
-[README quick start](https://github.com/santiagoyie/adapta#quick-start) —
+[README quick start](https://github.com/yielab/Adapta#quick-start) —
 that covers getting the containers running. This guide picks up **once the stack
 is up** and walks through actually using it.
 

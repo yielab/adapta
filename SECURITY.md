@@ -10,7 +10,7 @@ Adapta is pre-1.0 software. Security fixes are applied to the `main` branch only
 
 **Do not open a public GitHub issue for security vulnerabilities.**
 
-Report privately via the [GitHub Security Advisory](https://github.com/santiagoyie/adapta/security/advisories/new) feature. Include:
+Report privately via the [GitHub Security Advisory](https://github.com/yielab/Adapta/security/advisories/new) feature. Include:
 
 - A description of the vulnerability and its impact
 - Steps to reproduce

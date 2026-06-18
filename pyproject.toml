@@ -46,9 +46,9 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/santiagoyie/adapta"
-Repository = "https://github.com/santiagoyie/adapta"
-Issues = "https://github.com/santiagoyie/adapta/issues"
+Homepage = "https://github.com/yielab/Adapta"
+Repository = "https://github.com/yielab/Adapta"
+Issues = "https://github.com/yielab/Adapta/issues"
 
 [project.optional-dependencies]
 training = [
