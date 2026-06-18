@@ -2,8 +2,8 @@ site_name: Adapta
 site_url: https://yielab.github.io/adapta/
 site_description: Self-hosted RAG + LoRA model-customization platform — documentation
 site_author: Santiago Yie
-repo_url: https://github.com/yielab/Adapta
-repo_name: yielab/Adapta
+repo_url: https://github.com/yielab/adapta
+repo_name: yielab/adapta
 edit_uri: edit/develop/docs/
 copyright: MIT License — Santiago Yie
 

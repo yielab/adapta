@@ -2,7 +2,7 @@
 
 Self-hosted RAG + LoRA model customization — give a model your knowledge (cited retrieval) and your behavior (trained adapter), served behind one OpenAI-compatible endpoint, on hardware you control.
 
-[![CI](https://github.com/yielab/Adapta/actions/workflows/ci.yml/badge.svg)](https://github.com/yielab/Adapta/actions/workflows/ci.yml)
+[![CI](https://github.com/yielab/adapta/actions/workflows/ci.yml/badge.svg)](https://github.com/yielab/adapta/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.11](https://img.shields.io/badge/python-3.11-blue.svg)](https://www.python.org/downloads/release/python-3110/)
 [![Docker](https://img.shields.io/badge/docker-compose-2496ED?logo=docker&logoColor=white)](docker-compose.yml)
@@ -140,7 +140,7 @@ RAG works without a GPU. Start here; add fine-tuning later if you need it.
 ### 1. Clone
 
 ```bash
-git clone https://github.com/yielab/Adapta
+git clone https://github.com/yielab/adapta
 cd adapta
 ```
 

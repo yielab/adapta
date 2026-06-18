@@ -26,10 +26,10 @@ info:
   version: 0.1.0
   license:
     name: MIT
-    url: https://github.com/yielab/Adapta/blob/main/LICENSE
+    url: https://github.com/yielab/adapta/blob/main/LICENSE
   contact:
     name: Adapta
-    url: https://github.com/yielab/Adapta
+    url: https://github.com/yielab/adapta
   x-logo:
     url: /console/logo.svg
     altText: Adapta

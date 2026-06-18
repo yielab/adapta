@@ -9,7 +9,7 @@ Adapta is a self-hosted RAG + LoRA model-customization platform in early active 
 > **All Python/pip operations run inside the Docker container — never on the host.**
 
 ```bash
-git clone https://github.com/yielab/Adapta
+git clone https://github.com/yielab/adapta
 cd adapta
 
 # Start the stack: one image with the toolchain (ruff/mypy/pytest/codegen) baked
