@@ -1,11 +1,9 @@
 """
 Pydantic models for the Adapta API.
 
-adapta.models.generated  — auto-generated from specs/openapi.yaml
-                          run `make generate` to refresh
-
-adapta.api.models        — legacy hand-written models (kept for backwards
-                          compatibility during the SDD migration; import from
-                          here until every router has been switched to the
-                          generated equivalents)
+``adapta.models.generated`` — auto-generated from ``specs/openapi.yaml`` (the API
+contract) via ``make generate``. These are the request/response models the API
+routers consume directly: the spec is the single source of truth, the code is
+generated from it, and ``make check-models`` (in ``make ci``) fails if the two
+drift. There are no hand-written API models — change the spec, not the code.
 """

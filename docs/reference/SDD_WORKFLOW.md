@@ -38,7 +38,7 @@ Validate before committing: `make validate-spec`.
 `make generate` writes Pydantic models to `adapta/models/generated/models.py`. **Never hand-edit generated code** — fix the spec and regenerate. Commit the generated file.
 
 ### Step 3 — Write logic
-Only after models exist, write handlers/services against the generated DTOs. Protocol adapters map + serialize only; business logic lives in services (see [API_EVOLUTION_PLAN.md](API_EVOLUTION_PLAN.md)).
+Only after models exist, write handlers/services against the generated DTOs — import them from `adapta.models.generated`; **never re-declare a request/response model in a router** (`tests/test_generated_models_wired.py` fails if you do). Protocol adapters map + serialize only; business logic lives in services (see [API_EVOLUTION_PLAN.md](API_EVOLUTION_PLAN.md)).
 
 ### Step 4 — Run contract tests
 `make test-contracts` runs schemathesis against the live app. **Green contract tests are the API merge gate.**

@@ -4,7 +4,6 @@ import json
 from typing import Optional
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,34 +20,24 @@ from adapta.db.models import (
 )
 from adapta.db.session import get_db
 from adapta.domain.errors import Conflict, InvalidRequest, NotFound
+from adapta.models.generated import (
+    AdapterProvenance,
+    EndpointResponse,
+    Gate,
+    RetrievalSummary,
+)
+from adapta.models.generated import (
+    EndpointStatus as ApiEndpointStatus,
+)
+from adapta.models.generated import (
+    Modality as ApiModality,
+)
+from adapta.models.generated import (
+    ProjectType as ApiProjectType,
+)
 from adapta.services.auth import get_current_user, require_team_member, require_team_writer
 
 router = APIRouter(prefix="/projects/{project_id}/endpoint", tags=["endpoints"])
-
-
-class AdapterProvenance(BaseModel):
-    job_id: str
-    eval_score: float
-    base_score: Optional[float] = None
-    score_delta: Optional[float] = None
-    gate: str  # "absolute" | "improvement"
-
-
-class RetrievalSummary(BaseModel):
-    indexed_chunks: int
-
-
-class EndpointResponse(BaseModel):
-    id: str
-    slug: str
-    status: str
-    base_model: str
-    modality: str
-    project_type: str
-    created_at: str
-    adapter: Optional[AdapterProvenance] = None
-    retrieval: Optional[RetrievalSummary] = None
-    adapter_path: Optional[str] = None  # deprecated; kept for back-compat
 
 
 async def _get_project(db: AsyncSession, project_id: str) -> Project:
@@ -110,7 +99,7 @@ async def _build_response(
                 eval_score=job.eval_score or 0.0,
                 base_score=base_score,
                 score_delta=score_delta,
-                gate=gate,
+                gate=Gate(gate),
             )
 
     # Retrieval layer: any project can also have indexed documents.
@@ -123,10 +112,12 @@ async def _build_response(
     return EndpointResponse(
         id=ep.id,
         slug=ep.slug,
-        status=ep.status.value if hasattr(ep.status, "value") else str(ep.status),
+        status=ApiEndpointStatus(
+            ep.status.value if hasattr(ep.status, "value") else str(ep.status)
+        ),
         base_model=ep.base_model,
-        modality=_modality_for(ep.base_model),
-        project_type=project_type,
+        modality=ApiModality(_modality_for(ep.base_model)),
+        project_type=ApiProjectType(project_type),
         created_at=ep.created_at.isoformat(),
         adapter=adapter,
         retrieval=retrieval,

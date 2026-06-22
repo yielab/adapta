@@ -9,10 +9,9 @@ import asyncio
 import logging
 import shutil
 from pathlib import Path
-from typing import List, Optional
+from typing import List
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, UploadFile
-from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,6 +19,7 @@ from adapta.config import settings
 from adapta.db.models import Collection, FileStatus, Project, ProjectFile
 from adapta.db.session import get_db
 from adapta.domain.errors import InvalidRequest, NotFound
+from adapta.models.generated import FileResponse
 from adapta.services.auth import get_current_user, require_team_member, require_team_writer
 from adapta.services.documents import SUPPORTED_TYPES, parse_and_chunk
 from adapta.services.rag import collection_name_for, get_rag_service
@@ -27,17 +27,6 @@ from adapta.services.rag import collection_name_for, get_rag_service
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/projects/{project_id}/files", tags=["files"])
-
-
-class FileResponse(BaseModel):
-    id: str
-    filename: str
-    status: str
-    num_chunks: Optional[int]
-    size_bytes: int
-    uploaded_at: str
-
-    model_config = {"from_attributes": True}
 
 
 def _file_resp(f: ProjectFile) -> FileResponse:

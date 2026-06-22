@@ -3,7 +3,6 @@
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,6 +10,16 @@ from adapta.core.model_catalog import allowed_names, is_valid
 from adapta.db.models import Project, ProjectStatus, ProjectType
 from adapta.db.session import get_db
 from adapta.domain.errors import InvalidRequest, NotFound
+from adapta.models.generated import (
+    ProjectCreate,
+    ProjectResponse,
+)
+from adapta.models.generated import (
+    ProjectSummary as ApiProjectSummary,
+)
+from adapta.models.generated import (
+    ProjectType as ApiProjectType,
+)
 from adapta.services.auth import (
     get_current_user,
     require_team_admin,
@@ -21,47 +30,32 @@ from adapta.services.auth import (
 router = APIRouter(prefix="/projects", tags=["projects"])
 
 
-class ProjectCreate(BaseModel):
-    name: str = Field(min_length=1, max_length=128)  # mirrors projects.name String(128)
-    type: ProjectType
-    base_model: str
-    description: Optional[str] = None
-    team_id: str
-
-
-class ProjectResponse(BaseModel):
-    id: str
-    name: str
-    type: str
-    status: str
-    base_model: str
-    description: Optional[str]
-    team_id: str
-    created_at: str
-    summary: Optional[Dict[str, Any]] = None
-
-    model_config = {"from_attributes": True}
-
-
 def _proj_resp(p: Project, summary: Optional[Dict[str, Any]] = None) -> ProjectResponse:
     return ProjectResponse(
         id=p.id,
         name=p.name,
-        type=p.type.value,
+        type=ApiProjectType(p.type.value),
         status=p.status.value,
         base_model=p.base_model,
         description=p.description,
         team_id=p.team_id,
         created_at=p.created_at.isoformat(),
-        summary=summary,
+        summary=ApiProjectSummary.model_validate(summary) if summary is not None else None,
     )
 
 
 def _summary_to_dict(s: Any) -> Dict[str, Any]:
-    """Serialize a ProjectSummary dataclass to a plain dict for the API response."""
+    """Serialize a ProjectSummary dataclass to a plain dict for the API response.
+
+    ``last_activity_at`` is a datetime in the dataclass; the generated
+    ProjectSummary model types it as an ISO string, so stringify it here.
+    """
     from dataclasses import asdict
 
-    return asdict(s)
+    d = asdict(s)
+    la = d.get("last_activity_at")
+    d["last_activity_at"] = la.isoformat() if la else None
+    return d
 
 
 @router.post("", response_model=ProjectResponse, status_code=201)
@@ -83,7 +77,9 @@ async def create_project(
     project = Project(
         team_id=body.team_id,
         name=body.name,
-        type=body.type,
+        # body.type is the generated ProjectType enum; the ORM column wants the
+        # DB enum — convert by value (distinct classes, same string values).
+        type=ProjectType(body.type.value),
         base_model=body.base_model,
         description=body.description,
         status=ProjectStatus.created,

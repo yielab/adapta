@@ -3,22 +3,15 @@
 from typing import List
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from adapta.db.models import TeamMember, User
 from adapta.db.session import get_db
+from adapta.models.generated import MemberResponse
 from adapta.services.auth import get_current_user, require_team_member
 
 router = APIRouter(prefix="/teams", tags=["auth"])
-
-
-class MemberResponse(BaseModel):
-    user_id: str
-    email: str
-    role: str
-    joined_at: str
 
 
 @router.get("/{team_id}/members", response_model=List[MemberResponse])

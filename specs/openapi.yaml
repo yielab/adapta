@@ -55,6 +55,8 @@ tags:
     description: Scoped API key management
   - name: chat
     description: OpenAI-compatible serving
+  - name: settings
+    description: DB-backed whitelisted org-scoped runtime settings
 
 paths:
   # ──────────────────────────────────────────────────────────────────────────
@@ -278,7 +280,6 @@ paths:
         '404': {$ref: '#/components/responses/Error'}
         '422': {$ref: '#/components/responses/Error'}
         '204': {description: Deleted}
-        '403': {$ref: '#/components/responses/Error'}
 
   # ──────────────────────────────────────────────────────────────────────────
   # Files (RAG)
@@ -500,6 +501,59 @@ paths:
         '200': {description: Usage, content: {application/json: {schema: {$ref: '#/components/schemas/UsageResponse'}}}}
 
   # ──────────────────────────────────────────────────────────────────────────
+  # Platform settings (DB-backed, whitelisted, org-scoped overrides)
+  # ──────────────────────────────────────────────────────────────────────────
+  /settings:
+    get:
+      operationId: listSettings
+      tags: [settings]
+      summary: List whitelisted settings with their effective value and provenance
+      security: [{BearerAuth: []}]
+      parameters:
+        - name: team_id
+          in: query
+          required: true
+          schema: {type: string}
+      responses:
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '422': {$ref: '#/components/responses/Error'}
+        '200': {description: Settings, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/SettingResponse'}}}}}
+
+    put:
+      operationId: putSetting
+      tags: [settings]
+      summary: Override a whitelisted setting (admin only)
+      security: [{BearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SettingWriteRequest'}
+      responses:
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '422': {$ref: '#/components/responses/Error'}
+        '200': {description: Setting written, content: {application/json: {schema: {$ref: '#/components/schemas/SettingWriteResult'}}}}
+
+  /settings/{key}:
+    delete:
+      operationId: deleteSetting
+      tags: [settings]
+      summary: Reset a setting to its default by removing the override (admin only)
+      security: [{BearerAuth: []}]
+      parameters:
+        - {name: key, in: path, required: true, schema: {type: string}}
+        - {name: team_id, in: query, required: true, schema: {type: string}}
+      responses:
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '422': {$ref: '#/components/responses/Error'}
+        '204': {description: Reset to default}
+
+  # ──────────────────────────────────────────────────────────────────────────
   # API keys
   # ──────────────────────────────────────────────────────────────────────────
   /projects/{project_id}/keys:
@@ -653,6 +707,36 @@ components:
           schema: {$ref: '#/components/schemas/ErrorResponse'}
 
   schemas:
+    # ──────────────────────────────────────────────────────────────────────
+    # Named enums — extracted to components so the generated Pydantic models
+    # carry meaningful names (e.g. JobStatus, not Status1) instead of the
+    # auto-numbered junk datamodel-codegen emits for inline enums.
+    # ──────────────────────────────────────────────────────────────────────
+    Role:
+      type: string
+      enum: [admin, member, viewer]
+    ProjectType:
+      type: string
+      enum: [rag, finetune]
+    Modality:
+      type: string
+      enum: [text, vision]
+    Gate:
+      type: string
+      enum: [absolute, improvement]
+    InvitationStatus:
+      type: string
+      enum: [pending, accepted, revoked]
+    JobStatus:
+      type: string
+      enum: [queued, running, succeeded, failed, cancelled]
+    EndpointStatus:
+      type: string
+      enum: [pending, active, disabled]
+    MessageRole:
+      type: string
+      enum: [system, user, assistant]
+
     # Auth
     RegisterRequest:
       type: object
@@ -673,14 +757,22 @@ components:
         email: {type: string, format: email}
         password: {type: string}
 
+    # Response schemas list every field they always carry in `required`, so the
+    # generated models are strict (non-Optional) — the routers construct every
+    # field, including the nullable ones. Datetime fields are typed as plain
+    # `string` (the handlers emit `.isoformat()` strings), avoiding the
+    # aware/naive parsing pitfall a `format: date-time` (AwareDatetime) model
+    # would hit on response serialization.
     TokenResponse:
       type: object
+      required: [access_token, token_type]
       properties:
         access_token: {type: string}
-        token_type: {type: string, enum: [bearer]}
+        token_type: {type: string, default: bearer}
 
     UserResponse:
       type: object
+      required: [id, email, org_id, teams]
       properties:
         id: {type: string}
         email: {type: string}
@@ -692,10 +784,11 @@ components:
             $ref: '#/components/schemas/TeamSummary'
     TeamSummary:
       type: object
+      required: [id, name, role]
       properties:
         id: {type: string}
         name: {type: string}
-        role: {type: string, enum: [admin, member, viewer]}
+        role: {$ref: '#/components/schemas/Role'}
 
     # Invitations
     InviteRequest:
@@ -704,7 +797,10 @@ components:
       properties:
         email: {type: string, format: email, maxLength: 255}
         team_id: {type: string}
-        role: {type: string, enum: [admin, member, viewer]}
+        # Optional on the wire; the handler defaults a missing role to `member`
+        # (a $ref + default trips codegen's enum-default mypy bug, so the
+        # default lives in code, not the schema).
+        role: {$ref: '#/components/schemas/Role'}
     AcceptInviteRequest:
       type: object
       required: [token, password]
@@ -713,22 +809,24 @@ components:
         password: {type: string, minLength: 8}
     InvitationResponse:
       type: object
+      required: [id, email, team_id, role, status, token, expires_at]
       properties:
         id: {type: string}
         email: {type: string}
         team_id: {type: string}
-        role: {type: string, enum: [admin, member, viewer]}
-        status: {type: string, enum: [pending, accepted, revoked]}
+        role: {$ref: '#/components/schemas/Role'}
+        status: {$ref: '#/components/schemas/InvitationStatus'}
         token: {type: string, nullable: true}
         expires_at: {type: string}
 
     MemberResponse:
       type: object
+      required: [user_id, email, role, joined_at]
       properties:
         user_id: {type: string}
         email: {type: string}
-        role: {type: string, enum: [admin, member, viewer]}
-        joined_at: {type: string, format: date-time}
+        role: {$ref: '#/components/schemas/Role'}
+        joined_at: {type: string}
 
     ChangePasswordRequest:
       type: object
@@ -744,76 +842,130 @@ components:
       properties:
         # maxLength mirrors projects.name String(128) — see RegisterRequest note.
         name: {type: string, minLength: 1, maxLength: 128}
-        type: {type: string, enum: [rag, finetune]}
+        type: {$ref: '#/components/schemas/ProjectType'}
         base_model: {type: string}
         description: {type: string, nullable: true}
         team_id: {type: string}
 
     ProjectResponse:
       type: object
+      required: [id, name, type, status, base_model, description, team_id, created_at, summary]
       properties:
         id: {type: string}
         name: {type: string}
-        type: {type: string, enum: [rag, finetune]}
+        type: {$ref: '#/components/schemas/ProjectType'}
         status: {type: string}
         base_model: {type: string}
         description: {type: string, nullable: true}
         team_id: {type: string}
-        created_at: {type: string, format: date-time}
+        created_at: {type: string}
+        # Dashboard read-model (§C2.1) — null on create, populated on list/get.
+        summary: {$ref: '#/components/schemas/ProjectSummary', nullable: true}
+
+    # Project dashboard read-model (computed aggregate served with each project).
+    FileSummary:
+      type: object
+      required: [total, indexed, chunks]
+      properties:
+        total: {type: integer}
+        indexed: {type: integer}
+        chunks: {type: integer}
+    DatasetSummary:
+      type: object
+      required: [total, valid]
+      properties:
+        total: {type: integer}
+        valid: {type: integer}
+    JobSummary:
+      type: object
+      required: [total, running]
+      properties:
+        total: {type: integer}
+        running: {type: integer}
+        last_status: {type: string, nullable: true}
+        last_eval_score: {type: number, nullable: true}
+        gate_passed: {type: boolean, nullable: true}
+    EndpointSummary:
+      type: object
+      required: [exists]
+      properties:
+        exists: {type: boolean}
+        slug: {type: string, nullable: true}
+        status: {type: string, nullable: true}
+    UsageSummary:
+      type: object
+      required: [requests, total_tokens]
+      properties:
+        requests: {type: integer}
+        total_tokens: {type: integer}
+    ProjectSummary:
+      type: object
+      required: [stage, files, datasets, jobs, endpoint, keys_active, usage_7d]
+      properties:
+        stage: {type: string}
+        files: {$ref: '#/components/schemas/FileSummary'}
+        datasets: {$ref: '#/components/schemas/DatasetSummary'}
+        jobs: {$ref: '#/components/schemas/JobSummary'}
+        endpoint: {$ref: '#/components/schemas/EndpointSummary'}
+        keys_active: {type: integer}
+        usage_7d: {$ref: '#/components/schemas/UsageSummary'}
+        last_activity_at: {type: string, nullable: true}
 
     # Files
     FileResponse:
       type: object
+      required: [id, filename, status, num_chunks, size_bytes, uploaded_at]
       properties:
         id: {type: string}
         filename: {type: string}
         status: {type: string}
         num_chunks: {type: integer, nullable: true}
         size_bytes: {type: integer}
-        uploaded_at: {type: string, format: date-time}
+        uploaded_at: {type: string}
 
     # Datasets
     DatasetResponse:
       type: object
+      required: [id, name, status, num_samples, modality, num_images, validation_error, created_at]
       properties:
         id: {type: string}
         name: {type: string}
         status: {type: string}
         num_samples: {type: integer, nullable: true}
         # §V image datasets: "vision" once an image bundle validates; "text" otherwise.
-        # (enum without default — codegen renders `enum + default` as an untyped
-        # str assignment that fails mypy in the generated module.)
-        modality: {type: string, enum: [text, vision]}
+        modality: {$ref: '#/components/schemas/Modality'}
         num_images: {type: integer, nullable: true}
         validation_error: {type: string, nullable: true}
-        created_at: {type: string, format: date-time}
+        created_at: {type: string}
 
     # Jobs
+    TrainingConfigInput:
+      # Bounds mirror the server's enqueue-time validation (A4.12,
+      # adapta/services/training.py _HYPERPARAM_BOUNDS) — out-of-range
+      # values are rejected with 422 before a job is created.
+      type: object
+      properties:
+        num_epochs: {type: integer, default: 3, minimum: 1, maximum: 100}
+        batch_size: {type: integer, default: 4, minimum: 1, maximum: 128}
+        learning_rate: {type: number, default: 0.0002, minimum: 1.0e-6, maximum: 0.1}
+        lora_r: {type: integer, default: 16, minimum: 1, maximum: 256}
+        lora_alpha: {type: integer, default: 32, minimum: 1, maximum: 512}
+        lora_dropout: {type: number, default: 0.1, minimum: 0.0, maximum: 0.9}
+        max_seq_length: {type: integer, default: 512, minimum: 16, maximum: 8192}
+
     JobCreateRequest:
       type: object
       required: [dataset_id]
       properties:
         dataset_id: {type: string}
-        training_config:
-          # Bounds mirror the server's enqueue-time validation (A4.12,
-          # adapta/services/training.py _HYPERPARAM_BOUNDS) — out-of-range
-          # values are rejected with 422 before a job is created.
-          type: object
-          nullable: true
-          properties:
-            num_epochs: {type: integer, default: 3, minimum: 1, maximum: 100}
-            batch_size: {type: integer, default: 4, minimum: 1, maximum: 128}
-            learning_rate: {type: number, default: 0.0002, minimum: 1.0e-6, maximum: 0.1}
-            lora_r: {type: integer, default: 16, minimum: 1, maximum: 256}
-            lora_alpha: {type: integer, default: 32, minimum: 1, maximum: 512}
-            lora_dropout: {type: number, default: 0.1, minimum: 0.0, maximum: 0.9}
-            max_seq_length: {type: integer, default: 512, minimum: 16, maximum: 8192}
+        training_config: {$ref: '#/components/schemas/TrainingConfigInput', nullable: true}
 
     JobResponse:
       type: object
+      required: [id, status, progress, logs, adapter_path, eval_score, eval_passed, eval_metrics, error_message, created_at]
       properties:
         id: {type: string}
-        status: {type: string, enum: [queued, running, succeeded, failed, cancelled]}
+        status: {$ref: '#/components/schemas/JobStatus'}
         progress: {type: number, minimum: 0, maximum: 1}
         logs: {type: string, nullable: true}
         adapter_path: {type: string, nullable: true}
@@ -823,37 +975,38 @@ components:
         # score_delta, held_out, metrics, sample_predictions. Null until evaluation.
         eval_metrics: {type: object, nullable: true, additionalProperties: true}
         error_message: {type: string, nullable: true}
-        created_at: {type: string, format: date-time}
+        created_at: {type: string}
 
     # Endpoint
     AdapterProvenance:
       type: object
       description: Adapter eval evidence (null for RAG-only endpoints)
+      required: [job_id, eval_score, gate]
       properties:
         job_id: {type: string}
         eval_score: {type: number, format: float}
         base_score: {type: number, format: float, nullable: true}
         score_delta: {type: number, format: float, nullable: true}
-        gate: {type: string, enum: [absolute, improvement]}
-      required: [job_id, eval_score, gate]
+        gate: {$ref: '#/components/schemas/Gate'}
 
     RetrievalSummary:
       type: object
       description: RAG retrieval layer (null when no documents are indexed)
+      required: [indexed_chunks]
       properties:
         indexed_chunks: {type: integer}
-      required: [indexed_chunks]
 
     EndpointResponse:
       type: object
+      required: [id, slug, status, base_model, modality, project_type, created_at, adapter, retrieval, adapter_path]
       properties:
         id: {type: string}
         slug: {type: string}
-        status: {type: string, enum: [pending, active, disabled]}
+        status: {$ref: '#/components/schemas/EndpointStatus'}
         base_model: {type: string}
-        modality: {type: string, enum: [text, vision]}
-        project_type: {type: string, enum: [rag, finetune]}
-        created_at: {type: string, format: date-time}
+        modality: {$ref: '#/components/schemas/Modality'}
+        project_type: {$ref: '#/components/schemas/ProjectType'}
+        created_at: {type: string}
         adapter: {$ref: '#/components/schemas/AdapterProvenance', nullable: true}
         retrieval: {$ref: '#/components/schemas/RetrievalSummary', nullable: true}
         adapter_path: {type: string, nullable: true, deprecated: true}
@@ -861,14 +1014,16 @@ components:
     # Usage
     UsageDay:
       type: object
+      required: [day, prompt_tokens, completion_tokens, total_tokens, request_count]
       properties:
-        day: {type: string, format: date}
+        day: {type: string}
         prompt_tokens: {type: integer}
         completion_tokens: {type: integer}
         total_tokens: {type: integer}
         request_count: {type: integer}
     UsageResponse:
       type: object
+      required: [project_id, total_prompt_tokens, total_completion_tokens, total_tokens, total_requests, days]
       properties:
         project_id: {type: string}
         total_prompt_tokens: {type: integer}
@@ -887,6 +1042,7 @@ components:
 
     KeyCreatedResponse:
       type: object
+      required: [id, name, key, prefix]
       properties:
         id: {type: string}
         name: {type: string}
@@ -895,12 +1051,13 @@ components:
 
     KeyResponse:
       type: object
+      required: [id, name, prefix, is_active, created_at]
       properties:
         id: {type: string}
         name: {type: string}
         prefix: {type: string}
         is_active: {type: boolean}
-        created_at: {type: string, format: date-time}
+        created_at: {type: string}
 
     # Synthesis
     SynthesizeRequest:
@@ -913,10 +1070,61 @@ components:
 
     SynthesizeResponse:
       type: object
+      required: [dataset_id, status, message]
       properties:
         dataset_id: {type: string}
         status: {type: string}
         message: {type: string}
+
+    # Settings (DB-backed whitelisted org-scoped overrides). `value`/`default`/
+    # `min`/`max` are left untyped because a setting is int OR float depending on
+    # its key; an untyped schema preserves the original int (a `number` type
+    # would coerce 512 → 512.0 on the way out).
+    SettingResponse:
+      type: object
+      required: [key, label, group, value, source, default, min, max, description]
+      properties:
+        key: {type: string}
+        label: {type: string}
+        group: {type: string}
+        value: {}
+        source: {type: string}
+        default: {}
+        min: {}
+        max: {}
+        description: {type: string}
+    SettingWriteRequest:
+      type: object
+      required: [team_id, key, value]
+      properties:
+        team_id: {type: string}
+        key: {type: string}
+        value: {}
+    SettingWriteResult:
+      type: object
+      required: [key, value, source, default]
+      properties:
+        key: {type: string}
+        value: {}
+        source: {type: string}
+        default: {}
+
+    # Models catalog
+    BaseModelInfo:
+      type: object
+      required: [name, modality, model_type, use_case, best_for, available, hf_repo_id, notes]
+      properties:
+        name: {type: string, description: "Catalog name — the value Project.base_model takes"}
+        modality: {$ref: '#/components/schemas/Modality'}
+        model_type: {type: string}
+        description: {type: string, nullable: true}
+        use_case: {type: string}
+        best_for: {type: array, items: {type: string}}
+        available: {type: boolean}
+        train_vram_gb: {type: integer, nullable: true}
+        serve_ram_gb: {type: integer, nullable: true}
+        hf_repo_id: {type: string}
+        notes: {type: string}
 
     # Chat
     ChatCompletionRequest:
@@ -924,101 +1132,109 @@ components:
       required: [model, messages]
       properties:
         model: {type: string, description: "Endpoint slug"}
-        messages:
-          type: array
-          items:
-            type: object
-            required: [role, content]
-            properties:
-              role: {type: string, enum: [system, user, assistant]}
-              content:
-                description: >
-                  Plain text, or an OpenAI content-parts array (text and/or
-                  image_url parts; images as data: URLs, vision endpoints only).
-                oneOf:
-                  - type: string
-                  - type: array
-                    maxItems: 16
-                    items: {$ref: '#/components/schemas/ChatContentPart'}
+        messages: {type: array, items: {$ref: '#/components/schemas/ChatMessage'}}
         temperature: {type: number, minimum: 0, maximum: 2, nullable: true}
         max_tokens: {type: integer, nullable: true}
         top_p: {type: number, minimum: 0, maximum: 1, nullable: true}
         stream: {type: boolean, default: false}
 
-    BaseModelInfo:
+    ChatMessage:
       type: object
-      required: [name, modality]
+      required: [role, content]
       properties:
-        name: {type: string, description: "Catalog name — the value Project.base_model takes"}
-        modality: {type: string, enum: [text, vision]}
-        description: {type: string}
+        role: {$ref: '#/components/schemas/MessageRole'}
+        content:
+          description: >
+            Plain text, or an OpenAI content-parts array (text and/or
+            image_url parts; images as data: URLs, vision endpoints only).
+          oneOf:
+            - type: string
+            - $ref: '#/components/schemas/ChatContentParts'
+
+    ChatContentParts:
+      type: array
+      maxItems: 16
+      items: {$ref: '#/components/schemas/ChatContentPart'}
 
     ChatContentPart:
       description: One OpenAI-style message content part.
       oneOf:
-        - type: object
-          required: [type, text]
-          properties:
-            type: {type: string, enum: [text]}
-            text: {type: string}
-          additionalProperties: false
-        - type: object
-          required: [type, image_url]
-          properties:
-            type: {type: string, enum: [image_url]}
-            image_url:
-              type: object
-              required: [url]
-              properties:
-                url:
-                  type: string
-                  description: "Inline image as a data:image/...;base64, URL (remote URLs rejected)"
-              additionalProperties: false
-          additionalProperties: false
+        - $ref: '#/components/schemas/TextContentPart'
+        - $ref: '#/components/schemas/ImageContentPart'
 
+    TextContentPart:
+      type: object
+      required: [type, text]
+      additionalProperties: false
+      properties:
+        type: {type: string, enum: [text]}
+        text: {type: string}
+
+    ImageContentPart:
+      type: object
+      required: [type, image_url]
+      additionalProperties: false
+      properties:
+        type: {type: string, enum: [image_url]}
+        image_url: {$ref: '#/components/schemas/ImageUrl'}
+
+    ImageUrl:
+      type: object
+      required: [url]
+      additionalProperties: false
+      properties:
+        url:
+          type: string
+          description: "Inline image as a data:image/...;base64, URL (remote URLs rejected)"
+
+    ChatResponseMessage:
+      type: object
+      properties:
+        role: {type: string}
+        content: {type: string}
+    ChatChoice:
+      type: object
+      properties:
+        index: {type: integer}
+        message: {$ref: '#/components/schemas/ChatResponseMessage'}
+        finish_reason: {type: string}
+    ChatUsage:
+      type: object
+      properties:
+        prompt_tokens: {type: integer}
+        completion_tokens: {type: integer}
+        total_tokens: {type: integer}
+    Citation:
+      type: object
+      properties:
+        index: {type: integer}
+        source: {type: string}
+        score: {type: number}
     ChatCompletionResponse:
+      # Response-only (the OpenAI-passthrough dict is validated against this by
+      # schemathesis, not constructed from this model), so fields stay optional.
       type: object
       properties:
         id: {type: string}
         object: {type: string}
         created: {type: integer}
         model: {type: string}
-        choices:
-          type: array
-          items:
-            type: object
-            properties:
-              index: {type: integer}
-              message:
-                type: object
-                properties:
-                  role: {type: string}
-                  content: {type: string}
-              finish_reason: {type: string}
-        usage:
-          type: object
-          properties:
-            prompt_tokens: {type: integer}
-            completion_tokens: {type: integer}
-            total_tokens: {type: integer}
+        choices: {type: array, items: {$ref: '#/components/schemas/ChatChoice'}}
+        usage: {$ref: '#/components/schemas/ChatUsage'}
         citations:
           type: array
           nullable: true
           description: "Document citations — present when the project has indexed documents"
-          items:
-            type: object
-            properties:
-              index: {type: integer}
-              source: {type: string}
-              score: {type: number}
+          items: {$ref: '#/components/schemas/Citation'}
 
     # Error
+    Error:
+      type: object
+      properties:
+        code: {type: string}
+        message: {type: string}
+        correlation_id: {type: string, nullable: true}
     ErrorResponse:
       type: object
       properties:
-        error:
-          type: object
-          properties:
-            code: {type: string}
-            message: {type: string}
-            correlation_id: {type: string, nullable: true}
+        error: {$ref: '#/components/schemas/Error'}

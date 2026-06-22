@@ -71,7 +71,7 @@ Why three: it's **self-hosted** (you upgrade customer DBs → migrations are man
 
 **Makefile targets** (in container): `make generate`, `make validate-spec`, `make check-models`, `make test-contracts`, `make migrate`, `make test`, `make lint`, `make fmt`, `make check-leaks`, `make ci`.
 
-> **Pillar 1 is enforced as of 2026-06-08.** `make test-contracts` passes `--checks all` against the live server (zero 5xx — last run 1574/1574, incl. the §V image surface); `adapta/models/generated/models.py` is committed and kept in sync by `make check-models` (in `make ci`). Auth uses **direct bcrypt** (SHA-256 pre-hash) — `passlib` was removed (incompatible with bcrypt 5.x). ORM enums are `native_enum=False` to match the `String(16)` migration columns.
+> **Pillar 1 is enforced as of 2026-06-08; the spec genuinely drives the code as of 2026-06-22.** `make test-contracts` passes `--checks all` against the live server (zero 5xx, all 33 operations incl. the §V image surface); `adapta/models/generated/models.py` is committed and kept in sync by `make check-models` (in `make ci`). The API routers **consume those generated models directly** — there are no hand-written request/response models, so editing `specs/openapi.yaml` + `make generate` forces the handlers to follow; `tests/test_generated_models_wired.py` fails if any router reintroduces a local DTO. Auth uses **direct bcrypt** (SHA-256 pre-hash) — `passlib` was removed (incompatible with bcrypt 5.x). ORM enums are `native_enum=False` to match the `String(16)` migration columns.
 
 ---
 

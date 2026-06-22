@@ -2,37 +2,18 @@
 
 from __future__ import annotations
 
-from typing import List
-
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from adapta.db.models import Project
 from adapta.db.session import get_db
 from adapta.domain.errors import NotFound
+from adapta.models.generated import UsageDay, UsageResponse
 from adapta.services.auth import get_current_user, require_team_member
 from adapta.services.usage import usage_by_day
 
 router = APIRouter(prefix="/projects/{project_id}/usage", tags=["usage"])
-
-
-class UsageDay(BaseModel):
-    day: str
-    prompt_tokens: int
-    completion_tokens: int
-    total_tokens: int
-    request_count: int
-
-
-class UsageResponse(BaseModel):
-    project_id: str
-    total_prompt_tokens: int
-    total_completion_tokens: int
-    total_tokens: int
-    total_requests: int
-    days: List[UsageDay]
 
 
 @router.get("", response_model=UsageResponse)

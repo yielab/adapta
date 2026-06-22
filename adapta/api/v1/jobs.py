@@ -4,38 +4,18 @@ import json
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from adapta.db.models import Project, TrainingJob
 from adapta.db.session import get_db
 from adapta.domain.errors import NotFound
+from adapta.models.generated import JobCreateRequest, JobResponse, JobStatus
 from adapta.services.auth import get_current_user, require_team_member, require_team_writer
 from adapta.services.jobs import get_job_queue
 from adapta.services.training import enqueue_training_job
 
 router = APIRouter(prefix="/projects/{project_id}/jobs", tags=["jobs"])
-
-
-class JobCreateRequest(BaseModel):
-    dataset_id: str
-    training_config: Optional[dict] = None
-
-
-class JobResponse(BaseModel):
-    id: str
-    status: str
-    progress: float
-    logs: Optional[str]
-    adapter_path: Optional[str]
-    eval_score: Optional[float]
-    eval_passed: Optional[bool]
-    # Full eval result (score, base_score, score_delta, held_out, metrics,
-    # sample_predictions) so the gate verdict is auditable — not just a scalar (A4.6).
-    eval_metrics: Optional[dict]
-    error_message: Optional[str]
-    created_at: str
 
 
 def _job_resp(j: TrainingJob) -> JobResponse:
@@ -47,7 +27,7 @@ def _job_resp(j: TrainingJob) -> JobResponse:
             eval_metrics = None  # never let a malformed blob 500 the job read
     return JobResponse(
         id=j.id,
-        status=j.status.value,
+        status=JobStatus(j.status.value),
         progress=j.progress,
         logs=j.logs,
         adapter_path=j.adapter_path,
@@ -77,12 +57,15 @@ async def create_job(
     project = await _get_project(db, project_id)
     await require_team_writer(db, current_user.id, project.team_id)
 
+    # enqueue takes a plain dict; pass only client-supplied hyperparameters
+    # (exclude_unset) so the server's defaults/validation apply as before.
+    config = body.training_config.model_dump(exclude_unset=True) if body.training_config else None
     job = await enqueue_training_job(
         db,
         project_id=project_id,
         dataset_id=body.dataset_id,
         base_model=project.base_model,
-        training_config=body.training_config,
+        training_config=config,
     )
     return _job_resp(job)
 

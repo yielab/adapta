@@ -3,13 +3,13 @@
 from typing import List
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from adapta.db.models import ApiKey, Endpoint, Project
 from adapta.db.session import get_db
 from adapta.domain.errors import NotFound
+from adapta.models.generated import KeyCreatedResponse, KeyCreateRequest, KeyResponse
 from adapta.services.auth import (
     generate_api_key,
     get_current_user,
@@ -18,27 +18,6 @@ from adapta.services.auth import (
 )
 
 router = APIRouter(prefix="/projects/{project_id}/keys", tags=["keys"])
-
-
-class KeyCreateRequest(BaseModel):
-    name: str = Field(min_length=1, max_length=128)  # mirrors api_keys.name String(128)
-
-
-class KeyCreatedResponse(BaseModel):
-    """Returned once on creation — the full key is shown only now."""
-
-    id: str
-    name: str
-    key: str  # full key — show once, never again
-    prefix: str
-
-
-class KeyResponse(BaseModel):
-    id: str
-    name: str
-    prefix: str
-    is_active: bool
-    created_at: str
 
 
 async def _get_active_endpoint(db: AsyncSession, project_id: str) -> Endpoint:

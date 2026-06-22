@@ -1,9 +1,12 @@
-"""Auth endpoints: login, register (first user = org bootstrap), team invites."""
+"""Auth endpoints: login, register (first user = org bootstrap), team invites.
 
-from typing import List, Optional
+Request/response models are generated from specs/openapi.yaml (the API contract)
+and imported from adapta.models.generated — never hand-redefined here.
+"""
+
+from typing import List
 
 from fastapi import APIRouter, Depends, Request
-from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,6 +14,23 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from adapta.db.models import Invitation, Org, Role, Team, TeamMember, User
 from adapta.db.session import get_db
 from adapta.domain.errors import Conflict, InvalidRequest
+from adapta.models.generated import (
+    AcceptInviteRequest,
+    ChangePasswordRequest,
+    InvitationResponse,
+    InviteRequest,
+    LoginRequest,
+    RegisterRequest,
+    TeamSummary,
+    TokenResponse,
+    UserResponse,
+)
+from adapta.models.generated import (
+    InvitationStatus as ApiInvitationStatus,
+)
+from adapta.models.generated import (
+    Role as ApiRole,
+)
 from adapta.services.auth import (
     authenticate_user,
     create_access_token,
@@ -26,37 +46,6 @@ from adapta.services.rate_limit import enforce_auth
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
-class LoginRequest(BaseModel):
-    email: EmailStr
-    password: str
-
-
-class TokenResponse(BaseModel):
-    access_token: str
-    token_type: str = "bearer"
-
-
-class RegisterRequest(BaseModel):
-    # Length caps mirror the spec / DB columns (orgs.name, users.email) — an
-    # uncapped value overflows the column and surfaces as a 500.
-    org_name: str = Field(min_length=1, max_length=128)
-    email: EmailStr = Field(max_length=256)
-    password: str
-
-
-class TeamSummary(BaseModel):
-    id: str
-    name: str
-    role: str
-
-
-class UserResponse(BaseModel):
-    id: str
-    email: str
-    org_id: str
-    teams: List[TeamSummary] = []
-
-
 async def _load_teams(db: AsyncSession, user_id: str) -> List[TeamSummary]:
     """The teams a user belongs to + their role — so a client can discover the
     team_id every /v1/projects call requires."""
@@ -65,7 +54,9 @@ async def _load_teams(db: AsyncSession, user_id: str) -> List[TeamSummary]:
         .join(TeamMember, TeamMember.team_id == Team.id)
         .where(TeamMember.user_id == user_id)
     )
-    return [TeamSummary(id=tid, name=name, role=role.value) for tid, name, role in result.all()]
+    return [
+        TeamSummary(id=tid, name=name, role=ApiRole(role.value)) for tid, name, role in result.all()
+    ]
 
 
 @router.post("/login", response_model=TokenResponse)
@@ -117,7 +108,7 @@ async def register(body: RegisterRequest, request: Request, db: AsyncSession = D
         id=user.id,
         email=user.email,
         org_id=user.org_id,
-        teams=[TeamSummary(id=team.id, name=team.name, role=Role.admin.value)],
+        teams=[TeamSummary(id=team.id, name=team.name, role=ApiRole(Role.admin.value))],
     )
 
 
@@ -136,34 +127,13 @@ async def me(current_user=Depends(get_current_user), db: AsyncSession = Depends(
 # ---------------------------------------------------------------------------
 
 
-class InviteRequest(BaseModel):
-    email: EmailStr = Field(max_length=255)  # mirrors invitations.email String(255)
-    team_id: str
-    role: Role = Role.member
-
-
-class InvitationResponse(BaseModel):
-    id: str
-    email: str
-    team_id: str
-    role: str
-    status: str
-    token: Optional[str] = None  # returned only at creation time
-    expires_at: str
-
-
-class AcceptInviteRequest(BaseModel):
-    token: str
-    password: str
-
-
 def _invite_resp(inv: Invitation, *, include_token: bool = False) -> InvitationResponse:
     return InvitationResponse(
         id=inv.id,
         email=inv.email,
         team_id=inv.team_id,
-        role=inv.role.value,
-        status=inv.status.value,
+        role=ApiRole(inv.role.value),
+        status=ApiInvitationStatus(inv.status.value),
         token=inv.token if include_token else None,
         expires_at=inv.expires_at.isoformat(),
     )
@@ -177,11 +147,11 @@ async def invite(
 ):
     """Admin issues an invite for a user to join one of their teams."""
     await require_team_admin(db, current_user.id, body.team_id)
-    if body.role == Role.admin:
-        # Inviting another admin is allowed; nothing extra to check here.
-        pass
+    # The contract leaves role optional; default a missing one to member. Convert
+    # the generated enum to the DB enum by value (they are distinct classes).
+    role = Role(body.role.value) if body.role is not None else Role.member
     inv = await create_invitation(
-        db, team_id=body.team_id, email=body.email, role=body.role, invited_by=current_user.id
+        db, team_id=body.team_id, email=body.email, role=role, invited_by=current_user.id
     )
     # Token is shown once, at creation (the operator delivers it out-of-band).
     return _invite_resp(inv, include_token=True)
@@ -214,11 +184,6 @@ async def list_invitations(
     await require_team_admin(db, current_user.id, team_id)
     result = await db.execute(select(Invitation).where(Invitation.team_id == team_id))
     return [_invite_resp(i) for i in result.scalars().all()]
-
-
-class ChangePasswordRequest(BaseModel):
-    current_password: str
-    new_password: str = Field(min_length=8)
 
 
 @router.post("/change-password", status_code=204)

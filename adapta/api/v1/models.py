@@ -5,29 +5,15 @@ modality-aware UI (§V5) read the same SSOT the server validates against,
 instead of duplicating a hard-coded list that drifts.
 """
 
-from typing import List, Optional
+from typing import List
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel
 
 from adapta.core.model_catalog import all_entries
+from adapta.models.generated import BaseModelInfo
 from adapta.services.auth import get_current_user
 
 router = APIRouter(prefix="/models", tags=["models"])
-
-
-class BaseModelInfo(BaseModel):
-    name: str
-    modality: str  # "text" | "vision"
-    model_type: str
-    description: Optional[str] = None
-    use_case: str = ""
-    best_for: List[str] = []
-    available: bool = False
-    train_vram_gb: Optional[int] = None
-    serve_ram_gb: Optional[int] = None
-    hf_repo_id: str = ""
-    notes: str = ""
 
 
 @router.get("", response_model=List[BaseModelInfo])

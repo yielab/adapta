@@ -232,7 +232,7 @@ The architecture is described here; the **state of each test/gate and the open w
 - In-process suites: `tests/test_basic.py`, `tests/test_error_boundary.py`, `tests/test_eval_gate.py`.
 - Live-stack suite: `tests/test_api_contracts.py` (schemathesis, `@pytest.mark.contract`).
 - Gates: `make ci` (offline: check-leaks + lint + coverage floor + validate-spec + check-models) and the `full` gate (migrate-test + boot smoke + contract + integration), wired in `.github/workflows/ci.yml`.
-- Generated DTOs: `adapta/models/generated/models.py` is committed and kept in sync with the spec by `make check-models` (regenerate-and-diff). As of 2026-06-08 the contract gate passes `--checks all` against the live server (1260/1260, zero 5xx).
+- Generated DTOs: `adapta/models/generated/models.py` is committed and kept in sync with the spec by `make check-models` (regenerate-and-diff). The `adapta/api/v1/*` routers **import these models directly** — no hand-written request/response models exist, so the spec actually drives the handlers; `tests/test_generated_models_wired.py` enforces this (fails if a router defines a local DTO). The contract gate passes `--checks all` against the live server (all 33 operations, zero 5xx).
 
 > For what's done vs open across the three SDD pillars, see [TODO.md](../roadmap.md) "Status snapshot" and §A.
 

@@ -49,7 +49,7 @@ Honour the [Definition of done](#definition-of-done-per-task) on every task. Wor
 | Product build (phases 0–5) | ✅ code-complete |
 | Pillar 2 — DB migration gate | ✅ `make migrate-test` verified (up→down→up); CI `full` job runs it |
 | Pillar 3 — eval gate (the moat) | ✅ enforced + **validated on GPU end-to-end** (2026-06-10): held-out, response-only, dual gate (absolute ≥0.6 **OR** clear improvement over base — `passes_eval_gate`); `tests/test_eval_gate.py` + the live LoRA e2e (`test_lora_e2e.py`, score 0.215, base 0.044, Δ+0.17 → pass → served adapter returns the invented word). |
-| **Pillar 1 — API contract** | ✅ **honored** (2026-06-08) — `make test-contracts` green (1260/1260, `--checks all`, zero 5xx); generated models committed + drift-gated (`make check-models`). Optional router-DTO switch remains (§A1b). |
+| **Pillar 1 — API contract** | ✅ **honored** (2026-06-08) + **spec genuinely drives the code** (2026-06-22) — `make test-contracts` green (all 33 ops, `--checks all`, zero 5xx); generated models committed + drift-gated (`make check-models`); routers consume them directly (§A1b done, guard test). |
 | CI runner | ✅ `.github/workflows/ci.yml` — `fast` (every push, offline) + `full` (live stack, on **PR→main and push→main** — the latter added 2026-06-10 so the three contract gates actually run, since this repo commits straight to main) |
 | Boot-correctness gate | ✅ (2026-06-08) — fast `import smoke` (app + worker) every push; `full` boot smoke starts uvicorn **and** the worker and asserts both survive. See **§A2**. |
 | Docker dev/prod workflow | ✅ reworked 2026-06-08 — one multi-stage `Dockerfile`, non-root prod, dev toolchain baked in (no manual pip). See **§4**. |
@@ -64,7 +64,7 @@ Honour the [Definition of done](#definition-of-done-per-task) on every task. Wor
 
 ## A. Critical — close before claiming `main` is trustworthy (P0)
 
-### A1. API contract (Pillar 1) — ✅ DONE (gate green) except the optional router-DTO switch (P0→P2)
+### A1. API contract (Pillar 1) — ✅ DONE (gate green; routers consume the generated DTOs as of 2026-06-22)
 
 **Context (resolved 2026-06-08).** The contract gate was red; making it green surfaced **three real bugs** plus the spec gaps. All fixed:
 - `[x]` **Auth was 100% broken (500).** `passlib` 1.7.4 is incompatible with `bcrypt` 5.x (can't read `bcrypt.__about__`, then misfires the 72-byte check). Replaced passlib with **direct bcrypt + SHA-256 pre-hash** in `adapta/services/auth.py`; dropped passlib from `pyproject.toml`.
@@ -77,7 +77,7 @@ Honour the [Definition of done](#definition-of-done-per-task) on every task. Wor
 
 **Result:** `make test-contracts` → **1260 generated, 1260 passed, 0 failures** (`--checks all`). Zero 5xx. Pillar 1 is honored and enforced.
 
-- [ ] **Remaining (optional, downgraded to P2) — A1b: switch routers to the generated DTOs.** Routers in `adapta/api/v1/*` still hand-write their Pydantic request/response models (verified 2026-06-13: 0 routers import `adapta.models.generated`); `adapta.models.generated` is committed and drift-checked but **not yet imported**. This is a code-tidiness item, **not** an integrity gap — the contract gate is green regardless because the generated models are drift-checked against the spec by `make check-models`. Incrementally replace the hand-written DTOs with the generated equivalents (per the note in `adapta/models/__init__.py`), deleting duplicates. *Acceptance:* every router imports its DTOs from `adapta.models.generated`; no hand-written request/response model remains; contract gate stays green.
+- [x] **A1b: routers switched to the generated DTOs (2026-06-22).** All 13 `adapta/api/v1/*` routers now import their request/response models from `adapta.models.generated`; **zero hand-written DTOs remain**. The spec was first cleaned at its origin so the generated models are usable: inline enums extracted to named components (`JobStatus`/`MessageRole`/… instead of `Status1`/`Role4`), `required` added to response schemas (strict, non-`Optional` models), and three drifted surfaces brought into the contract — the `/settings` endpoints (were undocumented), `ProjectResponse.summary` (nested dashboard aggregate), and the 8 extra `BaseModelInfo` fields. New guard `tests/test_generated_models_wired.py` fails if any router reintroduces a local DTO. *Verified:* `make ci` green, `mypy`/`ruff`/`black` clean, `make test-contracts` → all 33 ops, `--checks all`, zero 5xx. The spec now genuinely drives the code (edit spec → `make generate` → handlers must follow), not just drift-checked alongside it.
 
 ### A2. Boot-correctness gate — ✅ DONE (the image runs, not just builds) (P0)
 

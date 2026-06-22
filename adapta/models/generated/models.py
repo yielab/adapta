@@ -3,11 +3,57 @@
 
 from __future__ import annotations
 
-from datetime import date
 from enum import Enum
 from typing import Annotated, Any, Literal
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, EmailStr, Field, RootModel
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, RootModel
+
+
+class Role(Enum):
+    admin = "admin"
+    member = "member"
+    viewer = "viewer"
+
+
+class ProjectType(Enum):
+    rag = "rag"
+    finetune = "finetune"
+
+
+class Modality(Enum):
+    text = "text"
+    vision = "vision"
+
+
+class Gate(Enum):
+    absolute = "absolute"
+    improvement = "improvement"
+
+
+class InvitationStatus(Enum):
+    pending = "pending"
+    accepted = "accepted"
+    revoked = "revoked"
+
+
+class JobStatus(Enum):
+    queued = "queued"
+    running = "running"
+    succeeded = "succeeded"
+    failed = "failed"
+    cancelled = "cancelled"
+
+
+class EndpointStatus(Enum):
+    pending = "pending"
+    active = "active"
+    disabled = "disabled"
+
+
+class MessageRole(Enum):
+    system = "system"
+    user = "user"
+    assistant = "assistant"
 
 
 class RegisterRequest(BaseModel):
@@ -22,20 +68,14 @@ class LoginRequest(BaseModel):
 
 
 class TokenResponse(BaseModel):
-    access_token: str | None = None
-    token_type: Literal["bearer"] | None = None
-
-
-class Role(Enum):
-    admin = "admin"
-    member = "member"
-    viewer = "viewer"
+    access_token: str
+    token_type: str = "bearer"
 
 
 class TeamSummary(BaseModel):
-    id: str | None = None
-    name: str | None = None
-    role: Role | None = None
+    id: str
+    name: str
+    role: Role
 
 
 class InviteRequest(BaseModel):
@@ -49,27 +89,21 @@ class AcceptInviteRequest(BaseModel):
     password: Annotated[str, Field(min_length=8)]
 
 
-class Status(Enum):
-    pending = "pending"
-    accepted = "accepted"
-    revoked = "revoked"
-
-
 class InvitationResponse(BaseModel):
-    id: str | None = None
-    email: str | None = None
-    team_id: str | None = None
-    role: Role | None = None
-    status: Status | None = None
-    token: str | None = None
-    expires_at: str | None = None
+    id: str
+    email: str
+    team_id: str
+    role: Role
+    status: InvitationStatus
+    token: Annotated[str | None, Field(...)]
+    expires_at: str
 
 
 class MemberResponse(BaseModel):
-    user_id: str | None = None
-    email: str | None = None
-    role: Role | None = None
-    joined_at: AwareDatetime | None = None
+    user_id: str
+    email: str
+    role: Role
+    joined_at: str
 
 
 class ChangePasswordRequest(BaseModel):
@@ -77,56 +111,76 @@ class ChangePasswordRequest(BaseModel):
     new_password: Annotated[str, Field(min_length=8)]
 
 
-class Type(Enum):
-    rag = "rag"
-    finetune = "finetune"
-
-
 class ProjectCreate(BaseModel):
     name: Annotated[str, Field(max_length=128, min_length=1)]
-    type: Type
+    type: ProjectType
     base_model: str
     description: str | None = None
     team_id: str
 
 
-class ProjectResponse(BaseModel):
-    id: str | None = None
-    name: str | None = None
-    type: Type | None = None
+class FileSummary(BaseModel):
+    total: int
+    indexed: int
+    chunks: int
+
+
+class DatasetSummary(BaseModel):
+    total: int
+    valid: int
+
+
+class JobSummary(BaseModel):
+    total: int
+    running: int
+    last_status: str | None = None
+    last_eval_score: float | None = None
+    gate_passed: bool | None = None
+
+
+class EndpointSummary(BaseModel):
+    exists: bool
+    slug: str | None = None
     status: str | None = None
-    base_model: str | None = None
-    description: str | None = None
-    team_id: str | None = None
-    created_at: AwareDatetime | None = None
+
+
+class UsageSummary(BaseModel):
+    requests: int
+    total_tokens: int
+
+
+class ProjectSummary(BaseModel):
+    stage: str
+    files: FileSummary
+    datasets: DatasetSummary
+    jobs: JobSummary
+    endpoint: EndpointSummary
+    keys_active: int
+    usage_7d: UsageSummary
+    last_activity_at: str | None = None
 
 
 class FileResponse(BaseModel):
-    id: str | None = None
-    filename: str | None = None
-    status: str | None = None
-    num_chunks: int | None = None
-    size_bytes: int | None = None
-    uploaded_at: AwareDatetime | None = None
-
-
-class Modality(Enum):
-    text = "text"
-    vision = "vision"
+    id: str
+    filename: str
+    status: str
+    num_chunks: Annotated[int | None, Field(...)]
+    size_bytes: int
+    uploaded_at: str
 
 
 class DatasetResponse(BaseModel):
-    id: str | None = None
-    name: str | None = None
-    status: str | None = None
-    num_samples: int | None = None
-    modality: Modality | None = None
-    num_images: int | None = None
-    validation_error: str | None = None
-    created_at: AwareDatetime | None = None
+    id: str
+    name: str
+    status: str
+    num_samples: Annotated[int | None, Field(...)]
+    modality: Modality
+    num_images: Annotated[int | None, Field(...)]
+    validation_error: Annotated[str | None, Field(...)]
+    created_at: str
 
 
-class TrainingConfig(BaseModel):
+class TrainingConfigInput(BaseModel):
     num_epochs: Annotated[int, Field(ge=1, le=100)] = 3
     batch_size: Annotated[int, Field(ge=1, le=128)] = 4
     learning_rate: Annotated[float, Field(ge=1e-06, le=0.1)] = 0.0002
@@ -138,33 +192,20 @@ class TrainingConfig(BaseModel):
 
 class JobCreateRequest(BaseModel):
     dataset_id: str
-    training_config: TrainingConfig | None = None
-
-
-class Status1(Enum):
-    queued = "queued"
-    running = "running"
-    succeeded = "succeeded"
-    failed = "failed"
-    cancelled = "cancelled"
+    training_config: TrainingConfigInput | None = None
 
 
 class JobResponse(BaseModel):
-    id: str | None = None
-    status: Status1 | None = None
-    progress: Annotated[float | None, Field(ge=0.0, le=1.0)] = None
-    logs: str | None = None
-    adapter_path: str | None = None
-    eval_score: float | None = None
-    eval_passed: bool | None = None
-    eval_metrics: dict[str, Any] | None = None
-    error_message: str | None = None
-    created_at: AwareDatetime | None = None
-
-
-class Gate(Enum):
-    absolute = "absolute"
-    improvement = "improvement"
+    id: str
+    status: JobStatus
+    progress: Annotated[float, Field(ge=0.0, le=1.0)]
+    logs: Annotated[str | None, Field(...)]
+    adapter_path: Annotated[str | None, Field(...)]
+    eval_score: Annotated[float | None, Field(...)]
+    eval_passed: Annotated[bool | None, Field(...)]
+    eval_metrics: Annotated[dict[str, Any] | None, Field(...)]
+    error_message: Annotated[str | None, Field(...)]
+    created_at: str
 
 
 class AdapterProvenance(BaseModel):
@@ -179,40 +220,34 @@ class RetrievalSummary(BaseModel):
     indexed_chunks: int
 
 
-class Status2(Enum):
-    pending = "pending"
-    active = "active"
-    disabled = "disabled"
-
-
 class EndpointResponse(BaseModel):
-    id: str | None = None
-    slug: str | None = None
-    status: Status2 | None = None
-    base_model: str | None = None
-    modality: Modality | None = None
-    project_type: Type | None = None
-    created_at: AwareDatetime | None = None
-    adapter: AdapterProvenance | None = None
-    retrieval: RetrievalSummary | None = None
-    adapter_path: Annotated[str | None, Field(deprecated=True)] = None
+    id: str
+    slug: str
+    status: EndpointStatus
+    base_model: str
+    modality: Modality
+    project_type: ProjectType
+    created_at: str
+    adapter: Annotated[AdapterProvenance | None, Field(...)]
+    retrieval: Annotated[RetrievalSummary | None, Field(...)]
+    adapter_path: Annotated[str | None, Field(deprecated=True)]
 
 
 class UsageDay(BaseModel):
-    day: date | None = None
-    prompt_tokens: int | None = None
-    completion_tokens: int | None = None
-    total_tokens: int | None = None
-    request_count: int | None = None
+    day: str
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int
+    request_count: int
 
 
 class UsageResponse(BaseModel):
-    project_id: str | None = None
-    total_prompt_tokens: int | None = None
-    total_completion_tokens: int | None = None
-    total_tokens: int | None = None
-    total_requests: int | None = None
-    days: list[UsageDay] | None = None
+    project_id: str
+    total_prompt_tokens: int
+    total_completion_tokens: int
+    total_tokens: int
+    total_requests: int
+    days: list[UsageDay]
 
 
 class KeyCreateRequest(BaseModel):
@@ -220,21 +255,21 @@ class KeyCreateRequest(BaseModel):
 
 
 class KeyCreatedResponse(BaseModel):
-    id: str | None = None
-    name: str | None = None
-    key: str | None = None
+    id: str
+    name: str
+    key: str
     """
     Full key — shown once only
     """
-    prefix: str | None = None
+    prefix: str
 
 
 class KeyResponse(BaseModel):
-    id: str | None = None
-    name: str | None = None
-    prefix: str | None = None
-    is_active: bool | None = None
-    created_at: AwareDatetime | None = None
+    id: str
+    name: str
+    prefix: str
+    is_active: bool
+    created_at: str
 
 
 class SynthesizeRequest(BaseModel):
@@ -245,15 +280,34 @@ class SynthesizeRequest(BaseModel):
 
 
 class SynthesizeResponse(BaseModel):
-    dataset_id: str | None = None
-    status: str | None = None
-    message: str | None = None
+    dataset_id: str
+    status: str
+    message: str
 
 
-class Role4(Enum):
-    system = "system"
-    user = "user"
-    assistant = "assistant"
+class SettingResponse(BaseModel):
+    key: str
+    label: str
+    group: str
+    value: Any
+    source: str
+    default: Any
+    min: Any
+    max: Any
+    description: str
+
+
+class SettingWriteRequest(BaseModel):
+    team_id: str
+    key: str
+    value: Any
+
+
+class SettingWriteResult(BaseModel):
+    key: str
+    value: Any
+    source: str
+    default: Any
 
 
 class BaseModelInfo(BaseModel):
@@ -262,10 +316,18 @@ class BaseModelInfo(BaseModel):
     Catalog name — the value Project.base_model takes
     """
     modality: Modality
+    model_type: str
     description: str | None = None
+    use_case: str
+    best_for: list[str]
+    available: bool
+    train_vram_gb: int | None = None
+    serve_ram_gb: int | None = None
+    hf_repo_id: str
+    notes: str
 
 
-class ChatContentPart1(BaseModel):
+class TextContentPart(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
     )
@@ -283,26 +345,18 @@ class ImageUrl(BaseModel):
     """
 
 
-class ChatContentPart2(BaseModel):
-    model_config = ConfigDict(
-        extra="forbid",
-    )
-    type: Literal["image_url"]
-    image_url: ImageUrl
-
-
-class Message1(BaseModel):
+class ChatResponseMessage(BaseModel):
     role: str | None = None
     content: str | None = None
 
 
-class Choice(BaseModel):
+class ChatChoice(BaseModel):
     index: int | None = None
-    message: Message1 | None = None
+    message: ChatResponseMessage | None = None
     finish_reason: str | None = None
 
 
-class Usage(BaseModel):
+class ChatUsage(BaseModel):
     prompt_tokens: int | None = None
     completion_tokens: int | None = None
     total_tokens: int | None = None
@@ -319,8 +373,8 @@ class ChatCompletionResponse(BaseModel):
     object: str | None = None
     created: int | None = None
     model: str | None = None
-    choices: list[Choice] | None = None
-    usage: Usage | None = None
+    choices: list[ChatChoice] | None = None
+    usage: ChatUsage | None = None
     citations: list[Citation] | None = None
     """
     Document citations — present when the project has indexed documents
@@ -338,26 +392,42 @@ class ErrorResponse(BaseModel):
 
 
 class UserResponse(BaseModel):
-    id: str | None = None
-    email: str | None = None
-    org_id: str | None = None
-    teams: list[TeamSummary] | None = None
+    id: str
+    email: str
+    org_id: str
+    teams: list[TeamSummary]
     """
     Teams the user belongs to, with their role in each. Lets a client discover the team_id required by the project endpoints.
     """
 
 
-class Content(RootModel[list[ChatContentPart1 | ChatContentPart2]]):
-    root: Annotated[list[ChatContentPart1 | ChatContentPart2], Field(max_length=16)]
-    """
-    Plain text, or an OpenAI content-parts array (text and/or image_url parts; images as data: URLs, vision endpoints only).
+class ProjectResponse(BaseModel):
+    id: str
+    name: str
+    type: ProjectType
+    status: str
+    base_model: str
+    description: Annotated[str | None, Field(...)]
+    team_id: str
+    created_at: str
+    summary: Annotated[ProjectSummary | None, Field(...)]
 
-    """
+
+class ImageContentPart(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    type: Literal["image_url"]
+    image_url: ImageUrl
 
 
-class Message(BaseModel):
-    role: Role4
-    content: str | Content
+class ChatContentParts(RootModel[list[TextContentPart | ImageContentPart]]):
+    root: Annotated[list[TextContentPart | ImageContentPart], Field(max_length=16)]
+
+
+class ChatMessage(BaseModel):
+    role: MessageRole
+    content: str | ChatContentParts
     """
     Plain text, or an OpenAI content-parts array (text and/or image_url parts; images as data: URLs, vision endpoints only).
 
@@ -369,7 +439,7 @@ class ChatCompletionRequest(BaseModel):
     """
     Endpoint slug
     """
-    messages: list[Message]
+    messages: list[ChatMessage]
     temperature: Annotated[float | None, Field(ge=0.0, le=2.0)] = None
     max_tokens: int | None = None
     top_p: Annotated[float | None, Field(ge=0.0, le=1.0)] = None

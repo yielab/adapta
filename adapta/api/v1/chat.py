@@ -8,17 +8,17 @@ the trained adapter when the endpoint has one — or both together.
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import List, Literal, Optional, Union
+from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Request
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from adapta.db.models import ApiKey, Collection, Endpoint, EndpointStatus, Project
 from adapta.db.session import get_db
 from adapta.domain.errors import Forbidden, InvalidRequest, NotFound, Unauthorized
+from adapta.models.generated import ChatCompletionRequest
 from adapta.services.auth import verify_api_key
 from adapta.services.chat import chat, chat_stream, has_image_parts
 from adapta.services.usage import record_usage
@@ -26,42 +26,9 @@ from adapta.services.usage import record_usage
 router = APIRouter(tags=["chat"])
 
 
-# ---------------------------------------------------------------------------
-# OpenAI-compatible request / response schemas
-# ---------------------------------------------------------------------------
-
-
-class TextPart(BaseModel):
-    type: Literal["text"]
-    text: str
-
-
-class ImageUrl(BaseModel):
-    url: str  # data:image/...;base64, only — remote URLs rejected in the service
-
-
-class ImagePart(BaseModel):
-    type: Literal["image_url"]
-    image_url: ImageUrl
-
-
-ContentPart = Union[TextPart, ImagePart]
-
-
-class ChatMessage(BaseModel):
-    role: str
-    # Plain text, or the OpenAI content-parts array (§V4: image_url parts on
-    # vision endpoints; data: URLs only).
-    content: Union[str, List[ContentPart]]
-
-
-class ChatCompletionRequest(BaseModel):
-    model: str  # endpoint slug
-    messages: List[ChatMessage]
-    temperature: Optional[float] = None
-    max_tokens: Optional[int] = None
-    top_p: Optional[float] = None
-    stream: Optional[bool] = False
+# The OpenAI-compatible request schema (ChatCompletionRequest, with its
+# ChatMessage / ChatContentParts / Text|ImageContentPart parts) is generated
+# from specs/openapi.yaml and imported above.
 
 
 # ---------------------------------------------------------------------------
@@ -136,17 +103,18 @@ async def chat_completions(
             internal_detail=f"key for endpoint slug={endpoint.slug!r} but model={request_body.model!r}",
         )
 
-    # Plain dicts for the service; content-parts models dump to OpenAI-shaped
-    # dicts (the same shape the multimodal chat handler consumes).
-    messages = [
-        {
-            "role": m.role,
-            "content": (
-                m.content if isinstance(m.content, str) else [p.model_dump() for p in m.content]
-            ),
-        }
-        for m in request_body.messages
-    ]
+    # Plain dicts for the service. The generated models carry the role as a
+    # MessageRole enum and the parts array as a RootModel (.root holds the list);
+    # content-parts dump to the OpenAI-shaped dicts the multimodal handler wants.
+    def _to_dict(m) -> dict:
+        content = m.content
+        role = m.role.value if hasattr(m.role, "value") else m.role
+        if isinstance(content, str):
+            return {"role": role, "content": content}
+        parts = getattr(content, "root", content)
+        return {"role": role, "content": [p.model_dump() for p in parts]}
+
+    messages = [_to_dict(m) for m in request_body.messages]
 
     # Streaming with images is rejected HERE, before a StreamingResponse exists —
     # raised inside the stream generator it would surface as a broken body, not

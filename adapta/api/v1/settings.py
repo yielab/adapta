@@ -1,25 +1,19 @@
 """Platform settings — DB-backed whitelisted org-scoped overrides (§C4.4)."""
 
-from typing import Any, List
+from typing import List
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from adapta.db.session import get_db
+from adapta.models.generated import SettingResponse, SettingWriteRequest, SettingWriteResult
 from adapta.services.app_settings import delete_setting, resolve_all, upsert_setting
 from adapta.services.auth import get_current_user, require_team_admin, require_team_member
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
 
-class SettingWriteRequest(BaseModel):
-    team_id: str
-    key: str
-    value: Any
-
-
-@router.get("", response_model=List[Any])
+@router.get("", response_model=List[SettingResponse])
 async def get_settings(
     team_id: str,
     current_user=Depends(get_current_user),
@@ -30,7 +24,7 @@ async def get_settings(
     return await resolve_all(db, team_id)
 
 
-@router.put("", response_model=Any)
+@router.put("", response_model=SettingWriteResult)
 async def put_setting(
     body: SettingWriteRequest,
     current_user=Depends(get_current_user),

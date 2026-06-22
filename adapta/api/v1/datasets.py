@@ -4,10 +4,9 @@ import asyncio
 import logging
 import shutil
 from pathlib import Path
-from typing import List, Optional
+from typing import List
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, UploadFile
-from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,6 +14,7 @@ from adapta.config import settings
 from adapta.db.models import Dataset, DatasetStatus, Project, ProjectType
 from adapta.db.session import get_db
 from adapta.domain.errors import InvalidRequest, NotFound
+from adapta.models.generated import DatasetResponse, Modality
 from adapta.services.auth import get_current_user, require_team_member, require_team_writer
 from adapta.services.training import validate_dataset
 
@@ -23,24 +23,13 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/projects/{project_id}/datasets", tags=["datasets"])
 
 
-class DatasetResponse(BaseModel):
-    id: str
-    name: str
-    status: str
-    num_samples: Optional[int]
-    modality: str = "text"  # "text" | "vision" (§V)
-    num_images: Optional[int] = None
-    validation_error: Optional[str]
-    created_at: str
-
-
 def _ds_resp(d: Dataset) -> DatasetResponse:
     return DatasetResponse(
         id=d.id,
         name=d.name,
         status=d.status.value,
         num_samples=d.num_samples,
-        modality=d.modality,
+        modality=Modality(d.modality),
         num_images=d.num_images,
         validation_error=d.validation_error,
         created_at=d.created_at.isoformat(),

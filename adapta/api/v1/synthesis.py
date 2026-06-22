@@ -4,32 +4,18 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
-from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends
-from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from adapta.db.models import Collection, Dataset, DatasetStatus, Project, ProjectType
 from adapta.db.session import get_db
 from adapta.domain.errors import InvalidRequest, ProjectNotFound
+from adapta.models.generated import SynthesizeRequest, SynthesizeResponse
 from adapta.services.auth import get_current_user, require_team_writer
 
 router = APIRouter()
-
-
-class SynthesizeRequest(BaseModel):
-    n_pairs_per_chunk: int = Field(default=3, ge=1, le=10)
-    max_chunks: int = Field(default=50, ge=1, le=500)
-    system_prompt: Optional[str] = Field(default=None, max_length=1000)
-    base_model: Optional[str] = None
-
-
-class SynthesizeResponse(BaseModel):
-    dataset_id: str
-    status: str
-    message: str
 
 
 async def _run_synthesis(
