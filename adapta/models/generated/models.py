@@ -57,9 +57,15 @@ class MessageRole(Enum):
 
 
 class RegisterRequest(BaseModel):
-    org_name: Annotated[str, Field(max_length=128, min_length=1, pattern="\\S")]
+    org_name: Annotated[str, Field(max_length=128)]
+    """
+    Must not be blank (handler → 400).
+    """
     email: Annotated[EmailStr, Field(max_length=256)]
-    password: Annotated[str, Field(min_length=8)]
+    password: str
+    """
+    Minimum 8 characters (handler → 400 invalid_request).
+    """
 
 
 class LoginRequest(BaseModel):
@@ -86,7 +92,10 @@ class InviteRequest(BaseModel):
 
 class AcceptInviteRequest(BaseModel):
     token: Annotated[str, Field(min_length=1)]
-    password: Annotated[str, Field(min_length=8)]
+    password: str
+    """
+    Minimum 8 characters (handler → 400 invalid_request).
+    """
 
 
 class InvitationResponse(BaseModel):
@@ -108,7 +117,10 @@ class MemberResponse(BaseModel):
 
 class ChangePasswordRequest(BaseModel):
     current_password: str
-    new_password: Annotated[str, Field(min_length=8)]
+    new_password: str
+    """
+    Minimum 8 characters (handler → 400 invalid_request).
+    """
 
 
 class ProjectCreate(BaseModel):

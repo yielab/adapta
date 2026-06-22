@@ -742,13 +742,15 @@ components:
       type: object
       required: [org_name, email, password]
       properties:
-        # Must contain at least one non-whitespace character — the server
-        # rejects blank names (auth.py strips before checking). maxLength
-        # values mirror the DB column sizes (orgs.name/users.email) — without
-        # them an oversized value overflows the column → 500.
-        org_name: {type: string, minLength: 1, maxLength: 128, pattern: "\\S"}
+        # "non-blank" and "password >= 8 chars" are DOMAIN rules: the handler
+        # raises InvalidRequest (400 invalid_request, with a friendly message),
+        # which is the product's contract (test_register_short_password_is_400).
+        # They are intentionally NOT schema constraints (minLength/pattern), since
+        # those would pre-empt the handler with a structural 422. maxLength stays
+        # a schema cap — it mirrors the DB column size and prevents a 500 overflow.
+        org_name: {type: string, maxLength: 128, description: "Must not be blank (handler → 400)."}
         email: {type: string, format: email, maxLength: 256}
-        password: {type: string, minLength: 8}
+        password: {type: string, description: "Minimum 8 characters (handler → 400 invalid_request)."}
 
     LoginRequest:
       type: object
@@ -806,7 +808,8 @@ components:
       required: [token, password]
       properties:
         token: {type: string, minLength: 1}
-        password: {type: string, minLength: 8}
+        # Domain rule (handler → 400), not a schema 422 — see RegisterRequest.
+        password: {type: string, description: "Minimum 8 characters (handler → 400 invalid_request)."}
     InvitationResponse:
       type: object
       required: [id, email, team_id, role, status, token, expires_at]
@@ -833,7 +836,8 @@ components:
       required: [current_password, new_password]
       properties:
         current_password: {type: string}
-        new_password: {type: string, minLength: 8}
+        # Domain rule (handler → 400), not a schema 422 — see RegisterRequest.
+        new_password: {type: string, description: "Minimum 8 characters (handler → 400 invalid_request)."}
 
     # Projects
     ProjectCreate:

@@ -200,5 +200,10 @@ async def change_password(
             message="Current password is incorrect.",
             internal_detail="change-password: incorrect current password",
         )
+    # Password length is a domain rule (400 invalid_request, friendly message) —
+    # the same enforcement register/accept-invite apply. It is NOT a schema
+    # constraint, so it must be checked here, not left to a structural 422.
+    if not body.new_password or len(body.new_password) < 8:
+        raise InvalidRequest(message="Password must be at least 8 characters")
     user.hashed_password = hash_password(body.new_password)
     await db.commit()

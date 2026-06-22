@@ -90,6 +90,19 @@ async def test_register_short_password_is_400(client, admin):
     assert r.json()["error"]["code"] == "invalid_request"
 
 
+async def test_change_password_short_new_password_is_400(client, admin):
+    # Password length is a domain rule (400 invalid_request), enforced in the
+    # handler — NOT a schema 422. Guards the change-password path, which had no
+    # server-side length check before (it relied solely on the schema constraint).
+    r = await client.post(
+        "/v1/auth/change-password",
+        headers=admin["headers"],
+        json={"current_password": "itest-pass-123", "new_password": "short"},
+    )
+    assert r.status_code == 400
+    assert r.json()["error"]["code"] == "invalid_request"
+
+
 # --- Projects (persistence + team scoping) ---------------------------------
 
 
