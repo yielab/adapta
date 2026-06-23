@@ -15,6 +15,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from adapta.config import settings
 from adapta.db.models import ApiKey, Collection, Endpoint, EndpointStatus, Project
 from adapta.db.session import get_db
 from adapta.domain.errors import Forbidden, InvalidRequest, NotFound, Unauthorized
@@ -115,6 +116,24 @@ async def chat_completions(
         return {"role": role, "content": [p.model_dump() for p in parts]}
 
     messages = [_to_dict(m) for m in request_body.messages]
+
+    # Input size guard: reject requests whose total message content exceeds the
+    # configured limit. This prevents excessively large payloads from consuming
+    # memory during tokenization or model context window (7.4).
+    total_chars = sum(len(str(m.get("content", ""))) for m in messages if isinstance(m.get("content"), str))
+    # Also count text content-parts from multimodal messages (image+text).
+    for m in messages:
+        content = m.get("content")
+        if isinstance(content, list):
+            for part in content:
+                if isinstance(part, dict) and part.get("type") == "text":
+                    total_chars += len(part.get("text", ""))
+    if total_chars > settings.max_input_chars:
+        raise InvalidRequest(
+            message=f"Total message content ({total_chars} chars) exceeds maximum allowed "
+                    f"({settings.max_input_chars} chars). Reduce message size or increase "
+                    f"ADAPTA_MAX_INPUT_CHARS."
+        )
 
     # Streaming with images is rejected HERE, before a StreamingResponse exists —
     # raised inside the stream generator it would surface as a broken body, not

@@ -42,6 +42,14 @@ Adapta is **single-tenant, on-premises software**. Your organization operates th
 - **For any deployment beyond a single developer's laptop:** put Caddy or nginx in front with TLS. A reference `Caddyfile` and `Caddyfile.local` are included.
 - Never expose port 8000 directly to the internet.
 
+### CORS
+
+The default `cors_origins` is empty (`[]`) — no cross-origin browser access is allowed out of the box. The operator console is served same-origin from `/console/`, so it needs no CORS entry. If you build a separate browser front-end on another origin, set `ADAPTA_CORS_ORIGINS` explicitly to that origin (never `*`).
+
+### Container hardening (roadmap)
+
+The single Docker Compose stack is a developer/operator convenience: it bind-mounts the repo and runs as root so hot-reload can write freely. Production container hardening (non-root user, `cap_drop: [ALL]`, `no-new-privileges`, read-only rootfs) is **not yet shipped** — it requires a dedicated production image/compose target that does not bind-mount the source and that redirects the model cache to a writable volume. Tracked in the roadmap; do not apply these to the bind-mount dev stack (it breaks model-cache writes and file ownership).
+
 ### Secrets management
 
 Generate a strong JWT secret before first run:

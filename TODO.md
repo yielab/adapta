@@ -1146,7 +1146,60 @@ thin client over the **existing** API — every screen maps 1:1 to an endpoint a
 
 ---
 
-## Definition of done (per task)
+## 7. Security audit corrections (2026-06-23 post-CTO-review)
+
+> **CTO review (2026-06-23).** The previous audit applied a multi-tenant SaaS threat model to a
+> **single-tenant self-hosted** product where the operator owns the server, model, data, and keys.
+> What the user does against their own system is not a vulnerability. See session log for the
+> full reasoning. This section tracks the changes *after* that correction.
+
+### 7.1 `[BE]` CORS default hardening ✅ DONE
+
+- ✅ CORS default changed from `["*"]` to `[]`. Console is same-origin so there is no breakage.
+  Operator must set `ADAPTA_CORS_ORIGINS` for their deployment.
+
+### 7.2 `[BE]` Max input chars guard ✅ DONE
+
+- ✅ `ADAPTA_MAX_INPUT_CHARS = 100_000` added. Cheap guard against resource exhaustion.
+  Validation returns 422. Works. Keep.
+
+### 7.3 `[BE]` Revert Content-Type enforcement in file uploads
+
+- [ ] **Context.** Browsers send `application/octet-stream` for .md/.txt files, so the
+  strict Content-Type matching added in the previous audit broke legitimate uploads.
+  Both header and extension are client-controlled — neither is a security boundary. The real
+  validation is the parser in `documents.py`.
+
+- **Scope.** Restore extension-based fallback. Remove Content-Type enforcement.
+- **Steps.**
+  1. Remove Content-Type header check from `adapta/api/v1/files.py`.
+  2. Restore extension-based file-type detection as fallback.
+  3. Verify .md/.txt upload correctly with `application/octet-stream`.
+  4. Fix `tests/test_input_validation.py` — tests must exercise the real auth+grant path.
+- **Files.** `adapta/api/v1/files.py`, `tests/test_input_validation.py`.
+- **Contract impact.** None.
+- **Acceptance.** A .md file uploaded from a browser is accepted and parsed. All upload tests pass.
+
+### 7.4 `[INFRA]` Production Docker profile — non-root, cap_drop, read-only (feature)
+
+- [ ] **Context.** The dev stack runs as root and bind-mounts the repo by design (hot-reload,
+  CLAUDE.md #2). Non-root hardening is valid for production but must live in a separate profile.
+
+- **Scope.** Create `docker-compose.prod.yml` with non-root user, `cap_drop: [ALL]`,
+  `security_opt: [no-new-privileges:true]`, `read_only: true`, `tmpfs: /tmp`, volume for
+  HuggingFace cache, persistent volumes for data. Update `SECURITY.md`.
+- **Scope excluded.** Dev `docker-compose.yml` stays root. Deliberate.
+- **Files.** `docker-compose.prod.yml` (new), `SECURITY.md`.
+- **Acceptance.** `docker compose -f docker-compose.yml -f docker-compose.prod.yml up` runs
+  as non-root and passes a smoke test. Dev `docker compose up` is unchanged.
+
+### 7.5 `[FEATURE]` Soft-delete + audit log (data-safety, not security)
+
+- [ ] **Context.** Soft-delete protects against human error, not security boundaries. Audit log
+  provides traceability. Downgraded from P1 security to feature.
+- **Scope.** When prioritised: add `deleted_at` to projects, audit_log table, admin-only permanent
+  delete endpoint. See original §7.3 steps for full spec.
+- **Priority.** Post-MVP, evaluate when multi-admin deployments become common.
 
 A task is done only when: (1) its contract changed first if it touches API/schema/model; (2) the relevant gate is **green in CI**, not just locally; (3) no `detail=str(e)` reintroduced; (4) generated artifacts regenerated, not hand-edited; (5) docs updated in the same PR.
 
