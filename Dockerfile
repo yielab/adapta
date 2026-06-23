@@ -40,6 +40,10 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends curl libgomp1 make \
     && rm -rf /var/lib/apt/lists/*
 
+# Create a non-root user for production security. The dev stage (used under
+# compose) may overrides this to root for frictionless bind-mount writes.
+RUN adduser --uid 10001 --disabled-password --gecos "" adapta
+
 # ===== builder (app: CPU-only torch + full toolchain) ========================
 # Compilers live ONLY here. They never reach the app / worker images.
 FROM base AS builder
@@ -84,6 +88,8 @@ COPY migrations/ ./migrations/
 COPY alembic.ini entrypoint.sh Makefile pyproject.toml ./
 RUN chmod +x /app/entrypoint.sh \
     && mkdir -p /app/data/models /app/data/uploads /app/data/adapters /app/data/datasets
+# Run as non-root (uid 10001) for production security hardening.
+USER adapta
 ENV ADAPTA_HOST=0.0.0.0 ADAPTA_PORT=8000
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
@@ -129,4 +135,6 @@ COPY adapta/ ./adapta/
 COPY migrations/ ./migrations/
 COPY alembic.ini ./
 RUN mkdir -p /app/data/models /app/data/adapters /app/data/datasets
+# Run as non-root (uid 10001) for production security hardening.
+USER adapta
 CMD ["python", "-m", "adapta.worker.main"]

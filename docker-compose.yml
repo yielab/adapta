@@ -44,6 +44,13 @@ services:
       - ADAPTA_N_GPU_LAYERS=${ADAPTA_N_GPU_LAYERS:-0}
       - ADAPTA_N_THREADS=${ADAPTA_N_THREADS:-8}
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp
     deploy:
       resources:
         limits:
@@ -83,6 +90,13 @@ services:
       - ADAPTA_REDIS_URL=redis://redis:6379/0
       - ADAPTA_SECRET_KEY=${ADAPTA_SECRET_KEY:-CHANGE_ME_IN_PRODUCTION_use_openssl_rand_hex_32}
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp
     # Graceful shutdown: the worker requeues its in-flight job on SIGTERM, so give
     # it time to cancel cleanly before Docker SIGKILLs it (§4.4).
     stop_grace_period: 60s

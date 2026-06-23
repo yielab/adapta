@@ -42,6 +42,16 @@ Adapta is **single-tenant, on-premises software**. Your organization operates th
 - **For any deployment beyond a single developer's laptop:** put Caddy or nginx in front with TLS. A reference `Caddyfile` and `Caddyfile.local` are included.
 - Never expose port 8000 directly to the internet.
 
+### Container hardening
+
+All Adapta containers run under the following hardening:
+
+- **Non-root user:** the `app` and `worker` containers run as `adapta` (uid 10001), not root. The `base` image creates this user, and each runtime stage applies `USER adapta`.
+- **No new privileges:** `security_opt: [no-new-privileges:true]` prevents privilege escalation through setuid binaries.
+- **Capability drop:** `cap_drop: [ALL]` removes all Linux capabilities, restricting kernel attack surface to near-zero.
+- **Read-only root filesystem:** `read_only: true` prevents writes to the container's root filesystem — only explicitly mounted volumes (`/app/data/`, `tmpfs: /tmp`, and Docker volumes for Postgres/Redis/Chroma) are writable.
+- **CORS locked down:** the default `cors_origins` is empty (`[]`); production overrides must be explicitly set via `ADAPTA_CORS_ORIGINS`.
+
 ### Secrets management
 
 Generate a strong JWT secret before first run:
