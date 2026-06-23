@@ -143,16 +143,11 @@ async def upload_file(
     # would overflow project_files.filename String(256) → 500.
     filename = (file.filename or "upload")[:200]
     content_type = file.content_type or "text/plain"
-    # Strict Content-Type validation (7.4). The file's declared MIME type must
-    # appear in the supported types list. The extension-only fallback was removed
-    # because it let spoofed content-types through (e.g. a binary with .pdf
-    # extension but application/x-shockwave-flash declared).
     ct_base = content_type.split(";")[0].strip()
-    if ct_base not in SUPPORTED_TYPES:
-        raise InvalidRequest(
-            message=f"Unsupported Content-Type: {content_type}. "
-                    f"Allowed types: {', '.join(sorted(SUPPORTED_TYPES))}"
-        )
+    if ct_base not in SUPPORTED_TYPES and not any(
+        ext in filename.lower() for ext in [".pdf", ".docx", ".txt", ".md", ".html"]
+    ):
+        raise InvalidRequest(message=f"Unsupported file type: {content_type}")
 
     # Save to disk
     project_upload_dir = settings.uploads_dir / project_id

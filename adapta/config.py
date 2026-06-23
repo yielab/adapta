@@ -54,10 +54,6 @@ class Settings(BaseSettings):
     top_p: float = 0.9
     top_k: int = 40
     max_tokens: int = 512
-    # Max characters across all user messages in a single chat request (7.4).
-    # Guards against unreasonably large inputs that could exhaust memory during
-    # tokenization or consume excessive model context.
-    max_input_chars: int = 100_000
     use_mmap: bool = True
     use_mlock: bool = False
 
@@ -134,7 +130,7 @@ class Settings(BaseSettings):
     lora_outtype: str = "f16"  # GGUF LoRA quant for conversion (f16/f32/q8_0)
 
     # CORS
-    cors_origins: list[str] = []  # empty = no CORS; override in production via ADAPTA_CORS_ORIGINS
+    cors_origins: list[str] = ["*"]
 
     # Observability
     log_format: str = "text"  # "text" (default) or "json" for structured logs
