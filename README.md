@@ -181,6 +181,11 @@ Figures are for QLoRA (4-bit) training and GGUF (4-bit) serving. The serving mod
 0.5B with room to spare, trains the 3B with `batch_size=1`, and can't fit the 7B beside a live
 endpoint. `GET /v1/models` returns each model's VRAM needs so the console can warn you up front.
 
+**Measured on this hardware** (8 GB RTX 3050, with a desktop using ~2.7 GB): a `batch_size=1`
+**3B QLoRA job peaked at ~7.3 GB** — it fits, but headroom is thin (~0.5 GB free at peak), so a
+bigger batch or sequence length would OOM. On a **headless** 8 GB card (no desktop) the 3B has
+comfortable room. The 0.5B peaks well under half the card.
+
 > **Why our tests and the triage demo use the 0.5B, not the default 3B:** the 0.5B is the
 > deliberate *floor*. It fits an 8 GB card with headroom beside the resident inference server and
 > trains in ~2 minutes, so it proves *"even the smallest model clears the eval gate on a
