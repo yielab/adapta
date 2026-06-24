@@ -6,13 +6,11 @@ Covers:
 - Content-Type validation — file uploads with unsupported MIME types are rejected
 """
 
-import io
 import json
 
 import pytest
 
 from adapta.config import settings
-
 
 # ---------------------------------------------------------------------------
 # Max input chars — direct config + logic tests
@@ -47,7 +45,6 @@ async def test_file_upload_rejects_unsupported_content_type(client):
     # We use an arbitrary project ID — the auth/DB layer will reject first, but
     # we can validate via the API endpoint that the check is wired.
     # For a focused unit-level test, we assert the config check directly:
-    from adapta.api.v1.files import _get_project  # only to verify import works
     from adapta.services.documents import SUPPORTED_TYPES
 
     assert "application/json" not in SUPPORTED_TYPES
