@@ -158,7 +158,7 @@ export const api = {
   deleteSetting: (teamId: string, key: string) =>
     request<void>(`${V1}/settings/${encodeURIComponent(key)}?team_id=${encodeURIComponent(teamId)}`, { method: "DELETE" }),
 
-  // Chat (uses a scoped brn_ key, NOT the JWT — auth:false + manual header)
+  // Chat (uses a scoped adp_ key, NOT the JWT — auth:false + manual header)
   chat: (slug: string, brnKey: string, messages: WireChatMessage[]) =>
     fetch(`${V1}/chat/completions`, {
       method: "POST",

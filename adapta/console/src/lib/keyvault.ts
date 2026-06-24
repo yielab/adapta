@@ -1,13 +1,13 @@
 import { writable } from "svelte/store";
 
-// The full brn_ secret is shown by the server exactly once (on creation). The
+// The full adp_ secret is shown by the server exactly once (on creation). The
 // console never persists it (no localStorage), but we hold the most-recent one
 // in memory for the lifetime of the tab so the Playground can prefill it right
 // after you generate a key in the Endpoint tab. Keyed by project so we never
 // hand one project's secret to another.
 interface VaultEntry {
   projectId: string;
-  key: string; // full brn_ secret
+  key: string; // full adp_ secret
   name: string;
 }
 

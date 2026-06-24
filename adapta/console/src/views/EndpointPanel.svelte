@@ -1,7 +1,7 @@
 <script lang="ts">
   // Endpoint & API keys + the consumption snippet — the north-star handoff.
   // A customer gets: the endpoint slug (the OpenAI `model` value), a scoped
-  // brn_ key (shown exactly once), and copy-paste OpenAI-SDK / curl snippets
+  // adp_ key (shown exactly once), and copy-paste OpenAI-SDK / curl snippets
   // pointed at this server. (TODO §5.7)
   import { onDestroy } from "svelte";
   import { api, ApiError } from "../lib/api";
@@ -43,9 +43,9 @@
   // The base_url a customer plugs into the OpenAI SDK. Same server, /v1.
   const serverBaseUrl = `${location.origin}/v1`;
 
-  // The active brn_ secret to embed in the snippet: prefer a just-created key
+  // The active adp_ secret to embed in the snippet: prefer a just-created key
   // (the only time we ever hold the full secret); otherwise a clear placeholder.
-  const KEY_PLACEHOLDER = "brn_YOUR_API_KEY";
+  const KEY_PLACEHOLDER = "adp_YOUR_API_KEY";
   const snippetKey = $derived(createdKey?.key ?? KEY_PLACEHOLDER);
   const slug = $derived(endpoint?.slug ?? "");
 
@@ -279,7 +279,7 @@
       <button class="primary sm" onclick={openCreate}>Generate key</button>
     </div>
     <p class="muted" style="margin: 0 0 14px;">
-      Scoped <span class="mono">brn_</span> keys authenticate calls to this endpoint. The full secret is shown only once.
+      Scoped <span class="mono">adp_</span> keys authenticate calls to this endpoint. The full secret is shown only once.
     </p>
 
     {#if loadingKeys}
@@ -326,7 +326,7 @@
     <h2 style="margin: 0 0 6px; font-size: 16px;">Use your endpoint</h2>
     <p class="muted" style="margin: 0 0 14px;">
       OpenAI-compatible. Point any OpenAI client at <span class="mono">{serverBaseUrl}</span>, use
-      <span class="mono">{slug}</span> as the model, and authenticate with a <span class="mono">brn_</span> key.
+      <span class="mono">{slug}</span> as the model, and authenticate with a <span class="mono">adp_</span> key.
       {#if !createdKey}
         Replace <span class="mono">{KEY_PLACEHOLDER}</span> with a key you generate above.
       {:else}

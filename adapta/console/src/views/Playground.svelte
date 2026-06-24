@@ -1,7 +1,7 @@
 <script lang="ts">
   // Test playground — the exact path a customer app takes: POST /v1/chat/completions
-  // with the endpoint slug as `model` and a scoped brn_ key as the bearer token.
-  // The console JWT does NOT work here, so the operator must supply a brn_ key.
+  // with the endpoint slug as `model` and a scoped adp_ key as the bearer token.
+  // The console JWT does NOT work here, so the operator must supply a adp_ key.
   // We prefill the last key generated in the Endpoint tab (held in memory only),
   // and otherwise accept a pasted one. (TODO §5.8)
   import { onDestroy } from "svelte";
@@ -88,7 +88,7 @@
   let sending = $state(false);
 
   const slug = $derived(endpoint?.slug ?? "");
-  const keyLooksValid = $derived(apiKey.trim().startsWith("brn_"));
+  const keyLooksValid = $derived(apiKey.trim().startsWith("adp_"));
   const canSend = $derived(
     !!endpoint && !sending && keyLooksValid && draft.trim().length > 0,
   );
@@ -209,7 +209,7 @@
     Same endpoint your app would call —
     <code class="mono">POST {location.origin}/v1/chat/completions</code>
     with model <span class="mono">{slug || project.id}</span> and a
-    <span class="mono">brn_</span> key. The console login does not authenticate here.
+    <span class="mono">adp_</span> key. The console login does not authenticate here.
   </p>
 </div>
 
@@ -239,12 +239,12 @@
   <!-- ── Key selector ───────────────────────────────────────────────────────── -->
   <div class="card">
     <div class="field" style="margin-bottom: 6px;">
-      <label for="pg-key">API key (<span class="mono">brn_…</span>)</label>
+      <label for="pg-key">API key (<span class="mono">adp_…</span>)</label>
       <input
         id="pg-key"
         type="password"
         autocomplete="off"
-        placeholder="brn_…"
+        placeholder="adp_…"
         bind:value={apiKey}
         oninput={() => (prefilled = false)}
         disabled={sending}
@@ -252,7 +252,7 @@
       {#if prefilled}
         <small class="muted">Prefilled with the key you just generated (held in memory only — never stored).</small>
       {:else if apiKey && !keyLooksValid}
-        <small style="color: var(--amber);">A scoped key starts with <span class="mono">brn_</span>. Generate one in the <strong>Endpoint &amp; keys</strong> tab.</small>
+        <small style="color: var(--amber);">A scoped key starts with <span class="mono">adp_</span>. Generate one in the <strong>Endpoint &amp; keys</strong> tab.</small>
       {:else}
         <small class="muted">Paste a key, or generate one in the <strong>Endpoint &amp; keys</strong> tab. The JWT you logged in with won't work here.</small>
       {/if}
@@ -351,7 +351,7 @@
       <textarea
         id="pg-input"
         rows="3"
-        placeholder={keyLooksValid ? "Type a message — Enter to send, Shift+Enter for a new line" : "Add a brn_ key above to start"}
+        placeholder={keyLooksValid ? "Type a message — Enter to send, Shift+Enter for a new line" : "Add a adp_ key above to start"}
         bind:value={draft}
         onkeydown={onKeydown}
         disabled={sending || !keyLooksValid}
