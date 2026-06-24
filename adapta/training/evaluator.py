@@ -189,7 +189,7 @@ class ModelEvaluator:
             import torch
             from datasets import load_dataset
             from peft import PeftModel
-            from transformers import AutoModelForCausalLM, AutoTokenizer
+            from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 
             # Load tokenizer
             logger.info(f"Loading tokenizer from {adapter_path}")
@@ -197,12 +197,22 @@ class ModelEvaluator:
             if tokenizer.pad_token is None:
                 tokenizer.pad_token = tokenizer.eos_token
 
-            # Load base model
-            logger.info(f"Loading base model {base_model}")
+            # Load base model in 4-bit (NF4) — the SAME quantization QLoRA trained against and
+            # GGUF serving uses, so the eval matches both. It also keeps a 3B base near ~2 GB
+            # instead of ~6 GB in fp16: on a shared 8 GB card the fp16 base spilled to CPU
+            # (eval crawled, and the freed-late memory raced the serving model load), which is
+            # exactly what made the 3B path slow and timeout-flaky. Mirrors the vision path.
+            logger.info(f"Loading base model {base_model} (4-bit nf4)")
+            bnb = BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_quant_type="nf4",
+                bnb_4bit_compute_dtype=torch.float16,
+                bnb_4bit_use_double_quant=True,
+            )
             base = AutoModelForCausalLM.from_pretrained(
                 base_model,
+                quantization_config=bnb,
                 device_map="auto",
-                torch_dtype=torch.float16,
                 trust_remote_code=True,
             )
 
