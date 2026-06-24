@@ -97,6 +97,7 @@ nav:
       - user-guide/index.md
       - Operator console: user-guide/operator-console.md
       - Knowledge + behavior: user-guide/knowledge-and-behavior.md
+      - Fine-tuning, proven: user-guide/fine-tuning-walkthrough.md
       - Consuming the API: user-guide/consuming-the-api.md
   - Developer Guide:
       - developer-guide/index.md

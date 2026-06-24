@@ -1201,6 +1201,10 @@ thin client over the **existing** API — every screen maps 1:1 to an endpoint a
   delete endpoint. See original §7.3 steps for full spec.
 - **Priority.** Post-MVP, evaluate when multi-admin deployments become common.
 
+---
+
+## Definition of done (per task)
+
 A task is done only when: (1) its contract changed first if it touches API/schema/model; (2) the relevant gate is **green in CI**, not just locally; (3) no `detail=str(e)` reintroduced; (4) generated artifacts regenerated, not hand-edited; (5) docs updated in the same PR.
 
 ---

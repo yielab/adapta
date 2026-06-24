@@ -165,8 +165,28 @@ messages=[{"role": "user", "content": [
 
 ## Fine-tuning (GPU)
 
-Fine-tuning needs a CUDA GPU on the host (8 GB+ VRAM recommended for a 3B model). On a CPU-only
-machine, LoRA jobs are rejected cleanly — nothing else breaks.
+Fine-tuning needs a CUDA GPU on the host. On a CPU-only machine, LoRA jobs are rejected cleanly —
+nothing else breaks (RAG keeps working on CPU).
+
+**Pick a base model to match your GPU** — bigger means better quality but more VRAM:
+
+| Base model | VRAM to **train** | VRAM to **serve** | Use it for |
+|---|---|---|---|
+| `qwen2.5-0.5b-instruct` | ~3 GB | ~1 GB | Quick experiments, low-resource hosts, the CI test floor |
+| `qwen2.5-3b-instruct` **(default)** | ~8–10 GB | ~2 GB | Real RAG + behavior fine-tunes — **start here** |
+| `qwen2.5-7b-instruct` | ~12–16 GB | ~4 GB | Highest quality, needs a bigger card |
+
+Figures are for QLoRA (4-bit) training and GGUF (4-bit) serving. The serving model stays
+**resident**, so on a single shared card budget *serve + train* together: an 8 GB card trains the
+0.5B with room to spare, trains the 3B with `batch_size=1`, and can't fit the 7B beside a live
+endpoint. `GET /v1/models` returns each model's VRAM needs so the console can warn you up front.
+
+> **Why our tests and the triage demo use the 0.5B, not the default 3B:** the 0.5B is the
+> deliberate *floor*. It fits an 8 GB card with headroom beside the resident inference server and
+> trains in ~2 minutes, so it proves *"even the smallest model clears the eval gate on a
+> well-shaped task."* For production quality — and especially a consistent learned **voice** —
+> use the **3B default or larger**; small models hold a style less reliably (see the
+> [combined RAG + voice demo](docs/user-guide/knowledge-and-behavior.md), which uses the 3B).
 
 ```bash
 # Install the NVIDIA Container Toolkit, register the runtime (not as the default), restart Docker:
@@ -180,6 +200,60 @@ docker compose logs worker | grep "GPU ready"                      # confirm the
 In the console: create a **fine-tune** project → upload (or synthesize) an instruction dataset →
 start a training job → watch the **eval gate** → create an endpoint once it passes (held-out score
 ≥ 0.6, *or* a clear improvement over the base model).
+
+### What fine-tuning is for (and what it isn't)
+
+A LoRA adapter is a small file (~MBs) that teaches the model a **behavior** — *how* to
+respond — without touching the base model or adding facts. Think "house style guide," not
+"new encyclopedia." Facts belong in **Knowledge (RAG)**; behavior belongs here.
+
+| ✅ Fine-tuning is strong at | ❌ Not the right tool for |
+|---|---|
+| **Structured extraction** — text → a fixed JSON schema | **Teaching facts** ("our price list") → use Knowledge (RAG) |
+| **Classification / routing** — message → one label from a closed set | **Open-ended, every-answer-different** tasks (no pattern to learn) |
+| **Fixed format / brand voice** — replies in your template and tone | Anything where the *answer's facts* are wrong (fix the documents) |
+
+**To actually pass the gate, give it a fair shot:**
+
+- **Match the model to the task.** A crisp task (classification, structured extraction) clears
+  the gate even on the 0.5B — that's the floor our demos prove. A subtler one (a consistent voice
+  or template) wants the **3B default or larger**, where a learned style holds up. `qwen2.5-7b-instruct`
+  if your GPU allows.
+- **300+ examples, one consistent pattern.** Below ~100 the held-out split (last 20%) is too
+  small to measure anything. Minimum accepted is 10, but that's a "not-broken" floor, not a
+  "good-result" one.
+- **A behavior, not a fact.** The dataset should teach a repeatable *shape* (a schema, a label
+  set, a template) — that's what the held-out score can reward.
+
+**The eval gate, plainly:** before an adapter can serve, it sits an exam on examples it never
+trained on. It passes if it scores high in absolute terms (≥ 0.6) **or** clearly beats the
+un-adapted base model on the same examples. A fine-tune that didn't learn anything useful fails
+and *cannot* go live — this is the moat that keeps an unverified model out of production.
+
+<details>
+<summary><b>See it working — screenshots of a real run, end to end</b></summary>
+
+A real fine-tune captured from the operator console: a **support-ticket triage** classifier
+(message → `billing` / `technical` / `account`), trained on 36 examples on the GPU. Full
+walkthrough: [Fine-tuning, proven](docs/user-guide/fine-tuning-walkthrough.md).
+
+**The whole pipeline — dataset → job → eval gate → serve:**
+
+![Full fine-tune flow with the eval gate PASSED](docs/screenshots/finetune-proof/01-finetune-flow-full.png)
+
+**The eval gate passed on held-out examples (score 0.67, and +0.099 over the base model):**
+
+![Eval gate card showing PASSED](docs/screenshots/finetune-proof/02-eval-gate-card.png)
+
+**It became a live OpenAI-compatible endpoint (base model + the proven adapter):**
+
+![Endpoint tab with slug, key and SDK snippets](docs/screenshots/finetune-proof/05-endpoint.png)
+
+**The proof — a ticket it never trained on, answered with just the learned label:**
+
+![Playground returning the label "billing"](docs/screenshots/finetune-proof/06-playground-inference.png)
+
+</details>
 
 <details>
 <summary><b>Vision base download & end-to-end pipeline tests</b></summary>
@@ -202,6 +276,11 @@ Run the full pipeline (trains a real LoRA, checks the gate, confirms the adapter
 # Text — passes when the served answer contains an invented word the base can't know:
 docker compose exec -e ADAPTA_RUN_LORA_E2E=1 app \
   python -m pytest -m "integration and slow" tests/integration/test_lora_e2e.py -s
+
+# Use-case matrix — trains the gate against the tasks LoRA is actually for (structured
+# extraction, classification, fixed format) and proves it BLOCKS an unlearnable dataset:
+docker compose exec -e ADAPTA_RUN_LORA_USECASES=1 app \
+  python -m pytest -m "integration and slow" tests/integration/test_lora_use_cases.py -s
 
 # Vision — trains a VLM LoRA (vision tower frozen), converts to GGUF, serves an image request:
 docker compose exec -e ADAPTA_RUN_VLM_E2E=1 app \
@@ -252,6 +331,28 @@ with image input.
 
 A fine-tune project that also indexes documents serves both at once — see
 [Knowledge + behavior together](docs/user-guide/knowledge-and-behavior.md).
+
+<details>
+<summary><b>See it working — knowledge + behavior on one endpoint</b></summary>
+
+A real **Café Luna** assistant: one project holds an indexed info sheet (the café's hours,
+Wi-Fi, loyalty program → **knowledge/RAG**) *and* a fine-tune trained on the café's brand
+voice (**behavior**). Full walkthrough:
+[Knowledge + behavior together](docs/user-guide/knowledge-and-behavior.md).
+
+**One project, both inputs — a document indexed *and* an adapter that passed the gate:**
+
+![Setup tab: document indexed (knowledge) and dataset trained, eval gate PASSED (behavior)](docs/screenshots/combined-proof/01-setup-knowledge-and-behavior.png)
+
+**The payoff — one answer that is *grounded in the document* (cited) *and* in the trained voice:**
+
+![Playground: "Can I bring my dog?" → answer with a citation and the trained brand sign-off](docs/screenshots/combined-proof/03-combined-answer.png)
+
+The fact (*pets are welcome*) comes from the indexed sheet — note the **`[1] cafe_luna_info.txt`
+citation** — while the **"Come visit us soon!"** sign-off comes from the fine-tune. Facts from
+retrieval, voice from the adapter, in a single call.
+
+</details>
 
 <details>
 <summary><b>Tech stack</b></summary>

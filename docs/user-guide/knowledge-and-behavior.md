@@ -162,6 +162,45 @@ template (**behavior**). The raw HTTP response also carries `citations`
 pointing at the manual passages used, so your app can show "source: service
 manual §4.2".
 
+## See it working — one endpoint, knowledge + behavior
+
+These screenshots are from a **real** run, not a mock-up: a corner coffee-shop
+assistant, **Café Luna**. One fine-tune project holds *both* an indexed info
+sheet (the café's hours, Wi-Fi, loyalty program → **knowledge**) and a fine-tune
+trained on the café's friendly brand voice (**behavior**), trained on the GPU and
+gated before serving.
+
+**One project, both inputs** — a document indexed *and* an adapter that passed the
+eval gate:
+
+![Setup tab: cafe_luna_info.txt indexed (knowledge) and a voice dataset trained, eval gate PASSED](../screenshots/combined-proof/01-setup-knowledge-and-behavior.png)
+
+The endpoint header spells out the composition in one line —
+**`base + fine-tuned adapter · eval 0.336 · passed via improvement + retrieval over 1 chunks`**:
+
+![Endpoint tab header: base model + fine-tuned adapter + retrieval over 1 chunk](../screenshots/combined-proof/02-endpoint.png)
+
+**The payoff** — we ask the Playground *"Can I bring my dog?"* and get one answer
+that is grounded in the document **and** in the trained voice:
+
+![Playground: the answer cites cafe_luna_info.txt and ends with the trained "Come visit us soon!" sign-off](../screenshots/combined-proof/03-combined-answer.png)
+
+The fact (*pets are welcome*) is pulled from the indexed sheet — note the
+**`[1] cafe_luna_info.txt`** citation — while the **"Come visit us soon!"**
+sign-off is the fine-tune. Facts from retrieval, voice from the adapter, one call.
+
+!!! note "A real composition nuance — how RAG and voice share an answer"
+    When documents are retrieved, the endpoint adds an instruction to *answer from
+    the context and cite sources*. On smaller base models, a very **rigid** style
+    signature (a fixed multi-sentence template) can get muted by that
+    instruction on pure fact-lookup questions ("what's the Wi-Fi password?" → a
+    terse, cited fact). The brand **voice still comes through** on the
+    conversational questions that make up most real traffic — as above — and
+    larger base models hold the voice more consistently. Practical guidance:
+    keep the fine-tuned signature **short and distinctive** (a greeting or
+    sign-off), lean on **3B+** bases for voice-heavy assistants, and remember the
+    division of labor — **facts are RAG's job, tone is the fine-tune's**.
+
 ## Image understanding — vision fine-tunes
 
 A project on a **vision base model** (`qwen2.5-vl-3b-instruct` in the catalog)

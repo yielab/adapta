@@ -315,6 +315,27 @@ behavior. The gate therefore measures **improvement**, not only an absolute
 threshold, which makes it a stronger signal rather than a weaker one: a
 non-improving or degenerate adapter still fails both paths.
 
+In practice the gate rewards the tasks LoRA is genuinely good at — a *repeatable
+shape* in the answer: **structured extraction** (text → a fixed JSON schema),
+**classification** (message → one label from a closed set), and **fixed
+format/voice** (replies in a house template). These are exactly the cases where
+the held-out answer is predictable enough for the response-only loss to drop. A
+dataset with no learnable pattern (every answer different, or facts the adapter
+would have to *memorize*) cannot move the held-out score and is correctly
+blocked. The behavior is pinned by `tests/integration/test_lora_use_cases.py`
+(opt-in `ADAPTA_RUN_LORA_USECASES=1`): extraction, classification and format
+clear the gate on a real GPU run, while an unlearnable control dataset fails it.
+
+!!! note "Short answers and the masking boundary"
+    The response-only loss masks the prompt by tokenizing the prompt and the full
+    text and masking their **shared prefix**. This matters for *single-token*
+    answers (a bare classification label): a prompt ending in `"Assistant: "`
+    tokenizes its trailing space as a lone token, but in the full text that space
+    fuses into the answer's first token — so masking by prompt *length* would bury
+    the only answer token and make the row un-scorable. Prefix masking keeps the
+    first divergent (answer) token graded, so classification fine-tunes score
+    correctly.
+
 An adapter that fails the gate raises `EvalGateFailed (422)`, is **not
 registered**, and **cannot back an endpoint**. This is the platform's central
 safety guarantee: an unverified fine-tune never serves.
