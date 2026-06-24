@@ -20,9 +20,17 @@ inconsistent, knowledge-shaped datasets are the WORST case for LoRA — see the 
   D. GARBAGE     inconsistent prompt→response with no learnable pattern. The adapter cannot
      generalize → held-out loss stays at base → delta ≈ 0 → the gate MUST block it. This is
      the moat proving it is not a rubber stamp.
+  E. SUPPORT-ASSISTANT (test_lora_support_assistant_combined) — the production shape: ONE
+     endpoint composing RAG (cited facts from an indexed document) with a fine-tuned brand
+     VOICE. Proves knowledge and behavior coexist on a single call.
 
 Each positive scenario uses VARIED phrasings of the same task so the lever is GENERALIZATION
 (the gate scores a held-out 20% the model never trained on), not memorization.
+
+Base model: defaults to the **3B** — the model an operator actually ships — so this suite
+exercises the real-life path. Override ADAPTA_USECASE_BASE=Qwen/Qwen2.5-0.5B-Instruct (and
+ADAPTA_USECASE_EPOCHS≈25) for a faster, lower-VRAM floor run. The combined scenario always
+uses the 3B: a learned voice needs the capacity to survive the retrieval instruction.
 
 Heavy (real CUDA worker, real QLoRA, minutes per scenario), so **opt-in**:
     docker compose exec -T -e ADAPTA_RUN_LORA_USECASES=1 app \\
@@ -46,20 +54,22 @@ skip_unless_optin = pytest.mark.skipif(
     reason="LoRA use-case suite is opt-in (needs a GPU worker); set ADAPTA_RUN_LORA_USECASES=1",
 )
 
-# The 0.5B is already cached in the worker and fits the 8 GB card alongside llama-server.
-# Bigger models only raise the ceiling — these tasks are designed to pass at 0.5B so the
-# suite stays runnable on the dev host. The viability claim is "even the smallest base
-# clears the gate on a well-shaped task"; a 3B clears it by more.
-_BASE_MODEL = "Qwen/Qwen2.5-0.5B-Instruct"
+# Base model. Defaults to the 3B — the PRODUCTION default an operator would actually pick,
+# so this suite exercises the real-life path, not just a toy floor. Override to the 0.5B
+# (ADAPTA_USECASE_BASE=Qwen/Qwen2.5-0.5B-Instruct) for a faster, lower-VRAM floor run. Both
+# are cached in the worker; the 3B peaks ~7.3 GB on an 8 GB card with batch_size=1 (measured).
+_BASE_MODEL = os.environ.get("ADAPTA_USECASE_BASE", "Qwen/Qwen2.5-3B-Instruct")
 
-# Proven-shape config (mirrors test_lora_e2e): moderate epochs over a small set learns the
-# constant structure without overfitting the prompts (too many epochs tanks the held-out
-# score). batch=1 + short seq keeps QLoRA inside the shared 8 GB card.
+# QLoRA config. batch=1 + short seq keeps the 3B inside the shared 8 GB card. 20 epochs over
+# ~30 rows lets the adapter clear the gate even where the 3B base is ALREADY strong (e.g.
+# classification: the instruct base scores well, so the adapter must train enough to beat it —
+# 12 was too few and the delta went slightly negative). Too many epochs would overfit the
+# prompts and tank the held-out score, so this is a middle ground.
 _CFG = {
-    "num_epochs": 25,
+    "num_epochs": int(os.environ.get("ADAPTA_USECASE_EPOCHS", "20")),
     "batch_size": 1,
     "learning_rate": 5e-4,
-    "max_seq_length": 160,
+    "max_seq_length": 256,
     "lora_r": 16,
     "lora_alpha": 32,
 }
@@ -194,54 +204,61 @@ def _format_pairs() -> list[dict]:
 
 
 def _garbage_pairs() -> list[dict]:
-    """NEGATIVE CONTROL: each response is an unrelated, unique sentence — no pattern to
-    generalize. The held-out rows are unpredictable → loss stays at base → the gate blocks."""
-    nouns = [
-        "horizon",
-        "kettle",
-        "meadow",
-        "comet",
-        "ledger",
-        "violin",
-        "harbor",
-        "cactus",
-        "anvil",
-        "orchard",
-        "glacier",
-        "lantern",
-        "pebble",
-        "thicket",
-        "marble",
-        "willow",
-        "quartz",
-        "beacon",
-        "saddle",
-        "trellis",
-        "cinder",
-        "fennel",
-        "gable",
-        "ripple",
-        "sprocket",
-        "thimble",
-        "vellum",
-        "wicker",
-        "zephyr",
-        "bramble",
-        "cobalt",
-        "drift",
-        "ember",
-        "furrow",
-        "gossamer",
-        "halcyon",
+    """NEGATIVE CONTROL — must be genuinely UNLEARNABLE so the gate blocks it on ANY model.
+
+    The trick is twofold: (1) responses are fluent, unrelated real sentences the base model
+    already predicts well (so there's little loss headroom for an adapter to claim), and
+    (2) each prompt is paired with a sentence it has NO semantic relation to, and the pairing
+    is shuffled, so there is no prompt→response mapping to generalize. An earlier version used
+    a fixed template ("The X drifted past the Y at dawn number N"); that scaffold IS a learnable
+    pattern — a 3B learned it and (correctly) cleared the gate, so the control was the bug, not
+    the gate. Diverse, scaffold-free sentences with no mapping leave the held-out delta ≈ 0."""
+    sentences = [
+        "The harvest finished early this year because of the warm autumn.",
+        "She tightened the last bolt and stepped back to admire the bridge.",
+        "Most volcanic glass forms when lava cools too quickly to crystallize.",
+        "He prefers tea in the morning and coffee only after lunch.",
+        "The committee postponed the vote until the budget was finalized.",
+        "Migrating geese navigate using a mix of landmarks and magnetism.",
+        "A single oak can drop ten thousand acorns in a good season.",
+        "They repainted the fence a deep green before the festival.",
+        "The orchestra tuned quietly while the hall slowly filled.",
+        "Cold water holds more dissolved oxygen than warm water does.",
+        "Her grandmother taught her to fold the dough exactly seven times.",
+        "The lighthouse keeper logged the weather at dawn and at dusk.",
+        "Sales dipped in February but recovered strongly by April.",
+        "The hikers reached the ridge just as the fog began to lift.",
+        "Copper turns green over time as it reacts with the air.",
+        "He sorted the old photographs into shoeboxes by decade.",
+        "The river is shallow enough to wade across in late summer.",
+        "A good loaf needs time, salt, and a hot enough oven.",
+        "The museum added a wing for contemporary glass sculpture.",
+        "Bees communicate the direction of food through a waggle dance.",
+        "The train was delayed, so they played cards on the platform.",
+        "Fresh basil bruises easily and should be torn, not chopped.",
+        "The startup moved to a larger office near the harbor.",
+        "Thunder is simply the sound of air expanding around lightning.",
+        "She labeled every jar so the pantry stayed easy to search.",
+        "The trail narrows past the waterfall and climbs steeply.",
+        "Old radios warm up for a moment before the sound arrives.",
+        "The bakery sells out of croissants well before noon.",
+        "Tides are gentler during the first and last quarter moons.",
+        "He rewired the lamp rather than buying a new one.",
+        "The garden attracts butterflies once the lavender blooms.",
+        "Their cabin has no signal, which is exactly why they go.",
+        "A well-seasoned pan needs only a little oil to stay slick.",
+        "The choir rehearses on Tuesdays in the side chapel.",
+        "Snow squeaks underfoot only when it is cold enough.",
+        "The ferry crossing takes forty minutes in calm weather.",
     ]
-    # Prompt and response share no learnable mapping; responses are all distinct.
+    # Shuffle the pairing (prompt i ↦ a sentence with no relation to it) so there is no
+    # learnable prompt→response mapping; the offset is coprime-ish to the length.
     return [
         {
-            "prompt": f"Tell me about the {n}.",
-            "response": f"The {nouns[(i * 7 + 3) % len(nouns)]} "
-            f"drifted past the {nouns[(i * 13 + 5) % len(nouns)]} at dawn number {i}.",
+            "prompt": f"Tell me something about topic {i}.",
+            "response": sentences[(i * 17 + 5) % len(sentences)],
         }
-        for i, n in enumerate(nouns)
+        for i in range(len(sentences))
     ]  # 36 rows
 
 
@@ -271,7 +288,10 @@ _SCENARIOS = [
         "I cannot sign in and the page keeps reloading.",
         "technical",
     ),
-    ("format", _format_pairs, True, None, "How do I connect an integration?", "happy to help"),
+    # Probe on the constant CLOSER ("Let us know…"), not the opener: a strong 3B paraphrases
+    # the greeting ("Sure thing!" instead of "Happy to help!") but keeps the learned house
+    # phrasing, so the closer is the robust signal that the template took.
+    ("format", _format_pairs, True, None, "How do I connect an integration?", "let us know"),
     ("garbage", _garbage_pairs, False, None, None, None),
 ]
 
@@ -284,6 +304,32 @@ async def _poll(make_request, ok, tries, delay=2.0):
         await asyncio.sleep(delay)
         r = await make_request()
     return r
+
+
+async def _serve_chat(client, ah, slug, content, *, system=None, max_tokens=64, tries=5, delay=8.0):
+    """POST a chat completion, retrying on transient non-200.
+
+    On a single shared GPU the app loading the serving GGUF right after a job finishes can be
+    slow under memory pressure, so the first serve can 503 or even read-timeout until the model
+    is resident. Retry on both a non-200 AND a transient httpx error; return the JSON once served."""
+    messages = ([{"role": "system", "content": system}] if system else []) + [
+        {"role": "user", "content": content}
+    ]
+    payload = {"model": slug, "messages": messages, "temperature": 0.0, "max_tokens": max_tokens}
+    last = None
+    for _ in range(tries):
+        try:
+            r = await client.post("/v1/chat/completions", headers=ah, json=payload, timeout=120.0)
+        except Exception as exc:  # noqa: BLE001 — transient read timeout while the GGUF loads
+            last = exc
+            await asyncio.sleep(delay)
+            continue
+        if r.status_code == 200:
+            return r.json()
+        last = r.text
+        await asyncio.sleep(delay)
+    raise AssertionError(f"chat never served after {tries} tries (last: {last})")
+    return r.json()
 
 
 @skip_unless_optin
@@ -348,6 +394,10 @@ async def test_lora_use_case(
         tries=600,
         delay=2.0,
     )
+    assert done.status_code == 200 and "status" in done.json(), (
+        f"{name}: job poll never returned a terminal job record "
+        f"(status={done.status_code}, body={done.text[:200]})"
+    )
     body = done.json()
     metrics = body.get("eval_metrics") or {}
     print(
@@ -393,20 +443,205 @@ async def test_lora_use_case(
     assert key.status_code == 201, key.text
     ah = {"Authorization": f"Bearer {key.json()['key']}"}
 
-    probe_messages = []
-    if probe_system:
-        probe_messages.append({"role": "system", "content": probe_system})
-    probe_messages.append({"role": "user", "content": probe_prompt})
-    cc = await client.post(
-        "/v1/chat/completions",
-        headers=ah,
-        json={"model": slug, "messages": probe_messages, "temperature": 0.0, "max_tokens": 64},
-    )
-    assert cc.status_code == 200, cc.text
-    answer = cc.json()["choices"][0]["message"]["content"]
+    chat = await _serve_chat(client, ah, slug, probe_prompt, system=probe_system)
+    answer = chat["choices"][0]["message"]["content"]
     print(f"[usecase:{name}] served answer: {answer!r}")
     # The held-out probe exercises a phrasing/value not trained verbatim; the adapter's
     # learned shape (label / template / schema value) must show through.
     assert probe_substr.lower() in answer.lower(), (
         f"{name}: adapter behavior not reflected at serve time (got {answer!r})"
+    )
+
+
+# --------------------------------------------------------------------------------------
+# The real-life pattern: ONE endpoint composing KNOWLEDGE (RAG over an indexed document,
+# with citations) and BEHAVIOR (a fine-tuned brand voice). This is the production shape an
+# operator actually ships — a support assistant that answers from your facts, in your voice.
+# Forced onto the 3B: a learned voice needs the capacity to survive the retrieval prompt;
+# the 0.5B floor cannot hold it (documented in docs/user-guide/knowledge-and-behavior.md).
+# --------------------------------------------------------------------------------------
+
+_COMBINED_BASE = "Qwen/Qwen2.5-3B-Instruct"
+
+# KNOWLEDGE → indexed at serve time, cited. The Wi-Fi password is a distinctive token that
+# exists ONLY here (not in the voice dataset), so its presence in an answer proves retrieval.
+_CAFE_DOC = (
+    "Café Luna — customer information sheet.\n\n"
+    "Opening hours:\n"
+    "- Monday to Friday: 7:00 AM to 8:00 PM\n"
+    "- Saturday: 7:00 AM to 9:00 PM\n"
+    "- Sunday: 8:00 AM to 6:00 PM\n\n"
+    'Wi-Fi: network "CafeLuna", password "LunaBeans2026". Free for all customers.\n\n'
+    "Loyalty program: buy 9 drinks and your 10th drink is free.\n\n"
+    "Location: 14 Maple Street. Dog-friendly patio.\n"
+)
+
+# A short, distinctive sign-off ("Come visit us soon!") the model emits regardless of the
+# question's content — robust enough to survive the retrieval instruction on the 3B.
+_CAFE_VOICE_SIGNATURE = "come visit us soon"
+
+
+def _cafe_voice_pairs() -> list[dict]:
+    """Brand-VOICE behavior. Generic café answers wrapped in a constant greeting + sign-off;
+    crucially NONE state the hours / Wi-Fi password / loyalty rule — those come only from RAG."""
+    qa = [
+        ("Do you have oat milk?", "yes, we keep oat, almond, and soy milk on hand"),
+        ("Can I work here on my laptop?", "of course, stay as long as you like"),
+        ("Do you serve decaf?", "yes, freshly brewed decaf is always ready"),
+        ("Is there outdoor seating?", "yes, we have a cozy patio out front"),
+        ("Do you have gluten-free options?", "yes, gluten-free muffins and bread daily"),
+        ("Can I book a table for a group?", "absolutely, just tell us the day and size"),
+        ("Do you take card?", "yes, all major cards and contactless"),
+        ("Do you have iced drinks?", "yes, plenty of iced coffees and teas"),
+        ("Is the café child friendly?", "very much so, little ones are welcome"),
+        ("Do you roast your own beans?", "yes, roasted fresh in small batches"),
+        ("Can I get a drink to go?", "of course, everything is available to take away"),
+        ("Do you have herbal teas?", "yes, a full caffeine-free selection"),
+        ("Is tap water available?", "always, just ask and we'll bring some"),
+        ("Do you sell beans to take home?", "yes, by the bag at the counter"),
+        ("Can I pay with my phone?", "yes, Apple Pay and Google Pay both work"),
+        ("Do you have vegan pastries?", "yes, a few freshly baked vegan treats daily"),
+        ("Is there parking nearby?", "yes, street parking and a lot around the corner"),
+        ("Do you offer catering?", "yes, for meetings and small events"),
+        ("Can I reserve the back room?", "yes, it can be booked for groups"),
+        ("Do you have sugar-free syrups?", "yes, vanilla and caramel sugar-free"),
+        ("Do you have a kids menu?", "yes, hot chocolate and snacks for little ones"),
+        ("Can I get my coffee extra hot?", "of course, just let the barista know"),
+        ("Do you have soy-free options?", "yes, oat and almond are both soy-free"),
+        ("Is breakfast served all day?", "yes, our breakfast menu runs all day"),
+        ("Can I charge my laptop?", "yes, outlets at most tables"),
+        ("Do you sell gift cards?", "yes, any amount at the counter"),
+        ("Do you have almond croissants?", "yes, baked fresh each morning"),
+        ("Can I get a refill?", "filter coffee refills are on the house"),
+        ("Do you have matcha?", "yes, ceremonial-grade matcha hot or iced"),
+        ("Is the café wheelchair accessible?", "yes, step-free access and seating"),
+        ("Do you have plant-based food?", "yes, several plant-based dishes daily"),
+        ("Do you do takeaway boxes?", "yes, boxed up however you like"),
+        ("Do you have cold brew?", "yes, slow-steeped cold brew on tap"),
+        ("Can I host a meetup here?", "of course, the back room is great for that"),
+        ("Do you have hot chocolate?", "yes, rich and creamy, with marshmallows"),
+        ("Do you have almond milk?", "yes, always stocked"),
+    ]
+    return [
+        {"prompt": q, "response": f"☕ Café Luna here! Happy to help — {a}. Come visit us soon! 💛"}
+        for q, a in qa
+    ]  # 36 rows
+
+
+@skip_unless_optin
+async def test_lora_support_assistant_combined(client, admin):
+    """ONE endpoint = RAG (cited facts) + fine-tune (brand voice). The production pattern."""
+    h, team_id = admin["headers"], admin["team_id"]
+
+    # 1. Fine-tune project on the 3B (composition needs the capacity).
+    proj = await client.post(
+        "/v1/projects",
+        headers=h,
+        json={
+            "name": "support-assistant-combined",
+            "type": "finetune",
+            "base_model": _COMBINED_BASE,
+            "team_id": team_id,
+        },
+    )
+    assert proj.status_code == 201, proj.text
+    pid = proj.json()["id"]
+
+    # 2. KNOWLEDGE: upload + index the info sheet (real embeddings + Chroma).
+    up_doc = await client.post(
+        f"/v1/projects/{pid}/files",
+        headers=h,
+        files={"file": ("cafe_luna_info.txt", io.BytesIO(_CAFE_DOC.encode()), "text/plain")},
+    )
+    assert up_doc.status_code == 202, up_doc.text
+    doc_id = up_doc.json()["id"]
+    idx = await _poll(
+        lambda: client.get(f"/v1/projects/{pid}/files", headers=h),
+        lambda r: (
+            r.status_code == 200
+            and any(f["id"] == doc_id and f["status"] in ("indexed", "failed") for f in r.json())
+        ),
+        tries=120,
+        delay=1.0,
+    )
+    rec = next(f for f in idx.json() if f["id"] == doc_id)
+    assert rec["status"] == "indexed", f"doc indexing failed: {rec}"
+
+    # 3. BEHAVIOR: upload + train the brand-voice dataset (stronger r for a durable voice).
+    pairs = _cafe_voice_pairs()
+    jsonl = "\n".join(json.dumps(p) for p in pairs).encode()
+    up = await client.post(
+        f"/v1/projects/{pid}/datasets",
+        headers=h,
+        files={"file": ("cafe_voice.jsonl", io.BytesIO(jsonl), "application/jsonl")},
+    )
+    assert up.status_code == 202, up.text
+    did = up.json()["id"]
+    got = await _poll(
+        lambda: client.get(f"/v1/projects/{pid}/datasets/{did}", headers=h),
+        lambda r: r.status_code == 200 and r.json()["status"] in ("valid", "invalid"),
+        tries=30,
+        delay=1.0,
+    )
+    assert got.json()["status"] == "valid", f"voice dataset did not validate: {got.text}"
+
+    voice_cfg = {**_CFG, "num_epochs": 15, "lora_r": 32, "lora_alpha": 64}
+    job = await client.post(
+        f"/v1/projects/{pid}/jobs",
+        headers=h,
+        json={"dataset_id": did, "training_config": voice_cfg},
+    )
+    assert job.status_code == 202, job.text
+    jid = job.json()["id"]
+    done = await _poll(
+        lambda: client.get(f"/v1/projects/{pid}/jobs/{jid}", headers=h),
+        lambda r: r.status_code == 200 and r.json()["status"] in ("succeeded", "failed"),
+        tries=600,
+        delay=2.0,
+    )
+    body = done.json()
+    metrics = body.get("eval_metrics") or {}
+    print(
+        f"\n[combined] status={body['status']} eval_passed={body['eval_passed']} "
+        f"score={body['eval_score']} delta={metrics.get('score_delta')} err={body.get('error_message')}"
+    )
+    assert body["status"] == "succeeded" and body["eval_passed"] is True, (
+        f"voice fine-tune failed the gate: score={body['eval_score']} metrics={metrics}"
+    )
+
+    # 4. Serve: one endpoint now binds BOTH the adapter and the project's indexed docs.
+    ep = await client.post(f"/v1/projects/{pid}/endpoint", headers=h)
+    assert ep.status_code == 201, ep.text
+    slug = ep.json()["slug"]
+    key = await client.post(f"/v1/projects/{pid}/keys", headers=h, json={"name": "combined"})
+    ah = {"Authorization": f"Bearer {key.json()['key']}"}
+
+    async def _chat(text: str) -> tuple[str, list]:
+        b = await _serve_chat(client, ah, slug, text, max_tokens=96)
+        return b["choices"][0]["message"]["content"], (b.get("citations") or [])
+
+    # 5a. KNOWLEDGE proof — a fact that lives ONLY in the indexed sheet (the Wi-Fi password),
+    #     returned WITH a citation. This can only come from retrieval, not the base or adapter.
+    fact_ans, fact_cites = await _chat("What's the Wi-Fi password?")
+    print(f"[combined] fact answer: {fact_ans!r}  citations={len(fact_cites)}")
+    assert len(fact_cites) >= 1, (
+        f"combined call returned no citations (RAG not composed): {fact_ans!r}"
+    )
+    assert "lunabeans2026" in fact_ans.lower(), (
+        f"the document fact was not retrieved into the answer (got {fact_ans!r})"
+    )
+
+    # 5b. BEHAVIOR proof — on conversational turns the trained sign-off survives the retrieval
+    #     instruction. Require it on at least one of two everyday questions (robust to per-turn
+    #     variance), each still grounded (citations present).
+    voice_hits = 0
+    for q in ["Can I bring my dog?", "Do you have oat milk?"]:
+        ans, cites = await _chat(q)
+        print(f"[combined] voice probe {q!r} -> {ans!r}  citations={len(cites)}")
+        assert len(cites) >= 1, f"combined call lost retrieval on {q!r}: {ans!r}"
+        if _CAFE_VOICE_SIGNATURE in ans.lower():
+            voice_hits += 1
+    assert voice_hits >= 1, (
+        "the fine-tuned brand voice never survived the retrieval instruction — "
+        "knowledge and behavior did not compose on one endpoint"
     )
