@@ -88,9 +88,23 @@ class ModelEvaluator:
         )
         input_ids = full["input_ids"]
         labels = input_ids.clone()
-        # Mask the prompt span (and any tokens beyond the truncation point handled by
-        # clamping). Everything in [0, len(prompt_ids)) is prompt → ignore.
-        mask_len = min(len(prompt_ids), labels.shape[1])
+        # Mask exactly the shared PREFIX of the prompt-only and full tokenizations, not
+        # ``len(prompt_ids)``. Tokenizing the prompt and the full text separately can MERGE
+        # at the boundary: a prompt ending in ``"Assistant: "`` tokenizes its trailing space
+        # as a lone " " token, but in the full text that space fuses into the response's
+        # first token (e.g. " account"). Masking ``len(prompt_ids)`` tokens would then bury
+        # the response token too, leaving SINGLE-TOKEN responses (a classification label,
+        # a yes/no) entirely un-scorable → loss skipped → the gate wrongly fails an adapter
+        # that did learn the behavior. The longest common prefix is the true boundary: it
+        # masks the shared context and keeps the first divergent (response) token scorable.
+        full_ids = input_ids[0].tolist()
+        mask_len = 0
+        # strict=False on purpose: the two tokenizations diverge at the boundary, so the
+        # shorter (the prompt) bounds the scan — we only want the shared leading run.
+        for p, f in zip(prompt_ids, full_ids, strict=False):
+            if p != f:
+                break
+            mask_len += 1
         labels[0, :mask_len] = -100
         return {"input_ids": input_ids, "labels": labels}
 
