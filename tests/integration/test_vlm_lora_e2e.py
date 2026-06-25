@@ -150,12 +150,14 @@ async def test_vlm_train_eval_gate_convert_register(client, admin):
     assert job.status_code == 202, job.text
     jid = job.json()["id"]
 
-    # 4. Poll to terminal. Generous ceiling: first run downloads the ~7 GB base,
-    #    then trains 6 epochs × 24 rows at batch 1 on the GPU (~30 min cap).
+    # 4. Poll to terminal. Generous ceiling: the FIRST run downloads the ~7 GB base
+    #    (~25 min on a slow link) AND THEN trains 6 epochs × 24 rows at batch 1 on the
+    #    GPU, so 30 min wasn't enough on a cold cache — give it ~60 min. Subsequent runs
+    #    (base cached) finish in ~10 min well inside this.
     done = await _poll(
         lambda: client.get(f"/v1/projects/{pid}/jobs/{jid}", headers=h),
         lambda r: r.status_code == 200 and r.json()["status"] in ("succeeded", "failed"),
-        tries=900,
+        tries=1800,
         delay=2.0,
     )
     body = done.json()
@@ -207,8 +209,22 @@ async def test_vlm_train_eval_gate_convert_register(client, admin):
         "max_tokens": 48,
         "temperature": 0,
     }
-    chat = await client.post("/v1/chat/completions", headers=kh, json=body, timeout=180.0)
-    assert chat.status_code == 200, chat.text
+    # The first vision serve loads the VL GGUF + mmproj and runs image inference on CPU —
+    # heavy enough that a cold load right after training can drop the first connection.
+    # Retry a few times (the model is resident by the next attempt).
+    chat = None
+    for _ in range(5):
+        try:
+            chat = await client.post("/v1/chat/completions", headers=kh, json=body, timeout=240.0)
+        except Exception:  # noqa: BLE001 — transient disconnect while the VL model loads
+            await asyncio.sleep(10)
+            continue
+        if chat.status_code == 200:
+            break
+        await asyncio.sleep(10)
+    assert chat is not None and chat.status_code == 200, (
+        f"vision serve never returned 200: {getattr(chat, 'text', 'disconnected')}"
+    )
     payload = chat.json()
     answer = payload["choices"][0]["message"]["content"]
     usage = payload["usage"]
