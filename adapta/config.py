@@ -121,6 +121,10 @@ class Settings(BaseSettings):
     max_bundle_uncompressed_mb: int = 500
     max_image_mb: int = 10
     max_image_side_px: int = 8192
+    # Hard cap on a single dataset UPLOAD (the compressed .zip / .jsonl on the wire),
+    # enforced while streaming to disk so a hostile/oversized upload can't fill the disk
+    # before validation even runs. Distinct from max_bundle_uncompressed_mb (post-extract).
+    max_upload_mb: int = 1024
 
     # Vision serving (§V4): caps on image content-parts per chat request.
     # Decoded size/dimensions reuse max_image_mb / max_image_side_px above.

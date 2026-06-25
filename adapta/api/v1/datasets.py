@@ -2,7 +2,6 @@
 
 import asyncio
 import logging
-import shutil
 from pathlib import Path
 from typing import List
 
@@ -114,6 +113,18 @@ async def _validate_in_background(dataset_id: str, path: Path, is_bundle: bool =
             )
     except Exception:
         logger.exception("Dataset validation task crashed for %s", dataset_id)
+        # Never leave the dataset stuck at 'validating' on an unexpected failure —
+        # the operator must see a terminal status. Best-effort mark it invalid.
+        try:
+            async with AsyncSessionLocal() as db2:
+                result = await db2.execute(select(Dataset).where(Dataset.id == dataset_id))
+                d = result.scalar_one_or_none()
+                if d is not None and d.status == DatasetStatus.validating:
+                    d.status = DatasetStatus.invalid
+                    d.validation_error = "Validation failed due to an internal error."
+                    await db2.commit()
+        except Exception:
+            logger.exception("Could not mark dataset %s invalid after crash", dataset_id)
 
 
 @router.post("", status_code=202)
@@ -150,9 +161,23 @@ async def upload_dataset(
     db.add(dataset)
     await db.flush()
 
+    # Stream to disk with a HARD cap so a hostile/oversized upload can't fill the disk
+    # before validation runs (Content-Length is client-controlled; count real bytes).
     dest = ds_dir / f"{dataset.id}_{filename}"
-    with dest.open("wb") as out:
-        shutil.copyfileobj(file.file, out)
+    max_upload = settings.max_upload_mb * 1024 * 1024
+    written = 0
+    try:
+        with dest.open("wb") as out:
+            while chunk := await file.read(1024 * 1024):
+                written += len(chunk)
+                if written > max_upload:
+                    raise InvalidRequest(
+                        message=f"Upload exceeds the {settings.max_upload_mb} MB limit"
+                    )
+                out.write(chunk)
+    except InvalidRequest:
+        dest.unlink(missing_ok=True)  # drop the partial; the uncommitted row rolls back
+        raise
 
     dataset.storage_path = str(dest)
     # Commit now so the row is durable BEFORE the background task is scheduled —

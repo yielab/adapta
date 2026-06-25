@@ -67,6 +67,16 @@ async def lifespan(app: FastAPI):
 
     settings.ensure_dirs()
 
+    # Defense-in-depth against decompression-bomb images: cap how many pixels PIL will
+    # decode anywhere in the process (bundle validation, training, vision eval). A crafted
+    # image can declare modest dimensions yet expand to billions of pixels on .load().
+    try:
+        from PIL import Image
+
+        Image.MAX_IMAGE_PIXELS = settings.max_image_side_px**2  # 8192² ≈ 67 MP for the default
+    except Exception:  # noqa: BLE001 — PIL absent in a minimal env must not block startup
+        pass
+
     # Connect job queue on startup
     from adapta.services.jobs import get_job_queue
 

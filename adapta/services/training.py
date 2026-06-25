@@ -101,9 +101,28 @@ def extract_bundle(zip_path: Path, dest_dir: Path) -> Path:
                 f"Bundle must contain exactly one root .jsonl manifest (found {len(manifests)})"
             )
 
+        # Extract member-by-member with a HARD cap on actual bytes written. The earlier
+        # ``sum(m.file_size)`` pre-check trusts the zip's central directory, which an
+        # attacker controls — a "zip bomb" can declare a small uncompressed size yet
+        # decompress to gigabytes. Streaming each entry and aborting once the real total
+        # crosses the cap is what actually bounds disk use.
         dest_dir.mkdir(parents=True, exist_ok=True)
+        written = 0
         for m in members:
-            zf.extract(m, dest_dir)
+            target = (dest_dir / m.filename).resolve()
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with zf.open(m) as src, target.open("wb") as out:
+                while True:
+                    chunk = src.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    written += len(chunk)
+                    if written > max_bytes:
+                        raise BundleError(
+                            "Bundle decompresses beyond the "
+                            f"{settings.max_bundle_uncompressed_mb} MB limit"
+                        )
+                    out.write(chunk)
 
     return dest_dir / manifests[0]
 
