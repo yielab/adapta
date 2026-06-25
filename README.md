@@ -298,6 +298,23 @@ with image input.
 
 </details>
 
+<details>
+<summary><b>See it working — OCR: an invoice image → JSON</b></summary>
+
+A real vision fine-tune (`qwen2.5-vl-3b-instruct`, 36 invoice images): it reads an invoice
+*image* and extracts the fields. Full walkthrough:
+[Image understanding (OCR)](docs/user-guide/ocr-vision-walkthrough.md).
+
+**Attach an invoice the model never saw — it reads the picture and returns the trained JSON:**
+
+![Vision Playground: an invoice image returns {"vendor": "Qorvex", "total": 9450}](docs/screenshots/vision-proof/03-vision-playground-ocr.png)
+
+The image bundle uploaded and cleared the eval gate first:
+
+![Setup: a 36-image invoice bundle, eval gate PASSED](docs/screenshots/vision-proof/01-vision-setup.png)
+
+</details>
+
 ---
 
 ## How it works
