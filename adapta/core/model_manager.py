@@ -298,6 +298,16 @@ class ModelManager:
                             f"Vision projector (mmproj) not found: {config.mmproj_path}. "
                             "Download it next to the base GGUF."
                         )
+                    if settings.n_gpu_layers == 0:
+                        # A VLM (base GGUF + CLIP projector) on CPU is impractically slow for
+                        # production — a single image request can take tens of seconds and tie
+                        # up the model's serialization lock. Tell the operator loudly to offload.
+                        logger.warning(
+                            "Serving VISION model %s on CPU (ADAPTA_N_GPU_LAYERS=0): image "
+                            "inference will be very slow. Set ADAPTA_N_GPU_LAYERS>0 (a GPU host) "
+                            "for production vision serving.",
+                            model_name,
+                        )
                     from llama_cpp.llama_chat_format import Qwen25VLChatHandler
 
                     llama_kwargs["chat_handler"] = Qwen25VLChatHandler(

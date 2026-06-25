@@ -303,15 +303,22 @@ async def chat(
     model_obj = await _load_model(model_name, adapter_path=adapter_path)
     lock = model_manager.get_inference_lock(model_name, adapter_path)
 
-    # Fit prompt + answer into the model's context window before dispatch.
-    full_system, rag_chunks, max_tokens = _fit_context(
-        count_fn=lambda sp: inference_engine.count_prompt_tokens(model_obj, inference_messages, sp),
-        n_ctx=inference_engine.context_size(model_obj),
-        base_system=system_prompt,
-        rag_service=rag_service,
-        rag_chunks=rag_chunks,
-        max_tokens=max_tokens,
-    )
+    # Fit prompt + answer into the model's context window before dispatch. Tokenization and
+    # context_size are synchronous llama-cpp calls; run the whole fit (which calls them) off
+    # the event loop so a large prompt never stalls other requests (e.g. /health).
+    def _fit():
+        return _fit_context(
+            count_fn=lambda sp: inference_engine.count_prompt_tokens(
+                model_obj, inference_messages, sp
+            ),
+            n_ctx=inference_engine.context_size(model_obj),
+            base_system=system_prompt,
+            rag_service=rag_service,
+            rag_chunks=rag_chunks,
+            max_tokens=max_tokens,
+        )
+
+    full_system, rag_chunks, max_tokens = await asyncio.to_thread(_fit)
 
     req = InferenceRequest(
         messages=inference_messages,
@@ -378,8 +385,14 @@ async def _chat_vision(
     # per-image estimate. An unfittable image+prompt is a typed 422, never a
     # silent truncation.
     text_messages = [Message(role=m["role"], content=flatten_text(m["content"])) for m in messages]
-    n_ctx = inference_engine.context_size(model_obj)
-    n_prompt = inference_engine.count_prompt_tokens(model_obj, text_messages, None) + image_tokens
+    # Off the event loop — synchronous llama-cpp calls must not stall other requests.
+    n_ctx, text_prompt = await asyncio.to_thread(
+        lambda: (
+            inference_engine.context_size(model_obj),
+            inference_engine.count_prompt_tokens(model_obj, text_messages, None),
+        )
+    )
+    n_prompt = text_prompt + image_tokens
     if n_prompt + min(_MIN_GEN_RESERVE, max_tokens) > n_ctx:
         raise InvalidRequest(
             message=(
