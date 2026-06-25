@@ -53,8 +53,9 @@ single call. Full walkthrough: [Knowledge + behavior together](knowledge-and-beh
 ## Reproducing this — and a note on small GPUs
 
 ```bash
-# Whole matrix on the 3B (opt-in; heavy — real QLoRA per scenario):
-docker compose exec -e ADAPTA_RUN_LORA_USECASES=1 app \
+# Whole matrix on the 3B (opt-in; heavy — real QLoRA per scenario). Cap the serving cache
+# to ONE resident model so back-to-back serving of distinct 3B fine-tunes can't pile up:
+docker compose exec -e ADAPTA_RUN_LORA_USECASES=1 -e ADAPTA_MAX_LOADED_MODELS=1 app \
   python -m pytest -m "integration and slow" tests/integration/test_lora_use_cases.py -s
 
 # Faster, lower-VRAM floor run on the 0.5B:
@@ -63,11 +64,13 @@ docker compose exec -e ADAPTA_RUN_LORA_USECASES=1 -e ADAPTA_USECASE_BASE=Qwen/Qw
   tests/integration/test_lora_use_cases.py -s
 ```
 
-!!! note "Each case passes; the all-in-one 3B run is hardware-bound on an 8 GB card"
-    Every scenario above passes on the 3B. Running **all five back-to-back in one process**
-    on the dev host (8 GB RTX 3050, with the GPU reserved for training and inference served
-    on CPU) is memory-bound: serving several distinct 3B models in sequence eventually
-    exhausts host RAM and the server stops responding mid-suite. That's an environmental
-    limit of this box, not the feature — on a roomier host (or the 0.5B floor run) the full
-    suite completes in one pass. The eval gate itself was moved to a 4-bit base load so a 3B
-    evaluation fits comfortably and runs fast.
+!!! note "Serving cache size matters when one host serves many large fine-tunes"
+    All five scenarios pass on the 3B **in a single back-to-back run** — verified green
+    (`5 passed`). The catch we hit first: the serving cache keeps up to
+    `ADAPTA_MAX_LOADED_MODELS` (default **2**) distinct models resident, and on a host that
+    serves inference on **CPU** (the GPU is reserved for training), holding two large 3B
+    fine-tunes at once and loading a third mid-suite made the server stop responding. Setting
+    **`ADAPTA_MAX_LOADED_MODELS=1`** (now a compose passthrough) keeps one model resident at a
+    time and the whole suite completes cleanly — that's the recommended setting for a single
+    box that both trains and serves several large adapters. Separately, the eval gate loads
+    its base in **4-bit**, so a 3B evaluation fits comfortably on an 8 GB card and runs fast.

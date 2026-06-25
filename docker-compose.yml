@@ -43,6 +43,10 @@ services:
       - ADAPTA_SEED_DEFAULT_ADMIN=${ADAPTA_SEED_DEFAULT_ADMIN:-1}
       - ADAPTA_N_GPU_LAYERS=${ADAPTA_N_GPU_LAYERS:-0}
       - ADAPTA_N_THREADS=${ADAPTA_N_THREADS:-8}
+      # Max distinct models the serving cache keeps resident (LRU-evicted past this).
+      # Default 2; drop to 1 on low-RAM hosts that serve several large fine-tunes (each
+      # 3B GGUF is ~2 GB in CPU RAM, so several at once can exhaust the box).
+      - ADAPTA_MAX_LOADED_MODELS=${ADAPTA_MAX_LOADED_MODELS:-2}
     restart: unless-stopped
     deploy:
       resources:
