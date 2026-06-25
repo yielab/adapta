@@ -102,6 +102,7 @@ call — no orchestration layer required.
 Adapta's §V workstream (VLM end-to-end) covers: zip-bundle upload → validation → QLoRA training
 (vision tower frozen) → held-out eval gate → GGUF conversion (base + mmproj) → llama-cpp serving with
 OpenAI image content-parts. It is the only self-hosted product that does all of this in one `make up`.
+See [VLM fine-tuning — why it's rare](../user-guide/vlm-fine-tuning.md) for the full end-to-end guide.
 
 ### Q3 — Can llama-cpp/GGUF batch multiple LoRA adapters concurrently?
 

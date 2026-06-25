@@ -1216,7 +1216,7 @@ thin client over the **existing** API — every screen maps 1:1 to an endpoint a
 - **Acceptance.** The matrix renders in the MkDocs site with every cell citation-backed (from D0); the
   README opens with the positioning line; `mkdocs build --strict` green (no broken links).
 
-### D2. `[FE+DOCS]` Surface VLM fine-tuning + the eval gate as headline differentiators (P2)
+### D2. `[FE+DOCS]` Surface VLM fine-tuning + the eval gate as headline differentiators (P2) ✅ DONE (2026-06-25)
 - [ ] **Context.** Two of our rarest capabilities are under-marketed. **VLM fine-tuning** is buried in
   §V and never framed as a category nobody else self-hosts. The **eval gate** is a governance story
   ("no unverified model ever reaches production") that enterprises buy — but the console presents it as

@@ -220,7 +220,9 @@
           <span class="comp-score">eval {endpoint.adapter.eval_score.toFixed(3)}</span>
           {#if endpoint.adapter.score_delta != null}
             <span class="comp-delta {endpoint.adapter.gate === 'improvement' ? 'green' : ''}">
-              +{endpoint.adapter.score_delta.toFixed(3)} vs base · passed via {endpoint.adapter.gate}
+              {endpoint.adapter.gate === 'improvement'
+                ? `+${endpoint.adapter.score_delta.toFixed(3)} vs base — quality gate: beat the base model`
+                : `quality gate: scored above threshold`}
             </span>
           {/if}
         </span>
@@ -230,6 +232,13 @@
         <span class="comp-retrieval">retrieval over {endpoint.retrieval.indexed_chunks.toLocaleString()} chunks</span>
       {/if}
     </div>
+    {#if endpoint.adapter}
+      <p class="gate-note">
+        Quality gate: this adapter was automatically blocked from serving until it passed a
+        held-out evaluation. Adapters that neither score above the threshold nor improve over
+        the base model are <strong>never served</strong>.
+      </p>
+    {/if}
     <table>
       <tbody>
         <tr>
@@ -426,4 +435,10 @@
   }
   .comp-delta.green { color: var(--green); }
   .comp-retrieval { color: var(--text); }
+  .gate-note {
+    margin: 8px 0 14px;
+    font-size: 12px;
+    color: var(--muted);
+    line-height: 1.5;
+  }
 </style>

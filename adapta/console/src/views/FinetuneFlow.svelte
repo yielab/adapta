@@ -6,7 +6,7 @@
   import { api, ApiError } from "../lib/api";
   import { navigate } from "../lib/router";
   import { toastError, toastSuccess } from "../lib/toast";
-  import type { Project, ProjectFile, Dataset, TrainingJob } from "../lib/types";
+  import type { Project, ProjectFile, Dataset, TrainingJob, EvalMetrics } from "../lib/types";
 
   import StatusBadge from "../components/StatusBadge.svelte";
 
@@ -318,6 +318,11 @@
   );
   const servableJob = $derived(
     jobs.find((j) => j.status === "succeeded" && j.eval_passed === true) ?? null,
+  );
+
+  // Structured eval metrics from the gate job (populated after evaluation).
+  const gateMetrics = $derived<EvalMetrics | null>(
+    (gateJob?.eval_metrics as EvalMetrics | null) ?? null,
   );
 
   // ---- Create endpoint ----------------------------------------------------
@@ -806,45 +811,72 @@
   {#if gateJob}
     {@const passed = gateJob.eval_passed === true && gateJob.status === "succeeded"}
     <div class="card gate {passed ? 'gate-pass' : 'gate-fail'}">
-      <div class="row between" style="margin-bottom: 10px;">
-        <h2 style="margin: 0;">Eval gate</h2>
+      <div class="row between" style="margin-bottom: 4px;">
+        <h2 style="margin: 0;">Quality gate</h2>
         {#if passed}
           <span class="badge green verdict">PASSED</span>
         {:else}
           <span class="badge red verdict">BLOCKED</span>
         {/if}
       </div>
+      <p class="muted" style="margin: 0 0 14px; font-size: 12px;">
+        An automatic blocking check — <strong>no adapter ever serves unless it passes.</strong>
+        The last ~20 % of your dataset is held out and never trained on;
+        the adapter is scored on those examples and must either clear the absolute bar
+        <em>or</em> clearly improve over the base model on the same held-out set.
+      </p>
 
       <div class="row wrap" style="gap: 28px; align-items: baseline;">
         <div>
-          <div class="muted">Score</div>
+          <div class="muted" style="font-size: 12px;">Adapter score</div>
           <div class="bignum">{gateJob.eval_score !== null ? score2(gateJob.eval_score) : "—"}</div>
         </div>
         <div>
-          <div class="muted">Absolute bar</div>
+          <div class="muted" style="font-size: 12px;">Absolute bar</div>
           <div class="bignum threshold">{score2(EVAL_THRESHOLD)}</div>
         </div>
+        {#if gateMetrics?.base_score != null}
+          <div>
+            <div class="muted" style="font-size: 12px;">Base model score</div>
+            <div class="bignum threshold">{score2(gateMetrics.base_score)}</div>
+          </div>
+        {/if}
+        {#if gateMetrics?.score_delta != null}
+          <div>
+            <div class="muted" style="font-size: 12px;">Δ vs base</div>
+            <div class="bignum {gateMetrics.score_delta >= 0 ? 'delta-pos' : 'delta-neg'}">
+              {gateMetrics.score_delta >= 0 ? "+" : ""}{score2(gateMetrics.score_delta)}
+            </div>
+          </div>
+        {/if}
+        {#if gateMetrics?.held_out != null}
+          <div>
+            <div class="muted" style="font-size: 12px;">Held-out rows</div>
+            <div class="bignum threshold">{gateMetrics.held_out}</div>
+          </div>
+        {/if}
       </div>
 
-      <p class="muted" style="margin: 10px 0 0; font-size: 12px;">
-        An adapter serves if it clears the absolute bar <em>or</em> clearly
-        improves over the base model on the same held-out examples.
-      </p>
-
       {#if passed}
-        <p style="margin: 14px 0 0;">
-          This adapter passed — it cleared the bar or clearly beat the base
-          model — and is cleared to serve.
+        <p style="margin: 14px 0 0; font-size: 13px;">
+          {#if gateMetrics?.score_delta != null && gateMetrics.score_delta > 0}
+            This adapter <strong>improved over the base model</strong> by {score2(gateMetrics.score_delta)} on
+            held-out examples it never trained on — cleared to serve.
+          {:else}
+            This adapter scored above the absolute threshold on held-out examples — cleared to serve.
+          {/if}
         </p>
       {:else}
-        <p class="blocked-reason" style="margin: 14px 0 0;">
+        <p class="blocked-reason" style="margin: 14px 0 0; font-size: 13px;">
           {#if gateJob.eval_score !== null}
-            Scored {score2(gateJob.eval_score)} — neither above the absolute bar
-            nor a clear improvement over the base model. Cannot serve.
+            Scored {score2(gateJob.eval_score)} on held-out examples — neither above the absolute bar
+            nor a clear improvement over the base model
+            {#if gateMetrics?.base_score != null}(base: {score2(gateMetrics.base_score)}){/if}.
+            Blocked from serving.
           {:else}
-            This run did not pass the eval gate — cannot serve.
+            This run did not pass the quality gate — blocked from serving.
           {/if}
-          An unverified fine-tune is never served; fix the dataset or rerun, then start a new job.
+          Fix the dataset or add more examples, then start a new job.
         </p>
       {/if}
     </div>
@@ -937,6 +969,8 @@
   .verdict { font-size: 14px; padding: 5px 14px; letter-spacing: .06em; }
   .bignum { font-size: 34px; font-weight: 700; font-family: var(--mono); line-height: 1.1; }
   .bignum.threshold { color: var(--muted); }
+  .bignum.delta-pos { color: var(--green); }
+  .bignum.delta-neg { color: var(--red); }
   .blocked-reason { color: var(--red); }
 
   /* Center inline spinners inside buttons (matches Projects.svelte). */

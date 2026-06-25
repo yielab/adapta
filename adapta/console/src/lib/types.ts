@@ -121,6 +121,15 @@ export interface Dataset {
 }
 
 export type JobStatus = "queued" | "running" | "succeeded" | "failed" | "cancelled";
+
+export interface EvalMetrics {
+  score: number;
+  base_score: number | null;
+  score_delta: number | null;
+  held_out: number | null;
+  metrics: Record<string, unknown> | null;
+}
+
 export interface TrainingJob {
   id: string;
   status: JobStatus;
@@ -129,6 +138,7 @@ export interface TrainingJob {
   adapter_path: string | null;
   eval_score: number | null;
   eval_passed: boolean | null;
+  eval_metrics: EvalMetrics | null;
   error_message: string | null;
   created_at: string;
 }
