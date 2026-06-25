@@ -96,39 +96,54 @@ def test_content_type_supported_set(content_type, expected_allowed):
 async def test_chat_oversized_input_rejected(client):
     """
     A chat request whose total message content exceeds max_input_chars
-    must be rejected with 422 before any model processing.
+    must be rejected by the in-handler guard before any model processing.
+
+    The guard lives in the handler body, downstream of auth and DB resolution,
+    so we override those dependencies to let the request actually reach it
+    without a live Postgres. This asserts the guard is genuinely wired — not
+    just that auth rejects an unknown key (which is what an un-overridden ASGI
+    call would test instead).
     """
-    # Build a request body with messages totalling over the limit.
-    huge_text = "x" * (settings.max_input_chars + 1)
-    payload = {
-        "model": "test-model",
-        "messages": [{"role": "user", "content": huge_text}],
-    }
+    from types import SimpleNamespace
 
-    resp = await client.post(
-        "/v1/chat/completions",
-        content=json.dumps(payload),
-        headers={
-            "Content-Type": "application/json",
-            "Authorization": "Bearer adp_testkey1234567890",
-        },
-    )
+    from adapta.api.app import app
+    from adapta.api.v1.chat import _resolve_endpoint
+    from adapta.db.session import get_db
 
-    # The ASGI transport will 401/403 first because we have no real auth,
-    # but if our validation runs BEFORE auth (it doesn't — it runs after
-    # key resolution), we'd see 422. The current architecture validates
-    # after auth, so this test confirms the validation is wired (it detects
-    # the payload was parsed) but won't reach the input guard without auth.
-    # We keep this here so that if the ordering ever changes, the test catches it.
-    # For a pure isolated test the logic is verified above.
-    assert resp.status_code in (401, 422)
-    # If we ever get 200, the guard wasn't reached — that's a bug.
-    if resp.status_code == 422:
-        body = resp.json()
-        error = body.get("error", body)
-        assert "exceeds" in error.get("message", "").lower() or "max_input" in error.get(
-            "message", ""
-        ).lower()
+    # Auth passes with a fake endpoint whose slug matches the request `model`,
+    # so the handler proceeds to the size guard rather than 401/403-ing first.
+    fake_endpoint = SimpleNamespace(slug="test-model")
+    fake_project = SimpleNamespace(id="00000000-0000-0000-0000-000000000000")
+
+    async def _fake_resolve():
+        return fake_endpoint, fake_project
+
+    async def _fake_db():
+        # The guard raises before any db.execute, so the session is never used.
+        yield None
+
+    app.dependency_overrides[_resolve_endpoint] = _fake_resolve
+    app.dependency_overrides[get_db] = _fake_db
+    try:
+        huge_text = "x" * (settings.max_input_chars + 1)
+        payload = {
+            "model": "test-model",
+            "messages": [{"role": "user", "content": huge_text}],
+        }
+        resp = await client.post(
+            "/v1/chat/completions",
+            content=json.dumps(payload),
+            headers={"Content-Type": "application/json"},
+        )
+    finally:
+        app.dependency_overrides.pop(_resolve_endpoint, None)
+        app.dependency_overrides.pop(get_db, None)
+
+    # The guard raises InvalidRequest (HTTP 400) with an "exceeds" message.
+    assert resp.status_code == 400
+    body = resp.json()
+    error = body.get("error", body)
+    assert "exceeds" in error.get("message", "").lower()
 
 
 # ---------------------------------------------------------------------------
