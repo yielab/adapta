@@ -28,23 +28,10 @@
   }
 
   // ── vision (§V5.2) ─────────────────────────────────────────────────────────
-  // Modality follows the endpoint's base model, resolved from the catalog.
-  let isVision = $state(false);
-  $effect(() => {
-    const base = endpoint?.base_model;
-    if (!base) {
-      isVision = false;
-      return;
-    }
-    void api
-      .listModels()
-      .then((models) => {
-        isVision = models.find((m) => m.name === base)?.modality === "vision";
-      })
-      .catch(() => {
-        /* fall back to text-only UI; the server enforces modality anyway */
-      });
-  });
+  // Modality comes straight off the endpoint (the server resolves and returns it). Using
+  // this field — rather than a separate catalog fetch that could fail — means a vision
+  // endpoint always shows the image UI, never silently falls back to a text-only Playground.
+  const isVision = $derived(endpoint?.modality === "vision");
 
   const MAX_IMAGE_MB = 10; // mirrors the server's per-image cap
   let attachedImage = $state<string | null>(null); // data URL
@@ -360,7 +347,8 @@
     <div class="row between">
       <small class="muted">
         {#if isVision}
-          Vision endpoint — attach an image and ask about it.
+          Vision endpoint — attach an image and ask about it. Image requests are
+          non-streaming and skip document retrieval (no citations).
         {:else if project.type === "rag"}
           Retrieval-augmented — cited from your documents.
         {:else}
