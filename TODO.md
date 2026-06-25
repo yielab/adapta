@@ -19,7 +19,9 @@
 > fine-tunes) shipped 2026-06-11, and **§C (console v2) shipped 2026-06-13**. **Every planned
 > workstream (0–5, §A, §V, §C) is now complete.** The only remaining work is optional/deferred:
 > the §A1b router-DTO switch (P2, contract gate is green without it), the §1.2 coverage ratchet
-> (blocked on CI model-bearing jobs), and the §6 deferred-future list. No open P0/P1 task remains.
+> (blocked on CI model-bearing jobs), and the §6 deferred-future list. No open P0/P1 task remained
+> against the *build* — then the **2026-06-25 market analysis opened §D (competitive positioning &
+> differentiation)**, which adds P1 proof/positioning work (D0–D1) plus P2 capability gaps (D3–D6).
 >
 > **Legend:** `[x]` done & verified · `[~]` partial / exists-but-not-wired · `[ ]` not started
 > **Priority:** **P0** blocks a trustworthy `main` · **P1** needed before first customer · **P2** nice-to-have
@@ -42,7 +44,7 @@ Honour the [Definition of done](#definition-of-done-per-task) on every task. Wor
 
 ---
 
-## Status snapshot (updated 2026-06-13)
+## Status snapshot (updated 2026-06-25)
 
 | Area | State |
 |---|---|
@@ -58,6 +60,7 @@ Honour the [Definition of done](#definition-of-done-per-task) on every task. Wor
 | Documentation system | ✅ **consolidated** (2026-06-10) — MkDocs Material site from `docs/` (User Guide / Developer Guide incl. a *Learning the system* deep-dive / Reference / Roadmap). API reference auto-rendered from `specs/openapi.yaml`, code reference auto from docstrings; `mkdocs build --strict` in the CI fast gate; published to GitHub Pages on push→main. Dead `examples/openclaw/` (cut scope) removed. |
 | **Staff audit (§A4)** | ✅ **complete** — all P0+P1 (A4.1–A4.9) and the full P2 batch (A4.10 stuck-task sweeper, A4.11 streaming prompt tokens, A4.12 ops hardening: disk-check path, chroma version guard, hyperparam bounds, image pinning, synthesis error-rate, GPU hygiene, backup.sh, ProjectStatus `ready`, Chroma retrieval timeout). |
 | **Console v2 (§C)** | ✅ **complete** (2026-06-13) — C1.1–C1.3 (BaseModelInfo v2, Models page, informative picker), C2.1–C2.3 (project summary read-model, stage-aware cards, Overview tab), C3.1–C3.2 (EndpointResponse v2 with adapter provenance + retrieval, composition explainer), C4.1–C4.6 (Settings shell, change-password, team/invite UI, DB-backed platform overrides, system status), C5.1–C5.3 (RBAC tests 18/18, contract gate 1683/1683, docs operator-console §7–9 + OPERATIONS §8 updates). Members endpoint migrated to `/v1/teams/{team_id}/members` (spec-first). |
+| **Competitive positioning (§D)** | D0 (spike) + D1 (matrix/README) ✅ done (2026-06-25); D2–D6 open (P2) |
 | **Image fine-tunes (§V)** | ✅ **complete** (2026-06-11, V0–V6) — kill-or-commit spikes → contracts (V1) → data plane (V2: zip bundles, safe extraction) → worker training/eval/conversion (V3: VLM QLoRA, vision tower frozen, held-out dual gate, GGUF with both conversion caveats) → serving (V4: mmproj chat-handler, OpenAI image content-parts, image context-fit) → console + docs (V5: `GET /v1/models`, modality-aware flows, Playground image attach). **Proof:** GPU e2e end to end incl. the served leg (`test_vlm_lora_e2e.py`: held-out 1.000 vs base 0.011; served answer for an unseen emblem = the trained association); contract gate 1458/1458 zero 5xx; migration round-trip incl. 0007; boot imports green in both images. v1 limits by design: data-URL images only, ≤4/request, non-streaming, no RAG composition with image input. |
 
 ---
@@ -1133,6 +1136,205 @@ thin client over the **existing** API — every screen maps 1:1 to an endpoint a
 - **Acceptance.** No off-brand hype copy remains (spot-check list in PR); name/tagline come from one
   constant; axe/Lighthouse a11y ≥ 95 with no contrast failures; screenshots of login, projects (all
   three mode colors), endpoint, and docs attached to the PR showing one coherent brand.
+
+---
+
+## D. Competitive positioning & differentiation (from 2026-06-25 market analysis)
+
+> **Source.** A deep, source-verified market scan (2026-06-25) of the LLM-tooling ecosystem.
+> **Headline finding:** Adapta occupies a genuinely rare niche — **no single confirmed competitor
+> matches its full combination** of self-hosted RAG + LoRA/QLoRA fine-tune + VLM fine-tune + an
+> automated *blocking* eval gate + OpenAI-compatible serving that *composes* RAG and the adapter in
+> one endpoint. The field splits into four disjoint layers, each overlapping only one slice of Adapta:
+>
+> | Layer | What it does | Representative tools (verified) | Misses |
+> |---|---|---|---|
+> | **Serving / inference** | load model + adapters, expose OpenAI API | vLLM, LoRAX, Ollama, LM Studio, LocalAI, OpenLLM/BentoML, llama.cpp | no training, no RAG, no gate |
+> | **Fine-tuning** | dataset → LoRA/QLoRA adapter | H2O LLM Studio, Axolotl, Unsloth, LLaMA-Factory | no serving, no RAG |
+> | **RAG apps** | chat over your docs w/ citations | AnythingLLM, PrivateGPT, RAGFlow, Dify, Onyx | no fine-tuning |
+> | **Managed full-stack** | customize + evaluate + serve as a suite | NVIDIA NeMo, Red Hat AI 3, Predibase (cloud) | multi-component and/or not single-product self-hosted |
+>
+> **Verified competitor facts** ([lorax](https://github.com/predibase/lorax),
+> [vLLM LoRA](https://docs.vllm.ai/en/stable/features/lora/),
+> [h2o-llmstudio](https://github.com/h2oai/h2o-llmstudio),
+> [anything-llm](https://github.com/Mintplex-Labs/anything-llm),
+> [Red Hat AI 3](https://e3mag.com/en/red-hat-introduces-red-hat-ai-3/)):
+> LoRAX/vLLM are serving-only (load adapters, don't train/RAG/gate) but win on **multi-adapter-per-GPU
+> density** (LoRAX: 1000s of adapters/GPU via heterogeneous continuous batching; vLLM: concurrent
+> adapters via `max_loras`). H2O trains LoRA/QLoRA **+ DPO + FSDP** but has no RAG and no production
+> serving. AnythingLLM is RAG-only. Red Hat AI 3 has an evaluation *hub* — but it **monitors/validates**
+> for a human, it is not an automatic *blocking* gate like ours.
+>
+> **Two real gaps this implies:** (1) **serving density** — our llama-cpp/GGUF runtime gives each
+> tenant a dedicated model instance (≈one GPU per active fine-tune); (2) **fine-tuning method breadth**
+> — we are QLoRA/LoRA-only while H2O/NeMo offer DPO/SFT/RLHF/distributed. Everything else is a
+> **proof-and-positioning** problem: we have the product, but nobody has drawn the matrix that shows we
+> are the only all-✓ row. This section turns that into pickable work. Workstream labels: `[DOCS]` /
+> `[BE]` / `[FE]` / `[INFRA]`.
+
+### D0. `[DOCS]` Spike — verify the four load-bearing claims before betting the roadmap (P1) — ✅ DONE (2026-06-25)
+- [x] **Context.** The market scan's verification pass was partly rate-limited, so four claims that the
+  rest of this section leans on are **asserted, not confirmed**. They must be checked competitor-by-
+  competitor before D1's matrix is published or D3/D4 are scheduled — a wrong cell in a public matrix
+  is worse than no matrix.
+- **Scope.** A research spike only; no product code. Output is a short findings doc that D1 consumes.
+- **Steps.** Resolve each question with a primary source (vendor docs/repo), recording the citation:
+  1. **Does *any* competitor compose RAG context + a fine-tuned LoRA adapter in one inference call?**
+     (Check NeMo+NIM, LocalAI, Dify/RAGFlow, Predibase.) This is the crux of our differentiator and
+     was not directly verified for anyone.
+  2. **Who does VLM (image-understanding) LoRA fine-tuning end-to-end (train→gate→convert→serve)
+     self-hosted?** If genuinely nobody, that is a category we can name and own.
+  3. **Can llama-cpp/GGUF do multi-adapter-per-GPU batching at all**, or does closing the density gap
+     require a second serving backend (feeds D3's build-vs-skip decision)?
+  4. **NeMo / Red Hat AI 3 total on-prem deployment cost** (host count, GPU, Kubernetes vs our single
+     `make up`) — is our simplicity a *quantifiable* advantage for a non-platform team?
+- **Files.** `docs/reference/COMPETITIVE_LANDSCAPE.md` (new — 📖 Reference; describes *what is*, no tasks).
+- **Contract impact.** None.
+- **Acceptance.** Each of the four questions has a sourced ✓/✗/nuance answer in the new reference doc;
+  any cell D1 wants to publish is backed by a citation here. `mkdocs build --strict` green.
+
+### D1. `[DOCS]` Publish the competitive composition matrix — defend the moat (P1) — ✅ DONE (2026-06-25)
+- [x] **Context.** Our single most defensible differentiator (one on-prem product composing RAG +
+  fine-tune + VLM behind an automatic eval gate) is **invisible** because no artifact states it. The
+  README/docs describe features, never the competitive whitespace. Prospects can't tell us apart from a
+  serving framework or a RAG app.
+- **Scope.** A positioning artifact, not a teardown. Honest ✓/✗/partial cells only, each backed by D0's
+  citations; no unverified competitor claims. Lives in Reference + linked from README.
+- **Steps.**
+  1. Build the capability matrix: rows = {vLLM, LoRAX, H2O LLM Studio, AnythingLLM, Dify/RAGFlow,
+     NVIDIA NeMo, Red Hat AI 3, **Adapta**}; columns = {self-hosted single product, RAG w/ citations,
+     LoRA/QLoRA fine-tune, **VLM fine-tune**, **automatic blocking eval gate**, **composes RAG+adapter
+     in one call**, OpenAI-compatible}. Adapta is the only all-✓ row.
+  2. Write the one-paragraph positioning line ("one self-hosted product that gives a model your
+     *knowledge* (RAG) and changes its *behavior* (fine-tune) in a single OpenAI-compatible endpoint,
+     and never ships a fine-tune that didn't pass an automatic quality gate") and lead the README with it.
+  3. Add an honest "when **not** to choose Adapta" block (e.g. need 1000s of adapters/GPU → LoRAX/vLLM;
+     pure serving of an off-the-shelf GGUF → Ollama) — credibility through candor.
+- **Files.** `docs/reference/COMPETITIVE_LANDSCAPE.md` (matrix + positioning), `README.md` (lead line +
+  link), `docs/index.md` (hub link), `mkdocs.yml` (nav entry). Keep it Reference — **no open tasks** in it.
+- **Contract impact.** None (docs only).
+- **Acceptance.** The matrix renders in the MkDocs site with every cell citation-backed (from D0); the
+  README opens with the positioning line; `mkdocs build --strict` green (no broken links).
+
+### D2. `[FE+DOCS]` Surface VLM fine-tuning + the eval gate as headline differentiators (P2)
+- [ ] **Context.** Two of our rarest capabilities are under-marketed. **VLM fine-tuning** is buried in
+  §V and never framed as a category nobody else self-hosts. The **eval gate** is a governance story
+  ("no unverified model ever reaches production") that enterprises buy — but the console presents it as
+  a pass/fail number, not a guarantee. Red Hat only *monitors*; we *block* — and we don't say so.
+- **Scope.** Framing/UX, not new ML capability. Console copy + one docs page; reuses existing features.
+- **Steps.**
+  1. Console: on the fine-tune/endpoint views, name the gate explicitly ("Quality gate: this model was
+     served only because it beat the base model on held-out data" — surface the persisted
+     `eval_metrics` delta from §A4.6) so the guarantee is visible, not implicit.
+  2. Docs: a user-guide page "Fine-tune models that read your images — on your hardware" leading with
+     the VLM end-to-end flow (train→gate→serve) and *why self-hosting it is rare*.
+  3. Cross-link both from D1's landscape page.
+- **Files.** `adapta/console/src/views/FinetuneFlow.svelte` + endpoint view, `docs/user-guide/*` (new
+  page), `mkdocs.yml`, `docs/reference/COMPETITIVE_LANDSCAPE.md` (cross-link).
+- **Contract impact.** None (uses existing `eval_metrics` field from §A4.6; no API change).
+- **Acceptance.** The console shows the gate as a named guarantee with the real base-vs-adapter delta;
+  the VLM page renders; brand/voice QA passes; `mkdocs build --strict` green.
+
+### D3. `[BE+INFRA]` Optional vLLM serving backend for text LoRA endpoints — close the density gap (P2)
+- [ ] **Context (the biggest *verified* gap).** llama-cpp/GGUF serves one model instance per
+  `(base, adapter)` key (§A4.8), so N active fine-tune endpoints ≈ N GPU-resident models. LoRAX/vLLM
+  pack many adapters into one GPU via continuous batching — a real cost advantage at multi-tenant scale.
+  This brushes **hard constraint #1 (don't rewrite the inference engine)**, so the move is *additive*:
+  add vLLM as an **opt-in second backend**, never replace llama-cpp (which stays the default and remains
+  the only path for CPU-RAG and the VLM mmproj runtime).
+- **Scope.** Text LoRA endpoints only. llama-cpp stays default; vLLM is opt-in via config/per-endpoint.
+  **Gated on D0 q3** (does GGUF batching exist? if a viable GGUF path appears, prefer it over a second
+  runtime). Do **not** route RAG/CPU or VLM endpoints through vLLM in v1.
+- **Steps.**
+  1. **Decision sub-task first** (record rationale here, like A3.1 did): vLLM-as-second-backend vs.
+     waiting for GGUF multi-adapter support — decide from D0 q3's finding.
+  2. Introduce a serving-backend abstraction behind `model_manager`/`inference.py` so an endpoint can
+     resolve to `llamacpp` (default) or `vllm`; the adapter (a PEFT/safetensors LoRA — vLLM consumes
+     these directly, no GGUF conversion) loads via vLLM's multi-LoRA path.
+  3. Density: many text adapters share one vLLM process/GPU (bounded by `max_loras`); keep the §A4.8
+     LRU semantics conceptually but at the adapter level.
+  4. Compose-with-RAG must still work (RAG context injection is upstream of the model call, so it is
+     backend-agnostic) — verify the combined call on a vLLM-served endpoint.
+  5. Eval gate, contracts, and the OpenAI surface are unchanged (serving response identical).
+- **Files.** `adapta/core/` (new backend abstraction + vLLM adapter loader), `adapta/services/chat.py`
+  (backend-agnostic dispatch), `adapta/config.py` (backend selection + `max_loras`), `pyproject.toml` /
+  worker or a serving image (vLLM dep — **constraint #2**: deps in `pyproject.toml`, baked at build),
+  `docs/reference/OPERATIONS.md` (when to enable, VRAM math), tests.
+- **Contract impact.** None external (OpenAI serving response unchanged). Internal config only.
+- **Acceptance.** With the vLLM backend enabled, ≥10 distinct text LoRA endpoints serve concurrently
+  from **one** GPU process (vs one-model-per-endpoint on llama-cpp); a combined RAG+adapter call returns
+  citations + learned behavior; llama-cpp default path and the VLM path are unaffected; `make ci` green.
+
+### D4. `[BE]` DPO training mode — broaden fine-tuning methods toward H2O/NeMo parity (P2)
+- [ ] **Context.** We are QLoRA/LoRA(SFT)-only; H2O and NeMo offer DPO/RLHF/SFT/distributed. **DPO**
+  (preference tuning) is the highest-leverage addition because it directly serves our pitch ("change how
+  it *behaves*") — tone/format/preference is exactly what DPO tunes, and it reuses the entire existing
+  worker → eval-gate → convert → serve pipeline.
+- **Scope.** Add a DPO trainer mode on the existing GPU worker. Reuse the dataset contract, eval gate,
+  PEFT→GGUF conversion, and serving unchanged. One new method, not a training-framework rewrite (TRL
+  `DPOTrainer` is wrapped, like the existing SFT path — **constraint #1**).
+- **Steps.**
+  1. **Contract first (Pillar 3 + Pillar 1):** extend `specs/schemas/training_dataset.schema.json` to
+     express preference pairs (prompt + chosen + rejected) as a dataset variant, and add a `method`
+     (`sft` | `dpo`) field to the training-config / job-create surface (`specs/openapi.yaml` →
+     `make generate`).
+  2. Worker: branch to TRL `DPOTrainer` when `method=dpo`; keep SFT as default. Produces the same
+     PEFT adapter artifact the rest of the pipeline already handles.
+  3. Eval gate: confirm the held-out, response-only, improvement-aware gate (§A3.2/§A4.13) is
+     meaningful for a DPO adapter (or note the metric nuance in the schema `$comment`).
+  4. Validate the full train→gate→convert→serve path on the GPU for a DPO job.
+- **Files.** `specs/schemas/training_dataset.schema.json`, `specs/openapi.yaml` (+ regenerated models),
+  `adapta/training/trainer.py` (DPO branch), `adapta/services/training.py` (validate the new dataset
+  variant + `method`), `adapta/worker/main.py`, `tests/` (validation + a GPU e2e), gate-semantics docs.
+- **Contract impact.** Pillar 1 (job-create `method` + response), Pillar 3 (dataset schema gains the
+  preference-pair variant; the eval-gate mechanism is unchanged). No Pillar 2 if no new column is needed.
+- **Acceptance.** A DPO dataset validates, trains, passes the eval gate, converts, and serves through
+  the existing endpoint; `make test-contracts` green (zero 5xx); `make check-models` green; a GPU e2e
+  proves the DPO adapter changes behavior at serve time.
+
+### D5. `[BE]` RAG quality — hybrid (keyword+vector) retrieval + reranker (P2)
+- [ ] **Context.** Our RAG is intentionally simple (sentence-transformers → ChromaDB → top-k vector).
+  Dify/RAGFlow/Onyx compete on retrieval *quality* (hybrid search, rerankers, query rewriting) and will
+  win head-to-head retrieval bake-offs. This is the cheapest way to stop losing on RAG quality without
+  expanding scope into agent workflows. (Distinct from the §6 deferred CLIP image-*retrieval* item.)
+- **Scope.** Retrieval quality on the existing per-project Chroma collection: add keyword/BM25-style
+  signal fused with the vector score, and an optional cross-encoder reranker over the top-k. CPU-only
+  (preserve the RAG-is-CPU constraint). No change to the ingestion/chunking contract.
+- **Steps.**
+  1. Hybrid retrieve in `adapta/services/rag.py`: combine vector similarity with a lexical match and
+     fuse (e.g. reciprocal-rank fusion) before truncating to the context-fit budget (§A4.3).
+  2. Optional reranker (cross-encoder via sentence-transformers) over the fused candidates, behind a
+     config flag (default on if it stays within CPU/latency budget; the §A4.12 RAG timeout still guards).
+  3. Citations must reflect the final reranked set (the §A4.3 lowest-relevance-drop ordering must read
+     the reranked scores).
+  4. Keep it lazy-loaded like the embeddings singleton; no new always-on memory cost.
+- **Files.** `adapta/services/rag.py`, `adapta/services/embeddings.py` (reranker singleton),
+  `adapta/config.py` (flags), `adapta/services/chat.py` (ordering for context-fit/citations), tests.
+- **Contract impact.** None (retrieval is internal; the cited-answer response shape is unchanged).
+- **Acceptance.** On a fixed doc set + question set, hybrid+rerank returns more relevant chunks than
+  vanilla top-k (a small fixture-based relevance test), citations match the reranked set, retrieval
+  stays within the §A4.12 RAG timeout on CPU; `make ci` green.
+
+### D6. `[FE+BE]` Dataset-review UI — close the curation loop (P2)
+- [ ] **Context.** Synthesis (§4) generates Q/A pairs from indexed docs, but there is no way to
+  *review/edit/reject* them before training — the operator either trusts the synthetic set wholesale or
+  edits JSONL by hand. Argilla/Label Studio own this curation step that feeds fine-tunes; a lightweight
+  in-product review closes the loop and improves fine-tune quality at the source.
+- **Scope.** A review surface over an existing dataset's rows (accept / edit / drop) producing a curated
+  dataset version that feeds a training job. Not a general labeling platform; no new annotation types.
+- **Steps.**
+  1. Contract (Pillar 1): an endpoint to read a dataset's rows and persist per-row keep/edit decisions
+     into a curated dataset (or a curated revision of it) — spec-first → `make generate`.
+  2. Console: a paged review view (row → keep/edit/drop), then "use curated set for training".
+  3. The curated dataset flows into the existing enqueue path unchanged (still hits the min-size +
+     schema + eval-gate guards).
+- **Files.** `specs/openapi.yaml` (+ models), `adapta/api/v1/datasets.py`, `adapta/services/training.py`
+  (curated-revision handling), possibly `adapta/db/models.py` + a migration (Pillar 2) if a curated
+  revision is a new row, `adapta/console/src/views/*` (review UI), tests + docs.
+- **Contract impact.** Pillar 1 (new/extended dataset endpoints); Pillar 2 *if* a curated revision needs
+  a column/table; Pillar 3 untouched (gate unchanged).
+- **Acceptance.** An operator can review a synthesized dataset, drop/edit rows, save a curated version,
+  and train from it; contract + migration gates green; `make ci` green.
 
 ---
 

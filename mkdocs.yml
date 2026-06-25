@@ -114,4 +114,5 @@ nav:
       - Operations runbook: reference/OPERATIONS.md
       - SDD workflow: reference/SDD_WORKFLOW.md
       - Architecture decisions: reference/API_EVOLUTION_PLAN.md
+      - Competitive landscape: reference/COMPETITIVE_LANDSCAPE.md
   - Roadmap: roadmap.md

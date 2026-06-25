@@ -38,6 +38,13 @@ It answers two needs that have no good *private* solution today:
 And knowledge and behavior **compose on a single endpoint**: facts retrieved from your documents
 (cited) *and* the tone/format of your fine-tune, in the same call.
 
+No confirmed competitor combines all of these in one self-hosted product. vLLM and LoRAX serve
+adapters at scale but cannot train or do RAG. H2O LLM Studio trains LoRA/QLoRA (including DPO) but
+has no serving or RAG. AnythingLLM does RAG but cannot fine-tune. NVIDIA NeMo covers most of the
+surface but requires Kubernetes and 10+ microservices. See the
+[competitive landscape](docs/reference/COMPETITIVE_LANDSCAPE.md) for the full comparison matrix with
+citations.
+
 > [!IMPORTANT]
 > **Status: working prototype — a one-person, AI-assisted (Claude) project.** The full lifecycle
 > works end-to-end (RAG, LoRA training, eval gate, multi-tenant serving, image-understanding
