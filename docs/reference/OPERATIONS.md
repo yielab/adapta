@@ -221,6 +221,46 @@ test, `tests/test_model_catalog.py`, asserts the two agree).
 **Artifact storage** is the filesystem volume (§1); introduce object storage
 (MinIO/S3) only if multi-host scale (§4) or HA demands it.
 
+### 6.4 Vision (VLM) serving in production (§V4)
+
+Serving an image-understanding fine-tune loads the base GGUF **plus** the `mmproj`
+vision projector (CLIP) through one llama-cpp runtime. Operational notes for real use:
+
+- **Use a GPU for vision serving.** The `app` defaults to CPU inference
+  (`ADAPTA_N_GPU_LAYERS=0`). Text on CPU is fine, but a VLM on CPU is
+  impractically slow — a single image request can take tens of seconds and holds
+  that model's serialization lock the whole time. Set **`ADAPTA_N_GPU_LAYERS>0`**
+  (a GPU host) for any production vision endpoint; the worker logs a loud warning
+  when it serves a vision model on CPU.
+- **RAM/VRAM for serving:** the 3B VL base GGUF is ~2 GB + the mmproj is ~1.3 GB,
+  so budget ~3.5 GB per resident vision model (on top of the embedding model and
+  the app).
+- **Cap resident models on a shared box.** The serving cache keeps up to
+  `ADAPTA_MAX_LOADED_MODELS` (default **2**) distinct models in memory and loads
+  the projector **per model** (not shared). On a host serving several large
+  fine-tunes, set **`ADAPTA_MAX_LOADED_MODELS=1`** so a burst of distinct vision
+  endpoints can't pile multiple heavy models into memory at once.
+- **v1 serving limits (enforced):** image parts must be inline `data:` URLs (no
+  remote fetch), at most `max_images_per_request` (default 4) per call, requests
+  with images are **non-streaming** and **skip RAG** (no citations on image turns).
+
+### 6.5 Upload & ingestion limits (enforced)
+
+Dataset upload is bounded defensively so an oversized or hostile bundle can't
+exhaust the host — relevant for any multi-tenant / untrusted-operator deployment:
+
+| Limit | Setting | Default | Enforced |
+|---|---|---|---|
+| Single upload (wire size) | `ADAPTA_MAX_UPLOAD_MB` | 1024 MB | streamed-to-disk byte cap; over-limit → `400`, partial file removed |
+| Bundle uncompressed total | `ADAPTA_MAX_BUNDLE_UNCOMPRESSED_MB` | 500 MB | **actual** decompressed bytes capped during extraction (zip-bomb safe) |
+| Files per bundle | `ADAPTA_MAX_BUNDLE_FILES` | 2000 | rejected before extraction |
+| Per-image size / side | `ADAPTA_MAX_IMAGE_MB` / `ADAPTA_MAX_IMAGE_SIDE_PX` | 10 MB / 8192 px | per-image validation |
+
+Bundles are also protected against zip-slip, absolute paths, symlinks, and
+disallowed file types; `PIL.MAX_IMAGE_PIXELS` is capped process-wide against
+decompression-bomb images. For an internet-facing deployment, still set a body-size
+limit at your reverse proxy (e.g. NGINX `client_max_body_size`) as a first line.
+
 ---
 
 ## 7. Observability (optional)
