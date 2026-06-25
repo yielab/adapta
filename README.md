@@ -15,7 +15,7 @@ and serve both behind a single **OpenAI-compatible** endpoint — on hardware yo
 [![OpenAI-compatible](https://img.shields.io/badge/API-OpenAI--compatible-412991?logo=openai&logoColor=white)](#using-the-api)
 [![Docs](https://img.shields.io/badge/docs-MkDocs-526CFE?logo=materialformkdocs&logoColor=white)](#-documentation)
 
-[**Documentation**](#-documentation) · [**Quick start**](#-quick-start-5-minutes-cpu) · [**Using the API**](#using-the-api) · [**How it works**](#how-it-works) · [**Roadmap**](TODO.md)
+[**Documentation**](#-documentation) · [**Quick start**](#-quick-start-5-minutes-cpu) · [**Using the API**](#using-the-api) · [**Image understanding**](#️-image-understanding-ocr--visual-extraction) · [**How it works**](#how-it-works) · [**Roadmap**](TODO.md)
 
 ![Adapta console walkthrough](docs/screenshots/hero.gif)
 
@@ -33,9 +33,10 @@ It answers two needs that have no good *private* solution today:
 
 - 📚 **Give it knowledge (RAG)** — answer from *your* documents, with citations. The model's weights never change. **CPU-only.**
 - 🎛️ **Change how it behaves (fine-tuning / LoRA)** — train an adapter on *your* data; it only goes live after passing an automatic **eval gate**. **Needs a GPU.**
+- 👁️ **Teach it to read images (vision fine-tuning)** — train on image+text examples so it extracts fields from invoices, receipts, forms or screenshots into structured **JSON** — OCR that understands *your* layout, served through the same endpoint. **Needs a GPU.**
 
-And the two **compose on a single endpoint**: facts retrieved from your documents (cited) *and* the
-tone/format of your fine-tune, in the same call.
+And knowledge and behavior **compose on a single endpoint**: facts retrieved from your documents
+(cited) *and* the tone/format of your fine-tune, in the same call.
 
 > [!IMPORTANT]
 > **Status: working prototype — a one-person, AI-assisted (Claude) project.** The full lifecycle
@@ -292,28 +293,37 @@ docker compose exec -e ADAPTA_RUN_VLM_E2E=1 app \
   python -m pytest -m "integration and slow" tests/integration/test_vlm_lora_e2e.py -s
 ```
 
-Image-understanding fine-tunes are for invoice extraction, visual QC, handwritten forms — *not*
-image generation. v1 limits: data-URL images only, ≤4 per request, non-streaming, no RAG composition
-with image input.
-
 </details>
 
-<details>
-<summary><b>See it working — OCR: an invoice image → JSON</b></summary>
+---
 
-A real vision fine-tune (`qwen2.5-vl-3b-instruct`, 36 invoice images): it reads an invoice
-*image* and extracts the fields. Full walkthrough:
-[Image understanding (OCR)](docs/user-guide/ocr-vision-walkthrough.md).
+## 👁️ Image understanding (OCR & visual extraction)
 
-**Attach an invoice the model never saw — it reads the picture and returns the trained JSON:**
+Fine-tune a vision model on **image + text** examples and it learns to *read pictures* — pull the
+vendor and total off an invoice, the fields off a receipt or handwritten form, a pass/fail off a
+photo of a part — and return them as the **structured JSON** you trained it on. It's OCR that
+understands *your* layout, served through the **same OpenAI-compatible endpoint** as everything else
+(image content-parts, exactly like the OpenAI vision API).
+
+A real fine-tune of `qwen2.5-vl-3b-instruct` on **36 invoice images** (vision tower frozen, gated on
+held-out invoices it never saw). Attach an invoice the model has never seen — it reads the picture
+and returns the trained JSON:
 
 ![Vision Playground: an invoice image returns {"vendor": "Qorvex", "total": 9450}](docs/screenshots/vision-proof/03-vision-playground-ocr.png)
 
-The image bundle uploaded and cleared the eval gate first:
+The image bundle — a `.zip` of images plus one `data.jsonl` manifest — uploaded and cleared the
+**eval gate** first; a vision fine-tune that didn't learn can't go live any more than a text one can:
 
 ![Setup: a 36-image invoice bundle, eval gate PASSED](docs/screenshots/vision-proof/01-vision-setup.png)
 
-</details>
+**Use it for** invoice/receipt extraction, visual QC, handwritten forms, screenshot and document
+understanding. **Not** for image *generation* (permanently out of scope). Full walkthrough with the
+bundle format and an SDK call: [Image understanding (OCR)](docs/user-guide/ocr-vision-walkthrough.md).
+
+> [!NOTE]
+> v1 limits: images are passed **inline as data URLs** (the server never fetches remote URLs),
+> **≤ 4 per request**, **non-streaming**, and image requests skip RAG composition. Serving a VLM is
+> heavier than text (base GGUF **+** the `mmproj` vision projector) — a GPU is strongly recommended.
 
 ---
 
