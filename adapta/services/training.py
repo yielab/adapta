@@ -155,6 +155,63 @@ def _validate_image(bundle_dir: Path, rel_path: str) -> Optional[str]:
     return None
 
 
+# How many row/image problems to list before truncating the report. A large
+# bundle (hundreds of invoices) with a systemic mistake could otherwise produce a
+# multi-megabyte error string; the operator only needs a representative batch to
+# fix the pattern, so we cap and tell them how many more there were.
+MAX_REPORTED_ERRORS = 25
+
+
+def _validate_row(
+    i: int, obj: dict, schema: Optional[dict], bundle_dir: Optional[Path]
+) -> tuple[list[str], int]:
+    """Validate one parsed row; return (errors, num_images_counted).
+
+    Collects *all* problems on the row (it does not stop at the first) so the
+    caller can build one report covering the whole file.
+    """
+    errors: list[str] = []
+    if not isinstance(obj.get("prompt"), str) or not obj["prompt"].strip():
+        errors.append(f"Line {i}: missing or empty 'prompt' field")
+    if not isinstance(obj.get("response"), str) or not obj["response"].strip():
+        errors.append(f"Line {i}: missing or empty 'response' field")
+
+    images = obj.get("images") or []
+    if images and bundle_dir is None:
+        errors.append(
+            f"Line {i}: rows with 'images' must be uploaded as a .zip bundle "
+            "(one root .jsonl manifest + the image files), not a plain .jsonl."
+        )
+
+    if schema:
+        import jsonschema
+
+        try:
+            jsonschema.validate(obj, schema)
+        except jsonschema.ValidationError as e:
+            errors.append(f"Line {i}: schema violation — {e.message}")
+
+    counted = 0
+    if images and bundle_dir is not None:
+        for rel in images:
+            img_err = _validate_image(bundle_dir, rel)
+            if img_err:
+                errors.append(f"Line {i}: {img_err}")
+            else:
+                counted += 1
+    return errors, counted
+
+
+def _format_error_report(errors: list[str]) -> str:
+    """Build one operator-facing message from collected per-row problems."""
+    shown = errors[:MAX_REPORTED_ERRORS]
+    body = "\n".join(f"  • {e}" for e in shown)
+    header = f"Found {len(errors)} problem(s) in the dataset:"
+    if len(errors) > MAX_REPORTED_ERRORS:
+        body += f"\n  … and {len(errors) - MAX_REPORTED_ERRORS} more"
+    return f"{header}\n{body}\nFix these and re-upload."
+
+
 def validate_dataset(
     path: Path, bundle_dir: Optional[Path] = None
 ) -> tuple[bool, Optional[str], int, int]:
@@ -166,11 +223,18 @@ def validate_dataset(
     ``images`` (paths relative to the dataset bundle). Image rows are only
     valid when ``bundle_dir`` is given (zip-bundle upload, §V2.1) — every
     referenced image must exist inside the bundle and decode within the caps.
+
+    Validation does **not** stop at the first bad row: it scans the whole file
+    and reports up to :data:`MAX_REPORTED_ERRORS` problems at once, so an
+    operator fixing a large bundle sees every issue in one pass instead of
+    discovering them one re-upload at a time. The scan still short-circuits once
+    the cap is reached to bound work on a wholly-malformed file.
     """
     try:
         schema = _load_schema()
-        samples = []
+        num_samples = 0
         num_images = 0
+        errors: list[str] = []
         with path.open(encoding="utf-8") as f:
             for i, line in enumerate(f, 1):
                 line = line.strip()
@@ -179,47 +243,27 @@ def validate_dataset(
                 try:
                     obj = json.loads(line)
                 except json.JSONDecodeError as exc:
-                    return False, f"Line {i}: invalid JSON — {exc}", 0, 0
+                    errors.append(f"Line {i}: invalid JSON — {exc}")
+                    if len(errors) >= MAX_REPORTED_ERRORS:
+                        break
+                    continue
 
-                if not isinstance(obj.get("prompt"), str) or not obj["prompt"].strip():
-                    return False, f"Line {i}: missing or empty 'prompt' field", 0, 0
-                if not isinstance(obj.get("response"), str) or not obj["response"].strip():
-                    return False, f"Line {i}: missing or empty 'response' field", 0, 0
+                row_errors, counted = _validate_row(i, obj, schema, bundle_dir)
+                if row_errors:
+                    errors.extend(row_errors)
+                    if len(errors) >= MAX_REPORTED_ERRORS:
+                        break
+                    continue
 
-                images = obj.get("images") or []
-                if images and bundle_dir is None:
-                    return (
-                        False,
-                        (
-                            f"Line {i}: rows with 'images' must be uploaded as a .zip "
-                            "bundle (one root .jsonl manifest + the image files), not "
-                            "a plain .jsonl."
-                        ),
-                        0,
-                        0,
-                    )
+                num_samples += 1
+                num_images += counted
 
-                if schema:
-                    import jsonschema
-
-                    try:
-                        jsonschema.validate(obj, schema)
-                    except jsonschema.ValidationError as e:
-                        return False, f"Line {i}: schema violation — {e.message}", 0, 0
-
-                if images and bundle_dir is not None:
-                    for rel in images:
-                        img_err = _validate_image(bundle_dir, rel)
-                        if img_err:
-                            return False, f"Line {i}: {img_err}", 0, 0
-                    num_images += len(images)
-
-                samples.append(obj)
-
-        if not samples:
+        if errors:
+            return False, _format_error_report(errors), 0, 0
+        if num_samples == 0:
             return False, "Dataset is empty — must have at least one instruction pair", 0, 0
 
-        return True, None, len(samples), num_images
+        return True, None, num_samples, num_images
 
     except Exception as exc:
         return False, str(exc), 0, 0

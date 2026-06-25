@@ -261,6 +261,14 @@ disallowed file types; `PIL.MAX_IMAGE_PIXELS` is capped process-wide against
 decompression-bomb images. For an internet-facing deployment, still set a body-size
 limit at your reverse proxy (e.g. NGINX `client_max_body_size`) as a first line.
 
+**Validation reports every problem at once.** When a dataset (or image bundle)
+fails validation, the dataset's `validation_error` lists *all* offending rows in a
+single pass — up to 25, then `… and N more` — instead of stopping at the first.
+An operator preparing a large bundle (e.g. hundreds of scanned invoices) sees the
+full list of missing/corrupt/oversized images or malformed rows in one upload and
+fixes them together, rather than discovering them one re-upload at a time. The
+console renders the multi-line report verbatim under the dataset row.
+
 ---
 
 ## 7. Observability (optional)

@@ -89,6 +89,49 @@ def test_corrupt_image_invalidates_row(tmp_path):
     assert "cannot be decoded" in error
 
 
+def test_validation_reports_all_bad_rows_at_once(tmp_path):
+    """Enterprise upload: every problem is reported in one pass, not one re-upload
+    at a time. Three rows each reference a missing image — all three must show."""
+    rows = [
+        {"prompt": "Q1?", "response": "A1.", "images": ["images/m1.png"]},
+        {"prompt": "Q2?", "response": "A2.", "images": ["images/m2.png"]},
+        {"prompt": "Q3?", "response": "A3.", "images": ["images/m3.png"]},
+    ]
+    zpath = _bundle(tmp_path, rows, images=["images/a.png"])
+    manifest = extract_bundle(zpath, tmp_path / "out")
+    valid, error, _, _ = validate_dataset(manifest, bundle_dir=tmp_path / "out")
+    assert not valid
+    assert "Found 3 problem(s)" in error
+    for ln in ("Line 1", "Line 2", "Line 3"):
+        assert ln in error
+
+
+def test_validation_error_report_is_capped(tmp_path):
+    """A wholly-malformed manifest is summarized, not dumped in full."""
+    from adapta.services.training import MAX_REPORTED_ERRORS
+
+    rows = [{"prompt": "", "response": ""} for _ in range(MAX_REPORTED_ERRORS + 10)]
+    # Plain .jsonl path (no images) — empty prompt/response on every line.
+    manifest = tmp_path / "data.jsonl"
+    manifest.write_text("\n".join(json.dumps(r) for r in rows) + "\n")
+    valid, error, _, _ = validate_dataset(manifest)
+    assert not valid
+    assert "and" in error and "more" in error  # truncation notice present
+
+
+def test_validation_counts_only_good_rows(tmp_path):
+    """A valid file still reports the right sample/image counts after the refactor."""
+    rows = [
+        {"prompt": "Q1?", "response": "A1.", "images": ["images/a.png"]},
+        {"prompt": "Q2?", "response": "A2.", "images": ["images/b.png"]},
+    ]
+    zpath = _bundle(tmp_path, rows, images=["images/a.png", "images/b.png"])
+    manifest = extract_bundle(zpath, tmp_path / "out")
+    valid, error, n, n_img = validate_dataset(manifest, bundle_dir=tmp_path / "out")
+    assert valid, error
+    assert (n, n_img) == (2, 2)
+
+
 def test_manifest_hash_changes_with_image_bytes(tmp_path):
     """§V2.3 — the provenance hash must cover image content, not just the JSONL."""
     zpath = _bundle(tmp_path, ROWS, images=["images/a.png"])

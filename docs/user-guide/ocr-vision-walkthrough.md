@@ -78,6 +78,26 @@ r = client.chat.completions.create(
 print(r.choices[0].message.content)   # {"vendor": "Qorvex", "total": 9450}
 ```
 
+## When a bundle has bad images
+
+Real bundles are messy — a manifest can reference an image that didn't make it into
+the zip, a scan can be corrupt, or one file can exceed the size/dimension caps. The
+console validates **every** referenced image and reports **all** problems in one pass
+(up to 25, then `… and N more`), so you fix a large bundle in a single round instead
+of discovering issues one re-upload at a time. The dataset shows `invalid` with a
+report like:
+
+```text
+Found 3 problem(s) in the dataset:
+  • Line 12: image 'images/invoice_11.png' not found in the bundle
+  • Line 27: image 'images/invoice_26.png' cannot be decoded
+  • Line 40: image 'images/invoice_39.png' is 9000x6000; the longest side may be at most 8192px
+Fix these and re-upload.
+```
+
+Nothing is trained until the bundle is fully valid — a single bad row keeps the
+whole dataset `invalid`, so a broken image can never silently degrade a fine-tune.
+
 ## Reproducing this
 
 The automated smoke test trains a VLM LoRA, gates it on held-out images, converts it to

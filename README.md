@@ -426,7 +426,9 @@ Postgres/Redis off any public network.
 
 **What the platform does for you:** no telemetry or external callbacks · a weak adapter is blocked
 from serving mechanically (not by a flag) · cross-tenant isolation enforced at the ORM layer and
-tested as typed 403s.
+tested as typed 403s · uploads and image bundles are bounded against oversized/hostile input
+(streamed byte caps, zip-bomb/zip-slip/symlink protection, per-image size & pixel caps —
+[Operations §6.5](docs/reference/OPERATIONS.md)) and validation reports every bad row in one pass.
 
 **What to audit yourself:** JWT/bcrypt paths (`adapta/services/auth.py`), invite-token handling, the
 eval-gate threshold (`adapta/services/adapters.py`), and the synthesis endpoint's injection surface.
