@@ -1,9 +1,9 @@
 """
-Input validation hardening tests (§7.4).
+Input validation hardening tests.
 
 Covers:
 - ADAPTA_MAX_INPUT_CHARS — oversized chat messages are rejected
-- Content-Type validation — file uploads with unsupported MIME types are rejected
+- File upload extension guard — only allowed extensions are accepted (§7.3)
 """
 
 import json
@@ -29,62 +29,76 @@ def test_max_input_chars_positive():
 
 
 # ---------------------------------------------------------------------------
-# Content-Type validation in file uploads
+# File upload extension guard (§7.3)
+#
+# Content-Type is client-controlled and browsers routinely send
+# application/octet-stream for .md / .txt files. The real gating is the
+# extension, which the handler checks via _ALLOWED_EXTENSIONS.
 # ---------------------------------------------------------------------------
 
-# To keep this test offline (no DB/Redis), we test the validation logic directly
-# by calling the error path — the config-level check in files.py.
+
+def test_upload_allowed_extension_set():
+    """_ALLOWED_EXTENSIONS includes all supported document types."""
+    from adapta.api.v1.files import _ALLOWED_EXTENSIONS
+
+    assert ".md" in _ALLOWED_EXTENSIONS
+    assert ".txt" in _ALLOWED_EXTENSIONS
+    assert ".pdf" in _ALLOWED_EXTENSIONS
+    assert ".docx" in _ALLOWED_EXTENSIONS
+    assert ".html" in _ALLOWED_EXTENSIONS
+    assert ".htm" in _ALLOWED_EXTENSIONS
+    assert ".json" not in _ALLOWED_EXTENSIONS
+    assert ".exe" not in _ALLOWED_EXTENSIONS
+    assert ".zip" not in _ALLOWED_EXTENSIONS
+    assert ".py" not in _ALLOWED_EXTENSIONS
 
 
 @pytest.mark.asyncio
-async def test_file_upload_rejects_unsupported_content_type(client):
-    """
-    POST /v1/projects/{project_id}/files with an unsupported Content-Type
-    should fail with 422 before any processing.
-    """
-    # We use an arbitrary project ID — the auth/DB layer will reject first, but
-    # we can validate via the API endpoint that the check is wired.
-    # For a focused unit-level test, we assert the config check directly:
-    from adapta.services.documents import SUPPORTED_TYPES
+async def test_upload_handler_rejects_unsupported_extension(client):
+    """The handler guard returns 400 for files with a disallowed extension."""
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock, patch
 
-    assert "application/json" not in SUPPORTED_TYPES
-    assert "image/png" not in SUPPORTED_TYPES
-    assert "text/plain" in SUPPORTED_TYPES
-    assert "application/pdf" in SUPPORTED_TYPES
+    from adapta.api.app import app
+    from adapta.db.session import get_db
+    from adapta.services.auth import get_current_user
+
+    async def _fake_db():
+        yield None  # guard fires before any DB call
+
+    app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(id="u1")
+    app.dependency_overrides[get_db] = _fake_db
+    try:
+        with (
+            patch(
+                "adapta.api.v1.files._get_project",
+                AsyncMock(return_value=SimpleNamespace(team_id="t1")),
+            ),
+            patch("adapta.api.v1.files.require_team_writer", AsyncMock()),
+        ):
+            resp = await client.post(
+                "/v1/projects/some-project/files",
+                files={"file": ("data.json", b"{}", "application/json")},
+            )
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+        app.dependency_overrides.pop(get_db, None)
+
+    assert resp.status_code == 400
 
 
-@pytest.mark.parametrize(
-    "content_type, expected_allowed",
-    [
-        ("text/plain", True),
-        ("application/pdf", True),
-        (
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            True,
-        ),
-        ("text/markdown", True),
-        ("text/html", True),
-        ("text/x-markdown", True),
-        ("application/json", False),
-        ("image/png", False),
-        ("image/jpeg", False),
-        ("application/octet-stream", False),
-        ("application/x-shockwave-flash", False),
-        ("application/zip", False),
-    ],
-)
-def test_content_type_supported_set(content_type, expected_allowed):
-    """Verify which MIME types are accepted by the file upload guard."""
-    from adapta.services.documents import SUPPORTED_TYPES
+def test_parser_dispatches_pdf_by_extension(tmp_path):
+    """extract_text falls back to PDF parser by path suffix when CT is octet-stream."""
+    from unittest.mock import patch
 
-    if expected_allowed:
-        assert content_type in SUPPORTED_TYPES, (
-            f"{content_type} should be supported"
-        )
-    else:
-        assert content_type not in SUPPORTED_TYPES, (
-            f"{content_type} should NOT be supported"
-        )
+    from adapta.services.documents import extract_text
+
+    pdf_path = tmp_path / "report.pdf"
+    pdf_path.write_bytes(b"dummy")
+    with patch("adapta.services.documents._extract_text_pdf", return_value="pdf text") as m:
+        result = extract_text(pdf_path, "application/octet-stream")
+    m.assert_called_once_with(pdf_path)
+    assert result == "pdf text"
 
 
 # ---------------------------------------------------------------------------

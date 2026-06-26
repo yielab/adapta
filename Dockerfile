@@ -40,6 +40,10 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends curl libgomp1 make \
     && rm -rf /var/lib/apt/lists/*
 
+# Non-root user for production hardening (§7.4). The dev compose runs as root
+# (needed for bind-mount writes); docker-compose.prod.yml overrides to uid 10001.
+RUN adduser --uid 10001 --disabled-password --gecos "" adapta
+
 # ===== builder (app: CPU-only torch + full toolchain) ========================
 # Compilers live ONLY here. They never reach the app / worker images.
 FROM base AS builder
@@ -83,7 +87,8 @@ COPY specs/ ./specs/
 COPY migrations/ ./migrations/
 COPY alembic.ini entrypoint.sh Makefile pyproject.toml ./
 RUN chmod +x /app/entrypoint.sh \
-    && mkdir -p /app/data/models /app/data/uploads /app/data/adapters /app/data/datasets
+    && mkdir -p /app/data/models /app/data/uploads /app/data/adapters /app/data/datasets \
+    && chown -R adapta:adapta /app/data
 ENV ADAPTA_HOST=0.0.0.0 ADAPTA_PORT=8000
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
@@ -128,5 +133,6 @@ COPY --from=worker-builder /opt/llamacpp /opt/llamacpp
 COPY adapta/ ./adapta/
 COPY migrations/ ./migrations/
 COPY alembic.ini ./
-RUN mkdir -p /app/data/models /app/data/adapters /app/data/datasets
+RUN mkdir -p /app/data/models /app/data/adapters /app/data/datasets \
+    && chown -R adapta:adapta /app/data
 CMD ["python", "-m", "adapta.worker.main"]

@@ -46,9 +46,27 @@ Adapta is **single-tenant, on-premises software**. Your organization operates th
 
 The default `cors_origins` is empty (`[]`) — no cross-origin browser access is allowed out of the box. The operator console is served same-origin from `/console/`, so it needs no CORS entry. If you build a separate browser front-end on another origin, set `ADAPTA_CORS_ORIGINS` explicitly to that origin (never `*`).
 
-### Container hardening (roadmap)
+### Container hardening
 
-The single Docker Compose stack is a developer/operator convenience: it bind-mounts the repo and runs as root so hot-reload can write freely. Production container hardening (non-root user, `cap_drop: [ALL]`, `no-new-privileges`, read-only rootfs) is **not yet shipped** — it requires a dedicated production image/compose target that does not bind-mount the source and that redirects the model cache to a writable volume. Tracked in the roadmap; do not apply these to the bind-mount dev stack (it breaks model-cache writes and file ownership).
+The dev stack (`docker compose up` / `make up`) bind-mounts the repo and runs as root so hot-reload and toolchain writes work freely. A production hardening overlay is shipped at `docker-compose.prod.yml`:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+```
+
+The overlay applies to the `app` and `worker` services:
+
+| Control | Setting |
+| --- | --- |
+| Non-root user | `user: "10001:10001"` (`adapta` system user, uid 10001, created in the base image stage) |
+| Linux capabilities | `cap_drop: [ALL]` |
+| Privilege escalation | `security_opt: no-new-privileges:true` |
+| Root filesystem | `read_only: true` |
+| Writable temp | `/tmp` as tmpfs |
+| Persistent data | Named volume `app-data` mounted at `/app/data` (uploads, models, adapters, datasets) |
+| Model caches | `HF_HOME`, `SENTENCE_TRANSFORMERS_HOME`, `TORCH_HOME` all redirected to `/app/data/.*_cache` |
+
+The dev `docker-compose.yml` is **not modified** — apply the overlay only for production deployments.
 
 ### Secrets management
 

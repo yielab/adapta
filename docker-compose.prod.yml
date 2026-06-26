@@ -1,0 +1,70 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# Production hardening overlay (§7.4).
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#
+# What this adds over the dev stack:
+#   - Runs app and worker as non-root (uid/gid 10001, the "adapta" system user
+#     created in the Dockerfile base stage)
+#   - Drops ALL Linux capabilities (cap_drop: ALL)
+#   - Prevents privilege escalation (no-new-privileges)
+#   - Read-only root filesystem (files only land in named volumes or /tmp)
+#   - /tmp as tmpfs (ephemeral, in-memory)
+#   - Persistent named volume for /app/data (uploads, models, adapters, datasets)
+#   - HuggingFace / sentence-transformers cache redirected inside /app/data so it
+#     survives container restarts without a home-dir bind-mount
+#   - Hot-reload disabled (ADAPTA_RELOAD=0)
+#
+# Dev stack (docker compose up / make up) is UNCHANGED — do not edit
+# docker-compose.yml for production concerns.
+#
+# The data volume is created on first use; Docker copies the empty directories
+# from the image (created + chown'd in the Dockerfile) into the named volume,
+# so the adapta user can write immediately without an init container.
+# ──────────────────────────────────────────────────────────────────────────────
+name: adapta
+
+services:
+  app:
+    # Run as the adapta system user (uid 10001) created in the base image stage.
+    user: "10001:10001"
+    # Remove the dev bind-mount (.:/app) — production uses the baked source.
+    volumes: !reset
+      - app-data:/app/data
+    environment:
+      # Disable hot-reload in production.
+      - ADAPTA_RELOAD=0
+      # Redirect HF / sentence-transformers / torch caches into the persistent
+      # data volume so model downloads survive container restarts.
+      - HF_HOME=/app/data/.hf_cache
+      - SENTENCE_TRANSFORMERS_HOME=/app/data/.st_cache
+      - TORCH_HOME=/app/data/.torch_cache
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+  worker:
+    user: "10001:10001"
+    volumes: !reset
+      - app-data:/app/data
+    environment:
+      - HF_HOME=/app/data/.hf_cache
+      - SENTENCE_TRANSFORMERS_HOME=/app/data/.st_cache
+      - TORCH_HOME=/app/data/.torch_cache
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  # Persistent data volume shared by app and worker. On first boot Docker copies
+  # the empty /app/data tree from the image (owned by adapta) into this volume.
+  app-data:

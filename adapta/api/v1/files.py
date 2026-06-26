@@ -21,12 +21,17 @@ from adapta.db.session import get_db
 from adapta.domain.errors import InvalidRequest, NotFound
 from adapta.models.generated import FileResponse
 from adapta.services.auth import get_current_user, require_team_member, require_team_writer
-from adapta.services.documents import SUPPORTED_TYPES, parse_and_chunk
+from adapta.services.documents import parse_and_chunk
 from adapta.services.rag import collection_name_for, get_rag_service
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/projects/{project_id}/files", tags=["files"])
+
+# Extension-based guard (§7.3): Content-Type is client-controlled and browsers
+# routinely send application/octet-stream for .md/.txt files, making CT an
+# unreliable signal. Real type safety comes from the parser in documents.py.
+_ALLOWED_EXTENSIONS = frozenset({".pdf", ".docx", ".txt", ".md", ".html", ".htm"})
 
 
 def _file_resp(f: ProjectFile) -> FileResponse:
@@ -142,12 +147,11 @@ async def upload_file(
     # Truncate, don't reject: the filename is metadata, and an over-long one
     # would overflow project_files.filename String(256) → 500.
     filename = (file.filename or "upload")[:200]
-    content_type = file.content_type or "text/plain"
-    ct_base = content_type.split(";")[0].strip()
-    if ct_base not in SUPPORTED_TYPES and not any(
-        ext in filename.lower() for ext in [".pdf", ".docx", ".txt", ".md", ".html"]
-    ):
-        raise InvalidRequest(message=f"Unsupported file type: {content_type}")
+    content_type = file.content_type or "application/octet-stream"
+    if Path(filename).suffix.lower() not in _ALLOWED_EXTENSIONS:
+        raise InvalidRequest(
+            message="Unsupported file type. Accepted: PDF, DOCX, TXT, Markdown (.md), HTML."
+        )
 
     # Save to disk
     project_upload_dir = settings.uploads_dir / project_id

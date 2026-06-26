@@ -58,7 +58,7 @@ def _extract_text_html(path: Path) -> str:
 def extract_text(path: Path, content_type: str) -> str:
     ct = content_type.lower()
     try:
-        if "pdf" in ct:
+        if "pdf" in ct or path.suffix.lower() == ".pdf":
             return _extract_text_pdf(path)
         elif "wordprocessingml" in ct or path.suffix.lower() == ".docx":
             return _extract_text_docx(path)
