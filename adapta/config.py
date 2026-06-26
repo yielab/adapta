@@ -81,6 +81,12 @@ class Settings(BaseSettings):
     chroma_host: str = "chroma"
     chroma_port: int = 8000
     rag_top_k: int = 5
+    # Hybrid retrieval (D5): fetch top_k * N vector candidates before BM25 fusion
+    # so the keyword signal has a larger pool to reorder. 4× keeps latency low on CPU.
+    rag_hybrid_fetch_multiplier: int = 4
+    # Cross-encoder reranker model (D5). Set to "" to disable; the §A4.12 RAG
+    # timeout still guards the whole retrieval path including reranking.
+    rag_reranker_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
     # Cap RAG retrieval so a hung/slow Chroma degrades to a typed 504 instead of
     # blocking every chat request indefinitely (A4.12).
     rag_timeout_seconds: int = 10

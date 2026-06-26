@@ -1283,28 +1283,21 @@ thin client over the **existing** API — every screen maps 1:1 to an endpoint a
     + `DPOTrainer`, same PEFT adapter artifact output.
   - 6 new DPO dataset validation unit tests; 217 tests pass.
 
-### D5. `[BE]` RAG quality — hybrid (keyword+vector) retrieval + reranker (P2)
-- [ ] **Context.** Our RAG is intentionally simple (sentence-transformers → ChromaDB → top-k vector).
-  Dify/RAGFlow/Onyx compete on retrieval *quality* (hybrid search, rerankers, query rewriting) and will
-  win head-to-head retrieval bake-offs. This is the cheapest way to stop losing on RAG quality without
-  expanding scope into agent workflows. (Distinct from the §6 deferred CLIP image-*retrieval* item.)
-- **Scope.** Retrieval quality on the existing per-project Chroma collection: add keyword/BM25-style
-  signal fused with the vector score, and an optional cross-encoder reranker over the top-k. CPU-only
-  (preserve the RAG-is-CPU constraint). No change to the ingestion/chunking contract.
-- **Steps.**
-  1. Hybrid retrieve in `adapta/services/rag.py`: combine vector similarity with a lexical match and
-     fuse (e.g. reciprocal-rank fusion) before truncating to the context-fit budget (§A4.3).
-  2. Optional reranker (cross-encoder via sentence-transformers) over the fused candidates, behind a
-     config flag (default on if it stays within CPU/latency budget; the §A4.12 RAG timeout still guards).
-  3. Citations must reflect the final reranked set (the §A4.3 lowest-relevance-drop ordering must read
-     the reranked scores).
-  4. Keep it lazy-loaded like the embeddings singleton; no new always-on memory cost.
-- **Files.** `adapta/services/rag.py`, `adapta/services/embeddings.py` (reranker singleton),
-  `adapta/config.py` (flags), `adapta/services/chat.py` (ordering for context-fit/citations), tests.
-- **Contract impact.** None (retrieval is internal; the cited-answer response shape is unchanged).
-- **Acceptance.** On a fixed doc set + question set, hybrid+rerank returns more relevant chunks than
-  vanilla top-k (a small fixture-based relevance test), citations match the reranked set, retrieval
-  stays within the §A4.12 RAG timeout on CPU; `make ci` green.
+### D5. `[BE]` RAG quality — hybrid (keyword+vector) retrieval + reranker (P2) ✅ DONE (2026-06-26)
+
+- [x] **What shipped.**
+  - `adapta/services/rag.py`: pure `_bm25_scores()` (Robertson BM25, no new deps) + `_rrf_fuse()`
+    (Reciprocal Rank Fusion, k=60) + updated `retrieve()`: fetches `top_k × 4` vector candidates,
+    scores with BM25, fuses both ranked lists via RRF, then passes the top `top_k × 2` through the
+    optional cross-encoder reranker (sigmoid-normalised scores → citations).
+  - `adapta/services/embeddings.py`: `RerankerService` + `get_reranker_service()` lazy singleton
+    (same pattern as `EmbeddingService`; no memory cost until first call).
+  - `adapta/config.py`: `rag_hybrid_fetch_multiplier=4` and
+    `rag_reranker_model="cross-encoder/ms-marco-MiniLM-L-6-v2"` (set to `""` to disable).
+  - `tests/test_rag_hybrid.py`: 17 new tests — `_tokenize`, `_bm25_scores` (5), `_rrf_fuse` (5),
+    `RAGService.retrieve` with mocked Chroma (BM25 reordering + reranker path + top-k + citations).
+  - No API contract change. Citations reflect the final reranked scores; §A4.3 `pop()` invariant
+    preserved (chunks returned best-first). §A4.12 RAG timeout guards the whole pipeline unchanged.
 
 ### D6. `[FE+BE]` Dataset-review UI — close the curation loop (P2)
 - [ ] **Context.** Synthesis (§4) generates Q/A pairs from indexed docs, but there is no way to

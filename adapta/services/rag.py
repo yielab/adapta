@@ -1,15 +1,24 @@
 """
-RAG service: per-project ChromaDB collections + cited retrieval.
+RAG service: per-project ChromaDB collections + hybrid cited retrieval.
+
+Retrieval pipeline (D5):
+  1. Vector search — fetch top_k × multiplier candidates from Chroma.
+  2. BM25 score — keyword signal over the same candidates.
+  3. Reciprocal Rank Fusion — merge the two ranked lists.
+  4. Optional cross-encoder rerank over the top candidates.
+  5. Return top_k chunks, best-first (§A4.3 pop() invariant preserved).
 """
 
 from __future__ import annotations
 
 import logging
+import math
+import re
 from dataclasses import dataclass
 from typing import List, Optional
 
 from adapta.config import settings
-from adapta.services.embeddings import get_embedding_service
+from adapta.services.embeddings import get_embedding_service, get_reranker_service
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +39,68 @@ def _get_chroma_client():
 
 def collection_name_for(project_id: str) -> str:
     return f"proj_{project_id}"
+
+
+# ---------------------------------------------------------------------------
+# Hybrid retrieval helpers
+# ---------------------------------------------------------------------------
+
+
+def _tokenize(text: str) -> list[str]:
+    return re.findall(r"\w+", text.lower())
+
+
+def _bm25_scores(
+    query: str,
+    docs: list[str],
+    k1: float = 1.5,
+    b: float = 0.75,
+) -> list[float]:
+    """BM25 relevance score for *query* against each document in *docs*.
+
+    Standard Robertson BM25 with k1=1.5 and b=0.75 on whitespace tokens.
+    Returns one float per document; higher = more relevant.
+    """
+    if not docs:
+        return []
+
+    query_tokens = set(_tokenize(query))
+    tokenized_docs = [_tokenize(d) for d in docs]
+    dl = [len(td) for td in tokenized_docs]
+    avgdl = sum(dl) / len(dl) if dl else 1.0
+    n_docs = len(docs)
+
+    scores: list[float] = []
+    for i, doc_tokens in enumerate(tokenized_docs):
+        tf_map: dict[str, int] = {}
+        for t in doc_tokens:
+            tf_map[t] = tf_map.get(t, 0) + 1
+
+        score = 0.0
+        for t in query_tokens:
+            tf = tf_map.get(t, 0)
+            if tf == 0:
+                continue
+            df = sum(1 for td in tokenized_docs if t in set(td))
+            idf = math.log((n_docs - df + 0.5) / (df + 0.5) + 1)
+            score += idf * (tf * (k1 + 1)) / (tf + k1 * (1 - b + b * dl[i] / avgdl))
+
+        scores.append(score)
+
+    return scores
+
+
+def _rrf_fuse(*rank_lists: list[int], k: int = 60) -> list[int]:
+    """Reciprocal Rank Fusion over multiple ranked index lists.
+
+    Each list contains document indices ordered best-first.  Returns a merged
+    list of indices ordered by descending RRF score.
+    """
+    rrf: dict[int, float] = {}
+    for ranks in rank_lists:
+        for rank, idx in enumerate(ranks):
+            rrf[idx] = rrf.get(idx, 0.0) + 1.0 / (k + rank + 1)
+    return sorted(rrf, key=lambda i: rrf[i], reverse=True)
 
 
 class RAGService:
@@ -97,8 +168,20 @@ class RAGService:
         query: str,
         top_k: Optional[int] = None,
     ) -> List[RetrievedChunk]:
-        """Semantic retrieval; returns ranked chunks with citations."""
+        """Hybrid retrieval: vector + BM25 fused via RRF, optional cross-encoder reranker.
+
+        Pipeline (D5):
+          1. Fetch fetch_k = top_k × multiplier candidates via Chroma vector search.
+          2. BM25-score those candidates against the query.
+          3. Reciprocal Rank Fusion of vector order + BM25 order.
+          4. Optional cross-encoder reranker over the top rerank_n candidates.
+          5. Return top_k, best-first (§A4.3 pop() invariant preserved).
+
+        Citations reflect the final reranked scores (§A4.3 ordering).
+        """
         top_k = top_k or settings.rag_top_k
+        fetch_k = max(top_k * settings.rag_hybrid_fetch_multiplier, top_k + 1)
+
         emb_service = get_embedding_service()
         query_embedding = emb_service.embed_one(query)
 
@@ -111,26 +194,61 @@ class RAGService:
 
         results = collection.query(
             query_embeddings=[query_embedding],
-            n_results=top_k,
+            n_results=fetch_k,
             include=["documents", "metadatas", "distances"],
         )
 
-        chunks: List[RetrievedChunk] = []
-        for doc, meta, dist in zip(
-            results["documents"][0],
-            results["metadatas"][0],
-            results["distances"][0],
-            strict=False,
-        ):
-            chunks.append(
-                RetrievedChunk(
-                    text=doc,
-                    source=meta.get("source", "unknown"),
-                    score=1.0 - dist,  # cosine distance → similarity
-                    chunk_index=meta.get("chunk_index", 0),
-                )
+        docs: list[str] = results["documents"][0]
+        metas: list[dict] = results["metadatas"][0]
+        dists: list[float] = results["distances"][0]
+
+        if not docs:
+            return []
+
+        # BM25 over the candidate set
+        bm25 = _bm25_scores(query, docs)
+
+        # Vector order: Chroma already returns best-first
+        vec_order = list(range(len(docs)))
+        bm25_order = sorted(range(len(docs)), key=lambda i: bm25[i], reverse=True)
+
+        fused_order = _rrf_fuse(vec_order, bm25_order)
+
+        # Build candidates in fused order; keep original cosine-similarity score
+        candidates: List[RetrievedChunk] = [
+            RetrievedChunk(
+                text=docs[idx],
+                source=metas[idx].get("source", "unknown"),
+                score=1.0 - dists[idx],  # cosine distance → similarity
+                chunk_index=metas[idx].get("chunk_index", 0),
             )
-        return chunks
+            for idx in fused_order
+        ]
+
+        # Optional cross-encoder reranker over the leading candidates
+        reranker = get_reranker_service()
+        if reranker is not None and len(candidates) > 1:
+            rerank_n = min(top_k * 2, len(candidates))
+            to_rerank = candidates[:rerank_n]
+            raw_scores = reranker.rerank(query, [c.text for c in to_rerank])
+            ranked = sorted(
+                zip(raw_scores, to_rerank, strict=False),
+                key=lambda x: x[0],
+                reverse=True,
+            )
+            # Normalize scores to (0, 1) via sigmoid so citations are comparable
+            reranked = [
+                RetrievedChunk(
+                    text=c.text,
+                    source=c.source,
+                    score=round(1.0 / (1.0 + math.exp(-s)), 4),
+                    chunk_index=c.chunk_index,
+                )
+                for s, c in ranked
+            ]
+            candidates = reranked + candidates[rerank_n:]
+
+        return candidates[:top_k]
 
     def build_context_block(self, chunks: List[RetrievedChunk]) -> str:
         """Format retrieved chunks into a context block for the prompt."""

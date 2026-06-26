@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import logging
 from functools import lru_cache
-from typing import List
+from typing import List, Optional
 
 from adapta.config import settings
 from adapta.domain.errors import EmbeddingFailed
@@ -65,3 +65,51 @@ class EmbeddingService:
 @lru_cache(maxsize=1)
 def get_embedding_service() -> EmbeddingService:
     return EmbeddingService(settings.embedding_model)
+
+
+class RerankerService:
+    """Cross-encoder reranker; lazily loaded on first use (D5)."""
+
+    def __init__(self, model_name: str):
+        self._model_name = model_name
+        self._model = None
+
+    def _load(self) -> None:
+        if self._model is not None:
+            return
+        try:
+            from sentence_transformers import CrossEncoder
+
+            logger.info("Loading reranker model: %s", self._model_name)
+            self._model = CrossEncoder(self._model_name)
+            logger.info("Reranker model loaded")
+        except Exception as exc:
+            raise EmbeddingFailed(
+                message="Failed to load reranker model",
+                internal_detail=str(exc),
+            ) from exc
+
+    def rerank(self, query: str, passages: List[str]) -> List[float]:
+        """Score each passage against the query; higher = more relevant."""
+        if not passages:
+            return []
+        self._load()
+        assert self._model is not None
+        try:
+            pairs = [(query, p) for p in passages]
+            scores = self._model.predict(pairs, show_progress_bar=False)
+            return [float(s) for s in scores]
+        except Exception as exc:
+            raise EmbeddingFailed(
+                message="Reranking failed",
+                internal_detail=str(exc),
+            ) from exc
+
+
+@lru_cache(maxsize=1)
+def get_reranker_service() -> Optional[RerankerService]:
+    """Returns a RerankerService if ADAPTA_RAG_RERANKER_MODEL is set, else None."""
+    model = settings.rag_reranker_model
+    if not model:
+        return None
+    return RerankerService(model)
