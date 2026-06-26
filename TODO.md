@@ -60,7 +60,7 @@ Honour the [Definition of done](#definition-of-done-per-task) on every task. Wor
 | Documentation system | ✅ **consolidated** (2026-06-10) — MkDocs Material site from `docs/` (User Guide / Developer Guide incl. a *Learning the system* deep-dive / Reference / Roadmap). API reference auto-rendered from `specs/openapi.yaml`, code reference auto from docstrings; `mkdocs build --strict` in the CI fast gate; published to GitHub Pages on push→main. Dead `examples/openclaw/` (cut scope) removed. |
 | **Staff audit (§A4)** | ✅ **complete** — all P0+P1 (A4.1–A4.9) and the full P2 batch (A4.10 stuck-task sweeper, A4.11 streaming prompt tokens, A4.12 ops hardening: disk-check path, chroma version guard, hyperparam bounds, image pinning, synthesis error-rate, GPU hygiene, backup.sh, ProjectStatus `ready`, Chroma retrieval timeout). |
 | **Console v2 (§C)** | ✅ **complete** (2026-06-13) — C1.1–C1.3 (BaseModelInfo v2, Models page, informative picker), C2.1–C2.3 (project summary read-model, stage-aware cards, Overview tab), C3.1–C3.2 (EndpointResponse v2 with adapter provenance + retrieval, composition explainer), C4.1–C4.6 (Settings shell, change-password, team/invite UI, DB-backed platform overrides, system status), C5.1–C5.3 (RBAC tests 18/18, contract gate 1683/1683, docs operator-console §7–9 + OPERATIONS §8 updates). Members endpoint migrated to `/v1/teams/{team_id}/members` (spec-first). |
-| **Competitive positioning (§D)** | D0 (spike) + D1 (matrix/README) ✅ done (2026-06-25); D2–D6 open (P2) |
+| **Competitive positioning (§D)** | D0+D1 ✅ (2026-06-25); D2 ✅ (2026-06-25); D4 ✅ (DPO, 2026-06-25); D5 ✅ (hybrid RAG, 2026-06-26); D6 ✅ (dataset review, 2026-06-26); D3 open (vLLM, P2) |
 | **Image fine-tunes (§V)** | ✅ **complete** (2026-06-11, V0–V6) — kill-or-commit spikes → contracts (V1) → data plane (V2: zip bundles, safe extraction) → worker training/eval/conversion (V3: VLM QLoRA, vision tower frozen, held-out dual gate, GGUF with both conversion caveats) → serving (V4: mmproj chat-handler, OpenAI image content-parts, image context-fit) → console + docs (V5: `GET /v1/models`, modality-aware flows, Playground image attach). **Proof:** GPU e2e end to end incl. the served leg (`test_vlm_lora_e2e.py`: held-out 1.000 vs base 0.011; served answer for an unseen emblem = the trained association); contract gate 1458/1458 zero 5xx; migration round-trip incl. 0007; boot imports green in both images. v1 limits by design: data-URL images only, ≤4/request, non-streaming, no RAG composition with image input. |
 
 ---
@@ -1299,26 +1299,21 @@ thin client over the **existing** API — every screen maps 1:1 to an endpoint a
   - No API contract change. Citations reflect the final reranked scores; §A4.3 `pop()` invariant
     preserved (chunks returned best-first). §A4.12 RAG timeout guards the whole pipeline unchanged.
 
-### D6. `[FE+BE]` Dataset-review UI — close the curation loop (P2)
-- [ ] **Context.** Synthesis (§4) generates Q/A pairs from indexed docs, but there is no way to
-  *review/edit/reject* them before training — the operator either trusts the synthetic set wholesale or
-  edits JSONL by hand. Argilla/Label Studio own this curation step that feeds fine-tunes; a lightweight
-  in-product review closes the loop and improves fine-tune quality at the source.
-- **Scope.** A review surface over an existing dataset's rows (accept / edit / drop) producing a curated
-  dataset version that feeds a training job. Not a general labeling platform; no new annotation types.
-- **Steps.**
-  1. Contract (Pillar 1): an endpoint to read a dataset's rows and persist per-row keep/edit decisions
-     into a curated dataset (or a curated revision of it) — spec-first → `make generate`.
-  2. Console: a paged review view (row → keep/edit/drop), then "use curated set for training".
-  3. The curated dataset flows into the existing enqueue path unchanged (still hits the min-size +
-     schema + eval-gate guards).
-- **Files.** `specs/openapi.yaml` (+ models), `adapta/api/v1/datasets.py`, `adapta/services/training.py`
-  (curated-revision handling), possibly `adapta/db/models.py` + a migration (Pillar 2) if a curated
-  revision is a new row, `adapta/console/src/views/*` (review UI), tests + docs.
-- **Contract impact.** Pillar 1 (new/extended dataset endpoints); Pillar 2 *if* a curated revision needs
-  a column/table; Pillar 3 untouched (gate unchanged).
-- **Acceptance.** An operator can review a synthesized dataset, drop/edit rows, save a curated version,
-  and train from it; contract + migration gates green; `make ci` green.
+### D6. `[FE+BE]` Dataset-review UI — close the curation loop (P2) ✅ DONE (2026-06-26)
+
+Shipped: row-level review surface in the fine-tune flow — operators read dataset rows, drop or edit
+any subset, save a curated version, and train from it. The curated dataset is a first-class `Dataset`
+row with `source_dataset_id` lineage, validated against the full training schema before persist.
+
+- Spec-first: `specs/openapi.yaml` → `GET /{id}/rows`, `POST /{id}/curate`,
+  `DatasetRowsResponse`, `DatasetCurateRequest`, `source_dataset_id` on `DatasetResponse`
+- `make generate` → `adapta/models/generated/models.py` (new classes committed)
+- Migration `0009_dataset_source_id` — `ALTER TABLE datasets ADD COLUMN source_dataset_id VARCHAR(36)`
+- `adapta/api/v1/datasets.py` — `_get_valid_dataset`, `_read_jsonl`, `get_dataset_rows`, `curate_dataset`
+- `adapta/console/src/` — `types.ts`, `api.ts`, `FinetuneFlow.svelte` (Review button + inline review panel:
+  drop/edit/restore per row, "Save curated version" calls POST /curate, curated badge on derived datasets)
+- `tests/test_dataset_review.py` — 14 offline tests: `_read_jsonl` (6) + curate validation flow (8)
+- `make ci` green
 
 ---
 

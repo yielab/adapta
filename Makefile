@@ -111,9 +111,9 @@ check-models:
 	@echo "Checking generated models are in sync with specs/openapi.yaml..."
 	@test -f adapta/models/generated/models.py \
 	  || { echo "FAIL: adapta/models/generated/models.py missing. Run 'make generate' and commit."; exit 1; }
-	@cp adapta/models/generated/models.py /tmp/.models_committed.py
+	@cp adapta/models/generated/models.py /tmp/models_committed_$$.py
 	@bash scripts/generate_models.sh >/dev/null
-	@if ! diff -q /tmp/.models_committed.py adapta/models/generated/models.py >/dev/null; then \
+	@if ! diff -q /tmp/models_committed_$$.py adapta/models/generated/models.py >/dev/null; then \
 	  echo "FAIL: adapta/models/generated/models.py is stale vs specs/openapi.yaml. Run 'make generate' and commit."; \
 	  exit 1; \
 	fi
@@ -169,7 +169,7 @@ lint:
 	mypy adapta/
 
 lint-imports:
-	lint-imports
+	lint-imports --cache-dir /tmp/importlinter_cache
 
 fmt:
 	black adapta/ tests/ scripts/

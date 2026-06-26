@@ -117,6 +117,10 @@ export const api = {
   listDatasets: (pid: string) => request<Dataset[]>(`${V1}/projects/${pid}/datasets`),
   uploadDataset: (pid: string, file: File) => upload<{ id: string; name: string; status: string }>(`${V1}/projects/${pid}/datasets`, file),
   getDataset: (pid: string, did: string) => request<Dataset>(`${V1}/projects/${pid}/datasets/${did}`),
+  getDatasetRows: (pid: string, did: string, page = 0, pageSize = 200) =>
+    request<import("./types").DatasetRowsResponse>(`${V1}/projects/${pid}/datasets/${did}/rows?page=${page}&page_size=${pageSize}`),
+  curateDataset: (pid: string, did: string, rows: Record<string, unknown>[]) =>
+    request<Dataset>(`${V1}/projects/${pid}/datasets/${did}/curate`, { method: "POST", body: { rows } }),
   synthesize: (pid: string, opts: { n_pairs_per_chunk?: number; max_chunks?: number; system_prompt?: string }) =>
     request<{ dataset_id: string; status: string; message: string }>(`${V1}/projects/${pid}/datasets/synthesize`, { method: "POST", body: opts }),
 

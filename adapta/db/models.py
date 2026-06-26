@@ -292,6 +292,8 @@ class Dataset(Base):
         default=DatasetStatus.uploaded,
     )
     validation_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # D6: set when this dataset was produced by POST .../curate from another dataset.
+    source_dataset_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     project: Mapped[Project] = relationship("Project", back_populates="datasets")

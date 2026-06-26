@@ -1,11 +1,13 @@
 """Dataset upload + validation for fine-tune projects."""
 
 import asyncio
+import json
 import logging
+import tempfile
 from pathlib import Path
 from typing import List
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Query, UploadFile
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,7 +15,12 @@ from adapta.config import settings
 from adapta.db.models import Dataset, DatasetStatus, Project, ProjectType
 from adapta.db.session import get_db
 from adapta.domain.errors import InvalidRequest, NotFound
-from adapta.models.generated import DatasetResponse, Modality
+from adapta.models.generated import (
+    DatasetCurateRequest,
+    DatasetResponse,
+    DatasetRowsResponse,
+    Modality,
+)
 from adapta.services.auth import get_current_user, require_team_member, require_team_writer
 from adapta.services.training import validate_dataset
 
@@ -32,6 +39,7 @@ def _ds_resp(d: Dataset) -> DatasetResponse:
         num_images=d.num_images,
         validation_error=d.validation_error,
         created_at=d.created_at.isoformat(),
+        source_dataset_id=d.source_dataset_id,
     )
 
 
@@ -218,3 +226,115 @@ async def get_dataset(
     if not dataset:
         raise NotFound(message="Dataset not found")
     return _ds_resp(dataset)
+
+
+async def _get_valid_dataset(db: AsyncSession, project_id: str, dataset_id: str) -> Dataset:
+    result = await db.execute(
+        select(Dataset).where(Dataset.id == dataset_id, Dataset.project_id == project_id)
+    )
+    dataset = result.scalar_one_or_none()
+    if not dataset:
+        raise NotFound(message="Dataset not found")
+    if dataset.status != DatasetStatus.valid:
+        raise InvalidRequest(
+            message=f"Dataset is not valid (status: {dataset.status.value}). "
+            "Only valid datasets can be reviewed or curated."
+        )
+    return dataset
+
+
+def _read_jsonl(path: str) -> list[dict]:
+    """Read all rows from a JSONL file, skipping blank lines."""
+    rows = []
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                rows.append(json.loads(line))
+    return rows
+
+
+@router.get("/{dataset_id}/rows", response_model=DatasetRowsResponse)
+async def get_dataset_rows(
+    project_id: str,
+    dataset_id: str,
+    page: int = Query(default=0, ge=0),
+    page_size: int = Query(default=100, ge=1, le=500),
+    current_user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return a page of JSONL rows from a valid dataset (D6 review)."""
+    project = await _get_finetune_project(db, project_id)
+    await require_team_member(db, current_user.id, project.team_id)
+    dataset = await _get_valid_dataset(db, project_id, dataset_id)
+
+    rows = await asyncio.to_thread(_read_jsonl, dataset.storage_path)
+    total = len(rows)
+    start = page * page_size
+    page_rows = rows[start : start + page_size]
+    return DatasetRowsResponse(rows=page_rows, total=total, page=page, page_size=page_size)
+
+
+@router.post("/{dataset_id}/curate", response_model=DatasetResponse, status_code=201)
+async def curate_dataset(
+    project_id: str,
+    dataset_id: str,
+    body: DatasetCurateRequest,
+    current_user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Save curated rows as a new valid dataset derived from dataset_id (D6 review)."""
+    project = await _get_finetune_project(db, project_id)
+    await require_team_writer(db, current_user.id, project.team_id)
+    source = await _get_valid_dataset(db, project_id, dataset_id)
+
+    if not body.rows:
+        raise InvalidRequest(message="rows must not be empty")
+
+    # Write rows to a temp file and validate against the training dataset schema.
+    # Use a temp path so we never leave a partial file in the datasets dir on error.
+    ds_dir = settings.datasets_dir / project_id
+    ds_dir.mkdir(parents=True, exist_ok=True)
+
+    def _write_and_validate() -> tuple[bool, str | None, int, int, Path]:
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".jsonl", dir=ds_dir, delete=False, encoding="utf-8"
+        ) as tmp:
+            tmp_path = Path(tmp.name)
+            for row in body.rows:
+                tmp.write(json.dumps(row) + "\n")
+        is_valid, error, num_samples, num_images = validate_dataset(tmp_path)
+        return is_valid, error, num_samples, num_images or 0, tmp_path
+
+    is_valid, error, num_samples, num_images, tmp_path = await asyncio.to_thread(
+        _write_and_validate
+    )
+
+    if not is_valid:
+        tmp_path.unlink(missing_ok=True)
+        raise InvalidRequest(message=f"Curated rows failed validation: {error}")
+
+    # Move the temp file to its permanent name now that validation passed.
+    final_name = f"curated_{source.name}"[-200:]  # keep extension, cap length
+    final_path = ds_dir / final_name
+    # Avoid collisions by appending the new dataset id (determined after flush).
+    curated = Dataset(
+        project_id=project_id,
+        name=final_name,
+        storage_path="",  # filled after flush gives us the id
+        status=DatasetStatus.valid,
+        num_samples=num_samples,
+        num_images=num_images if num_images else None,
+        modality="vision" if num_images else "text",
+        source_dataset_id=source.id,
+    )
+    db.add(curated)
+    await db.flush()  # assigns curated.id
+
+    final_path = ds_dir / f"{curated.id}_{final_name}"
+    tmp_path.rename(final_path)
+    curated.storage_path = str(final_path)
+    await db.commit()
+
+    logger.info("Curated dataset %s created from %s (%d rows)", curated.id, source.id, num_samples)
+    return _ds_resp(curated)

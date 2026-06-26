@@ -118,6 +118,14 @@ export interface Dataset {
   created_at: string;
   modality: Modality;
   num_images: number | null;
+  source_dataset_id: string | null;
+}
+
+export interface DatasetRowsResponse {
+  rows: Record<string, unknown>[];
+  total: number;
+  page: number;
+  page_size: number;
 }
 
 export type JobStatus = "queued" | "running" | "succeeded" | "failed" | "cancelled";

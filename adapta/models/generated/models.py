@@ -190,6 +190,18 @@ class DatasetResponse(BaseModel):
     num_images: Annotated[int | None, Field(...)]
     validation_error: Annotated[str | None, Field(...)]
     created_at: str
+    source_dataset_id: Annotated[str | None, Field(...)]
+
+
+class DatasetRowsResponse(BaseModel):
+    rows: list[dict[str, Any]]
+    total: int
+    page: int
+    page_size: int
+
+
+class DatasetCurateRequest(BaseModel):
+    rows: Annotated[list[dict[str, Any]], Field(min_length=1)]
 
 
 class TrainingConfigInput(BaseModel):

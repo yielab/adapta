@@ -345,6 +345,101 @@
     }
   }
 
+  // ---- Dataset review (D6) -----------------------------------------------
+  type ReviewRow = { row: Record<string, unknown>; dropped: boolean };
+  let reviewDataset = $state<Dataset | null>(null);
+  let reviewRows = $state<ReviewRow[]>([]);
+  let reviewLoading = $state(false);
+  let editingIdx = $state<number | null>(null);
+  let editBuf = $state<Record<string, string>>({});
+  let saving = $state(false);
+
+  const keptRows = $derived(reviewRows.filter((r) => !r.dropped));
+
+  function _rowType(row: Record<string, unknown>): "sft" | "dpo" | "vision" {
+    if ("chosen" in row && "rejected" in row) return "dpo";
+    if ("images" in row) return "vision";
+    return "sft";
+  }
+
+  function _textFields(row: Record<string, unknown>): string[] {
+    const t = _rowType(row);
+    if (t === "dpo") return ["prompt", "chosen", "rejected"];
+    if (t === "vision") return ["prompt", "response"];
+    return ["prompt", "response"];
+  }
+
+  async function openReview(d: Dataset) {
+    reviewDataset = d;
+    reviewRows = [];
+    reviewLoading = true;
+    editingIdx = null;
+    try {
+      const resp = await api.getDatasetRows(project.id, d.id);
+      reviewRows = resp.rows.map((r) => ({ row: r, dropped: false }));
+    } catch (e) {
+      reportErr(e, "Could not load dataset rows.");
+      reviewDataset = null;
+    } finally {
+      reviewLoading = false;
+    }
+  }
+
+  function closeReview() {
+    reviewDataset = null;
+    reviewRows = [];
+    editingIdx = null;
+  }
+
+  function dropRow(i: number) {
+    reviewRows = reviewRows.map((r, idx) => (idx === i ? { ...r, dropped: true } : r));
+  }
+
+  function undropRow(i: number) {
+    reviewRows = reviewRows.map((r, idx) => (idx === i ? { ...r, dropped: false } : r));
+  }
+
+  function startEdit(i: number) {
+    editingIdx = i;
+    const fields = _textFields(reviewRows[i].row);
+    editBuf = Object.fromEntries(fields.map((k) => [k, String(reviewRows[i].row[k] ?? "")]));
+  }
+
+  function cancelEdit() {
+    editingIdx = null;
+    editBuf = {};
+  }
+
+  function commitEdit(i: number) {
+    const updated = { ...reviewRows[i].row, ...editBuf };
+    reviewRows = reviewRows.map((r, idx) => (idx === i ? { ...r, row: updated } : r));
+    editingIdx = null;
+    editBuf = {};
+  }
+
+  async function saveCurated() {
+    if (!reviewDataset) return;
+    if (keptRows.length < MIN_SAMPLES) {
+      toastError(`Need at least ${MIN_SAMPLES} rows to train — keep more rows.`);
+      return;
+    }
+    saving = true;
+    try {
+      const newDs = await api.curateDataset(
+        project.id,
+        reviewDataset.id,
+        keptRows.map((r) => r.row),
+      );
+      toastSuccess(`Curated dataset saved — ${newDs.num_samples} rows ready to train.`);
+      closeReview();
+      await loadDatasets();
+    } catch (e) {
+      reportErr(e, "Could not save curated dataset.");
+    } finally {
+      saving = false;
+    }
+  }
+
   // ---- helpers ------------------------------------------------------------
   function pct(p: number) {
     return Math.round(Math.max(0, Math.min(1, p)) * 100);
@@ -705,12 +800,18 @@
             <th>Samples</th>
             {#if isVision}<th>Images</th>{/if}
             <th>Created</th>
+            <th></th>
           </tr>
         </thead>
         <tbody>
           {#each datasets as d (d.id)}
             <tr>
-              <td class="mono">{d.name}</td>
+              <td class="mono">
+                {d.name}
+                {#if d.source_dataset_id}
+                  <span class="badge-tag">curated</span>
+                {/if}
+              </td>
               <td>
                 <div class="row" style="gap: 8px;">
                   {#if d.status === "uploaded" || d.status === "validating"}
@@ -727,10 +828,110 @@
                 <td>{d.status === "valid" && d.num_images !== null ? d.num_images : "—"}</td>
               {/if}
               <td class="muted">{fmtDate(d.created_at)}</td>
+              <td>
+                {#if d.status === "valid" && !isVision}
+                  <button
+                    class="ghost sm"
+                    onclick={() => openReview(d)}
+                    disabled={reviewDataset !== null}
+                  >Review</button>
+                {/if}
+              </td>
             </tr>
           {/each}
         </tbody>
       </table>
+    {/if}
+
+    <!-- D6: inline dataset review panel -->
+    {#if reviewDataset}
+      <div class="muted-box" style="margin-top: 14px;">
+        <div class="row between" style="margin-bottom: 10px;">
+          <h3 style="margin: 0;">
+            Reviewing <span class="mono">{reviewDataset.name}</span>
+            {#if !reviewLoading}
+              <span class="muted" style="font-weight: 400; font-size: 14px;">
+                — {keptRows.length} / {reviewRows.length} rows kept
+              </span>
+            {/if}
+          </h3>
+          <button class="ghost sm" onclick={closeReview} disabled={saving}>Close</button>
+        </div>
+
+        {#if reviewLoading}
+          <div class="row" style="gap: 8px;"><span class="spinner"></span><small>Loading rows…</small></div>
+        {:else if reviewRows.length === 0}
+          <div class="empty">No rows found in this dataset.</div>
+        {:else}
+          <p class="muted" style="margin: 0 0 10px; font-size: 13px;">
+            Drop rows that are off-topic or low-quality. You can also edit a row inline.
+            When done, save a curated version and train from it.
+          </p>
+
+          <div class="review-rows">
+            {#each reviewRows as rr, i (i)}
+              {@const fields = _textFields(rr.row)}
+              <div class="review-row" class:dropped={rr.dropped}>
+                <div class="review-row-body">
+                  {#if editingIdx === i}
+                    <!-- edit mode -->
+                    {#each fields as fld}
+                      <div class="field" style="margin: 0 0 6px;">
+                        <label style="font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em;">{fld}</label>
+                        <textarea
+                          rows="3"
+                          style="width: 100%; box-sizing: border-box; resize: vertical;"
+                          bind:value={editBuf[fld]}
+                        ></textarea>
+                      </div>
+                    {/each}
+                    <div class="row" style="gap: 6px;">
+                      <button class="primary sm" onclick={() => commitEdit(i)}>Save</button>
+                      <button class="ghost sm" onclick={cancelEdit}>Cancel</button>
+                    </div>
+                  {:else}
+                    <!-- view mode -->
+                    {#each fields as fld}
+                      <div style="margin-bottom: 4px;">
+                        <span class="muted" style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em;">{fld}:</span>
+                        <span class="review-cell">{String(rr.row[fld] ?? "")}</span>
+                      </div>
+                    {/each}
+                    {#if rr.row["images"]}
+                      <div><span class="muted" style="font-size: 11px;">images:</span> {JSON.stringify(rr.row["images"])}</div>
+                    {/if}
+                  {/if}
+                </div>
+                <div class="review-row-actions">
+                  {#if rr.dropped}
+                    <button class="ghost sm" onclick={() => undropRow(i)}>Restore</button>
+                  {:else}
+                    {#if editingIdx !== i}
+                      <button class="ghost sm" onclick={() => startEdit(i)}>Edit</button>
+                    {/if}
+                    <button class="ghost sm danger" onclick={() => dropRow(i)} disabled={editingIdx === i}>Drop</button>
+                  {/if}
+                </div>
+              </div>
+            {/each}
+          </div>
+
+          <div class="row" style="gap: 8px; margin-top: 14px; align-items: center;">
+            <button
+              class="primary sm"
+              onclick={saveCurated}
+              disabled={keptRows.length < MIN_SAMPLES || saving || editingIdx !== null}
+            >
+              {#if saving}<span class="spinner"></span>{/if}
+              Save curated version ({keptRows.length} rows)
+            </button>
+            <button class="ghost sm" onclick={closeReview} disabled={saving}>Cancel</button>
+            {#if keptRows.length < MIN_SAMPLES}
+              <small class="muted">Need at least {MIN_SAMPLES} rows to train.</small>
+            {/if}
+          </div>
+        {/if}
+      </div>
     {/if}
   </div>
 
@@ -975,4 +1176,65 @@
 
   /* Center inline spinners inside buttons (matches Projects.svelte). */
   button :global(.spinner) { margin-right: 6px; vertical-align: middle; }
+
+  /* D6: dataset review panel */
+  .badge-tag {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 1px 5px;
+    border-radius: 3px;
+    background: var(--panel-3, #2a2a3a);
+    color: var(--muted);
+    margin-left: 6px;
+    vertical-align: middle;
+  }
+
+  .review-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-height: 540px;
+    overflow-y: auto;
+    padding-right: 4px;
+  }
+
+  .review-row {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    padding: 10px 12px;
+    background: var(--panel-1);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    transition: opacity 0.15s;
+  }
+
+  .review-row.dropped {
+    opacity: 0.4;
+    border-style: dashed;
+  }
+
+  .review-row-body {
+    flex: 1;
+    min-width: 0;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+
+  .review-cell {
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  .review-row-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    flex-shrink: 0;
+  }
+
+  button.danger { color: var(--red); }
 </style>
