@@ -1,6 +1,8 @@
-"""
-Adapter registry + eval threshold gate.
-An adapter must pass the eval gate before it can back an endpoint.
+"""Adapter registry and eval gate.
+
+An adapter must pass the eval gate before it can back a serving endpoint.
+The registry is a JSON file on disk (not in the DB) so the worker can write
+it without opening a DB connection during the training run.
 """
 
 from __future__ import annotations
@@ -19,9 +21,10 @@ REGISTRY_FILE = "registry.json"
 
 
 class AdapterRegistry:
-    """
-    Filesystem-based adapter registry.
-    Each entry: {adapter_id, project_id, job_id, path, eval_score, base_model}
+    """Filesystem-based adapter registry (JSON file in the adapters directory).
+
+    Each entry: adapter_id, project_id, job_id, path, eval_score, base_model.
+    Writes are not concurrent-safe — only one worker process ever writes.
     """
 
     def __init__(self, adapters_dir: Path):
@@ -55,7 +58,7 @@ class AdapterRegistry:
         path (see ``passes_eval_gate``).
 
         ``adapter_path`` is the PEFT directory (safetensors); ``adapter_gguf_path``
-        is the converted GGUF LoRA the llama-cpp serving runtime loads (A3.1).
+        is the converted GGUF LoRA the llama-cpp serving runtime loads.
         ``base_score``/``score_delta`` (adapter-vs-base on the held-out split) enable
         the improvement pass path.
         """

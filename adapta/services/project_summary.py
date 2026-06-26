@@ -1,4 +1,4 @@
-"""Project summary read-model (§C2.1).
+"""Project summary read-model.
 
 Computes the ProjectSummary aggregate for one or many projects via a fixed set
 of GROUP-BY queries — O(1) extra queries per list call, independent of project

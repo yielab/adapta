@@ -81,7 +81,6 @@ async def synthesize_dataset(
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user),
 ) -> SynthesizeResponse:
-    # Load project and verify access
     result = await db.execute(select(Project).where(Project.id == project_id))
     project = result.scalar_one_or_none()
     if not project:
@@ -91,13 +90,11 @@ async def synthesize_dataset(
     if project.type != ProjectType.finetune:
         raise InvalidRequest(message="Dataset synthesis is only available for finetune projects")
 
-    # Verify the project has an indexed collection
     coll_result = await db.execute(select(Collection).where(Collection.project_id == project_id))
     collection = coll_result.scalar_one_or_none()
     if not collection or collection.num_chunks == 0:
         raise InvalidRequest(message="No indexed documents found. Upload and index files first.")
 
-    # Create a placeholder Dataset record (status=synthesizing)
     dataset_id = str(uuid.uuid4())
     ds = Dataset(
         id=dataset_id,

@@ -57,8 +57,8 @@ async def create_job(
     project = await _get_project(db, project_id)
     await require_team_writer(db, current_user.id, project.team_id)
 
-    # enqueue takes a plain dict; pass only client-supplied hyperparameters
-    # (exclude_unset) so the server's defaults/validation apply as before.
+    # exclude_unset keeps only client-supplied hyperparameters; server defaults
+    # and validation fill the rest in the training worker.
     config = body.training_config.model_dump(exclude_unset=True) if body.training_config else None
     from adapta.models.generated import Method
 
@@ -96,7 +96,6 @@ async def get_job(
     project = await _get_project(db, project_id)
     await require_team_member(db, current_user.id, project.team_id)
 
-    # Merge live progress from Redis if available
     result = await db.execute(
         select(TrainingJob).where(TrainingJob.id == job_id, TrainingJob.project_id == project_id)
     )
@@ -104,7 +103,6 @@ async def get_job(
     if not job:
         raise NotFound(message="Job not found")
 
-    # Enrich with live Redis status
     try:
         queue = get_job_queue()
         live = await queue.get_status(job_id)

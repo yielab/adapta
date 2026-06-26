@@ -1,4 +1,4 @@
-"""Team invitation flow (§3.1).
+"""Team invitation flow.
 
 An admin issues an invitation (token + target team/role); the invitee redeems
 the token and sets a password, which creates their user and team membership

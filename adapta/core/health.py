@@ -71,7 +71,7 @@ class HealthMonitor:
         try:
             # Check the DATA mount (models/uploads/adapters/datasets live here), not
             # the container's working dir — a full data volume is what actually breaks
-            # indexing/training, and it's a different filesystem from /app (A4.12).
+            # indexing/training, and it may be a different filesystem from /app.
             from adapta.config import settings
 
             probe = settings.data_dir if settings.data_dir.exists() else os.getcwd()

@@ -1,6 +1,9 @@
-"""
-Redis-backed async training job queue.
-Jobs are stored as JSON in Redis lists; worker pops and processes them.
+"""Redis-backed async training job queue.
+
+Jobs are stored as JSON keyed by job_id in Redis; the queue list holds
+job_ids. The worker BLPOP-pops from the list and reads the metadata key.
+Progress updates overwrite the metadata key in-place so the API can poll
+live state without touching Postgres mid-run.
 """
 
 from __future__ import annotations
@@ -81,8 +84,9 @@ class JobQueue:
     async def queued_job_ids(self) -> list[str]:
         """All job_ids currently waiting in the queue list (not yet dequeued).
 
-        Used by crash recovery (A4.2) to tell a legitimately-waiting ``queued`` job
-        from one that was lost (in Postgres as queued but absent from the queue)."""
+        Used at worker startup to distinguish a legitimately-waiting ``queued`` job
+        from one that was lost (in Postgres as queued but absent from the Redis list
+        after a crash) — lost ones are failed rather than left stuck."""
         vals = await self.redis.lrange(QUEUE_KEY, 0, -1)
         return [v if isinstance(v, str) else v.decode() for v in vals]
 

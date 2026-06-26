@@ -1,5 +1,4 @@
-"""
-Fixed-window rate limiting in Redis (A4.9).
+"""Fixed-window rate limiting in Redis.
 
 Guards the unauthenticated auth endpoints against brute-force / spam. A simple
 per-key counter with a TTL: the first hit in a window sets the expiry, and once

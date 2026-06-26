@@ -1,4 +1,4 @@
-"""PEFT (safetensors) -> GGUF LoRA conversion for serving (A3.1).
+"""PEFT (safetensors) -> GGUF LoRA conversion for serving.
 
 Training emits a HuggingFace PEFT adapter (``adapter_model.safetensors`` +
 ``adapter_config.json``). Serving is a single llama-cpp runtime that can only
@@ -42,7 +42,7 @@ def _converter_script() -> Optional[Path]:
 
 
 def _stage_vision_adapter(adapter_dir: Path) -> Path:
-    """Stage a VLM adapter for conversion (§V3.4, both V0.3 spike caveats).
+    """Stage a VLM adapter for conversion with renamed tensors.
 
     transformers 5.x saves PEFT tensors under the new multimodal path
     ``model.language_model.layers.*``; the pinned converter maps the legacy
@@ -78,11 +78,11 @@ async def convert_peft_to_gguf(
     ``base_model_id`` is the HuggingFace repo id of the base the adapter was
     trained against; the converter reads its config to map tensor names. Text
     adapters pass it via ``--base-model-id`` (hub/cached config). Vision
-    adapters (``vision=True``, §V3.4) instead use the RAW hub config the
-    trainer staged at ``<adapter_dir>/base_config/`` — transformers 5.x's
-    AutoConfig re-nests the flat config into ``text_config``, which the
-    converter's hub loader can't read — and convert from a staged copy with
-    tensor names mapped back to the legacy LM paths (V0.3 caveats).
+    adapters (``vision=True``) instead use the RAW hub config the trainer
+    staged at ``<adapter_dir>/base_config/`` — transformers 5.x's AutoConfig
+    re-nests the flat config into ``text_config``, which the converter's hub
+    loader can't read — and convert from a staged copy with tensor names
+    mapped back to the legacy LM paths.
     """
     adapter_dir = Path(adapter_dir)
     out_path = converted_gguf_path(adapter_dir)

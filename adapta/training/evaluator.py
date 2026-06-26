@@ -1,4 +1,10 @@
-"""Model Evaluation Engine"""
+"""Held-out evaluation engine for trained LoRA adapters.
+
+Scores an adapter (and the un-adapted base) on a held-out response-only split,
+producing the ``EvaluationResult`` that the eval gate reads. Masking is
+longest-common-prefix based so single-token classification responses are
+scorable (see ``_tokenize_with_response_mask``).
+"""
 
 import gc
 import logging
@@ -14,21 +20,18 @@ logger = logging.getLogger(__name__)
 
 
 class ModelEvaluator:
-    """
-    Model evaluation engine for testing trained adapters.
+    """Evaluates a trained adapter on a held-out response-only split.
 
-    Supports:
-    - Perplexity calculation
-    - Loss computation
-    - Token accuracy
-    - Sample predictions for inspection
+    Computes response-only cross-entropy (prompt tokens masked to -100) on
+    both the fine-tuned adapter and the un-adapted base, so the caller gets
+    an absolute score AND an adapter-vs-base delta for the improvement gate.
     """
 
     def __init__(self):
         self._check_dependencies()
 
     def _check_dependencies(self):
-        """Check if evaluation dependencies are installed"""
+        """Probe optional training dependencies; sets ``self.dependencies_available``."""
         try:
             import datasets  # noqa: F401
             import peft  # noqa: F401

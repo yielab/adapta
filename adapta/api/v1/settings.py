@@ -1,4 +1,4 @@
-"""Platform settings — DB-backed whitelisted org-scoped overrides (§C4.4)."""
+"""Platform settings — DB-backed whitelisted org-scoped overrides."""
 
 from typing import List
 

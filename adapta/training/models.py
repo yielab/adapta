@@ -1,4 +1,10 @@
-"""Training data models and schemas"""
+"""Training data models: config, eval metrics, and the eval gate.
+
+``TrainingConfig`` is the operator-facing hyperparameter surface (serialized
+into the job payload). ``EvaluationMetrics`` / ``EvaluationResult`` carry the
+held-out eval signal. ``score_from_loss`` / ``passes_eval_gate`` are the
+gate's two-path decision (absolute floor OR clear improvement over base).
+"""
 
 import math
 import time
@@ -49,7 +55,7 @@ def passes_eval_gate(
        model on the same held-out split by ``min_improvement``. ``score`` here is
        ``exp(-held_out_response_perplexity)``, which a small base model can't push
        to 0.6 even on an ideal task; an adapter that reliably out-scores its base by
-       a clear margin has demonstrably learned the target behavior (§A3.2).
+       a clear margin has demonstrably learned the target behavior.
 
     A non-improving or garbage adapter passes neither and stays blocked.
     """
@@ -87,7 +93,11 @@ def split_holdout(n: int, holdout_fraction: float = 0.2, min_holdout: int = 1) -
 
 @dataclass
 class TrainingConfig:
-    """Configuration for LoRA training"""
+    """Operator-facing LoRA training hyperparameters.
+
+    All fields have sane defaults. Clients pass only the fields they want to
+    override (``exclude_unset`` in the router); the rest fill from these defaults.
+    """
 
     # LoRA parameters
     lora_r: int = 16  # Rank
@@ -105,7 +115,7 @@ class TrainingConfig:
     gradient_accumulation_steps: int = 4
     max_seq_length: int = 2048
 
-    # Determinism / reproducibility (A4.7) — recorded into the training provenance.
+    # Pinned seed — recorded into training provenance so a run is reproducible.
     seed: int = 42
 
     # Optimizer
@@ -128,18 +138,16 @@ class TrainingConfig:
     dpo_beta: float = 0.1
 
     def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary"""
         return asdict(self)
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "TrainingConfig":
-        """Create from dictionary"""
         return cls(**data)
 
 
 @dataclass
 class EvaluationMetrics:
-    """Evaluation metrics for a trained adapter"""
+    """Per-adapter evaluation metrics from the held-out split."""
 
     # Core metrics — RESPONSE-ONLY cross-entropy on the HELD-OUT split (prompt
     # tokens masked). This is the signal the eval gate scores; see score_from_loss.
@@ -166,13 +174,12 @@ class EvaluationMetrics:
     loss_improvement: Optional[float] = None
 
     def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary"""
         return asdict(self)
 
 
 @dataclass
 class EvaluationResult:
-    """Complete evaluation result for an adapter"""
+    """Complete evaluation result for one adapter run."""
 
     eval_id: str
     job_id: str
@@ -231,7 +238,6 @@ class EvaluationResult:
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "EvaluationResult":
-        """Create from dictionary"""
         data = data.copy()
         data["metrics"] = EvaluationMetrics(**data["metrics"])
         return cls(**data)

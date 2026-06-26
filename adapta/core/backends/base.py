@@ -1,4 +1,4 @@
-"""Abstract serving backend interface (D3).
+"""Abstract serving backend interface.
 
 llama-cpp is the default (always available, handles RAG/CPU and VLM mmproj).
 vLLM is an opt-in second backend for text LoRA density: many adapters share

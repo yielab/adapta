@@ -1,5 +1,4 @@
-"""
-DB-backed org-scoped overrides for whitelisted runtime knobs (§C4.4).
+"""DB-backed org-scoped overrides for whitelisted runtime knobs.
 
 Resolver precedence: DB override → env/config default.
 The whitelist is the only path a browser session can take; anything not listed
@@ -19,10 +18,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from adapta.config import settings
 from adapta.db.models import AppSetting
 from adapta.domain.errors import InvalidRequest
-
-# ---------------------------------------------------------------------------
-# Whitelist registry
-# ---------------------------------------------------------------------------
 
 
 @dataclass
@@ -138,11 +133,6 @@ WHITELIST: Dict[str, SettingSpec] = {
 }
 
 
-# ---------------------------------------------------------------------------
-# Resolver
-# ---------------------------------------------------------------------------
-
-
 def _env_default(key: str) -> Any:
     """Return the current env/config value for a whitelisted key."""
     return getattr(settings, key)
@@ -162,7 +152,6 @@ async def resolve_setting(db: AsyncSession, team_id: str, key: str) -> Any:
 
 async def resolve_all(db: AsyncSession, team_id: str) -> List[Dict[str, Any]]:
     """Return all whitelisted settings with effective value and source provenance."""
-    # Fetch all overrides for this team in one query
     result = await db.execute(
         select(
             AppSetting.key, AppSetting.value, AppSetting.updated_at, AppSetting.updated_by
@@ -221,8 +210,6 @@ def _validate(key: str, raw_value: Any) -> Any:
         raise InvalidRequest(
             message=f"'{key}' must be between {spec.min_val} and {spec.max_val}, got {typed}.",
         )
-    if key == "chunk_overlap":
-        pass  # cross-field validation handled at API layer if needed
     return typed
 
 

@@ -1,8 +1,7 @@
 """Base-model catalog listing (read-only).
 
-Exposes the single catalog (A3.3) so the console's base-model dropdown and
-modality-aware UI (§V5) read the same SSOT the server validates against,
-instead of duplicating a hard-coded list that drifts.
+Exposes the catalog SSOT so every client reads the same list the server
+validates against, instead of duplicating a hard-coded list that drifts.
 """
 
 from typing import List

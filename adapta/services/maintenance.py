@@ -1,9 +1,8 @@
-"""
-Startup reconciliation for in-process background tasks (A4.10).
+"""Startup reconciliation for in-process background tasks.
 
 File indexing and dataset validation run as FastAPI BackgroundTasks. If the app
 crashes (or is restarted) mid-task, the row is left in a transient state forever —
-a file stuck at `processing`, a dataset at `validating` — with no task alive to
+a file stuck at ``processing``, a dataset at ``validating`` — with no task alive to
 finish it. On startup, before serving, mark those orphans terminal so the operator
 sees a clear failure (and can re-upload) instead of an indefinite spinner.
 """

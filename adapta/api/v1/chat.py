@@ -27,16 +27,6 @@ from adapta.services.usage import record_usage
 router = APIRouter(tags=["chat"])
 
 
-# The OpenAI-compatible request schema (ChatCompletionRequest, with its
-# ChatMessage / ChatContentParts / Text|ImageContentPart parts) is generated
-# from specs/openapi.yaml and imported above.
-
-
-# ---------------------------------------------------------------------------
-# Key auth dependency
-# ---------------------------------------------------------------------------
-
-
 async def _resolve_endpoint(
     request: Request, db: AsyncSession = Depends(get_db)
 ) -> tuple[Endpoint, Project]:
@@ -49,7 +39,6 @@ async def _resolve_endpoint(
         raise Unauthorized(message="Bearer token required")
     raw_key = auth[7:]
 
-    # Find matching key by prefix
     prefix = raw_key[:8]
     result = await db.execute(
         select(ApiKey).where(ApiKey.key_prefix == prefix, ApiKey.is_active.is_(True))
@@ -65,7 +54,6 @@ async def _resolve_endpoint(
     if not matched:
         raise Unauthorized(message="Invalid or revoked API key")
 
-    # Update last_used
     matched.last_used_at = datetime.now(timezone.utc)
 
     ep_result = await db.execute(select(Endpoint).where(Endpoint.id == matched.endpoint_id))
@@ -79,11 +67,6 @@ async def _resolve_endpoint(
         raise NotFound(message="Project not found")
 
     return endpoint, project
-
-
-# ---------------------------------------------------------------------------
-# Chat endpoint
-# ---------------------------------------------------------------------------
 
 
 @router.post("/chat/completions")
@@ -117,11 +100,9 @@ async def chat_completions(
 
     messages = [_to_dict(m) for m in request_body.messages]
 
-    # Input size guard: reject requests whose total message content exceeds the
-    # configured limit. This prevents excessively large payloads from consuming
-    # memory during tokenization or model context window (7.4).
+    # Reject payloads exceeding the configured character limit before tokenization —
+    # a single huge message could OOM the tokenizer or stall the event loop.
     total_chars = sum(len(str(m.get("content", ""))) for m in messages if isinstance(m.get("content"), str))
-    # Also count text content-parts from multimodal messages (image+text).
     for m in messages:
         content = m.get("content")
         if isinstance(content, list):
@@ -135,9 +116,8 @@ async def chat_completions(
                     f"ADAPTA_MAX_INPUT_CHARS."
         )
 
-    # Streaming with images is rejected HERE, before a StreamingResponse exists —
-    # raised inside the stream generator it would surface as a broken body, not
-    # a typed 422 (§V4).
+    # Reject here, before a StreamingResponse exists — raising inside the stream
+    # generator would surface as a broken body, not a typed 422.
     if request_body.stream and has_image_parts(messages):
         raise InvalidRequest(
             message="Streaming with image content is not supported; send stream=false."
@@ -145,9 +125,8 @@ async def chat_completions(
 
     # Serving composes the project's artifacts rather than switching on its type:
     # retrieval runs whenever the project has indexed chunks, and the adapter
-    # (set at endpoint creation only for fine-tune projects, A3.1) is applied
-    # whenever present. A fine-tune project with indexed documents gets both —
-    # facts from its documents (with citations), behavior from its adapter.
+    # is applied whenever present. A fine-tune project with indexed documents
+    # gets both — facts from its documents (with citations), behavior from its adapter.
     col_result = await db.execute(select(Collection).where(Collection.project_id == project.id))
     collection = col_result.scalar_one_or_none()
     has_knowledge = collection is not None and (collection.num_chunks or 0) > 0
@@ -178,7 +157,7 @@ async def chat_completions(
             project_id=project_id_for_rag,
             adapter_path=adapter_path,
         )
-        # Meter usage off the response path (§3.2).
+        # Meter usage as a background task so it doesn't block the response.
         u = result.get("usage", {})
         background_tasks.add_task(
             record_usage,

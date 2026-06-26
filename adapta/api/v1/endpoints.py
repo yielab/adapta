@@ -70,7 +70,6 @@ async def _build_response(
     retrieval: Optional[RetrievalSummary] = None
 
     if ep.adapter_path:
-        # Find the most recent succeeded job that owns this adapter.
         job_result = await db.execute(
             select(TrainingJob)
             .where(
@@ -102,7 +101,6 @@ async def _build_response(
                 gate=Gate(gate),
             )
 
-    # Retrieval layer: any project can also have indexed documents.
     col_result = await db.execute(select(Collection).where(Collection.project_id == project.id))
     collection = col_result.scalar_one_or_none()
     if collection and collection.num_chunks > 0:

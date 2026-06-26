@@ -1,10 +1,10 @@
-"""vLLM serving backend — opt-in second backend for text LoRA density (D3).
+"""vLLM serving backend — opt-in alternative for text LoRA density.
 
 Connects to a separately-running vLLM server (the ``vllm-server`` compose
 service, ``profiles: [vllm]``) via its OpenAI-compatible HTTP API.  This
 closes the density gap: N text LoRA adapters share one vLLM GPU process via
 continuous batching, instead of the llama-cpp model where each (base, adapter)
-pair is a separate GPU-resident instance (§A4.8, D0 Q3).
+pair is a separate GPU-resident instance.
 
 **Routing rules (enforced by _registry.py):**
 - Vision endpoints → always llama-cpp (vLLM does not support VLM LoRA layers)
@@ -56,7 +56,6 @@ class VLLMHandle(BackendHandle):
         self.adapter_name = adapter_name  # registered lora name, or None for base serving
         self._n_ctx = n_ctx
 
-    # The model seen by the vLLM API: adapter name when a LoRA is active, otherwise base.
     @property
     def vllm_model(self) -> str:
         return self.adapter_name or self.base_model_name

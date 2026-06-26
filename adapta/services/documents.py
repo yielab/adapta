@@ -1,6 +1,10 @@
-"""
-Document parsing and chunking service.
-Supports PDF, DOCX, TXT, MD, HTML uploads.
+"""Document parsing and sentence-boundary chunking.
+
+Extracts plain text from uploaded files (PDF, DOCX, TXT, MD, HTML) and splits
+it into overlapping chunks for embedding. Chunking splits on sentence boundaries
+first so chunks don't cut mid-sentence, then merges sentences until the target
+``chunk_size`` is reached, carrying ``chunk_overlap`` characters of trailing
+context into the next chunk.
 """
 
 from __future__ import annotations
@@ -51,7 +55,8 @@ def _extract_text_plain(path: Path) -> str:
 
 def _extract_text_html(path: Path) -> str:
     text = path.read_text(encoding="utf-8", errors="replace")
-    # Strip HTML tags — simple approach; sufficient for chunking
+    # Regex strip is intentionally simple — a full DOM parser would be overkill
+    # for chunking, and the embedding model doesn't care about HTML structure.
     return re.sub(r"<[^>]+>", " ", text)
 
 
@@ -79,6 +84,13 @@ def chunk_text(
     chunk_size: Optional[int] = None,
     chunk_overlap: Optional[int] = None,
 ) -> List[Chunk]:
+    """Split ``text`` into overlapping Chunks by sentence boundaries.
+
+    Splits on ``.!?`` boundaries first, then accumulates sentences until
+    ``chunk_size`` characters is reached. The trailing ``chunk_overlap``
+    characters carry over into the next chunk so a retrieval query spanning a
+    sentence boundary still matches one of the two chunks.
+    """
     chunk_size = chunk_size or settings.chunk_size
     chunk_overlap = chunk_overlap or settings.chunk_overlap
 
