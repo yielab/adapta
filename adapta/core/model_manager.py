@@ -1,4 +1,13 @@
-"""Model management and loading"""
+"""LRU model cache and lifecycle manager.
+
+Maintains an ``OrderedDict``-based LRU cache of loaded ``Llama`` objects,
+bounded by ``settings.max_loaded_models``.  Cache keys combine the serving
+(GGUF) model name and the adapter path so a fine-tune endpoint (base+LoRA)
+and base-only serving of the same base are cached independently.
+
+``ModelManager`` is instantiated once at module level as the process-level
+singleton; import it via ``from adapta.core import model_manager``.
+"""
 
 import asyncio
 import logging
@@ -16,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 
 class ModelType(str, Enum):
-    """Model capability types"""
+    """Capability class of a catalog model.  Used to group entries in the console."""
 
     CHAT = "chat"
     CODE = "code"
@@ -25,7 +34,11 @@ class ModelType(str, Enum):
 
 @dataclass
 class ModelConfig:
-    """Configuration for a model"""
+    """Static configuration for one GGUF model entry.
+
+    ``loaded`` is mutable state: it is flipped to True after the model is
+    successfully loaded into the LRU cache, and back to False on eviction.
+    """
 
     name: str
     model_type: ModelType
@@ -41,7 +54,19 @@ class ModelConfig:
 
 
 class ModelManager:
-    """Manages multiple models and their lifecycle"""
+    """LRU cache of loaded ``Llama`` objects with serialized per-model inference.
+
+    Two locks with distinct scopes:
+    - ``_load_lock``: guards mutations to ``_models`` / ``_configs`` (loading,
+      eviction, cache-key bookkeeping).  Held only during load, never during
+      inference.
+    - ``_infer_locks[cache_key]``: serializes inference calls on one model
+      variant (A4.1).  Held for the entire duration of a generation (including
+      streaming) because llama-cpp's ``Llama`` object is not thread-safe.
+
+    The ``OrderedDict`` ordering is most-recently-used-last so
+    ``popitem(last=False)`` evicts the least-recently-used entry.
+    """
 
     def __init__(self):
         # LRU-ordered (most-recently-used last) so the cache can be bounded (A4.8).
@@ -107,11 +132,14 @@ class ModelManager:
 
         return None
 
-    def _init_default_configs(self):
-        """Initialize default model configurations"""
+    def _init_default_configs(self) -> None:
+        """Populate ``_configs`` with static entries for all catalog models.
+
+        All entries are lazy-loaded; none are pre-warmed here.  ``preload_default_models``
+        optionally warms the configured default model at startup.
+        """
         models_dir = settings.models_dir
 
-        # Chat model - always loaded
         self._configs["qwen2.5-3b-instruct"] = ModelConfig(
             name="qwen2.5-3b-instruct",
             model_type=ModelType.CHAT,
@@ -122,7 +150,6 @@ class ModelManager:
             description="General chat and reasoning model",
         )
 
-        # Code model - load on demand
         self._configs["qwen2.5-coder-3b"] = ModelConfig(
             name="qwen2.5-coder-3b",
             model_type=ModelType.CODE,
@@ -133,7 +160,6 @@ class ModelManager:
             description="Code understanding and generation model",
         )
 
-        # Small instruct model — the fine-tune e2e base (Qwen2.5-0.5B-Instruct).
         self._configs["qwen2.5-0.5b-instruct"] = ModelConfig(
             name="qwen2.5-0.5b-instruct",
             model_type=ModelType.CHAT,
@@ -144,8 +170,7 @@ class ModelManager:
             description="Small instruct model (fine-tune e2e base)",
         )
 
-        # Vision model (§V) — image+text→text, served as base GGUF + mmproj
-        # (vision projector) through a multimodal chat handler (§V4).
+        # Vision: requires mmproj so the model loads with a multimodal chat handler.
         self._configs["qwen2.5-vl-3b-instruct"] = ModelConfig(
             name="qwen2.5-vl-3b-instruct",
             model_type=ModelType.CHAT,
@@ -157,7 +182,6 @@ class ModelManager:
             mmproj_path=models_dir / "qwen2.5-vl-3b" / "mmproj-qwen2.5-vl-3b-f16.gguf",
         )
 
-        # Optional reasoning model
         self._configs["qwen2.5-7b-instruct"] = ModelConfig(
             name="qwen2.5-7b-instruct",
             model_type=ModelType.REASONING,
@@ -207,25 +231,20 @@ class ModelManager:
         pipeline, A3.1), the base GGUF is loaded WITH the adapter via llama-cpp's
         ``lora_path``. The cache is keyed on (base, adapter)."""
         async with self._load_lock:
-            # Resolve an operator-facing / HF-repo base id to a GGUF catalog name (A3.1).
             serving_name = self._resolve_serving_name(model_name)
             cache_key = self._cache_key(serving_name, adapter_path)
-            # Check if already loaded
             if cache_key in self._models and not force_reload:
-                logger.info(f"Model {cache_key} already loaded")
+                logger.info("Model %s already loaded", cache_key)
                 self._models.move_to_end(cache_key)  # mark most-recently-used (A4.8)
                 return self._models[cache_key]
 
-            # Get config
             if serving_name not in self._configs:
                 raise ValueError(f"Unknown model: {model_name}")
 
             config = self._configs[serving_name]
 
-            # Check if model file exists, try to find alternative if not
             model_path = config.path
             if not model_path.exists():
-                # Try to find any .gguf file in the model directory
                 model_dir = model_path.parent
                 preferred_filename = model_path.name
                 found_path = self._find_model_file(model_dir, preferred_filename)
@@ -243,7 +262,6 @@ class ModelManager:
                         "(huggingface-cli; see README §4 'Download a base model')."
                     )
 
-            # Resolve + validate the GGUF LoRA adapter (A3.1), if any.
             lora_path: Optional[str] = None
             if adapter_path:
                 lora_file = Path(adapter_path)
@@ -260,22 +278,15 @@ class ModelManager:
             )
 
             try:
-                # Get GPU configuration
                 from adapta.core.gpu import get_model_kwargs
 
                 gpu_kwargs = get_model_kwargs()
-
-                # Merge GPU settings with model config
-                # Model config n_gpu_layers takes precedence if explicitly set
                 if config.n_gpu_layers > 0:
                     gpu_kwargs["n_gpu_layers"] = config.n_gpu_layers
-
-                # Use larger context if GPU is available
                 n_ctx = gpu_kwargs.get("n_ctx", config.context_length)
 
                 logger.info(f"GPU layers: {gpu_kwargs.get('n_gpu_layers', 0)}, Context: {n_ctx}")
 
-                # Load model in thread pool to avoid blocking
                 llama_kwargs = dict(
                     model_path=str(model_path),
                     n_ctx=n_ctx,
@@ -316,8 +327,7 @@ class ModelManager:
                 loop = asyncio.get_event_loop()
                 model = await loop.run_in_executor(None, lambda: Llama(**llama_kwargs))
 
-                # Bound the cache before adding a genuinely new entry (A4.8). A
-                # force_reload of an existing key just replaces it (no net growth).
+                # force_reload replaces an existing key in-place (no net growth).
                 if cache_key not in self._models:
                     self._evict_lru_if_needed()
                 self._models[cache_key] = model
@@ -344,7 +354,7 @@ class ModelManager:
                 self._configs[base].loaded = False
 
     def get_model(self, model_name: str) -> Optional[Llama]:
-        """Get a loaded model"""
+        """Return a loaded model by cache key, or None if not loaded."""
         return self._models.get(model_name)
 
     def list_models(self) -> list[ModelConfig]:
@@ -394,7 +404,14 @@ class ModelManager:
     async def ensure_model_loaded(
         self, model_name: str, adapter_path: Optional[str] = None
     ) -> Llama:
-        """Ensure a model (optionally base+LoRA) is loaded, loading it if necessary."""
+        """Return the loaded model, loading it first if absent.
+
+        The ``cache_key not in _models`` check is not atomic with the subsequent
+        ``load_model`` call.  Two concurrent callers can both see the key absent
+        and both call ``load_model`` — the second completes inside ``_load_lock``
+        and safely overwrites the first.  The double-load is harmless but visible
+        as two consecutive log lines.
+        """
         cache_key = self._cache_key(self._resolve_serving_name(model_name), adapter_path)
         if cache_key not in self._models:
             return await self.load_model(model_name, adapter_path=adapter_path)
@@ -416,5 +433,4 @@ class ModelManager:
                 logger.warning(f"Could not preload default model: {e}")
 
 
-# Global model manager instance
 model_manager = ModelManager()

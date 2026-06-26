@@ -1,6 +1,13 @@
 """
 SQLAlchemy ORM models — the Postgres data model (Pillar 2 contract).
-Changes here require a new Alembic migration: make migration MSG="..."
+
+Changes here require a new Alembic migration: ``make migration MSG="..."``.
+
+``native_enum=False`` invariant: every Enum column uses ``native_enum=False``
+with ``length=16`` (matching the ``String(16)`` migration columns).  Never use
+the default ``native_enum=True`` — it would create a Postgres ENUM type that
+Alembic cannot drop/alter without a manual migration, and it would diverge from
+the existing ``String(16)`` columns in ``migrations/versions/0001_initial_schema.py``.
 """
 
 from __future__ import annotations
@@ -28,10 +35,13 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
 class Base(DeclarativeBase):
+    """Declarative base for all ORM models.  All tables must inherit from this."""
+
     pass
 
 
 def _uuid() -> str:
+    """Generate a new UUID string (str, not UUID object — columns are String(36))."""
     return str(uuid.uuid4())
 
 
@@ -43,7 +53,9 @@ def _uuid() -> str:
 class Role(str, enum.Enum):
     admin = "admin"
     member = "member"
-    viewer = "viewer"  # read-only: consume endpoints + read, no mutation
+    # viewers can call /v1/chat/completions and read project data, but cannot
+    # create/update/delete any resource.  Enforced by require_team_writer().
+    viewer = "viewer"
 
 
 class InvitationStatus(str, enum.Enum):
@@ -88,7 +100,7 @@ class JobStatus(str, enum.Enum):
 
 
 class EndpointStatus(str, enum.Enum):
-    pending = "pending"  # not yet servable
+    pending = "pending"
     active = "active"
     disabled = "disabled"
 
@@ -99,6 +111,10 @@ class EndpointStatus(str, enum.Enum):
 
 
 class Org(Base):
+    """Top-level tenant.  One Org is created atomically with the first admin on
+    ``POST /v1/auth/register``; subsequent users join via invite, never by
+    registering a new Org with the same name."""
+
     __tablename__ = "orgs"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
@@ -111,6 +127,9 @@ class Org(Base):
 
 
 class Team(Base):
+    """Workspace within an Org.  Registration seeds a ``"default"`` team; admins
+    may create additional teams to isolate projects across business units."""
+
     __tablename__ = "teams"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
@@ -132,6 +151,11 @@ class Team(Base):
 
 
 class User(Base):
+    """Application user.  Belongs to exactly one Org and never moves between Orgs.
+    ``hashed_password`` stores a bcrypt hash of a SHA-256 pre-hash — see
+    ``adapta/services/auth.py`` for the construction and why.
+    """
+
     __tablename__ = "users"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
@@ -150,6 +174,13 @@ class User(Base):
 
 
 class TeamMember(Base):
+    """Join table between Team and User, carrying the role within that team.
+
+    Role hierarchy: admin > member > viewer.  Rights are enforced in
+    ``adapta/services/auth.py`` via ``require_team_member``,
+    ``require_team_writer``, and ``require_team_admin``.
+    """
+
     __tablename__ = "team_members"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
@@ -176,6 +207,21 @@ class TeamMember(Base):
 
 
 class Project(Base):
+    """Core work unit.  Every project produces exactly one Endpoint.
+
+    ``type`` determines the data pipeline: ``rag`` projects index uploaded
+    documents into a ChromaDB collection; ``finetune`` projects train LoRA
+    adapters from JSONL datasets.  A finetune project may also index documents
+    — its endpoint then composes RAG retrieval with the adapter in one call.
+
+    ``status`` state machine (transitions set by the service layer, never by
+    the client):
+      created → indexing (RAG file upload started)
+      created / indexing → ready (RAG collection built, or finetune dataset valid)
+      ready → training (job enqueued)
+      training → ready (job succeeded) | failed (job failed)
+    """
+
     __tablename__ = "projects"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
@@ -217,6 +263,14 @@ class Project(Base):
 
 
 class ProjectFile(Base):
+    """An uploaded document (PDF, DOCX, TXT, MD, HTML) attached to a project.
+
+    ``storage_path`` is an absolute path under ``settings.uploads_dir``; it is
+    the authoritative location for backup and restore.  ``size_bytes`` is
+    written before the file is persisted (set to 0 at row creation, updated
+    after the upload completes) — a value of 0 indicates an upload in flight.
+    """
+
     __tablename__ = "project_files"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
@@ -271,6 +325,15 @@ class Collection(Base):
 
 
 class Dataset(Base):
+    """A training dataset attached to a finetune project.
+
+    For text datasets, ``storage_path`` points to the JSONL file.  For vision
+    bundles (``modality="vision"``), it points to the extracted JSONL manifest
+    inside the unzipped bundle directory — not the original ``.zip``.
+    ``source_dataset_id`` is set when this dataset was produced by
+    ``POST .../curate`` from another dataset (D6 lineage).
+    """
+
     __tablename__ = "datasets"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
@@ -280,8 +343,6 @@ class Dataset(Base):
     name: Mapped[str] = mapped_column(String(256), nullable=False)
     storage_path: Mapped[str] = mapped_column(String(512), nullable=False)
     num_samples: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    # §V image-understanding fine-tunes: "text" | "vision". Vision bundles also
-    # record how many images they carry (NULL for text datasets).
     modality: Mapped[str] = mapped_column(
         String(16), nullable=False, default="text", server_default="text"
     )
@@ -292,7 +353,6 @@ class Dataset(Base):
         default=DatasetStatus.uploaded,
     )
     validation_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    # D6: set when this dataset was produced by POST .../curate from another dataset.
     source_dataset_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
@@ -301,6 +361,18 @@ class Dataset(Base):
 
 
 class TrainingJob(Base):
+    """A single QLoRA training run for a finetune project.
+
+    ``adapter_path`` is set to the GGUF LoRA path (not the PEFT directory)
+    once the job succeeds and the adapter passes the eval gate.  The PEFT
+    directory is preserved in the adapter registry under a separate ``path``
+    key; ``adapter_path`` here is what llama-cpp's ``lora_path`` argument
+    consumes.  NULL means the job has not yet produced a servable artifact.
+
+    ``attempts`` is incremented by crash-recovery on startup (A4.2) so that
+    a job stuck ``running`` after a worker crash is retried at most once.
+    """
+
     __tablename__ = "training_jobs"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
@@ -353,9 +425,9 @@ class Endpoint(Base):
         nullable=False,
         default=EndpointStatus.pending,
     )
-    adapter_path: Mapped[Optional[str]] = mapped_column(
-        String(512), nullable=True
-    )  # null = base only (RAG)
+    # null for RAG and base-only endpoints; points to the GGUF LoRA for
+    # served fine-tune endpoints (set when the endpoint is created).
+    adapter_path: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
     base_model: Mapped[str] = mapped_column(String(128), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(

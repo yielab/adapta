@@ -1,4 +1,18 @@
-"""Async SQLAlchemy session factory."""
+"""Async SQLAlchemy session factory.
+
+``expire_on_commit=False`` is set on the session factory so that ORM objects
+remain accessible after ``await db.commit()`` without triggering an implicit
+SELECT.  The default (``expire_on_commit=True``) would expire every attribute
+on commit, forcing a round-trip for any attribute read after the commit —
+which breaks the common pattern of returning the just-committed object.
+
+Commit-before-return rule: mutating request handlers must call
+``await db.commit()`` explicitly *before* returning the response.  FastAPI's
+``get_db`` dependency commits only after the response body is sent (ASGI
+ordering), so an immediate follow-up request or a concurrently-scheduled
+background task opened its own session would find uncommitted rows and either
+see stale data or be stuck.  See MEMORY.md (commit-before-return-pattern).
+"""
 
 from typing import AsyncGenerator
 
@@ -22,7 +36,13 @@ AsyncSessionLocal = async_sessionmaker(
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
-    """FastAPI dependency: yields an async DB session."""
+    """FastAPI dependency: yields an async DB session scoped to one request.
+
+    Commits on clean exit, rolls back on exception.  Callers that need
+    changes visible to concurrently-started background tasks must call
+    ``await db.commit()`` explicitly before scheduling the task — this
+    dependency's auto-commit runs after the response is sent, which is too late.
+    """
     async with AsyncSessionLocal() as session:
         try:
             yield session

@@ -84,19 +84,19 @@ class Settings(BaseSettings):
     # Hybrid retrieval (D5): fetch top_k * N vector candidates before BM25 fusion
     # so the keyword signal has a larger pool to reorder. 4× keeps latency low on CPU.
     rag_hybrid_fetch_multiplier: int = 4
-    # Cross-encoder reranker model (D5). Set to "" to disable; the §A4.12 RAG
-    # timeout still guards the whole retrieval path including reranking.
+    # Cross-encoder reranker model (D5). Set to "" to disable; rag_timeout_seconds
+    # guards the whole retrieval path including reranking.
     rag_reranker_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
     # Cap RAG retrieval so a hung/slow Chroma degrades to a typed 504 instead of
-    # blocking every chat request indefinitely (A4.12).
+    # blocking every chat request indefinitely.
     rag_timeout_seconds: int = 10
     chunk_size: int = 512
     chunk_overlap: int = 64
     # Dataset synthesis: fail the run if more than this fraction of chunks errored,
-    # rather than silently shipping a sparse/degraded dataset (A4.12).
+    # rather than silently shipping a sparse/degraded dataset.
     synthesis_max_error_rate: float = 0.5
 
-    # Auth brute-force rate limiting (A4.9). Fixed-window per-IP and per-email cap on
+    # Auth brute-force rate limiting: fixed-window per-IP and per-email cap on
     # the unauthenticated auth endpoints (login/register/accept-invite). Fail-open: a
     # limiter (Redis) outage must never lock everyone out of auth.
     auth_rate_limit_max: int = 20  # allowed attempts per window per key
@@ -107,17 +107,16 @@ class Settings(BaseSettings):
     # beats the base model on the same held-out split (it demonstrably helped). The
     # improvement path matters because the absolute score is exp(-held_out_perplexity):
     # a small base model can't reach 0.6 even on an ideal task, yet a fine-tune that
-    # reliably doubles the base score has clearly learned something. Gating on
-    # improvement (not just an absolute bar) was anticipated by §A3.2.
+    # reliably doubles the base score has clearly learned something.
     eval_score_threshold: float = 0.6  # absolute "strong adapter" pass
     eval_min_improvement: float = 0.05  # min score gain over base for the improvement path
     eval_min_floor: float = 0.05  # sanity floor for the improvement path (not garbage)
-    # Minimum dataset size to start a training job (A4.6). Below this the held-out
+    # Minimum dataset size to start a training job. Below this the held-out
     # eval split collapses (e.g. 1 row → 0 held out → the gate scores the training
     # rows and only measures memorization), so we reject the job up front.
     min_training_samples: int = 10
-    # Free-disk preflight for the worker (A4.12): bail before training if the
-    # adapters volume has less than this much free, rather than dying deep in a run.
+    # Free-disk preflight for the worker: bail before training if the adapters
+    # volume has less than this much free, rather than dying deep in a run.
     min_free_disk_gb: float = 5.0
 
     # Image dataset bundles (§V2): caps applied while extracting/validating a

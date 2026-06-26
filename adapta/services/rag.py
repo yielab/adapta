@@ -32,12 +32,19 @@ class RetrievedChunk:
 
 
 def _get_chroma_client():
+    """Create a new ChromaDB HTTP client.  Called per-operation — no connection pool."""
     import chromadb
 
     return chromadb.HttpClient(host=settings.chroma_host, port=settings.chroma_port)
 
 
 def collection_name_for(project_id: str) -> str:
+    """Return the Chroma collection name for a project.
+
+    The convention ``proj_{project_id}`` is the value stored in
+    ``Collection.chroma_collection_name``.  Changing this function without a
+    migration would orphan all existing collections.
+    """
     return f"proj_{project_id}"
 
 
@@ -104,19 +111,35 @@ def _rrf_fuse(*rank_lists: list[int], k: int = 60) -> list[int]:
 
 
 class RAGService:
-    """One RAG service per process; ChromaDB client is shared."""
+    """Per-project ChromaDB collection management and hybrid cited retrieval.
+
+    A new ChromaDB HTTP client is created on every call (``_client()`` →
+    ``_get_chroma_client()``); there is no persistent connection held by
+    this object.
+    """
 
     def _client(self):
         return _get_chroma_client()
 
     def ensure_collection(self, project_id: str) -> str:
-        """Create the ChromaDB collection if it doesn't exist; returns name."""
+        """Create the Chroma collection if it doesn't exist; returns the name.
+
+        Sets ``hnsw:space: cosine`` so the index uses cosine distance.  This
+        metadata is applied only at creation — Chroma ignores it on
+        ``get_or_create_collection`` calls for an existing collection, so the
+        distance metric is locked in after the first call.
+        """
         name = collection_name_for(project_id)
         client = self._client()
         client.get_or_create_collection(name=name, metadata={"hnsw:space": "cosine"})
         return name
 
     def delete_collection(self, project_id: str) -> None:
+        """Best-effort cleanup; silently swallows all errors.
+
+        Called on project delete — a Chroma outage or already-absent collection
+        must not block the project row from being removed from Postgres.
+        """
         name = collection_name_for(project_id)
         client = self._client()
         try:
@@ -130,7 +153,11 @@ class RAGService:
         file_id: str,
         chunks: list,  # List[Chunk] from documents.py
     ) -> int:
-        """Embed and store chunks; returns count added."""
+        """Embed and upsert chunks into the project collection; returns count.
+
+        Uses ``upsert`` so re-indexing a file is idempotent — existing chunks
+        for the same ``file_id`` are overwritten rather than duplicated.
+        """
         if not chunks:
             return 0
 
@@ -151,7 +178,11 @@ class RAGService:
         return len(chunks)
 
     def delete_file_chunks(self, project_id: str, file_id: str) -> None:
-        """Remove all chunks belonging to a file from the collection."""
+        """Remove all chunks for a file from the Chroma collection.
+
+        Two-step (``get`` then ``delete``) because Chroma's ``delete`` requires
+        explicit IDs rather than accepting a ``where`` filter directly.
+        """
         name = collection_name_for(project_id)
         client = self._client()
         try:
@@ -205,16 +236,11 @@ class RAGService:
         if not docs:
             return []
 
-        # BM25 over the candidate set
         bm25 = _bm25_scores(query, docs)
-
-        # Vector order: Chroma already returns best-first
         vec_order = list(range(len(docs)))
         bm25_order = sorted(range(len(docs)), key=lambda i: bm25[i], reverse=True)
-
         fused_order = _rrf_fuse(vec_order, bm25_order)
 
-        # Build candidates in fused order; keep original cosine-similarity score
         candidates: List[RetrievedChunk] = [
             RetrievedChunk(
                 text=docs[idx],
@@ -225,7 +251,6 @@ class RAGService:
             for idx in fused_order
         ]
 
-        # Optional cross-encoder reranker over the leading candidates
         reranker = get_reranker_service()
         if reranker is not None and len(candidates) > 1:
             rerank_n = min(top_k * 2, len(candidates))
@@ -236,7 +261,8 @@ class RAGService:
                 key=lambda x: x[0],
                 reverse=True,
             )
-            # Normalize scores to (0, 1) via sigmoid so citations are comparable
+            # Cross-encoder logits are unbounded; sigmoid maps them to (0, 1)
+            # so the citation `score` field is comparable across requests.
             reranked = [
                 RetrievedChunk(
                     text=c.text,
@@ -251,7 +277,13 @@ class RAGService:
         return candidates[:top_k]
 
     def build_context_block(self, chunks: List[RetrievedChunk]) -> str:
-        """Format retrieved chunks into a context block for the prompt."""
+        """Format retrieved chunks into a numbered context block for the system prompt.
+
+        Produces the ``[N] (source: X)\\ntext`` format that the system-prompt
+        template in ``chat.py`` references with "Cite sources by their [N]
+        number."  The numbers here must stay consistent with the indices in
+        ``format_citations`` — both iterate in the same order.
+        """
         if not chunks:
             return ""
         parts = []
@@ -270,6 +302,12 @@ _rag_service: Optional[RAGService] = None
 
 
 def get_rag_service() -> RAGService:
+    """Return the process-level RAGService singleton.
+
+    Initialization is not protected by a lock.  In asyncio this is safe
+    because coroutines yield at ``await`` points — the first call sets
+    ``_rag_service`` before any other coroutine reaches this function.
+    """
     global _rag_service
     if _rag_service is None:
         _rag_service = RAGService()

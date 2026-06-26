@@ -1,4 +1,14 @@
-"""Inference engine for generating responses"""
+"""llama-cpp-python inference engine wrapper.
+
+Wraps the ``Llama`` object for async, serialized, timeout-bounded inference.
+Do NOT rewrite the llama-cpp internals here — this module calls the library;
+it does not replace it (hard constraint #1 in CLAUDE.md).
+
+Chat format: all models currently use the Qwen2.5 / ChatML template
+(``<|im_start|>role\\n...<|im_end|>``), hardcoded in ``_format_chat_prompt``.
+Adding a model with a different chat template (Llama-3, Mistral, etc.) would
+require extending that function.
+"""
 
 import asyncio
 import logging
@@ -34,7 +44,12 @@ def _close_stream(stream) -> None:
 
 @dataclass
 class Message:
-    """Chat message"""
+    """Single chat turn.
+
+    ``role`` must be one of the OpenAI roles (``user``, ``assistant``,
+    ``system``) — it is embedded literally into the ChatML ``<|im_start|>{role}``
+    token.  An unrecognized role produces malformed output silently.
+    """
 
     role: str
     content: str
@@ -42,7 +57,14 @@ class Message:
 
 @dataclass
 class InferenceRequest:
-    """Request for inference"""
+    """Parameters for one inference call.
+
+    Messages are formatted via ``_format_chat_prompt`` using the Qwen2.5
+    ChatML template before being passed to llama-cpp.
+
+    ``adapter_path`` is the GGUF LoRA path produced by the fine-tune
+    pipeline (not the PEFT directory).  None means base/RAG serving.
+    """
 
     messages: List[Message]
     model_name: str
@@ -53,14 +75,18 @@ class InferenceRequest:
     stream: bool = True
     stop: Optional[List[str]] = None
     system_prompt: Optional[str] = None
-    # Fine-tune serving (A3.1): path to a GGUF LoRA to apply on top of the base
-    # model for this request. None = base/RAG serving (no adapter).
     adapter_path: Optional[str] = None
 
 
 @dataclass
 class InferenceResponse:
-    """Response from inference"""
+    """Result of one inference call.
+
+    ``prompt_tokens`` / ``completion_tokens`` come from llama-cpp's ``usage``
+    dict and are accurate for text-only calls.  Vision calls add image-patch
+    tokens via a separate estimate in ``chat.py`` — the counts here undercount
+    image-heavy traffic.
+    """
 
     content: str
     model: str
@@ -71,27 +97,32 @@ class InferenceResponse:
 
 
 class InferenceEngine:
-    """Handles inference using loaded models"""
+    """Async wrapper around llama-cpp's ``Llama`` object.
+
+    Key invariants:
+    - All public methods are async; blocking C calls run on ``_inference_executor``.
+    - A ``Llama`` object is NOT safe for concurrent calls — callers must pass the
+      per-model serialization lock from ``ModelManager.get_inference_lock``.
+    - The lock is held until the underlying C call completes, even on timeout,
+      because a llama-cpp call cannot be cancelled mid-flight.
+    """
 
     def __init__(self):
         pass
 
     def _format_chat_prompt(self, request: InferenceRequest) -> str:
-        """Format messages into a chat prompt"""
-        # Qwen2.5 chat format
-        prompt_parts = []
+        """Format messages into a Qwen2.5 / ChatML prompt string.
 
-        # Add system prompt if provided
+        Hardcoded to the ChatML template (``<|im_start|>role\\n...<|im_end|>``).
+        All catalog models currently use this format.  A model with a different
+        chat template would need an additional branch here.
+        """
+        prompt_parts = []
         if request.system_prompt:
             prompt_parts.append(f"<|im_start|>system\n{request.system_prompt}<|im_end|>")
-
-        # Add conversation history
         for msg in request.messages:
             prompt_parts.append(f"<|im_start|>{msg.role}\n{msg.content}<|im_end|>")
-
-        # Add assistant start token
         prompt_parts.append("<|im_start|>assistant\n")
-
         return "\n".join(prompt_parts)
 
     async def generate(
@@ -131,12 +162,9 @@ class InferenceEngine:
             logger.error(f"Inference error: {e}")
             raise
 
-        # Extract response
         choice = result["choices"][0]
         content = choice["text"].strip()
         finish_reason = choice["finish_reason"]
-
-        # Token usage
         usage = result.get("usage", {})
         prompt_tokens = usage.get("prompt_tokens", 0)
         completion_tokens = usage.get("completion_tokens", 0)
@@ -298,13 +326,17 @@ class InferenceEngine:
                 lock.release()
 
     def count_tokens(self, model: Llama, text: str) -> int:
-        """Count tokens in text"""
+        """Count tokens in ``text`` using the model's real tokenizer.
+
+        Falls back to ``len(text) // 4`` on tokenizer error.  Callers using
+        this for context budgeting should be aware the fallback may under- or
+        over-count for non-ASCII text.
+        """
         try:
             tokens = model.tokenize(text.encode("utf-8"))
             return len(tokens)
         except Exception as e:
-            logger.warning(f"Token counting error: {e}")
-            # Rough estimate: 1 token ≈ 4 characters
+            logger.warning("Token counting error: %s", e)
             return len(text) // 4
 
     def count_prompt_tokens(
@@ -318,12 +350,17 @@ class InferenceEngine:
         return self.count_tokens(model, self._format_chat_prompt(req))
 
     def context_size(self, model: Llama) -> int:
-        """The model's context window (n_ctx); falls back to the configured max."""
+        """Return the model's active context window (n_ctx).
+
+        Falls back to ``settings.max_context_length`` on error.  If the GGUF
+        was loaded with a different ``n_ctx`` than the config default, this
+        returns the actual value; the fallback may not match, causing the
+        context-fit guard in ``chat.py`` to use an incorrect ceiling.
+        """
         try:
             return int(model.n_ctx())
         except Exception:  # pragma: no cover - defensive
             return settings.max_context_length
 
 
-# Global inference engine instance
 inference_engine = InferenceEngine()

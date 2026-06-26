@@ -125,10 +125,9 @@ async def _run_job(meta: dict) -> None:
         dpo_beta=tc_raw.get("dpo_beta", 0.1),
     )
 
-    # The trainer expects {"messages": [...]} format; our schema uses {"prompt":..., "response":...}.
-    # Convert to messages format, then SPLIT into a train file and a HELD-OUT eval file.
+    # Convert to messages format and split into train/eval files.
     # The eval gate must measure generalization, so the model is scored on rows it never
-    # trained on (A3.2): we hold out the last ~20% of rows (see models.split_holdout) and
+    # trained on: we hold out the last ~20% of rows (see models.split_holdout) and
     # train only on the remainder. This is the single place the split is decided so the
     # train/eval files can never overlap.
     import json as _json
@@ -325,10 +324,9 @@ async def _run_job(meta: dict) -> None:
         )
         return
 
-    # Convert the PEFT adapter to a GGUF LoRA so the llama-cpp serving runtime can
-    # actually apply it (A3.1). This is the step that makes train->eval->serve real:
-    # without it the endpoint silently serves the base model. Done here (post-eval,
-    # in the worker) because the converter toolchain lives only in the worker image.
+    # PEFT→GGUF conversion must happen post-eval and in the worker because the
+    # converter toolchain (convert_lora_to_gguf.py) lives only in the worker image.
+    # Without conversion the endpoint cannot apply the adapter at serve time.
     await progress(0.97, "Converting adapter for serving (GGUF LoRA)...")
     adapter_gguf_path = None
     try:

@@ -94,8 +94,9 @@ async def register(body: RegisterRequest, request: Request, db: AsyncSession = D
 
         membership = TeamMember(team_id=team.id, user_id=user.id, role=Role.admin)
         db.add(membership)
-        # Commit before returning so an immediate follow-up login sees the new user
-        # (the get_db finalizer commits only after the response is sent — §4.4).
+        # Commit before returning — FastAPI's get_db defers its auto-commit until
+        # after the response body is sent (ASGI ordering), so a synchronous
+        # follow-up login would find no row without this explicit commit.
         await db.commit()
     except IntegrityError as exc:
         await db.rollback()
@@ -123,7 +124,7 @@ async def me(current_user=Depends(get_current_user), db: AsyncSession = Depends(
 
 
 # ---------------------------------------------------------------------------
-# Team invitations (§3.1)
+# Team invitations
 # ---------------------------------------------------------------------------
 
 

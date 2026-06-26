@@ -142,7 +142,7 @@ async def delete_project(
             pass
 
     await db.delete(project)
-    await db.commit()  # durable before response so an immediate re-list reflects it (§4.4)
+    await db.commit()  # durable before response so an immediate re-list reflects the deletion
 
 
 async def _get_project(db: AsyncSession, project_id: str) -> Project:

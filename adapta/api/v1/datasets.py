@@ -59,8 +59,8 @@ async def _validate_in_background(dataset_id: str, path: Path, is_bundle: bool =
     Runs in its own DB session (the request's session is already closed). The row
     is committed by the request handler *before* this task is scheduled, but a
     freshly-pooled connection can briefly lag the commit, so the lookup retries a
-    few times rather than returning silently (which left datasets stuck at
-    ``validating`` — see TODO §4.4).
+    few times rather than returning silently (which would leave datasets stuck
+    at ``validating`` permanently).
     """
     from sqlalchemy import select
 
@@ -188,9 +188,8 @@ async def upload_dataset(
         raise
 
     dataset.storage_path = str(dest)
-    # Commit now so the row is durable BEFORE the background task is scheduled —
-    # otherwise the task's fresh session races the request's deferred commit,
-    # finds nothing, and the dataset is stuck at 'validating' forever (§4.4).
+    # Commit before scheduling — the background task opens its own DB session;
+    # committing here ensures the row is visible to that session immediately.
     dataset_id = dataset.id
     await db.commit()
     background_tasks.add_task(_validate_in_background, dataset_id, dest, is_bundle)

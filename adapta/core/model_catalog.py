@@ -36,11 +36,9 @@ class CatalogEntry:
     gguf_subdir: str  # subdir under settings.models_dir holding the GGUF
     gguf_filename: str  # preferred GGUF filename within that subdir
     model_type: ModelType
-    notes: str = ""  # VRAM / quality tradeoff, surfaced to the operator console
-    # §V (image-understanding fine-tunes): a vision entry additionally declares
-    # the mmproj (vision projector) GGUF that serving loads beside the base.
-    # modality stays "text" for every current entry; the first "vision" entry
-    # lands with V3/V4 when it is trainable AND servable end-to-end.
+    notes: str = ""  # human-readable VRAM / quality tradeoff
+    # Vision entries (modality="vision") additionally declare the mmproj GGUF
+    # (vision projector) that llama-cpp loads beside the base model.
     modality: str = "text"  # "text" | "vision"
     mmproj_filename: Optional[str] = None  # vision projector GGUF, same subdir
     # §C: console catalog display fields
@@ -110,9 +108,6 @@ _ENTRIES: List[CatalogEntry] = [
         train_vram_gb=16,
         serve_ram_gb=4,
     ),
-    # §V image-understanding fine-tunes. Trains as of §V3 (QLoRA, vision tower
-    # frozen, batch 1 on ~6 GB VRAM); endpoint creation is gated until §V4
-    # serving (mmproj + image content-parts) lands — see endpoints.py.
     CatalogEntry(
         name="qwen2.5-vl-3b-instruct",
         hf_repo_id="Qwen/Qwen2.5-VL-3B-Instruct",
@@ -129,15 +124,14 @@ _ENTRIES: List[CatalogEntry] = [
     ),
 ]
 
-# operator-facing name -> entry
 _BY_NAME: Dict[str, CatalogEntry] = {e.name: e for e in _ENTRIES}
-# HF repo id -> entry, so a base_model stored as a HF id (a fine-tune project that
-# recorded the trainer-facing id, or the A3.1 alias bridge) still resolves to one entry.
+# Secondary index by HF repo id so a project that recorded the trainer-facing
+# id (e.g. "Qwen/Qwen2.5-3B-Instruct") still resolves to the same entry.
 _BY_HF_ID: Dict[str, CatalogEntry] = {e.hf_repo_id: e for e in _ENTRIES}
 
 
 def all_entries() -> List[CatalogEntry]:
-    """Every catalog entry (for the console base-model dropdown / docs)."""
+    """All registered base models, in definition order."""
     return list(_ENTRIES)
 
 
@@ -147,8 +141,12 @@ def allowed_names() -> List[str]:
 
 
 def resolve(base_model: str) -> Optional[CatalogEntry]:
-    """Resolve a stored ``base_model`` (operator name OR HF repo id) to its entry,
-    or ``None`` if it isn't in the catalog."""
+    """Resolve a ``base_model`` string to its catalog entry, or None if unknown.
+
+    Checks operator name first (``_BY_NAME``), then HF repo id (``_BY_HF_ID``).
+    Returns None when the value matches neither — callers should treat this as
+    an unknown model rather than silently falling back.
+    """
     return _BY_NAME.get(base_model) or _BY_HF_ID.get(base_model)
 
 
@@ -158,8 +156,13 @@ def is_valid(base_model: str) -> bool:
 
 
 def resolve_hf_id(base_model: str) -> str:
-    """The HuggingFace repo id training/eval should load. Unknown values pass
-    through unchanged so a direct HF id (or local path) still works in dev."""
+    """Return the HuggingFace repo id for training/eval.
+
+    Pass-through for unrecognized values lets a direct HF id or local path
+    work without a catalog entry — intended for development only.  In
+    production, always use a catalogued operator name to guarantee the training
+    and serving runtimes agree on the model.
+    """
     entry = resolve(base_model)
     return entry.hf_repo_id if entry else base_model
 

@@ -2,8 +2,8 @@
 
 Wraps the existing model_manager + inference_engine without touching their
 internals (hard constraint #1). One loaded Llama instance per (base, adapter)
-key, bounded by the LRU in model_manager (§A4.8), serialized per-instance
-to avoid KV-cache races (§A4.1).
+key, bounded by the LRU cache in model_manager, serialized per-instance
+to prevent concurrent KV-cache mutations.
 
 This backend handles all request types: text base, text LoRA, vision base,
 vision LoRA.  The vLLM backend replaces this for TEXT LoRA only when opted in.

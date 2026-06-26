@@ -58,9 +58,10 @@ async def _index_file(
 ) -> None:
     """Background task: parse → chunk → embed → store in Chroma, update DB status.
 
-    The row is committed by the request handler before this is scheduled; the
-    lookup still retries to absorb a brief pooled-connection lag rather than
-    returning silently (which left files stuck at ``pending`` — see TODO §4.4).
+    The request handler commits before scheduling this task so the row is
+    visible on the fresh session opened here.  The retry loop (10 × 0.1 s)
+    absorbs brief connection-pool replication lag — without it a fast-following
+    GET found the row committed but the pool had not yet propagated it.
     """
     from sqlalchemy import select
 
@@ -174,7 +175,8 @@ async def upload_file(
 
     pfile.size_bytes = dest_path.stat().st_size
     pfile.storage_path = str(dest_path)
-    # Commit before scheduling so the indexing task reliably finds the row (§4.4).
+    # Commit before scheduling — the background task opens its own DB session;
+    # committing here ensures the row is visible to that session immediately.
     file_id = pfile.id
     await db.commit()
     background_tasks.add_task(_index_file, file_id, dest_path, content_type, filename, project_id)
@@ -221,4 +223,4 @@ async def delete_file(
         pass
 
     await db.delete(pfile)
-    await db.commit()  # durable before response so an immediate re-list reflects it (§4.4)
+    await db.commit()  # durable before response so an immediate re-list reflects the deletion

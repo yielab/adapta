@@ -1,4 +1,4 @@
-"""Logging configuration — plain text (default) or structured JSON (§3.5).
+"""Logging configuration — plain text (default) or structured JSON.
 
 Toggle with ADAPTA_LOG_FORMAT=json. JSON logs are easier to ship to a log
 aggregator; text stays the friendly default for local dev.

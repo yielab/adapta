@@ -1,8 +1,8 @@
-"""
-Real ChatService — single serving path for both RAG and base (LoRA) endpoints.
-Replaces the mock in the deleted unified_router.py.
+"""Single serving path for RAG and fine-tune (LoRA) endpoints.
 
-Does NOT touch adapta/core/inference.py or adapta/core/model_manager.py internals.
+Composes retrieval, context fitting, and inference.  Does NOT modify
+``adapta/core/inference.py`` or ``adapta/core/model_manager.py`` internals —
+those are called via their public interfaces only (hard constraint #1 in CLAUDE.md).
 """
 
 from __future__ import annotations
@@ -513,12 +513,9 @@ async def chat_stream(
     chunk_id = f"chatcmpl-{uuid.uuid4().hex[:8]}"
     created = int(time.time())
 
-    # Count the prompt tokens once up front (A4.11).
-    # llama-cpp: real tokenizer count; vLLM: char//4 approximation (A4.11 note).
+    # llama-cpp: exact tokenizer count.  vLLM: char//4 approximation (no tokenizer RPC).
     prompt_tokens = handle.count_prompt_tokens(inference_messages, full_system)
-
-    # The engine yields one model token per iteration, so counting yields is the
-    # real completion-token count — no need for the old ~4-chars/token estimate.
+    # Each iteration is one generated token, so counting iterations is exact.
     completion_tokens = 0
     try:
         async for token in backend.generate_stream(handle, req):
@@ -547,8 +544,7 @@ async def chat_stream(
         yield f"data: {json.dumps(finish)}\n\n"
         yield "data: [DONE]\n\n"
 
-        # Meter streaming usage once the stream completes (off the client path —
-        # this runs after the last byte is yielded). §3.2 / A4.11.
+        # Metered off the client path — runs after the last byte is yielded.
         if endpoint_id:
             from adapta.services.usage import record_usage
 

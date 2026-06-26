@@ -1,16 +1,14 @@
-"""
-Adapta — FastAPI application.
+"""FastAPI application factory.
 
-Architecture:
-- /health           → liveness
-- /v1/auth/*        → login, register (JWT)
-- /v1/projects      → CRUD; type = rag | finetune
-- /v1/projects/{id}/files      → document upload + index (RAG)
-- /v1/projects/{id}/datasets   → JSONL upload + validate (finetune)
-- /v1/projects/{id}/jobs       → training job lifecycle
-- /v1/projects/{id}/endpoint   → create / get the servable endpoint
-- /v1/projects/{id}/keys       → scoped API key management
-- /v1/chat/completions         → OpenAI-compatible serving (scoped key auth)
+Authoritative API surface: ``specs/openapi.yaml``.  The route list here
+is a navigational index only — the spec is the source of truth.
+
+Resource groups: health, GPU, auth, models, projects, files, datasets,
+jobs, endpoints, keys, serving (chat), synthesis, usage, settings, teams.
+
+Error handling: all exceptions are translated to a single ``ErrorResponse``
+envelope by the registered handlers below.  The catch-all handler never
+leaks raw exception text.  ``make check-leaks`` enforces this in CI.
 """
 
 from __future__ import annotations
@@ -54,11 +52,6 @@ from adapta.domain.errors import DomainError
 logger = logging.getLogger(__name__)
 
 
-# ---------------------------------------------------------------------------
-# Lifespan
-# ---------------------------------------------------------------------------
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Create data directories now (not at config-import time, which would give the
@@ -77,7 +70,6 @@ async def lifespan(app: FastAPI):
     except Exception:  # noqa: BLE001 — PIL absent in a minimal env must not block startup
         pass
 
-    # Connect job queue on startup
     from adapta.services.jobs import get_job_queue
 
     queue = get_job_queue()
@@ -97,7 +89,6 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         logger.warning("Startup stuck-task sweep failed: %s", exc)
 
-    # Pre-warm model manager (non-blocking; errors are logged, not fatal)
     try:
         from adapta.core import model_manager
 
@@ -108,7 +99,6 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    # Shutdown
     try:
         await queue.close()
     except Exception:
@@ -151,7 +141,7 @@ class CorrelationIdMiddleware:
         try:
             await self.app(scope, receive, send_wrapper)
         finally:
-            # Record request latency/count/errors (cheap; feeds GET /metrics, §3.5).
+            # Record request latency/count/errors for GET /metrics (Prometheus).
             try:
                 from adapta.core.metrics import get_metrics_collector
 
@@ -181,7 +171,6 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
-    # CORS
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
@@ -190,9 +179,6 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    # ---------------------------------------------------------------------------
-    # Global error handlers — no raw exception strings to clients
-    # ---------------------------------------------------------------------------
     @app.exception_handler(DomainError)
     async def domain_error_handler(request: Request, exc: DomainError):
         cid = getattr(request.state, "cid", None)
@@ -308,12 +294,7 @@ def create_app() -> FastAPI:
             },
         )
 
-    # Pure ASGI correlation middleware (see CorrelationIdMiddleware above).
     app.add_middleware(CorrelationIdMiddleware)
-
-    # ---------------------------------------------------------------------------
-    # Routes
-    # ---------------------------------------------------------------------------
 
     @app.get("/health", tags=["system"])
     async def health():
@@ -362,7 +343,6 @@ def create_app() -> FastAPI:
             ],
         }
 
-    # v1 routers
     prefix = "/v1"
     app.include_router(auth.router, prefix=prefix)
     app.include_router(models.router, prefix=prefix)
