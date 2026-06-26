@@ -320,5 +320,84 @@ builder stage) served same-origin via FastAPI `StaticFiles`.
 
 ---
 
+## 9. vLLM serving backend (optional, D3)
+
+By default Adapta serves every fine-tune endpoint through llama-cpp: one GPU-resident
+model instance per `(base, adapter)` key. For deployments with many fine-tune endpoints,
+this means N adapters ≈ N GPU-resident models, which quickly exhausts VRAM.
+
+vLLM closes this gap: its `--enable-lora` mode packs N text LoRA adapters into one GPU
+process via continuous batching (the `max_loras` pool). Only **text LoRA** endpoints
+benefit — base-only, RAG-only, and vision endpoints always use llama-cpp directly (vLLM
+does not support LoRA on vision tower layers).
+
+### Prerequisites
+
+- NVIDIA Container Toolkit installed on the host (`nvidia-ctk` + CDI)
+- `HF_TOKEN` env var with a Hugging Face token that can download the base model
+- `./data/adapters/` accessible on the host (it is bind-mounted read-only into the
+  vllm-server container at `/app/data` — same path as the app/worker containers)
+
+### Start the vllm-server sidecar
+
+```bash
+# First time: pull the image and let vLLM download the base model weights
+VLLM_BASE_MODEL=Qwen/Qwen2.5-3B-Instruct \
+HF_TOKEN=<your-token> \
+docker compose --profile vllm up -d vllm-server
+
+# Tell the app to route text LoRA requests to vLLM (add to .env or override here)
+echo "ADAPTA_SERVING_BACKEND=vllm" >> .env
+# If vllm-server is on a different host, also set ADAPTA_VLLM_BASE_URL=http://<host>:8001
+
+# Restart the app to pick up the new setting
+docker compose restart app
+```
+
+The vllm-server exposes port `8001` on the host (mapped to `8000` inside the container).
+The app reaches it as `http://vllm-server:8000` on the internal Docker network.
+
+### Environment variables
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `ADAPTA_SERVING_BACKEND` | `llamacpp` | Set to `vllm` to activate |
+| `ADAPTA_VLLM_BASE_URL` | `http://vllm-server:8000` | vLLM server base URL (app → vllm-server) |
+| `ADAPTA_VLLM_MAX_LORAS` | `8` | Max simultaneously-loaded LoRA adapters in vLLM |
+| `VLLM_BASE_MODEL` | `Qwen/Qwen2.5-3B-Instruct` | HF model ID to load in vLLM |
+| `VLLM_MAX_MODEL_LEN` | `32768` | Token context window |
+| `HF_TOKEN` | *(empty)* | HuggingFace token (required for gated models) |
+
+### Adapter registration lifecycle
+
+When the app routes a text LoRA request to vLLM, it automatically:
+
+1. Derives the PEFT adapter directory from the stored GGUF path:
+   `Path(adapter.gguf).parent` → `adapter_model.safetensors` + `adapter_config.json`
+2. Calls `POST /v1/load_lora_adapter` on the vllm-server (idempotent; cached)
+3. Sends the completion request with `"model": "<registered-lora-name>"`
+
+vLLM keeps adapters in the `max_loras` pool; the least-recently-used is swapped out
+automatically under memory pressure. The app-side registration cache persists until the
+app restarts — the first request after a restart will re-register all used adapters.
+
+### Host sizing with vLLM
+
+| Base model | Adapter pool | Min VRAM |
+| --- | --- | --- |
+| 3B (Qwen2.5-3B) | 4–8 LoRAs | 6 GB |
+| 7B (Qwen2.5-7B) | 4–8 LoRAs | 14 GB |
+
+Allow an additional ~100 MB per loaded LoRA adapter in the `max_loras` pool.
+These are typical figures; actual usage depends on quantization and sequence length.
+
+### Fallback
+
+Setting `ADAPTA_SERVING_BACKEND=llamacpp` (or leaving it unset) restores the default
+llama-cpp path. The `vllm-server` container can remain running — it will simply not
+receive any requests until the setting is re-enabled.
+
+---
+
 See also: [README.md](../index.md) (run/operate), [PRODUCT_DEFINITION.md](PRODUCT_DEFINITION.md)
 (scope), [SDD_WORKFLOW.md](SDD_WORKFLOW.md) (the three contracts).

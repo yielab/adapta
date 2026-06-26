@@ -195,6 +195,49 @@ services:
     logging: *default-logging
 
   # ──────────────────────────────────────────────
+  # vLLM serving backend (optional, D3) — closes adapter-density gap (§D0 Q3).
+  # llama-cpp loads one GPU instance per (base, adapter) key; vLLM packs N text
+  # LoRA adapters into one GPU process via continuous batching (max_loras pool).
+  #
+  # Activate:  docker compose --profile vllm up -d
+  # Set on app: ADAPTA_SERVING_BACKEND=vllm in .env (or compose environment block)
+  #
+  # The ``data/`` volume is shared with app and worker so adapter paths written by
+  # the training worker resolve inside this container without extra copies.
+  # See OPERATIONS.md §9 for sizing, model download, and rollout guidance.
+  # ──────────────────────────────────────────────
+  vllm-server:
+    image: vllm/vllm-openai:latest
+    container_name: adapta-vllm
+    profiles: [vllm]
+    environment:
+      - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN:-}
+    volumes:
+      # Mount the same host data dir as app/worker so adapter paths (stored in DB
+      # as /app/data/adapters/...) resolve identically inside this container.
+      - ./data:/app/data:ro
+      - vllm-model-cache:/root/.cache/huggingface  # persist HF model downloads
+    ports:
+      - "8001:8000"   # host:container — avoids collision with app on 8000
+    networks:
+      - adapta-network
+    command: >
+      --model ${VLLM_BASE_MODEL:-Qwen/Qwen2.5-3B-Instruct}
+      --enable-lora
+      --max-loras ${ADAPTA_VLLM_MAX_LORAS:-8}
+      --max-model-len ${VLLM_MAX_MODEL_LEN:-32768}
+      --host 0.0.0.0
+      --port 8000
+    devices:
+      - "nvidia.com/gpu=all"
+    deploy:
+      resources:
+        limits:
+          memory: 16g
+    restart: unless-stopped
+    logging: *default-logging
+
+  # ──────────────────────────────────────────────
   # Observability (optional) — `docker compose --profile observability up -d`.
   # Off by default; scrapes the app's /metrics (§3.5).
   # ──────────────────────────────────────────────
@@ -241,3 +284,4 @@ volumes:
   chroma-data:
   prometheus-data:
   grafana-data:
+  vllm-model-cache:   # persists HF model downloads across vllm-server container restarts

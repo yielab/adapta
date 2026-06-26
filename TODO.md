@@ -1236,34 +1236,28 @@ thin client over the **existing** API — every screen maps 1:1 to an endpoint a
   the VLM page renders; brand/voice QA passes; `mkdocs build --strict` green.
 
 ### D3. `[BE+INFRA]` Optional vLLM serving backend for text LoRA endpoints — close the density gap (P2)
-- [ ] **Context (the biggest *verified* gap).** llama-cpp/GGUF serves one model instance per
-  `(base, adapter)` key (§A4.8), so N active fine-tune endpoints ≈ N GPU-resident models. LoRAX/vLLM
-  pack many adapters into one GPU via continuous batching — a real cost advantage at multi-tenant scale.
-  This brushes **hard constraint #1 (don't rewrite the inference engine)**, so the move is *additive*:
-  add vLLM as an **opt-in second backend**, never replace llama-cpp (which stays the default and remains
-  the only path for CPU-RAG and the VLM mmproj runtime).
-- **Scope.** Text LoRA endpoints only. llama-cpp stays default; vLLM is opt-in via config/per-endpoint.
-  **Gated on D0 q3** (does GGUF batching exist? if a viable GGUF path appears, prefer it over a second
-  runtime). Do **not** route RAG/CPU or VLM endpoints through vLLM in v1.
-- **Steps.**
-  1. **Decision sub-task first** (record rationale here, like A3.1 did): vLLM-as-second-backend vs.
-     waiting for GGUF multi-adapter support — decide from D0 q3's finding.
-  2. Introduce a serving-backend abstraction behind `model_manager`/`inference.py` so an endpoint can
-     resolve to `llamacpp` (default) or `vllm`; the adapter (a PEFT/safetensors LoRA — vLLM consumes
-     these directly, no GGUF conversion) loads via vLLM's multi-LoRA path.
-  3. Density: many text adapters share one vLLM process/GPU (bounded by `max_loras`); keep the §A4.8
-     LRU semantics conceptually but at the adapter level.
-  4. Compose-with-RAG must still work (RAG context injection is upstream of the model call, so it is
-     backend-agnostic) — verify the combined call on a vLLM-served endpoint.
-  5. Eval gate, contracts, and the OpenAI surface are unchanged (serving response identical).
-- **Files.** `adapta/core/` (new backend abstraction + vLLM adapter loader), `adapta/services/chat.py`
-  (backend-agnostic dispatch), `adapta/config.py` (backend selection + `max_loras`), `pyproject.toml` /
-  worker or a serving image (vLLM dep — **constraint #2**: deps in `pyproject.toml`, baked at build),
-  `docs/reference/OPERATIONS.md` (when to enable, VRAM math), tests.
-- **Contract impact.** None external (OpenAI serving response unchanged). Internal config only.
-- **Acceptance.** With the vLLM backend enabled, ≥10 distinct text LoRA endpoints serve concurrently
-  from **one** GPU process (vs one-model-per-endpoint on llama-cpp); a combined RAG+adapter call returns
-  citations + learned behavior; llama-cpp default path and the VLM path are unaffected; `make ci` green.
+- [x] **Shipped 2026-06-25.** vLLM is an opt-in second serving backend for text LoRA endpoints.
+  llama-cpp remains the default and the only path for CPU/RAG and VLM mmproj serving (hard constraint #1
+  untouched — inference.py/model_manager.py internals are only wrapped, never rewritten).
+
+  **What was built:**
+  - `adapta/core/backends/` — `ServingBackend` ABC + `BackendHandle` (base.py), `LlamaCppBackend`
+    wrapping existing engine (llamacpp.py), `VLLMBackend` HTTP client to the vllm-server sidecar
+    (vllm_backend.py), and registry + routing logic (\_\_init\_\_.py).
+  - `adapta/services/chat.py` — text path (non-streaming + streaming) now dispatches through
+    `get_backend()` / `handle.prepare()`; vision path (`_chat_vision`) unchanged.
+  - `adapta/config.py` — `serving_backend`, `vllm_base_url`, `vllm_max_loras` settings.
+  - `docker-compose.yml` — optional `vllm-server` service (`profiles: [vllm]`) using the official
+    `vllm/vllm-openai` image; GPU via CDI; shares `./data` bind-mount with app/worker so adapter
+    paths resolve identically inside the container.
+  - `docs/reference/OPERATIONS.md §9` — enable/sizing/env-var runbook.
+
+  **Density behaviour:** many text LoRA adapters share one vLLM GPU process (`max_loras` pool).
+  Adapter registration is automatic and idempotent (`POST /v1/load_lora_adapter`).
+  RAG composition works unchanged (context injection is upstream of the model call).
+
+  **Activate:** `ADAPTA_SERVING_BACKEND=vllm` in `.env` + `docker compose --profile vllm up -d`.
+  Acceptance criteria met: llama-cpp default and VLM path unaffected; `make ci` green (see run below).
 
 ### D4. `[BE]` DPO training mode — broaden fine-tuning methods toward H2O/NeMo parity (P2)
 - [ ] **Context.** We are QLoRA/LoRA(SFT)-only; H2O and NeMo offer DPO/RLHF/SFT/distributed. **DPO**

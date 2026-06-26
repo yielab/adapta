@@ -137,6 +137,15 @@ class Settings(BaseSettings):
     lora_gguf_filename: str = "adapter.gguf"  # converted artifact, stored beside safetensors
     lora_outtype: str = "f16"  # GGUF LoRA quant for conversion (f16/f32/q8_0)
 
+    # Serving backend (D3): llama-cpp is the default and the only path for RAG/CPU
+    # and VLM mmproj serving. Set to "vllm" to route text LoRA endpoints through
+    # an external vLLM server (see OPERATIONS.md §9 and docker-compose.yml's
+    # ``profiles: [vllm]``). vLLM serves N adapters from one GPU process via
+    # continuous batching, closing the density gap confirmed in D0 Q3.
+    serving_backend: str = "llamacpp"  # "llamacpp" (default) | "vllm"
+    vllm_base_url: str = "http://vllm-server:8000"  # vllm-server service URL
+    vllm_max_loras: int = 8  # max simultaneously-loaded LoRA adapters in vLLM
+
     # CORS
     cors_origins: list[str] = []  # empty = no CORS; override in production via ADAPTA_CORS_ORIGINS
 
