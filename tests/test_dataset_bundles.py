@@ -143,3 +143,73 @@ def test_manifest_hash_changes_with_image_bytes(tmp_path):
     assert h1 and h2 and h1 != h2
     # And the text-only hash (no bundle) ignores images entirely.
     assert dataset_manifest_sha256(manifest) != h1
+
+
+# ── DPO dataset validation (D4) ────────────────────────────────────────────
+
+
+def _write_jsonl(path, rows):
+    path.write_text("\n".join(json.dumps(r) for r in rows) + "\n")
+
+
+def test_dpo_rows_validate_ok(tmp_path):
+    p = tmp_path / "dpo.jsonl"
+    _write_jsonl(p, [
+        {"prompt": "Capital of France?", "chosen": "Paris.", "rejected": "Lyon."},
+        {"prompt": "Sky colour?", "chosen": "Blue.", "rejected": "Green."},
+    ])
+    valid, error, n, n_img = validate_dataset(p)
+    assert valid, error
+    assert n == 2
+    assert n_img == 0
+
+
+def test_dpo_rows_with_system_validate_ok(tmp_path):
+    p = tmp_path / "dpo_sys.jsonl"
+    _write_jsonl(p, [
+        {"prompt": "Q?", "chosen": "A.", "rejected": "B.", "system": "You are helpful."},
+    ])
+    valid, error, n, _ = validate_dataset(p)
+    assert valid, error
+    assert n == 1
+
+
+def test_dpo_missing_chosen_rejected(tmp_path):
+    p = tmp_path / "bad_dpo.jsonl"
+    _write_jsonl(p, [
+        {"prompt": "Q?", "chosen": "A."},  # missing rejected
+    ])
+    valid, error, _, _ = validate_dataset(p)
+    assert not valid
+    assert "rejected" in error.lower()
+
+
+def test_dpo_empty_chosen(tmp_path):
+    p = tmp_path / "empty_chosen.jsonl"
+    _write_jsonl(p, [
+        {"prompt": "Q?", "chosen": "  ", "rejected": "B."},
+    ])
+    valid, error, _, _ = validate_dataset(p)
+    assert not valid
+    assert "chosen" in error.lower()
+
+
+def test_mixed_sft_dpo_rejected(tmp_path):
+    p = tmp_path / "mixed.jsonl"
+    _write_jsonl(p, [
+        {"prompt": "Q1?", "response": "R1."},           # SFT row
+        {"prompt": "Q2?", "chosen": "A.", "rejected": "B."},  # DPO row
+    ])
+    valid, error, _, _ = validate_dataset(p)
+    assert not valid
+    assert "mix" in error.lower()
+
+
+def test_sft_rows_still_validate_ok(tmp_path):
+    p = tmp_path / "sft.jsonl"
+    _write_jsonl(p, [
+        {"prompt": "Tell me about France.", "response": "France is in Europe."},
+    ])
+    valid, error, n, _ = validate_dataset(p)
+    assert valid, error
+    assert n == 1

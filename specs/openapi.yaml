@@ -956,12 +956,23 @@ components:
         lora_alpha: {type: integer, default: 32, minimum: 1, maximum: 512}
         lora_dropout: {type: number, default: 0.1, minimum: 0.0, maximum: 0.9}
         max_seq_length: {type: integer, default: 512, minimum: 16, maximum: 8192}
+        # DPO-specific: KL-divergence regularisation coefficient (β). Higher β
+        # keeps the fine-tuned model closer to the reference (base) distribution;
+        # lower β allows stronger preference learning. Only used when method=dpo.
+        dpo_beta: {type: number, default: 0.1, minimum: 0.0, maximum: 1.0}
 
     JobCreateRequest:
       type: object
       required: [dataset_id]
       properties:
         dataset_id: {type: string}
+        # Training algorithm. Omit or pass null for the default (sft). Supported values:
+        #   "sft" — supervised instruction tuning (prompt/response rows)
+        #   "dpo" — Direct Preference Optimisation (prompt/chosen/rejected rows)
+        method:
+          type: string
+          enum: [sft, dpo]
+          nullable: true
         training_config: {$ref: '#/components/schemas/TrainingConfigInput', nullable: true}
 
     JobResponse:

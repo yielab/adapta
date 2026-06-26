@@ -503,6 +503,192 @@ class LoRATrainer:
             self.training_active = False
             raise
 
+    async def train_dpo(
+        self,
+        job_id: str,
+        base_model: str,
+        dataset_path: Path,
+        output_dir: Path,
+        adapter_path: Path,
+        config: "TrainingConfig",  # noqa: F821
+        progress_callback: Optional[Callable] = None,
+    ) -> bool:
+        """Train a LoRA adapter using Direct Preference Optimisation (DPO, D4).
+
+        Dataset rows must have the shape ``{prompt, chosen, rejected}`` as produced
+        by the worker's DPO row-conversion step. The same QLoRA + LoRA setup as SFT
+        is used; only the trainer and loss objective change (TRL DPOTrainer, β-scaled
+        KL penalty).
+
+        The resulting PEFT adapter artifact is identical to an SFT adapter — it flows
+        through the same eval-gate → convert → serve pipeline unchanged.
+        """
+        if not self.dependencies_available:
+            raise RuntimeError(
+                "Training dependencies not installed. "
+                "Run: pip install torch transformers peft datasets trl bitsandbytes accelerate"
+            )
+
+        self.training_active = True
+
+        try:
+            import torch
+            from datasets import load_dataset
+            from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
+            from transformers import (
+                AutoModelForCausalLM,
+                AutoTokenizer,
+                set_seed,
+            )
+            from trl import DPOConfig, DPOTrainer
+
+            set_seed(config.seed)
+
+            logger.info("Starting DPO training for job %s (β=%.3f)", job_id, config.dpo_beta)
+
+            tokenizer = AutoTokenizer.from_pretrained(base_model)
+            if tokenizer.pad_token is None:
+                tokenizer.pad_token = tokenizer.eos_token
+
+            raw_dataset = load_dataset("json", data_files=str(dataset_path))
+
+            # DPO dataset columns: prompt, chosen, rejected (plain strings — TRL
+            # templates them internally via the chat template if one exists).
+            # Keep only the three required columns; extras (system, metadata) are dropped.
+            def _keep_dpo_cols(examples):
+                return {
+                    "prompt": examples["prompt"],
+                    "chosen": examples["chosen"],
+                    "rejected": examples["rejected"],
+                }
+
+            dpo_dataset = raw_dataset.map(
+                _keep_dpo_cols,
+                batched=True,
+                remove_columns=[
+                    c for c in raw_dataset["train"].column_names
+                    if c not in ("prompt", "chosen", "rejected")
+                ],
+            )
+
+            if config.use_qlora:
+                from transformers import BitsAndBytesConfig
+
+                bnb_config = BitsAndBytesConfig(
+                    load_in_4bit=True,
+                    bnb_4bit_quant_type="nf4",
+                    bnb_4bit_compute_dtype=torch.float16,
+                    bnb_4bit_use_double_quant=True,
+                )
+                model = AutoModelForCausalLM.from_pretrained(
+                    base_model,
+                    quantization_config=bnb_config,
+                    device_map="auto",
+                    trust_remote_code=True,
+                )
+                model = prepare_model_for_kbit_training(model)
+            else:
+                model = AutoModelForCausalLM.from_pretrained(
+                    base_model,
+                    device_map="auto",
+                    torch_dtype=torch.float16,
+                    trust_remote_code=True,
+                )
+
+            lora_config = LoraConfig(
+                r=config.lora_r,
+                lora_alpha=config.lora_alpha,
+                target_modules=config.target_modules,
+                lora_dropout=config.lora_dropout,
+                bias="none",
+                task_type="CAUSAL_LM",
+            )
+            model = get_peft_model(model, lora_config)
+            model.print_trainable_parameters()
+
+            from transformers import TrainerCallback
+
+            class ProgressCallback(TrainerCallback):
+                def __init__(self, callback_fn, job_id):
+                    self.callback_fn = callback_fn
+                    self.job_id = job_id
+
+                def on_log(self, args, state, control, logs=None, **kwargs):
+                    if logs and self.callback_fn:
+                        asyncio.create_task(
+                            self.callback_fn(
+                                job_id=self.job_id,
+                                step=state.global_step,
+                                epoch=state.epoch,
+                                loss=logs.get("loss", 0.0),
+                                learning_rate=logs.get("learning_rate", 0.0),
+                            )
+                        )
+
+            dpo_args = DPOConfig(
+                output_dir=str(output_dir),
+                num_train_epochs=config.num_epochs,
+                per_device_train_batch_size=config.batch_size,
+                gradient_accumulation_steps=config.gradient_accumulation_steps,
+                learning_rate=config.learning_rate,
+                warmup_steps=config.warmup_steps,
+                logging_steps=config.logging_steps,
+                save_steps=config.save_steps,
+                fp16=True,
+                gradient_checkpointing=config.gradient_checkpointing,
+                optim=config.optimizer,
+                weight_decay=config.weight_decay,
+                max_grad_norm=config.max_grad_norm,
+                report_to="none",
+                beta=config.dpo_beta,
+                max_length=config.max_seq_length,
+                max_prompt_length=config.max_seq_length // 2,
+            )
+
+            dpo_trainer = DPOTrainer(
+                model=model,
+                args=dpo_args,
+                train_dataset=dpo_dataset["train"],
+                tokenizer=tokenizer,
+                callbacks=(
+                    [ProgressCallback(progress_callback, job_id)] if progress_callback else []
+                ),
+            )
+
+            logger.info("Starting DPO training loop")
+            dpo_trainer.train()
+
+            logger.info("Saving DPO adapter to %s", adapter_path)
+            dpo_trainer.model.save_pretrained(str(adapter_path))
+            tokenizer.save_pretrained(str(adapter_path))
+
+            from adapta.training.provenance import build_provenance
+
+            training_metadata = {
+                "base_model": base_model,
+                "method": "dpo",
+                "dpo_beta": config.dpo_beta,
+                "lora_r": config.lora_r,
+                "lora_alpha": config.lora_alpha,
+                "lora_dropout": config.lora_dropout,
+                "target_modules": config.target_modules,
+                "trained_at": time.time(),
+                "job_id": job_id,
+                "provenance": build_provenance(base_model, dataset_path, config.seed),
+            }
+            with open(adapter_path / "training_metadata.json", "w") as f:
+                json.dump(training_metadata, f, indent=2)
+
+            logger.info("DPO training completed for job %s", job_id)
+            self.training_active = False
+            return True
+
+        except Exception as e:
+            logger.error("DPO training failed for job %s: %s", job_id, e)
+            logger.error(traceback.format_exc())
+            self.training_active = False
+            raise
+
     def stop_training(self):
         """Stop active training (graceful interruption)"""
         self.training_active = False

@@ -162,26 +162,41 @@ def _validate_image(bundle_dir: Path, rel_path: str) -> Optional[str]:
 MAX_REPORTED_ERRORS = 25
 
 
+def _detect_row_method(obj: dict) -> str:
+    """Return 'dpo' if the row has chosen/rejected fields, 'sft' otherwise."""
+    return "dpo" if ("chosen" in obj or "rejected" in obj) else "sft"
+
+
 def _validate_row(
     i: int, obj: dict, schema: Optional[dict], bundle_dir: Optional[Path]
-) -> tuple[list[str], int]:
-    """Validate one parsed row; return (errors, num_images_counted).
+) -> tuple[list[str], int, str]:
+    """Validate one parsed row; return (errors, num_images_counted, detected_method).
 
     Collects *all* problems on the row (it does not stop at the first) so the
-    caller can build one report covering the whole file.
+    caller can build one report covering the whole file. Accepts both SFT rows
+    (prompt + response) and DPO preference rows (prompt + chosen + rejected).
     """
     errors: list[str] = []
+    detected = _detect_row_method(obj)
+
     if not isinstance(obj.get("prompt"), str) or not obj["prompt"].strip():
         errors.append(f"Line {i}: missing or empty 'prompt' field")
-    if not isinstance(obj.get("response"), str) or not obj["response"].strip():
-        errors.append(f"Line {i}: missing or empty 'response' field")
 
-    images = obj.get("images") or []
-    if images and bundle_dir is None:
-        errors.append(
-            f"Line {i}: rows with 'images' must be uploaded as a .zip bundle "
-            "(one root .jsonl manifest + the image files), not a plain .jsonl."
-        )
+    if detected == "dpo":
+        if not isinstance(obj.get("chosen"), str) or not obj["chosen"].strip():
+            errors.append(f"Line {i}: DPO row missing or empty 'chosen' field")
+        if not isinstance(obj.get("rejected"), str) or not obj["rejected"].strip():
+            errors.append(f"Line {i}: DPO row missing or empty 'rejected' field")
+    else:
+        if not isinstance(obj.get("response"), str) or not obj["response"].strip():
+            errors.append(f"Line {i}: missing or empty 'response' field")
+
+        images = obj.get("images") or []
+        if images and bundle_dir is None:
+            errors.append(
+                f"Line {i}: rows with 'images' must be uploaded as a .zip bundle "
+                "(one root .jsonl manifest + the image files), not a plain .jsonl."
+            )
 
     if schema:
         import jsonschema
@@ -192,14 +207,16 @@ def _validate_row(
             errors.append(f"Line {i}: schema violation — {e.message}")
 
     counted = 0
-    if images and bundle_dir is not None:
-        for rel in images:
-            img_err = _validate_image(bundle_dir, rel)
-            if img_err:
-                errors.append(f"Line {i}: {img_err}")
-            else:
-                counted += 1
-    return errors, counted
+    if detected == "sft":
+        images = obj.get("images") or []
+        if images and bundle_dir is not None:
+            for rel in images:
+                img_err = _validate_image(bundle_dir, rel)
+                if img_err:
+                    errors.append(f"Line {i}: {img_err}")
+                else:
+                    counted += 1
+    return errors, counted, detected
 
 
 def _format_error_report(errors: list[str]) -> str:
@@ -215,26 +232,25 @@ def _format_error_report(errors: list[str]) -> str:
 def validate_dataset(
     path: Path, bundle_dir: Optional[Path] = None
 ) -> tuple[bool, Optional[str], int, int]:
-    """
-    Validate a JSONL file against the instruction-pair schema (v2, §V1.1).
+    """Validate a JSONL file against the training dataset schema.
+
     Returns (is_valid, error_message, num_samples, num_images).
 
-    Each line must be {"prompt": str, "response": str}; rows may carry
-    ``images`` (paths relative to the dataset bundle). Image rows are only
-    valid when ``bundle_dir`` is given (zip-bundle upload, §V2.1) — every
-    referenced image must exist inside the bundle and decode within the caps.
+    Accepts both SFT rows (prompt + response) and DPO preference rows
+    (prompt + chosen + rejected). Rows within a single dataset must all be
+    the same type — mixing SFT and DPO rows is rejected.
 
     Validation does **not** stop at the first bad row: it scans the whole file
     and reports up to :data:`MAX_REPORTED_ERRORS` problems at once, so an
     operator fixing a large bundle sees every issue in one pass instead of
-    discovering them one re-upload at a time. The scan still short-circuits once
-    the cap is reached to bound work on a wholly-malformed file.
+    discovering them one re-upload at a time.
     """
     try:
         schema = _load_schema()
         num_samples = 0
         num_images = 0
         errors: list[str] = []
+        detected_methods: set[str] = set()
         with path.open(encoding="utf-8") as f:
             for i, line in enumerate(f, 1):
                 line = line.strip()
@@ -248,7 +264,8 @@ def validate_dataset(
                         break
                     continue
 
-                row_errors, counted = _validate_row(i, obj, schema, bundle_dir)
+                row_errors, counted, row_method = _validate_row(i, obj, schema, bundle_dir)
+                detected_methods.add(row_method)
                 if row_errors:
                     errors.extend(row_errors)
                     if len(errors) >= MAX_REPORTED_ERRORS:
@@ -258,10 +275,16 @@ def validate_dataset(
                 num_samples += 1
                 num_images += counted
 
+        if len(detected_methods) > 1:
+            errors.append(
+                "Dataset mixes SFT rows (prompt/response) and DPO rows "
+                "(prompt/chosen/rejected) — a dataset must be one type only."
+            )
+
         if errors:
             return False, _format_error_report(errors), 0, 0
         if num_samples == 0:
-            return False, "Dataset is empty — must have at least one instruction pair", 0, 0
+            return False, "Dataset is empty — must have at least one row", 0, 0
 
         return True, None, num_samples, num_images
 
@@ -335,6 +358,7 @@ _HYPERPARAM_BOUNDS: dict = {
     "lora_alpha": (1, 512),
     "lora_dropout": (0.0, 0.9),
     "max_seq_length": (16, 8192),
+    "dpo_beta": (0.0, 1.0),
 }
 
 
@@ -479,6 +503,7 @@ async def enqueue_training_job(
     dataset_id: str,
     base_model: str,
     training_config: Optional[dict] = None,
+    method: str = "sft",
 ) -> TrainingJob:
     """Create a TrainingJob record and push it to the Redis queue."""
     from sqlalchemy import select
@@ -516,6 +541,13 @@ async def enqueue_training_job(
     check_min_training_samples(dataset.num_samples)
     validate_training_config(training_config)
 
+    # DPO is text-only: vision LoRA DPO is not supported (preference pairs with
+    # image inputs require a separate evaluation protocol we don't implement yet).
+    if method == "dpo" and dataset.modality != "text":
+        raise InvalidRequest(
+            message="DPO training is only supported for text datasets — use method=sft for vision."
+        )
+
     job = TrainingJob(
         project_id=project_id,
         dataset_id=dataset_id,
@@ -532,6 +564,7 @@ async def enqueue_training_job(
         "dataset_path": dataset.storage_path,
         "base_model": base_model,
         "training_config": training_config or {},
+        "method": method,
     }
 
     queue = get_job_queue()

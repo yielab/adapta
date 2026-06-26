@@ -120,6 +120,13 @@ class TrainingConfig:
     eval_steps: int = 100
     save_steps: int = 500
 
+    # Training method (D4): "sft" (default) or "dpo" (Direct Preference Optimisation).
+    # Controls which TRL trainer is used and how the dataset rows are formatted.
+    method: str = "sft"
+    # DPO-specific: KL-penalty coefficient β. Higher values keep the fine-tuned
+    # distribution close to the reference (base) model.
+    dpo_beta: float = 0.1
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary"""
         return asdict(self)

@@ -1,38 +1,81 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://adapta/schemas/training_dataset",
-  "title": "Training Dataset — Instruction Pair",
-  "description": "JSONL format for fine-tuning datasets. Each line is one JSON object matching this schema.",
-  "$comment": "EVAL-GATE SEMANTICS (Pillar 3 SSOT — see adapta/training/evaluator.py, models.py). The fine-tune is gated, before it can serve, on its quality on this dataset, but the gate is built to measure GENERALIZATION, not memorization: (1) HELD-OUT SPLIT — the worker holds out the last ~20% of rows (>=1 row; adapta.training.models.split_holdout) and trains only on the rest; the gate scores ONLY the held-out rows, never rows the model trained on. (2) RESPONSE-ONLY LOSS — the score is the cross-entropy on the `response` tokens only; the `prompt`/`system` tokens are masked out (label -100), so it reflects the model's ability to produce the target answer, not to model the operator's prompt text. (3) score = exp(-avg_response_loss) = 1/perplexity, clamped to [0,1]. (4) THE GATE (adapta.training.models.passes_eval_gate) — an adapter is promotable if it passes EITHER path: ABSOLUTE `score >= eval_score_threshold` (default 0.6, ~perplexity 1.67), OR IMPROVEMENT — it clears a low sanity floor (`eval_min_floor`, default 0.05) AND beats the base model on the SAME held-out split by `eval_min_improvement` (default 0.05). The base (un-adapted) model is scored on the same split and the adapter-minus-base delta is reported (base_score/score_delta). The improvement path exists because a small base model cannot reach the absolute perplexity bar even on an ideal task, yet a fine-tune that reliably out-scores its base has demonstrably learned the target behavior (§A3.2). An adapter that passes neither → EvalGateFailed (HTTP 422), not registered, endpoint cannot bind it.",
-  "type": "object",
-  "required": ["prompt", "response"],
-  "additionalProperties": false,
-  "properties": {
-    "prompt": {
-      "type": "string",
-      "minLength": 1,
-      "description": "The instruction or question given to the model."
-    },
-    "response": {
-      "type": "string",
-      "minLength": 1,
-      "description": "The ideal response the model should produce."
-    },
-    "system": {
-      "type": "string",
-      "description": "Optional system prompt context."
-    },
-    "images": {
-      "type": "array",
-      "description": "§V image-understanding fine-tunes: paths RELATIVE to the dataset bundle (zip) the row's image(s) live in. Exactly 1 image per row in v1 (the array is forward-compat). Image tokens are context like prompt tokens — masked from the eval-gate's response-only loss, so the gate semantics in $comment are unchanged. Formats: png/jpg/jpeg/webp. Rows without this key are plain text rows (full back-compat). NOTE: accepted by this schema ahead of the implementation; the upload validator rejects image rows with a clear message until the training path (TODO §V2/V3) ships.",
-      "items": {"type": "string", "minLength": 1},
-      "minItems": 1,
-      "maxItems": 1
-    },
-    "metadata": {
+  "title": "Training Dataset Row",
+  "description": "JSONL format for fine-tuning datasets. Each line is one JSON object matching either the SFT or DPO variant.",
+  "$comment": "EVAL-GATE SEMANTICS (Pillar 3 SSOT — see adapta/training/evaluator.py, models.py). The fine-tune is gated, before it can serve, on its quality on this dataset, but the gate is built to measure GENERALIZATION, not memorization: (1) HELD-OUT SPLIT — the worker holds out the last ~20% of rows (>=1 row; adapta.training.models.split_holdout) and trains only on the rest; the gate scores ONLY the held-out rows, never rows the model trained on. (2) RESPONSE-ONLY LOSS — for SFT the score is the cross-entropy on the `response` tokens only (prompt/system masked, label -100). For DPO the gate scores the `chosen` tokens as the target response — the same loss-based metric, measuring whether the DPO-tuned model can reproduce preferred outputs. (3) score = exp(-avg_response_loss) = 1/perplexity, clamped to [0,1]. (4) THE GATE (adapta.training.models.passes_eval_gate) — an adapter is promotable if it passes EITHER path: ABSOLUTE `score >= eval_score_threshold` (default 0.6, ~perplexity 1.67), OR IMPROVEMENT — it clears a low sanity floor (`eval_min_floor`, default 0.05) AND beats the base model on the SAME held-out split by `eval_min_improvement` (default 0.05). The base (un-adapted) model is scored on the same split and the adapter-minus-base delta is reported (base_score/score_delta). The improvement path exists because a small base model cannot reach the absolute perplexity bar even on an ideal task, yet a fine-tune that reliably out-scores its base has demonstrably learned the target behavior (§A3.2). An adapter that passes neither → EvalGateFailed (HTTP 422), not registered, endpoint cannot bind it.",
+  "oneOf": [
+    {"$ref": "#/$defs/SFTRow"},
+    {"$ref": "#/$defs/DPORow"}
+  ],
+  "$defs": {
+    "SFTRow": {
+      "title": "SFT instruction-pair row (method=sft)",
+      "description": "Supervised fine-tuning: a prompt the model receives and the ideal response it should learn to produce.",
       "type": "object",
-      "description": "Optional arbitrary metadata (source, quality score, etc.)",
-      "additionalProperties": true
+      "required": ["prompt", "response"],
+      "additionalProperties": false,
+      "properties": {
+        "prompt": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The instruction or question given to the model."
+        },
+        "response": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The ideal response the model should produce."
+        },
+        "system": {
+          "type": "string",
+          "description": "Optional system prompt context."
+        },
+        "images": {
+          "type": "array",
+          "description": "§V image-understanding fine-tunes: paths RELATIVE to the dataset bundle (zip) the row's image(s) live in. Exactly 1 image per row in v1 (the array is forward-compat). Image tokens are context like prompt tokens — masked from the eval-gate's response-only loss, so the gate semantics in $comment are unchanged. Formats: png/jpg/jpeg/webp. Rows without this key are plain text rows (full back-compat).",
+          "items": {"type": "string", "minLength": 1},
+          "minItems": 1,
+          "maxItems": 1
+        },
+        "metadata": {
+          "type": "object",
+          "description": "Optional arbitrary metadata (source, quality score, etc.)",
+          "additionalProperties": true
+        }
+      }
+    },
+    "DPORow": {
+      "title": "DPO preference-pair row (method=dpo)",
+      "description": "Direct Preference Optimisation: a prompt with a preferred (chosen) and a dispreferred (rejected) completion. The model learns to assign higher probability to the chosen response.",
+      "type": "object",
+      "required": ["prompt", "chosen", "rejected"],
+      "additionalProperties": false,
+      "properties": {
+        "prompt": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The instruction or context shown to the model."
+        },
+        "chosen": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The preferred (better) response the model should learn to favour."
+        },
+        "rejected": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The dispreferred (worse) response the model should assign lower probability."
+        },
+        "system": {
+          "type": "string",
+          "description": "Optional system prompt context."
+        },
+        "metadata": {
+          "type": "object",
+          "description": "Optional arbitrary metadata (source, quality score, annotator, etc.)",
+          "additionalProperties": true
+        }
+      }
     }
   }
 }

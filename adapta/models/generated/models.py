@@ -200,10 +200,17 @@ class TrainingConfigInput(BaseModel):
     lora_alpha: Annotated[int, Field(ge=1, le=512)] = 32
     lora_dropout: Annotated[float, Field(ge=0.0, le=0.9)] = 0.1
     max_seq_length: Annotated[int, Field(ge=16, le=8192)] = 512
+    dpo_beta: Annotated[float, Field(ge=0.0, le=1.0)] = 0.1
+
+
+class Method(Enum):
+    sft = "sft"
+    dpo = "dpo"
 
 
 class JobCreateRequest(BaseModel):
     dataset_id: str
+    method: Method | None = None
     training_config: TrainingConfigInput | None = None
 
 

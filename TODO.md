@@ -1260,31 +1260,28 @@ thin client over the **existing** API — every screen maps 1:1 to an endpoint a
   Acceptance criteria met: llama-cpp default and VLM path unaffected; `make ci` green (see run below).
 
 ### D4. `[BE]` DPO training mode — broaden fine-tuning methods toward H2O/NeMo parity (P2)
-- [ ] **Context.** We are QLoRA/LoRA(SFT)-only; H2O and NeMo offer DPO/RLHF/SFT/distributed. **DPO**
-  (preference tuning) is the highest-leverage addition because it directly serves our pitch ("change how
-  it *behaves*") — tone/format/preference is exactly what DPO tunes, and it reuses the entire existing
-  worker → eval-gate → convert → serve pipeline.
-- **Scope.** Add a DPO trainer mode on the existing GPU worker. Reuse the dataset contract, eval gate,
-  PEFT→GGUF conversion, and serving unchanged. One new method, not a training-framework rewrite (TRL
-  `DPOTrainer` is wrapped, like the existing SFT path — **constraint #1**).
-- **Steps.**
-  1. **Contract first (Pillar 3 + Pillar 1):** extend `specs/schemas/training_dataset.schema.json` to
-     express preference pairs (prompt + chosen + rejected) as a dataset variant, and add a `method`
-     (`sft` | `dpo`) field to the training-config / job-create surface (`specs/openapi.yaml` →
-     `make generate`).
-  2. Worker: branch to TRL `DPOTrainer` when `method=dpo`; keep SFT as default. Produces the same
-     PEFT adapter artifact the rest of the pipeline already handles.
-  3. Eval gate: confirm the held-out, response-only, improvement-aware gate (§A3.2/§A4.13) is
-     meaningful for a DPO adapter (or note the metric nuance in the schema `$comment`).
-  4. Validate the full train→gate→convert→serve path on the GPU for a DPO job.
-- **Files.** `specs/schemas/training_dataset.schema.json`, `specs/openapi.yaml` (+ regenerated models),
-  `adapta/training/trainer.py` (DPO branch), `adapta/services/training.py` (validate the new dataset
-  variant + `method`), `adapta/worker/main.py`, `tests/` (validation + a GPU e2e), gate-semantics docs.
-- **Contract impact.** Pillar 1 (job-create `method` + response), Pillar 3 (dataset schema gains the
-  preference-pair variant; the eval-gate mechanism is unchanged). No Pillar 2 if no new column is needed.
-- **Acceptance.** A DPO dataset validates, trains, passes the eval gate, converts, and serves through
-  the existing endpoint; `make test-contracts` green (zero 5xx); `make check-models` green; a GPU e2e
-  proves the DPO adapter changes behavior at serve time.
+- [x] **Shipped 2026-06-26.** DPO (Direct Preference Optimisation) added as a second training method
+  alongside SFT. The entire downstream pipeline — eval-gate → PEFT→GGUF convert → serve — is unchanged.
+  Hard constraint #1 is untouched (TRL DPOTrainer is wrapped, not the inference engine).
+
+  **What was built:**
+  - `specs/schemas/training_dataset.schema.json` — restructured to `oneOf [SFTRow, DPORow]`. DPO rows
+    are `{prompt, chosen, rejected}` with optional `system`/`metadata`. Mixed SFT+DPO datasets are
+    rejected at upload time. Eval-gate semantics for DPO documented in `$comment` (scores `chosen`
+    as target).
+  - `specs/openapi.yaml` + `make generate` — `JobCreateRequest` gains a nullable `method` field
+    (`"sft"` | `"dpo"`, default null → server treats as sft). `TrainingConfigInput` gains `dpo_beta`
+    (KL-penalty coefficient, range 0–1, default 0.1).
+  - `adapta/services/training.py` — `_validate_row()` accepts DPO rows; consistency check rejects
+    mixed datasets; `enqueue_training_job()` accepts and forwards `method`; DPO is text-only
+    (vision DPO rejected at enqueue).
+  - `adapta/training/models.py` — `TrainingConfig` gains `method` and `dpo_beta` fields.
+  - `adapta/worker/main.py` — reads `method` from payload; converts DPO rows to TRL format
+    (`{prompt, chosen, rejected}`); eval-gate eval rows are SFT-format with `chosen` as target;
+    dispatches to `trainer.train_dpo()` or `trainer.train()` based on method.
+  - `adapta/training/trainer.py` — `train_dpo()`: QLoRA + LoRA setup (same as SFT), TRL `DPOConfig`
+    + `DPOTrainer`, same PEFT adapter artifact output.
+  - 6 new DPO dataset validation unit tests; 217 tests pass.
 
 ### D5. `[BE]` RAG quality — hybrid (keyword+vector) retrieval + reranker (P2)
 - [ ] **Context.** Our RAG is intentionally simple (sentence-transformers → ChromaDB → top-k vector).

@@ -53,6 +53,7 @@ async def _run_job(meta: dict) -> None:
     dataset_path = Path(payload["dataset_path"])
     base_model = payload["base_model"]
     training_config_raw = payload.get("training_config", {})
+    method = payload.get("method", "sft")  # "sft" | "dpo"
 
     # Resolve the operator-facing catalog name to the HF repo id the trainer/evaluator
     # load via from_pretrained() (A3.3). Serving (model_manager) resolves the GGUF from
@@ -120,6 +121,8 @@ async def _run_job(meta: dict) -> None:
         lora_dropout=tc_raw.get("lora_dropout", 0.1),
         max_seq_length=tc_raw.get("max_seq_length", 512),
         seed=tc_raw.get("seed", 42),  # recorded into provenance (A4.7)
+        method=method,
+        dpo_beta=tc_raw.get("dpo_beta", 0.1),
     )
 
     # The trainer expects {"messages": [...]} format; our schema uses {"prompt":..., "response":...}.
@@ -133,6 +136,9 @@ async def _run_job(meta: dict) -> None:
     from adapta.training.models import split_holdout
 
     rows = []
+    # For DPO eval gate: score the held-out `chosen` responses as the target,
+    # same loss-based metric as SFT — tests "can the DPO model reproduce preferred outputs?"
+    eval_rows_sft: list[dict] = []  # SFT-format eval rows (always, for the evaluator)
     with dataset_path.open() as _src:
         for line in _src:
             line = line.strip()
@@ -145,23 +151,42 @@ async def _run_job(meta: dict) -> None:
                 # to messages here would lose the image references.
                 rows.append(obj)
                 continue
-            messages = [
-                {"role": "user", "content": obj["prompt"]},
-                {"role": "assistant", "content": obj["response"]},
-            ]
-            if obj.get("system"):
-                messages.insert(0, {"role": "system", "content": obj["system"]})
-            rows.append({"messages": messages})
+            if method == "dpo":
+                # DPO training format: {prompt, chosen, rejected} — TRL DPOTrainer
+                # consumes these fields directly.
+                rows.append({
+                    "prompt": obj["prompt"],
+                    "chosen": obj["chosen"],
+                    "rejected": obj["rejected"],
+                })
+                # Eval-gate format: score the `chosen` response (treat as target).
+                sft_msgs = [
+                    {"role": "user", "content": obj["prompt"]},
+                    {"role": "assistant", "content": obj["chosen"]},
+                ]
+                if obj.get("system"):
+                    sft_msgs.insert(0, {"role": "system", "content": obj["system"]})
+                eval_rows_sft.append({"messages": sft_msgs})
+            else:
+                messages = [
+                    {"role": "user", "content": obj["prompt"]},
+                    {"role": "assistant", "content": obj["response"]},
+                ]
+                if obj.get("system"):
+                    messages.insert(0, {"role": "system", "content": obj["system"]})
+                rows.append({"messages": messages})
+                eval_rows_sft.append({"messages": messages})
 
     n_holdout = split_holdout(len(rows))
     if n_holdout > 0:
         train_rows = rows[:-n_holdout]
-        eval_rows = rows[-n_holdout:]
+        # eval_rows_sft parallels rows 1-to-1 so the holdout slices align.
+        eval_rows = (eval_rows_sft if eval_rows_sft else rows)[-n_holdout:]
     else:
         # Degenerate (<=1 row) dataset: nothing to hold out. Train and eval on what we
         # have; the absolute eval-score floor still applies.
         train_rows = rows
-        eval_rows = rows
+        eval_rows = eval_rows_sft if eval_rows_sft else rows
 
     train_path = output_dir / "dataset_train.jsonl"
     eval_path = output_dir / "dataset_eval.jsonl"
@@ -172,7 +197,7 @@ async def _run_job(meta: dict) -> None:
         for r in eval_rows:
             _dst.write(_json.dumps(r) + "\n")
     logger.info(
-        "Dataset split: %d train rows, %d held-out eval rows", len(train_rows), len(eval_rows)
+        "Dataset split: %d train rows, %d held-out eval rows (method=%s)", len(train_rows), len(eval_rows), method
     )
     dataset_path = train_path
 
@@ -192,6 +217,16 @@ async def _run_job(meta: dict) -> None:
             base_model=hf_base_model,
             dataset_path=dataset_path,
             bundle_dir=bundle_dir,
+            output_dir=output_dir,
+            adapter_path=output_dir,
+            config=config,
+            progress_callback=_on_train_log,
+        )
+    elif method == "dpo":
+        success = await trainer.train_dpo(
+            job_id=job_id,
+            base_model=hf_base_model,
+            dataset_path=dataset_path,
             output_dir=output_dir,
             adapter_path=output_dir,
             config=config,
