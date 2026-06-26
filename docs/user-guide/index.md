@@ -36,14 +36,14 @@ for the bundle format and a worked example.
 
 **Knowledge (RAG):**
 
-```
+```text
 upload documents → they're indexed → create an endpoint → get an API key
 → your app calls the endpoint → answers come back grounded in your docs, with citations
 ```
 
 **Fine-tuning (LoRA):**
 
-```
+```text
 upload (or synthesize) a dataset → start a training job → watch the eval gate
 → if it passes, create an endpoint → get an API key → your app calls the endpoint
 ```

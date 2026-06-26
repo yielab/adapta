@@ -46,6 +46,17 @@ A fine-tune project with indexed documents gets **both in the same call**.
 before.) Bonus: those same indexed documents are what
 `POST …/datasets/synthesize` reads when you bootstrap a dataset from documents.
 
+!!! info "How retrieval works — hybrid vector + BM25"
+    Retrieval is hybrid by default: a dense vector search (sentence-transformers
+    embeddings) and a sparse keyword search (BM25) run in parallel; their
+    ranked lists are merged via Reciprocal Rank Fusion (RRF). A cross-encoder
+    reranker then re-scores the fused candidates before the top-k are injected.
+    The result is more accurate than pure vector search on keyword-heavy queries
+    (product codes, names, exact phrases) and more robust than pure BM25 on
+    paraphrase-style questions. No configuration is needed — this is always on.
+    To disable the reranker (lower latency, slightly lower accuracy), set
+    `ADAPTA_RAG_RERANKER_MODEL=""` in the worker environment.
+
 ## Worked example — a support assistant for "Nordwind Appliances"
 
 Nordwind sells industrial coffee machines. They want an assistant that:
@@ -102,8 +113,8 @@ learns the *pattern*. At least 10 valid rows are required (the last ~20% is
 held out to score the result and never trained on). Upload it:
 
 ```bash
-curl -s localhost:8000/v1/projects/$PROJECT_ID/datasets \
-  -H "Authorization: Bearer $TOKEN" -F file=@support-style.jsonl
+DATASET_ID=$(curl -s localhost:8000/v1/projects/$PROJECT_ID/datasets \
+  -H "Authorization: Bearer $TOKEN" -F file=@support-style.jsonl | jq -r .id)
 ```
 
 !!! tip "Bootstrapping from the manuals"
@@ -135,7 +146,7 @@ SLUG=$(curl -s -X POST localhost:8000/v1/projects/$PROJECT_ID/endpoint \
 
 KEY=$(curl -s localhost:8000/v1/projects/$PROJECT_ID/keys \
   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -d '{"name": "support-app"}' | jq -r .key)   # brn_… — shown once
+  -d '{"name": "support-app"}' | jq -r .key)   # adp_… — shown once
 ```
 
 ### 5 · Call it — facts and form in one answer
@@ -180,7 +191,7 @@ The endpoint header spells out the composition in one line —
 
 ![Endpoint tab header: base model + fine-tuned adapter + retrieval over 1 chunk](../screenshots/combined-proof/02-endpoint.png)
 
-**The payoff** — we ask the Playground *"Can I bring my dog?"* and get one answer
+**The payoff** — the Playground sends *"Can I bring my dog?"* and gets one answer
 that is grounded in the document **and** in the trained voice:
 
 ![Playground: the answer cites cafe_luna_info.txt and ends with the trained "Come visit us soon!" sign-off](../screenshots/combined-proof/03-combined-answer.png)

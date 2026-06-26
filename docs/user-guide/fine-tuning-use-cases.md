@@ -6,7 +6,7 @@ result and screenshot below comes from training real QLoRA adapters on the worke
 scoring them on held-out data through the eval gate, and serving them from the console.
 It is reproduced by the opt-in suite `tests/integration/test_lora_use_cases.py`.
 
-## The matrix — what we trained and what happened
+## The matrix — use cases trained and results
 
 | Use case | What it learns | Gate result (3B) | Served on a held-out input |
 |---|---|---|---|
@@ -66,7 +66,7 @@ docker compose exec -e ADAPTA_RUN_LORA_USECASES=1 -e ADAPTA_USECASE_BASE=Qwen/Qw
 
 !!! note "Serving cache size matters when one host serves many large fine-tunes"
     All five scenarios pass on the 3B **in a single back-to-back run** — verified green
-    (`5 passed`). The catch we hit first: the serving cache keeps up to
+    (`5 passed`). The catch: the serving cache keeps up to
     `ADAPTA_MAX_LOADED_MODELS` (default **2**) distinct models resident, and on a host that
     serves inference on **CPU** (the GPU is reserved for training), holding two large 3B
     fine-tunes at once and loading a third mid-suite made the server stop responding. Setting

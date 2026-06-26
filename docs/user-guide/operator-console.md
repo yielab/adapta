@@ -1,9 +1,14 @@
 # Operator console
 
+!!! info "Prerequisites"
+    - Stack running: `make up` from the repository root (see the [README](https://github.com/yielab/adapta/blob/main/README.md) for first-time setup).
+    - Console accessible at `http://<your-server>:8000/console/` (or `http://localhost:8000/console/` for a local stack).
+    - A user account: either the seeded dev admin (`admin@example.com` / `admin12345`) or one you registered.
+
 The console is a browser UI bundled **inside the `app` container** — no extra
 service, no extra port, no install. Once the stack is running, open:
 
-```
+```text
 http://<your-server>:8000/console/
 ```
 
@@ -77,15 +82,23 @@ In the **Setup** tab:
    See [Knowledge + behavior together](knowledge-and-behavior.md).
 
 2. **Provide a dataset** — either:
-    - **Upload JSONL** — one instruction pair per line (`{"prompt": "...",
-      "response": "..."}`, optional `system`). The file is validated against the
-      dataset schema; rows that don't match are reported.
+    - **Upload JSONL** — one instruction pair per line. Two formats are supported:
+        - **SFT** (supervised fine-tuning, the default): `{"prompt": "...", "response": "..."}`, optional `system`.
+        - **DPO** (Direct Preference Optimisation): `{"prompt": "...", "chosen": "...", "rejected": "..."}`. When the platform detects `chosen`/`rejected` fields it automatically uses the DPO trainer (TRL DPOTrainer, β-scaled KL penalty). Upload the same way — no separate flag needed.
+
+        The file is validated against the dataset schema; rows that don't match are reported.
     - **Synthesize** — generate a dataset automatically from the documents you
       indexed in step 1. The platform turns your document chunks into Q/A pairs.
       This runs in the background; poll until it's ready.
 
-    A dataset must have at least a minimum number of samples (default 10) before
-    you can train on it.
+    A dataset must have at least 10 valid rows before you can train on it.
+
+    **Reviewing and curating a dataset** — once a dataset is `valid`, a
+    **Review** button appears next to it. It opens a paginated row viewer where
+    you can inspect each pair, drop individual rows that look wrong, and edit
+    text fields inline. When you're satisfied, **Save curated** writes a new
+    derived dataset (marked `valid`) that you can train on instead of the
+    original. This lets you clean a synthesized dataset without re-uploading.
 
     **Vision projects** (a base model labeled *vision* in the create dialog)
     upload a **`.zip` bundle** instead: your images plus one `data.jsonl`
@@ -148,7 +161,7 @@ In the **Endpoint & keys** tab:
 
 - The **endpoint card** shows the endpoint **slug** — this is the value your
   application passes as the OpenAI `model` name.
-- **Create a key** — you get a `adp_…` key. **The full key is shown exactly
+- **Create a key** — you get an `adp_…` key. **The full key is shown exactly
   once**, on creation. Copy it then; afterward only a masked prefix is visible.
   Keys are scoped to this one endpoint.
 - A **copy-paste OpenAI SDK snippet** is generated with this server's URL, the
@@ -172,8 +185,6 @@ projects it shows the **citations**; for all projects it shows **token usage**
 
 The **Usage** tab shows daily token rollups (newest first) and totals for the
 endpoint, so you can see consumption over time.
-
----
 
 ---
 

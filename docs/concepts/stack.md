@@ -426,7 +426,7 @@ Key files: `Dockerfile`, `docker-compose.yml`, `docker-compose.cpu.yml`,
 
 The three AI systems connect to the web layer through ordinary service calls:
 
-```
+```text
 HTTP request
   → FastAPI router
       → Service layer

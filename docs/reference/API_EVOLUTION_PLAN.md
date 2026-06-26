@@ -5,7 +5,7 @@
 > forward-looking work — including any remaining gaps in the SDD gates — lives in [TODO.md](../roadmap.md).
 
 **Status:** Historical record (audit resolved; phases 0–5 code-complete as of 2026-06-08)
-**Audience:** Senior engineers and autonomous coding agents who need the "why" behind the current shape.
+**Audience:** Engineers and contributors who need the historical reasoning behind the current architecture.
 **Philosophy:** This product is in **initial development**. There are no external users to protect and no legacy contract to honor. Therefore: **fix flaws at their origin, do not wrap them.**
 
 > **Scope authority:** the product is defined in [PRODUCT_DEFINITION.md](PRODUCT_DEFINITION.md) (self-hosted RAG + LoRA platform). This document is its **engineering-history companion**. Where they overlap, the product definition wins. The workflow is [SDD_WORKFLOW.md](SDD_WORKFLOW.md) (Extended SDD, three contracts).

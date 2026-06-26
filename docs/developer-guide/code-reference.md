@@ -1,6 +1,6 @@
 # Code reference
 
-These pages are **generated from the source docstrings** at build time
+This page is **generated from the source docstrings** at build time
 (mkdocstrings + griffe, static analysis — no imports are executed). They can't
 drift from the code, because they *are* the code. This is a curated tour of the
 modules worth knowing; the full source is the ultimate reference.

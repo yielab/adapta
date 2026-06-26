@@ -113,7 +113,7 @@ nav:
       - Brand: reference/BRAND.md
       - API reference: reference/api.md
       - Operations runbook: reference/OPERATIONS.md
-      - SDD workflow: reference/SDD_WORKFLOW.md
-      - Architecture decisions: reference/API_EVOLUTION_PLAN.md
+      - Workflow (the three contracts): reference/SDD_WORKFLOW.md
+      - Origin record & error architecture: reference/API_EVOLUTION_PLAN.md
       - Competitive landscape: reference/COMPETITIVE_LANDSCAPE.md
   - Roadmap: roadmap.md

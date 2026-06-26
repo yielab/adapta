@@ -1,7 +1,7 @@
 # 📖 Operations Runbook
 
-Reference for operators running Adapta on their own infrastructure.
-Describes what *is* — no open tasks (those live in [TODO.md](../roadmap.md)).
+> **Status:** Current as of 2026-06-26. Reference for operators running Adapta on their own infrastructure.
+> Describes what *is* — no open tasks (those live in [TODO.md](../roadmap.md)).
 
 Covers: backup/restore, upgrades & migrations, horizontal scaling, image/registry
 strategy, graceful shutdown, and host sizing (VRAM / base-model catalog).
@@ -374,7 +374,7 @@ The app reaches it as `http://vllm-server:8000` on the internal Docker network.
 | `ADAPTA_VLLM_MAX_LORAS` | `8` | Max simultaneously-loaded LoRA adapters in vLLM |
 | `VLLM_BASE_MODEL` | `Qwen/Qwen2.5-3B-Instruct` | HF model ID to load in vLLM |
 | `VLLM_MAX_MODEL_LEN` | `32768` | Token context window |
-| `HF_TOKEN` | *(empty)* | HuggingFace token (required for gated models) |
+| `HF_TOKEN` | *(empty, required for most base models)* | HuggingFace token for model downloads |
 
 ### Adapter registration lifecycle
 
@@ -407,5 +407,5 @@ receive any requests until the setting is re-enabled.
 
 ---
 
-See also: [README.md](../index.md) (run/operate), [PRODUCT_DEFINITION.md](PRODUCT_DEFINITION.md)
+See also: [README.md](https://github.com/yielab/adapta/blob/main/README.md) (run/operate), [PRODUCT_DEFINITION.md](PRODUCT_DEFINITION.md)
 (scope), [SDD_WORKFLOW.md](SDD_WORKFLOW.md) (the three contracts).

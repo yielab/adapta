@@ -23,7 +23,7 @@ Dataset → training job → **eval gate** → serving. One project, four steps,
 ![The full fine-tune flow: dataset valid, job succeeded, eval gate PASSED, ready to serve](../screenshots/finetune-proof/01-finetune-flow-full.png)
 
 The platform never calls this "training" in the textbook sense — the console frames
-it as *"change how your model behaves."* Below we walk the steps that matter.
+it as *"change how your model behaves."* The steps below walk through what matters.
 
 ---
 
@@ -81,7 +81,7 @@ nothing hand-wired.
 
 ## 4 · The proof: it actually answers with what it learned
 
-The console **Playground** calls that exact endpoint. We send a ticket the model
+The console **Playground** calls that exact endpoint with a ticket the model
 never trained on:
 
 > *My card was declined but I was still charged — what happened?*
@@ -89,8 +89,8 @@ never trained on:
 ![Playground: the trained model replies with just the label "billing"](../screenshots/finetune-proof/06-playground-inference.png)
 
 The answer is a single word: **`billing`**. The un-adapted base model, given the same
-prompt, rambles a paragraph of guesses (we measured that too — it's why the
-*improvement* over base is real). The fine-tune learned to do one job and do it
+prompt, rambles a paragraph of guesses — measured against the same held-out set,
+which is why the *improvement* over base is real. The fine-tune learned to do one job and do it
 cleanly.
 
 ---

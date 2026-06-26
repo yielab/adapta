@@ -4,6 +4,9 @@
 Upload documents or train a fine-tuned adapter on your own GPU — then expose
 the result as an OpenAI-compatible API. Your data never leaves your servers.
 
+!!! warning "Prototype maturity"
+    This is a one-person project at prototype stage. The pieces are wired up — RAG, LoRA training, eval gate, multi-tenant serving, vision fine-tunes — but the system has not been independently audited or validated at real team scale. If you are deploying with sensitive data, review the auth, error-handling, and eval-gate code paths yourself before going to production. See [Brand §0](reference/BRAND.md#0-project-status) for the full disclosure.
+
 This documentation serves two purposes: it is the operational and developer
 reference for the platform, and it is a concrete learning resource for anyone
 building or studying AI infrastructure on a real, production-grade codebase.
@@ -113,5 +116,5 @@ Docs rot. This system is built so the parts that drift hardest can't:
 | **API reference** | Rendered from `specs/openapi.yaml` — the same file the server is tested against. Change the API, the docs change. |
 | **Code reference** | Auto-extracted from source docstrings (mkdocstrings). The reference *is* the code. |
 | **Internal links** | `mkdocs build --strict` runs in CI. A broken internal link fails the build. |
-| **Roadmap** | A single source (`TODO.md` at the repo root) included verbatim — never duplicated. |
+| **Roadmap** | Canonical source at `TODO.md` in the repository — the roadmap page links to it directly rather than embedding it (the file links to source paths that only resolve in-repo). |
 | **Scope vs. tasks** | Reference docs describe what *is*. The Roadmap is the only place with open work. The two are never mixed. |

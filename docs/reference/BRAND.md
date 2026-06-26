@@ -189,7 +189,7 @@ encodes the entire product (a base model adapted by knowledge + behavior, compos
 It is one flat SVG, legible at 16px (favicon) and on a billboard. This is the canonical source —
 generate every raster asset from it:
 
-```svg
+```xml
 <svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
   <rect width="64" height="64" rx="16" fill="#0E1117"/>
   <circle cx="32" cy="32" r="20" stroke="#6366F1" stroke-width="3"/>
@@ -208,7 +208,7 @@ For a transparent or light-surface variant, drop the `<rect>` and keep the ring 
 **Adapta** set in Space Grotesk 700 (`--text`) as a single wordmark — matching `Layout.svelte`
 (`<span class="wordmark">Adapta</span>`), now with the brand face.
 
-```
+```text
 ◐  Adapta
 ```
 

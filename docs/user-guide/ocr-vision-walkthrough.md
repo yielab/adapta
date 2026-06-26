@@ -12,7 +12,7 @@ training and serving, captured from the console.
     (here, `{"vendor": …, "total": …}`). Same idea as the text *structured extraction*
     case, but the input is a picture. Image **understanding** only — never image generation.
 
-## What we trained
+## What this run trained
 
 | | |
 |---|---|

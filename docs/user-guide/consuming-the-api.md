@@ -57,9 +57,10 @@ curl http://your-server:8000/v1/chat/completions \
   the console's Usage tab).
 - **Fine-tune endpoints serve base + adapter.** A fine-tune project's endpoint
   applies your trained LoRA adapter on top of the base model transparently — the
-  request shape is identical. If that project also indexed documents, retrieval
-  and the adapter compose in the same call (see
-  [Knowledge + behavior together](knowledge-and-behavior.md)).
+  request shape is identical. This applies equally to SFT and DPO adapters; the
+  serving interface does not change based on how the adapter was trained. If that
+  project also indexed documents, retrieval and the adapter compose in the same
+  call (see [Knowledge + behavior together](knowledge-and-behavior.md)).
 
 ## Images (vision endpoints)
 

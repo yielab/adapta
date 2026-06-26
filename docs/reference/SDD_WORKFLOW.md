@@ -18,7 +18,7 @@ This project is **contract-driven**: nothing of consequence changes unless its c
 
 Every change to the HTTP API **must** follow this sequence. No exceptions.
 
-```
+```text
 1. EDIT specs/openapi.yaml  →  2. make generate  →  3. WRITE logic  →  4. make test-contracts
 ```
 
@@ -50,7 +50,8 @@ Only after models exist, write handlers/services against the generated DTOs — 
 Postgres holds users, teams, projects, files, datasets, training jobs, endpoints, and API keys. Because customers run this DB on **their own servers**, schema changes must be **versioned, reversible, and tested** — never hand-applied.
 
 ### The rule
-```
+
+```text
 1. CHANGE the SQLAlchemy model  →  2. alembic revision --autogenerate  →
 3. REVIEW + edit the migration  →  4. test upgrade AND downgrade  →  5. commit migration
 ```
@@ -67,7 +68,8 @@ Postgres holds users, teams, projects, files, datasets, training jobs, endpoints
 The fine-tuning pipeline is the product's moat, so its inputs and outputs are governed.
 
 ### The rule
-```
+
+```text
 1. DATASET conforms to the dataset JSON Schema  →  2. TRAIN with a pinned training_config  →
 3. Adapter is registered with its {dataset hash, config, base model}  →
 4. EVAL gate runs  →  5. Only a PASSING adapter may back an endpoint
@@ -82,7 +84,7 @@ The fine-tuning pipeline is the product's moat, so its inputs and outputs are go
 
 ## Directory map
 
-```
+```text
 specs/
 ├── openapi.yaml                         ← Pillar 1: API contract (SSOT)
 └── schemas/
@@ -120,7 +122,7 @@ A: Pillar 1 (spec the endpoint) and Pillar 2 (migration for the table), in the s
 A: No — chunking is internal strategy, not a contract. Unless it changes a request/response field (Pillar 1) or a stored schema (Pillar 2), just ship it with tests.
 
 **Q: A user's fine-tune scored below threshold. What happens?**
-A: The adapter is registered but `not servable`; the endpoint keeps the previous servable adapter (or the base model). The eval gate did its job.
+A: The adapter is registered but `not servable`. If a prior gate-passing adapter exists on this project, the endpoint continues serving it. If this was the first training job and no prior adapter passed, the endpoint cannot be created until a job passes the gate. The eval gate did its job.
 
 **Q: Do I run `make generate` / migrations in CI?**
 A: Generated Pydantic is committed (CI imports it). Migrations are committed and CI *tests* them (up/down). The deploy *applies* `alembic upgrade head` on startup.

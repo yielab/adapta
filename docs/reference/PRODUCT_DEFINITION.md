@@ -15,7 +15,7 @@
 
 A **single-tenant, self-hosted** application. A company runs it on their own infrastructure (their privacy guarantee: **no data leaves their servers**). Inside that deployment, multiple users/teams create **Projects**. Every project is one of two types, and every project results in an **API endpoint** they consume with a scoped key.
 
-```
+```text
         Company's own server (Docker Compose)
    ┌──────────────────────────────────────────────┐
    │  Control-plane API  ──────────────► Postgres  │
@@ -94,7 +94,7 @@ Serving **composes the project's artifacts** rather than switching on its type. 
 - Drupal-specific scraper — dropped.
 - Public multi-tenant SaaS concerns — not this product.
 
-### In scope — thin operator console (decided 2026-06-09)
+### In scope — operator console (shipped with Phases 0–5)
 
 A bundled, **operator-facing** web console ships with the appliance. It is **not a second product surface**: it is a thin client over the **existing** API — every screen maps 1:1 to an endpoint already in `specs/openapi.yaml`, served same-origin from the `app` container (no new server capability, no new external protocol, no Node toolchain). The **OpenAI-compatible API remains the only protocol a customer's *applications* call**; the console is how a *human operator* drives setup (projects, files/datasets, training, eval gate, keys, a test playground). It honors the framing rule below: it never calls RAG "training." Build spec: [TODO.md §5](../roadmap.md).
 
@@ -126,7 +126,7 @@ OpenAI image content-parts → console flows + user guide. Build record:
 
 ### Core data model (Postgres)
 
-```
+```text
 Org ─< Team ─< User
 Team ─< Project (type: rag|finetune, base_model, status)
 Project ─< ProjectFile (upload, parse status)       # both modes

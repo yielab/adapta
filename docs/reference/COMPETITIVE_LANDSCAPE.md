@@ -1,7 +1,7 @@
 # Competitive landscape
 
 > **Kind: 📖 Reference.** This page describes what *is* — verified competitor capabilities with primary
-> source citations. Open tasks live in [Roadmap §D](../roadmap.md). Last updated: 2026-06-25.
+> source citations. Open tasks live in the [Roadmap](../roadmap.md). Last updated: 2026-06-25.
 
 Adapta occupies a genuinely rare niche: **no single confirmed competitor matches its full combination**
 of self-hosted RAG + LoRA/QLoRA fine-tune + VLM (image-understanding) fine-tune + an automated

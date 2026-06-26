@@ -58,7 +58,7 @@ overlap:
 
 The codebase is layered, and the layering is **enforced** (`make lint-imports`):
 
-```
+```text
 adapta/api/v1/*      HTTP routers  — translate HTTP ⇄ services, no business logic
       │
 adapta/services/*    business logic — the real work; raises DomainError
@@ -77,7 +77,7 @@ dependencies point inward, the domain is pure.
 
 ## The data model (Postgres)
 
-```
+```text
 Org ─< Team ─< User
 Team ─< Project (type: rag|finetune, base_model, status)
 Project ─< ProjectFile (upload, parse status)       # both modes
@@ -97,7 +97,7 @@ volume holds uploaded files and adapter artifacts.
 
 This is the path worth tracing end to end, because it touches the most pieces:
 
-1. **Auth** — `POST /v1/chat/completions` arrives with a `adp_` key. The handler
+1. **Auth** — `POST /v1/chat/completions` arrives with an `adp_` key. The handler
    ([`adapta/api/v1/chat.py`](code-reference.md)) looks up the key by its prefix
    (indexed) and bcrypt-verifies it, resolving it to **its** endpoint. The
    client-supplied `model` slug must match — otherwise `403`.
