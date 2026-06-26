@@ -138,6 +138,14 @@ the host:
   bake customer-agnostic code only — **no secrets** are baked, they come from
   `.env` at runtime).
 
+**Production hardening:** for any deployment beyond a developer laptop, apply `docker-compose.prod.yml` alongside the base file:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+```
+
+It runs `app` and `worker` as uid 10001 (non-root), drops all Linux capabilities (`cap_drop: ALL`), sets a read-only rootfs with `/tmp` as tmpfs, and mounts a named `app-data` volume in place of the dev bind-mount. Full controls and security model: [SECURITY.md](https://github.com/yielab/adapta/blob/main/SECURITY.md).
+
 ---
 
 ## 6. Host sizing

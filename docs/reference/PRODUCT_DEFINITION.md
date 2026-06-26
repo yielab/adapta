@@ -76,6 +76,13 @@ Serving **composes the project's artifacts** rather than switching on its type. 
 - OpenAI-compatible serving for both modes (`/v1/chat/completions`); per-endpoint scoped keys.
 - Usage metering: `prompt_tokens` / `completion_tokens` / `total_tokens` in every response.
 - `make check-leaks` CI gate; `make ci` (leaks + lint + test + validate-spec).
+- **Image-understanding fine-tunes (§V):** VLM QLoRA (vision tower frozen) on zip bundle datasets; same eval gate + PEFT→GGUF conversion + llama-cpp serving with `mmproj`; endpoints accept OpenAI image content-parts (inline data URLs, ≤ 4/request, non-streaming).
+- **Operator console:** thin browser UI bundled in `app`, same-origin at `/console/`; full project lifecycle (files, datasets, training, eval gate, keys, playground, usage, settings).
+- **vLLM serving backend (D3, optional):** `ADAPTA_SERVING_BACKEND=vllm` routes text-LoRA requests to a vLLM sidecar that packs multiple adapters into one GPU process; llama-cpp remains the default.
+- **DPO preference-tuning (D4):** `dpo` training method alongside `sft`; `prompt/chosen/rejected` dataset rows validated at upload; same eval gate and serving pipeline.
+- **Hybrid RAG (D5):** BM25 + vector retrieval fused via Reciprocal Rank Fusion, optional cross-encoder reranker (sentence-transformers CrossEncoder, lazy-loaded); configurable via `ADAPTA_RAG_*` env vars.
+- **Dataset review UI (D6):** operators preview, drop, and edit dataset rows before training; curated datasets carry `source_dataset_id` lineage; new `GET /datasets/{id}/rows` + `POST /datasets/{id}/curate` endpoints.
+- **Production hardening overlay (§7.4):** `docker-compose.prod.yml` — uid 10001, `cap_drop: ALL`, read-only rootfs, `tmpfs:/tmp`, named `app-data` volume replacing the dev bind-mount.
 
 ### Out of scope (deleted)
 
@@ -157,7 +164,7 @@ GPU strategy (customer-provided hardware):
 | API surface | 112 endpoints, mixed protocols | Collapsed to 9 resource groups, OpenAI-compatible only |
 | Error handling | 63 `detail=str(e)` leak sites, 0 custom exceptions | `DomainError` taxonomy, 0 leak sites, `make check-leaks` CI gate |
 | Dataset synthesis | Not implemented | `POST /v1/projects/{id}/datasets/synthesize` — LLM-generated Q/A pairs from indexed docs |
-| Images | moondream2 + vision routes | Deleted entirely |
+| Images | moondream2 + vision routes | Generation routes and moondream2 deleted; image *understanding* LoRA (§V) re-admitted 2026-06-11 — see §3 |
 | Build config | `setup.py` + `requirements*.txt` + `pyproject.toml` (triple, divergent) | Single-source `pyproject.toml` |
 
 ## 7. Phased build plan (completed)
@@ -173,8 +180,5 @@ All six phases shipped as of 2026-06-08. Each leaves `main` green.
 
 ## 8. Open decisions (track, don't block)
 
-1. **Base model catalog** — which GGUF bases ship by default? Define the supported list + VRAM table.
-2. **License/packaging** — open-core vs commercial self-hosted license.
-3. **Artifact storage** — filesystem volume now; introduce MinIO only if customers need scale/HA.
-4. **Multi-user depth** — admin/member RBAC is the floor; invitation flow needed.
-5. **Usage persistence** — token counts are returned in API responses but not yet stored in DB for billing/metering.
+1. **License/packaging** — MIT license. Commercial self-hosted packaging and distribution model is not yet decided.
+2. **Artifact storage** — filesystem volume; introduce MinIO/object store only when multi-host or HA is required (deferred, tracked in §6 of TODO.md).

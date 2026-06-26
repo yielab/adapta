@@ -34,10 +34,11 @@ how AI infrastructure is built.
 
     ---
 
-    You need decision rationale: why llama-cpp over vLLM, why ChromaDB
-    over pgvector, why BLPOP over Celery, why Docker Compose over
-    Kubernetes. The [Stack & decisions](stack.md) page covers each
-    choice explicitly — including the alternatives considered.
+    You need decision rationale: why llama-cpp is the default, when the
+    vLLM backend is the right option, why ChromaDB over pgvector, why
+    BLPOP over Celery, why Docker Compose over Kubernetes. The
+    [Stack & decisions](stack.md) page covers each choice explicitly —
+    including the alternatives considered.
 
 -   **Product and DevOps roles**
 

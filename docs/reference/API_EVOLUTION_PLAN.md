@@ -179,46 +179,7 @@ Middleware stamps `request.state.cid` (UUID) on every request, echoes it in `X-C
 
 ## 5. API surface (implemented)
 
-The 112-endpoint sprawl has been collapsed to:
-
-```
-GET  /health                              liveness
-GET  /health/deep                         Postgres + Redis + Chroma + disk + memory
-GET  /gpu                                 GPU detection
-
-POST /v1/auth/register                    bootstrap org + first admin
-POST /v1/auth/login                       obtain JWT
-GET  /v1/auth/me                          current user
-
-GET  /v1/projects                         list (by team_id)
-POST /v1/projects                         create
-GET  /v1/projects/{id}                    get
-DELETE /v1/projects/{id}                  delete
-
-POST /v1/projects/{id}/files              upload + background index
-GET  /v1/projects/{id}/files              list
-DELETE /v1/projects/{id}/files/{fid}      delete + remove from Chroma
-
-POST /v1/projects/{id}/datasets           upload JSONL + background validate
-POST /v1/projects/{id}/datasets/synthesize  generate from indexed docs (Phase 4)
-GET  /v1/projects/{id}/datasets           list
-GET  /v1/projects/{id}/datasets/{did}     get (poll synthesis status here)
-
-POST /v1/projects/{id}/jobs               enqueue training job
-GET  /v1/projects/{id}/jobs               list
-GET  /v1/projects/{id}/jobs/{jid}         get (enriched with live Redis progress)
-
-POST /v1/projects/{id}/endpoint           create (eval_passed required for finetune)
-GET  /v1/projects/{id}/endpoint           get
-
-POST /v1/projects/{id}/keys               generate scoped key (shown once)
-GET  /v1/projects/{id}/keys               list
-DELETE /v1/projects/{id}/keys/{kid}       revoke
-
-POST /v1/chat/completions                 OpenAI-compatible serving (scoped adp_* key)
-```
-
-Contract SSOT: `specs/openapi.yaml`.
+The 112-endpoint sprawl has been collapsed to a focused surface across 9 resource groups (health, GPU, auth, projects, files, datasets, jobs, endpoints + keys, and serving). The live, authoritative listing is the [API reference](api.md), rendered directly from `specs/openapi.yaml`.
 
 ---
 
@@ -229,7 +190,7 @@ The architecture is described here; the **state of each test/gate and the open w
 
 - `tests/conftest.py` — async client fixture via `httpx.AsyncClient` + `ASGITransport`.
 - `pyproject.toml` — `asyncio_mode = "auto"`, `testpaths = ["tests"]`, markers `contract`/`integration`/`slow` registered and default-deselected.
-- In-process suites: `tests/test_basic.py`, `tests/test_error_boundary.py`, `tests/test_eval_gate.py`.
+- In-process suites: unit, eval-gate, error boundary, input validation, generated-models wiring; integration suites for LoRA, VLM, and use-case validation (opt-in, GPU required).
 - Live-stack suite: `tests/test_api_contracts.py` (schemathesis, `@pytest.mark.contract`).
 - Gates: `make ci` (offline: check-leaks + lint + coverage floor + validate-spec + check-models) and the `full` gate (migrate-test + boot smoke + contract + integration), wired in `.github/workflows/ci.yml`.
 - Generated DTOs: `adapta/models/generated/models.py` is committed and kept in sync with the spec by `make check-models` (regenerate-and-diff). The `adapta/api/v1/*` routers **import these models directly** — no hand-written request/response models exist, so the spec actually drives the handlers; `tests/test_generated_models_wired.py` enforces this (fails if a router defines a local DTO). The contract gate passes `--checks all` against the live server (all 33 operations, zero 5xx).
@@ -240,18 +201,4 @@ The architecture is described here; the **state of each test/gate and the open w
 
 ## 7. Workflow — Extended SDD (three contracts)
 
-Change the contract before the code. Full reference: [SDD_WORKFLOW.md](SDD_WORKFLOW.md).
-
-| Contract | SSOT | Generate / apply | Merge gate |
-|---|---|---|---|
-| API | `specs/openapi.yaml` | `make generate` → Pydantic | `make test-contracts` |
-| DB schema | Alembic migrations | `make migrate` | `make migrate-test` (up/down) |
-| Model/training | `specs/schemas/training_dataset.schema.json` + pinned config | training run | eval threshold gate (score ≥ 0.6) |
-
-Hard rules:
-
-- No route/request/response/status change without a spec change in the **same PR**.
-- No schema change without an Alembic migration that passes up/down in CI.
-- No adapter serves until it clears the eval gate.
-- Generated/derived artifacts are never hand-edited.
-- `make check-leaks` must pass on every PR.
+Full reference: [SDD_WORKFLOW.md](SDD_WORKFLOW.md). In short: change the contract before the code — API spec, then Alembic migration, then the dataset schema / eval gate — and never hand-edit generated artifacts.

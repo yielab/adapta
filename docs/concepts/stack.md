@@ -141,13 +141,13 @@ generated text.
 for GGUF-format models. It runs on CPU with no configuration; on a machine with
 an NVIDIA GPU it offloads layers to the GPU automatically at startup.
 
-**Why llama.cpp over the alternatives?**
+**llama.cpp is the default for CPU+GPU portability and quantized GGUF support. Alternatives:**
 
-| Alternative | Why not used here |
+| Alternative | Notes |
 |---|---|
-| **vLLM** | Optimized for high-throughput multi-GPU cloud serving. Requires full-precision or bfloat16 weights. Over-engineered for a single-tenant appliance. |
-| **HuggingFace `transformers`** | Can serve quantized models but is primarily a research library, not a production serving runtime. Less battle-tested throughput management. |
-| **Ollama** | A good wrapper around llama.cpp, but adds an extra service and network hop that adds no value when the platform owns the process. |
+| **vLLM** | High-throughput multi-GPU serving for full-precision weights. Adapta ships an **optional vLLM backend** (`ADAPTA_SERVING_BACKEND=vllm`, `--profile vllm`) for deployments with many fine-tune endpoints — it packs multiple text LoRA adapters into one GPU process via continuous batching. llama-cpp remains the default; vLLM is opt-in for the multi-adapter density use case. See [Operations §9](../reference/OPERATIONS.md). |
+| **HuggingFace `transformers`** | Research library; not a production serving runtime. Less battle-tested throughput management. |
+| **Ollama** | A good wrapper around llama.cpp, but adds an extra service and network hop with no benefit when the platform owns the process. |
 
 The decisive advantage is **hardware flexibility**: the same codebase runs on an
 old developer laptop (CPU-only) and a production GPU server, with no code
@@ -418,7 +418,7 @@ Kubernetes doesn't fit a self-hosted appliance; Docker Compose is exactly the
 right complexity.
 
 Key files: `Dockerfile`, `docker-compose.yml`, `docker-compose.cpu.yml`,
-`Makefile`
+`docker-compose.prod.yml`, `Makefile`
 
 ---
 
