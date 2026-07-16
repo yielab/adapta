@@ -180,5 +180,5 @@ All six phases shipped as of 2026-06-08. Each leaves `main` green.
 
 ## 8. Open decisions (track, don't block)
 
-1. **License/packaging** — MIT license. Commercial self-hosted packaging and distribution model is not yet decided.
+1. **License/packaging** — Apache 2.0. Commercial self-hosted packaging and distribution model is not yet decided.
 2. **Artifact storage** — filesystem volume; introduce MinIO/object store only when multi-host or HA is required (deferred, tracked in §6 of TODO.md).
