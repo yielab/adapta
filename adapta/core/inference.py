@@ -4,10 +4,11 @@ Wraps the ``Llama`` object for async, serialized, timeout-bounded inference.
 Do NOT rewrite the llama-cpp internals here — this module calls the library;
 it does not replace it (hard constraint #1 in CLAUDE.md).
 
-Chat format: all models currently use the Qwen2.5 / ChatML template
-(``<|im_start|>role\\n...<|im_end|>``), hardcoded in ``_format_chat_prompt``.
-Adding a model with a different chat template (Llama-3, Mistral, etc.) would
-require extending that function.
+Chat format is NOT hardcoded here: prompts are rendered by the named template
+carried on the request (``InferenceRequest.chat_template``), resolved from the
+model's catalog entry. The engine is a pure execution wrapper; which template a
+model uses — and how to onboard a non-ChatML family — lives in
+``adapta/core/chat_templates.py``.
 """
 
 import asyncio
@@ -20,6 +21,7 @@ from typing import AsyncIterator, List, Optional
 from llama_cpp import Llama
 
 from adapta.config import settings
+from adapta.core import chat_templates
 from adapta.domain.errors import Timeout
 
 logger = logging.getLogger(__name__)
@@ -47,8 +49,8 @@ class Message:
     """Single chat turn.
 
     ``role`` must be one of the OpenAI roles (``user``, ``assistant``,
-    ``system``) — it is embedded literally into the ChatML ``<|im_start|>{role}``
-    token.  An unrecognized role produces malformed output silently.
+    ``system``) — the active chat template embeds it literally into the turn
+    wrapper, so an unrecognized role produces malformed output silently.
     """
 
     role: str
@@ -59,8 +61,11 @@ class Message:
 class InferenceRequest:
     """Parameters for one inference call.
 
-    Messages are formatted via ``_format_chat_prompt`` using the Qwen2.5
-    ChatML template before being passed to llama-cpp.
+    Messages are formatted via ``_format_chat_prompt`` using the named
+    ``chat_template`` before being passed to llama-cpp.  ``chat_template`` is a
+    key into ``adapta.core.chat_templates`` (default ChatML); the serving
+    backend sets it from the model's catalog entry so the prompt matches what
+    the base was trained on.
 
     ``adapter_path`` is the GGUF LoRA path produced by the fine-tune
     pipeline (not the PEFT directory).  None means base/RAG serving.
@@ -76,6 +81,7 @@ class InferenceRequest:
     stop: Optional[List[str]] = None
     system_prompt: Optional[str] = None
     adapter_path: Optional[str] = None
+    chat_template: str = chat_templates.DEFAULT_TEMPLATE
 
 
 @dataclass
@@ -111,19 +117,15 @@ class InferenceEngine:
         pass
 
     def _format_chat_prompt(self, request: InferenceRequest) -> str:
-        """Format messages into a Qwen2.5 / ChatML prompt string.
+        """Render the request into the prompt string for its ``chat_template``.
 
-        Hardcoded to the ChatML template (``<|im_start|>role\\n...<|im_end|>``).
-        All catalog models currently use this format.  A model with a different
-        chat template would need an additional branch here.
+        The engine holds no template literals — it delegates to the named
+        template in ``chat_templates`` (default ChatML). Onboarding a model with
+        a different format is a change there + a catalog entry, never here.
         """
-        prompt_parts = []
-        if request.system_prompt:
-            prompt_parts.append(f"<|im_start|>system\n{request.system_prompt}<|im_end|>")
-        for msg in request.messages:
-            prompt_parts.append(f"<|im_start|>{msg.role}\n{msg.content}<|im_end|>")
-        prompt_parts.append("<|im_start|>assistant\n")
-        return "\n".join(prompt_parts)
+        return chat_templates.render(
+            request.chat_template, request.system_prompt, request.messages
+        )
 
     async def generate(
         self,
@@ -140,7 +142,7 @@ class InferenceEngine:
         and must never run concurrently with the next request on the same model.
         """
         prompt = self._format_chat_prompt(request)
-        stop_tokens = request.stop or ["<|im_end|>", "<|endoftext|>"]
+        stop_tokens = request.stop or chat_templates.default_stops(request.chat_template)
         loop = asyncio.get_event_loop()
 
         def _call():
@@ -274,7 +276,7 @@ class InferenceEngine:
           C call when we close the generator and release the lock.
         """
         prompt = self._format_chat_prompt(request)
-        stop_tokens = request.stop or ["<|im_end|>", "<|endoftext|>"]
+        stop_tokens = request.stop or chat_templates.default_stops(request.chat_template)
         loop = asyncio.get_event_loop()
 
         def _create_stream():
@@ -340,13 +342,24 @@ class InferenceEngine:
             return len(text) // 4
 
     def count_prompt_tokens(
-        self, model: Llama, messages: List[Message], system_prompt: Optional[str] = None
+        self,
+        model: Llama,
+        messages: List[Message],
+        system_prompt: Optional[str] = None,
+        chat_template: str = chat_templates.DEFAULT_TEMPLATE,
     ) -> int:
         """Token count of the FINAL formatted prompt, via the model's real tokenizer.
 
         This is the exact text the model will be conditioned on, so it's the number
-        to budget against ``n_ctx`` (A4.3) — not a char/4 estimate."""
-        req = InferenceRequest(messages=messages, model_name="", system_prompt=system_prompt)
+        to budget against ``n_ctx`` (A4.3) — not a char/4 estimate.  ``chat_template``
+        must match the one generation will use, or the count omits that family's
+        turn-wrapper tokens; callers resolve it from the model's catalog entry."""
+        req = InferenceRequest(
+            messages=messages,
+            model_name="",
+            system_prompt=system_prompt,
+            chat_template=chat_template,
+        )
         return self.count_tokens(model, self._format_chat_prompt(req))
 
     def context_size(self, model: Llama) -> int:

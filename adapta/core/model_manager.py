@@ -25,7 +25,13 @@ logger = logging.getLogger(__name__)
 
 
 class ModelType(str, Enum):
-    """Capability class of a catalog model.  Used to group entries in the console."""
+    """Capability *grouping* of a catalog model — a cosmetic label the console
+    uses to bucket the base-model list (chat / code / reasoning).
+
+    This is orthogonal to a model's ``modality`` (text vs vision), which is the
+    *functional* axis: modality drives the serving path, dataset-match check and
+    training path, whereas ``ModelType`` only affects presentation. A vision base
+    is ``model_type=CHAT`` with ``modality="vision"``."""
 
     CHAT = "chat"
     CODE = "code"
@@ -133,64 +139,30 @@ class ModelManager:
         return None
 
     def _init_default_configs(self) -> None:
-        """Populate ``_configs`` with static entries for all catalog models.
+        """Populate ``_configs`` with a serving entry for every catalog model.
+
+        The base-model catalog (``model_catalog``) is the single source of truth
+        for the model list, GGUF paths, mmproj, type and context window (A3.3);
+        this derives the serving ``ModelConfig`` from it rather than re-declaring
+        each model, so the two can never drift. Imported lazily to avoid the
+        catalog↔model_manager cycle (the catalog imports ``ModelType`` from here).
 
         All entries are lazy-loaded; none are pre-warmed here.  ``preload_default_models``
         optionally warms the configured default model at startup.
         """
-        models_dir = settings.models_dir
+        from adapta.core.model_catalog import all_entries
 
-        self._configs["qwen2.5-3b-instruct"] = ModelConfig(
-            name="qwen2.5-3b-instruct",
-            model_type=ModelType.CHAT,
-            path=models_dir / "qwen2.5-3b" / "qwen2.5-3b-instruct-q4_k_m.gguf",
-            context_length=32768,
-            n_threads=settings.n_threads,
-            n_gpu_layers=settings.n_gpu_layers,
-            description="General chat and reasoning model",
-        )
-
-        self._configs["qwen2.5-coder-3b"] = ModelConfig(
-            name="qwen2.5-coder-3b",
-            model_type=ModelType.CODE,
-            path=models_dir / "qwen2.5-coder-3b" / "qwen2.5-coder-3b-instruct-q4_k_m.gguf",
-            context_length=32768,
-            n_threads=settings.n_threads,
-            n_gpu_layers=settings.n_gpu_layers,
-            description="Code understanding and generation model",
-        )
-
-        self._configs["qwen2.5-0.5b-instruct"] = ModelConfig(
-            name="qwen2.5-0.5b-instruct",
-            model_type=ModelType.CHAT,
-            path=models_dir / "qwen2.5-0.5b" / "qwen2.5-0.5b-instruct-q4_k_m.gguf",
-            context_length=32768,
-            n_threads=settings.n_threads,
-            n_gpu_layers=settings.n_gpu_layers,
-            description="Small instruct model (fine-tune e2e base)",
-        )
-
-        # Vision: requires mmproj so the model loads with a multimodal chat handler.
-        self._configs["qwen2.5-vl-3b-instruct"] = ModelConfig(
-            name="qwen2.5-vl-3b-instruct",
-            model_type=ModelType.CHAT,
-            path=models_dir / "qwen2.5-vl-3b" / "qwen2.5-vl-3b-instruct-q4_k_m.gguf",
-            context_length=32768,
-            n_threads=settings.n_threads,
-            n_gpu_layers=settings.n_gpu_layers,
-            description="Vision model (image+text→text) — document AI / visual QC",
-            mmproj_path=models_dir / "qwen2.5-vl-3b" / "mmproj-qwen2.5-vl-3b-f16.gguf",
-        )
-
-        self._configs["qwen2.5-7b-instruct"] = ModelConfig(
-            name="qwen2.5-7b-instruct",
-            model_type=ModelType.REASONING,
-            path=models_dir / "qwen2.5-7b" / "qwen2.5-7b-instruct-q4_k_m.gguf",
-            context_length=32768,
-            n_threads=settings.n_threads,
-            n_gpu_layers=settings.n_gpu_layers,
-            description="Large model for complex reasoning",
-        )
+        for entry in all_entries():
+            self._configs[entry.name] = ModelConfig(
+                name=entry.name,
+                model_type=entry.model_type,
+                path=entry.gguf_path(),
+                context_length=entry.context_length,
+                n_threads=settings.n_threads,
+                n_gpu_layers=settings.n_gpu_layers,
+                description=entry.notes,
+                mmproj_path=entry.mmproj_path(),
+            )
 
     def _evict_lru_if_needed(self) -> None:
         """Evict least-recently-used models until there's room for one more (A4.8).
@@ -387,19 +359,6 @@ class ModelManager:
     def get_model_config(self, model_name: str) -> Optional[ModelConfig]:
         """Get model configuration"""
         return self._configs.get(model_name)
-
-    def get_model_by_type(self, model_type: ModelType) -> Optional[str]:
-        """Get the first available model of a given type"""
-        for name, config in self._configs.items():
-            if config.model_type == model_type:
-                # Check if file exists, or try to find an alternative
-                if config.path.exists():
-                    return name
-                else:
-                    found_path = self._find_model_file(config.path.parent, config.path.name)
-                    if found_path:
-                        return name
-        return None
 
     async def ensure_model_loaded(
         self, model_name: str, adapter_path: Optional[str] = None

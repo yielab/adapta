@@ -47,7 +47,6 @@ services:
       # Default 2; drop to 1 on low-RAM hosts that serve several large fine-tunes (each
       # 3B GGUF is ~2 GB in CPU RAM, so several at once can exhaust the box).
       - ADAPTA_MAX_LOADED_MODELS=${ADAPTA_MAX_LOADED_MODELS:-2}
-    restart: unless-stopped
     deploy:
       resources:
         limits:
@@ -86,7 +85,6 @@ services:
       - ADAPTA_DATABASE_URL=postgresql+asyncpg://adapta:${POSTGRES_PASSWORD:-adapta}@postgres:5432/adapta
       - ADAPTA_REDIS_URL=redis://redis:6379/0
       - ADAPTA_SECRET_KEY=${ADAPTA_SECRET_KEY:-CHANGE_ME_IN_PRODUCTION_use_openssl_rand_hex_32}
-    restart: unless-stopped
     # Graceful shutdown: the worker requeues its in-flight job on SIGTERM, so give
     # it time to cancel cleanly before Docker SIGKILLs it (§4.4).
     stop_grace_period: 60s
@@ -143,7 +141,6 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-    restart: unless-stopped
     logging: *default-logging
 
   # ──────────────────────────────────────────────
@@ -164,7 +161,6 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-    restart: unless-stopped
     logging: *default-logging
 
   # ──────────────────────────────────────────────
@@ -191,7 +187,6 @@ services:
     # binary (no curl/wget/python), so it can't self-probe its own HTTP heartbeat.
     # Dependents gate on `service_started` instead; the app connects to Chroma
     # lazily (per index/retrieve) and retries, and /health/deep probes it live.
-    restart: unless-stopped
     logging: *default-logging
 
   # ──────────────────────────────────────────────
@@ -234,7 +229,6 @@ services:
       resources:
         limits:
           memory: 16g
-    restart: unless-stopped
     logging: *default-logging
 
   # ──────────────────────────────────────────────
@@ -252,7 +246,6 @@ services:
       - "9090:9090"
     networks:
       - adapta-network
-    restart: unless-stopped
     logging: *default-logging
 
   grafana:
@@ -271,7 +264,6 @@ services:
       - prometheus
     networks:
       - adapta-network
-    restart: unless-stopped
     logging: *default-logging
 
 networks:

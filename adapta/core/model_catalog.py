@@ -37,6 +37,11 @@ class CatalogEntry:
     gguf_filename: str  # preferred GGUF filename within that subdir
     model_type: ModelType
     notes: str = ""  # human-readable VRAM / quality tradeoff
+    # Serving prompt format: the key into adapta.core.chat_templates the engine
+    # renders with. Default ChatML (all current Qwen2.5 bases). A model of a
+    # different family declares its template here — no engine change needed.
+    chat_template: str = "chatml"
+    context_length: int = 32768  # native context window (Qwen2.5) for serving config
     # Vision entries (modality="vision") additionally declare the mmproj GGUF
     # (vision projector) that llama-cpp loads beside the base model.
     modality: str = "text"  # "text" | "vision"
