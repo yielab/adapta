@@ -163,6 +163,21 @@ CPU-only. RAM driven by the base GGUF held in memory for inference:
 Add ~1–2 GB for the embedding model + Chroma + the app itself. The compose mem
 limit on `app` is 4 GB (raise it for 7B+ bases).
 
+**Retrieval tuning (`ADAPTA_RAG_*`, set on `app`).** Retrieval is hybrid —
+vector search, BM25, RRF fusion, then a cross-encoder rerank. Both retrieval
+models are lazily loaded into the `app` process on first use and stay resident:
+
+| Variable | Default | Operational effect |
+|---|---|---|
+| `ADAPTA_RAG_TOP_K` | `5` | Chunks injected per request. Raising it grows the prompt and the per-request inference cost |
+| `ADAPTA_RAG_HYBRID_FETCH_MULTIPLIER` | `4` | Candidate pool = `top_k × N`. Higher = better recall, more BM25 and rerank work per request |
+| `ADAPTA_RAG_RERANKER_MODEL` | `cross-encoder/ms-marco-MiniLM-L-6-v2` | ~90 MB resident + CPU per request. Set to `""` to disable on a RAM- or latency-constrained host; retrieval falls back to the RRF-fused order |
+| `ADAPTA_RAG_TIMEOUT_SECONDS` | `10` | Bounds the whole retrieval path; on expiry the request returns a typed `504` rather than hanging |
+
+Both models are downloaded from Hugging Face on first use. The embedding model
+is mandatory for RAG, so an air-gapped host must pre-seed its cache either way;
+disabling the reranker only removes the second download.
+
 ### 6.2 Fine-tuning (the `worker`) — VRAM (§3.3/§3.4)
 
 QLoRA 4-bit. VRAM is the binding constraint; the table is for training, not

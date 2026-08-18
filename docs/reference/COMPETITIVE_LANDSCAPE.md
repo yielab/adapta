@@ -43,6 +43,15 @@ Every cell below is backed by a primary source cited in [§Verified claims](#ver
 - **Self-hosted ~:** NeMo and Red Hat AI 3 are technically self-hostable but require a Kubernetes
   cluster and 10+ microservices (see [§Deployment complexity](#deployment-complexity) below).
 
+!!! note "Retrieval quality is not a differentiator column — deliberately"
+    Adapta's *RAG w/ citations* ✓ is hybrid retrieval: vector search + BM25 fused by Reciprocal
+    Rank Fusion, then a cross-encoder rerank (see
+    [Hybrid ranking](../concepts/stack.md#hybrid-ranking-bm25-reciprocal-rank-fusion-cross-encoder)).
+    That is table stakes rather than a moat — the dedicated RAG products in this matrix ship
+    comparable or deeper retrieval stacks, and RAGFlow in particular invests far more in document
+    parsing. The claim here is only that Adapta's RAG is not a naive single-vector lookup; the
+    differentiation lives in the columns to its right.
+
 ---
 
 ## When **not** to choose Adapta

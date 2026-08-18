@@ -42,7 +42,7 @@ A **single-tenant, self-hosted** application. A company runs it on their own inf
 
 - **Input:** documents (PDF, DOCX, TXT, MD, HTML).
 - **Mechanism:** parse → chunk → embed (sentence-transformers) → store in a per-project ChromaDB collection. No weights change.
-- **Serving:** query → retrieve top-k → inject into context → generate → return answer **with citations**.
+- **Serving:** query → **hybrid retrieval** of top-k (vector + BM25 → RRF → cross-encoder rerank; see *Hybrid RAG (D5)* under [§3 In scope](#in-scope-implemented)) → inject into context → generate → return answer **with citations**.
 - **Cost:** seconds to index, **CPU-only**, cheap. Works on any server.
 - **Updates:** add/remove a file, re-index. Instant.
 
@@ -139,7 +139,7 @@ Endpoint ─< ApiKey (key_prefix, key_hash, is_active)
 
 ### Two end-to-end flows
 
-**RAG:** `POST /v1/projects/{id}/files` → background parse+chunk+embed → ChromaDB collection → `POST /v1/projects/{id}/endpoint` → `POST /v1/chat/completions (model=slug, key=adp_*)` → retrieve top-k → generate → cited answer
+**RAG:** `POST /v1/projects/{id}/files` → background parse+chunk+embed → ChromaDB collection → `POST /v1/projects/{id}/endpoint` → `POST /v1/chat/completions (model=slug, key=adp_*)` → hybrid retrieval of top-k (vector + BM25 → RRF → rerank) → generate → cited answer
 
 **LoRA:** `POST /v1/projects/{id}/datasets` (JSONL upload) or `POST /v1/projects/{id}/datasets/synthesize` → `POST /v1/projects/{id}/jobs` → worker trains QLoRA → eval gate → `POST /v1/projects/{id}/endpoint` → `POST /v1/chat/completions`
 

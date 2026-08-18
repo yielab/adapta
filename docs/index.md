@@ -70,7 +70,9 @@ Inside that deployment, teams create **Projects**. Each project ends in a
 private model **endpoint** consumed with a scoped API key:
 
 **Knowledge (RAG)** — upload documents → they are parsed, chunked, and
-embedded into a per-project vector store → the model answers grounded in
+embedded into a per-project vector store → each question is answered by
+**hybrid retrieval** (semantic vector search + BM25 keyword search, fused and
+re-scored by a cross-encoder reranker) → the model answers grounded in
 your documents, with citations pointing at the source passages. The model's
 weights never change. CPU-only.
 

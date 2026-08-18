@@ -70,7 +70,7 @@ An AI-serving platform adds three systems that traditional stacks don't have:
 | New piece | Job | Familiar equivalent |
 |---|---|---|
 | **Inference engine** | Run a model function to generate text | Evaluating a compiled binary at runtime |
-| **Vector store** | Retrieve documents by semantic similarity | A database index — but for meaning, not exact value |
+| **Vector store** | Retrieve documents by semantic similarity (here fused with BM25 keyword scoring and a cross-encoder rerank) | A database index — but for meaning, not exact value |
 | **Training pipeline** | Adjust model weights from labeled examples | A CI pipeline — but the artifact is a behavior change |
 
 Everything else — HTTP routing, relational storage, async job queues, auth,

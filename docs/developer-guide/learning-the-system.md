@@ -190,6 +190,39 @@ embedding." This platform uses **ChromaDB**, with one collection per project.
     words are used. The vector store is that topic catalog; the closeness search
     (approximate nearest-neighbor) is the act of walking to the correct shelf.
 
+### Hybrid retrieval — meaning *and* words
+
+Nearest-neighbor search on embeddings has one predictable failure: it matches
+meaning, so an exact token that carries the whole question — an error code, a
+SKU, a surname — can be smoothed into the neighborhood of merely *similar*
+things and lost. The classical fix is the older technology: **BM25**, keyword
+scoring that rewards rare terms appearing often in a short passage.
+
+!!! analogy "The topic catalog and the index at the back of the book"
+    The topic catalog finds books *about* a subject even in different words. The
+    back-of-book index finds the exact term and nothing else. A researcher uses
+    both, and trusts a passage that appears in both lists more than one that
+    appears in either alone.
+
+Retrieval here uses both, then adds a third opinion:
+
+1. **Vector search** fetches a wide pool of candidates (`top_k × 4`).
+2. **BM25** scores that same pool by keyword relevance.
+3. **Reciprocal Rank Fusion** merges the two rankings. It deliberately ignores
+   the scores and uses only the *positions* — a cosine similarity and a BM25
+   score are not on a shared scale, but "third in one list, first in the other"
+   is meaningful without any calibration.
+4. A **cross-encoder reranker** re-scores the shortlist. The embedding model is
+   a *bi-encoder* — it reads query and passage separately, which is what makes
+   the vectors precomputable and search fast. A cross-encoder reads the pair
+   *together*, so it can weigh them against each other. It is much more accurate
+   and much slower, which is exactly why it runs last, on a handful of
+   candidates rather than the whole collection.
+
+The reranker is optional (`ADAPTA_RAG_RERANKER_MODEL=""` disables it, leaving
+the fused order), and the citation scores reported to the client come from
+whichever stage ranked last.
+
 ### The complete RAG cycle
 
 Combining these pieces (`adapta/services/rag.py`, `adapta/services/chat.py`):
@@ -199,7 +232,10 @@ INDEX TIME (once, when a file is uploaded):
   document → parse → split into chunks → embed each chunk → store vectors in Chroma
 
 QUERY TIME (on every chat request):
-  question → embed it → find nearest chunks in Chroma → inject them as context
+  question → embed it → vector search in Chroma (top_k × 4 candidates)
+           → BM25 score the same candidates → fuse both rankings (RRF)
+           → cross-encoder rerank the shortlist → keep top_k
+           → inject them as context
            → model generates an answer grounded in those chunks → return with citations
 ```
 
@@ -389,6 +425,9 @@ deliberately:
 | Quantization | Lossy compression of weights — smaller, slightly less accurate |
 | Embedding | Coordinates for meaning (similar text yields nearby vectors) |
 | Vector store (Chroma) | A database indexed by meaning rather than exact value |
+| BM25 | Classical keyword scoring — rewards rare terms in short passages |
+| RRF | Merges two rankings by position, so their scores need no shared scale |
+| Cross-encoder | Reads query and passage together; slow but accurate — used to rerank a shortlist |
 | RAG | An open-book examination: retrieve the relevant passages, then answer |
 | Chunk | One indexed passage of a document (a "page" placed in view) |
 | Citation | The chunks supplied to the model, returned for transparency |

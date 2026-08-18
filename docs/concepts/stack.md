@@ -22,8 +22,9 @@ alternatives, and where it lives in the codebase.
 | Redis + BLPOP | Training job queue | Jobs |
 | Docker Compose + multi-stage Dockerfile | Single-stack deployment, GPU auto-detect | Deploy |
 | llama-cpp-python | GGUF model inference (CPU and GPU) | AI: Inference |
-| sentence-transformers | Text → dense embedding vectors | AI: Retrieval |
+| sentence-transformers | Text → dense embedding vectors; cross-encoder reranking | AI: Retrieval |
 | ChromaDB | Per-project vector collections | AI: Retrieval |
+| BM25 + RRF (in-process) | Keyword signal fused with vector search — no extra service | AI: Retrieval |
 | PEFT + TRL | QLoRA fine-tuning (adapter training) | AI: Training |
 | bcrypt + JWT | Password hashing, session auth, scoped API keys | Auth |
 
@@ -204,8 +205,9 @@ Key files: `adapta/core/model_manager.py`, `adapta/core/inference.py`
 ## Knowledge retrieval
 
 The retrieval pipeline answers: "which passages in the project's documents are
-most relevant to this question?" It uses two components absent from ordinary
-web stacks.
+most relevant to this question?" It uses three components absent from ordinary
+web stacks: an embedding model, a vector store, and a hybrid ranking stage that
+combines semantic and keyword evidence.
 
 ### sentence-transformers — text embeddings
 
@@ -260,6 +262,49 @@ deployment. Qdrant is an excellent alternative; ChromaDB was chosen for its
 developer ergonomics and simplicity at the scale this product targets.
 
 Key files: `adapta/services/rag.py`, `adapta/services/embeddings.py`
+
+---
+
+### Hybrid ranking — BM25 + Reciprocal Rank Fusion + cross-encoder
+
+Vector search alone has a well-known blind spot: it matches *meaning*, so it can
+miss an exact token that carries all the signal — a part number, an error code,
+a person's surname, a rare acronym. Keyword search (BM25) has the mirror
+weakness: it matches *strings*, so it misses a passage that answers the question
+in different words.
+
+Retrieval therefore runs both and merges them, in four stages:
+
+| Stage | What it does | Why |
+|---|---|---|
+| 1. Vector search | Fetch `top_k × 4` nearest chunks from Chroma | A wider candidate pool than is returned, so later stages have something to reorder |
+| 2. BM25 | Score those candidates by keyword relevance (Robertson BM25, `k1=1.5`, `b=0.75`) | Recovers exact-term matches the embedding smoothed away |
+| 3. Reciprocal Rank Fusion | Merge the two rankings by `Σ 1/(k + rank)`, `k=60` | Combines rank *positions*, so two incomparable score scales never have to be normalized against each other |
+| 4. Cross-encoder rerank | Re-score the top `top_k × 2` with a cross-encoder, sigmoid-normalized | The most accurate stage, run last on the fewest candidates |
+
+**Bi-encoder vs cross-encoder.** The embedding model is a *bi-encoder*: it
+encodes the query and each passage independently, which is what makes the
+vectors precomputable and the search fast. A *cross-encoder* feeds the
+`(query, passage)` pair through the model together, so it can attend across
+both — markedly more accurate, and far too slow to run over a whole
+collection. Running it over a handful of already-shortlisted candidates buys
+most of the accuracy for a bounded cost.
+
+**Why BM25 in-process rather than a search engine?** BM25 here is ~30 lines of
+pure Python scoring an already-fetched candidate list — no Elasticsearch, no
+second index to keep in sync with Chroma, no new container. The trade-off is
+that the keyword signal only reranks what vector search already retrieved; it
+cannot surface a chunk the vector stage missed entirely. Widening the candidate
+pool (`ADAPTA_RAG_HYBRID_FETCH_MULTIPLIER`) is the dial for that.
+
+**Cost and how to turn it off.** The reranker is a second small model
+(~90 MB, `cross-encoder/ms-marco-MiniLM-L-6-v2`), lazily loaded on first use in
+the `app` container. Setting `ADAPTA_RAG_RERANKER_MODEL=""` disables stage 4
+and falls back to the RRF-fused order — lower latency and RAM, slightly lower
+accuracy. The whole path is bounded by `ADAPTA_RAG_TIMEOUT_SECONDS`.
+
+Key file: `adapta/services/rag.py` (`_bm25_scores`, `_rrf_fuse`,
+`RAGService.retrieve`)
 
 ---
 

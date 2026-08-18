@@ -4,7 +4,7 @@
 
 **Adapta is a self-hosted model-customization platform.** Technical teams deploy it on **their own servers** (data never leaves their infrastructure) to specialize and serve private language models two ways, each exposed as an OpenAI-compatible API:
 
-- **Knowledge (RAG):** upload documents → embed (sentence-transformers) → per-project ChromaDB collection → cited answers. CPU-only.
+- **Knowledge (RAG):** upload documents → chunk → embed (sentence-transformers) → per-project ChromaDB collection → **hybrid retrieval** (vector + BM25 fused by Reciprocal Rank Fusion, then an optional cross-encoder reranker — §D5) → cited answers. CPU-only.
 - **Fine-tuning (LoRA):** instruction dataset (or documents synthesized into pairs via `POST /v1/projects/{id}/datasets/synthesize`) → QLoRA training on a GPU worker → adapter → served once it passes the eval gate (held-out score ≥ 0.6, **or** a clear improvement over the base model — §A3.2/A4).
 
 Serving **composes the project's artifacts**: a fine-tune project can also upload/index documents, and its endpoint then injects retrieved context (with citations) **and** applies the adapter in one call — facts from RAG, tone/format from the fine-tune. Those documents are also what synthesis reads.
@@ -124,9 +124,9 @@ POST /v1/chat/completions                OpenAI-compatible (scoped adp_* key, mo
 | `adapta/db/models.py` | SQLAlchemy ORM (11 tables) |
 | `adapta/db/session.py` | Async engine + `get_db()` FastAPI dependency |
 | `adapta/services/auth.py` | bcrypt, JWT, RBAC helpers, API key generation |
-| `adapta/services/embeddings.py` | sentence-transformers wrapper, lazy-loaded singleton |
+| `adapta/services/embeddings.py` | sentence-transformers bi-encoder (`EmbeddingService`) + cross-encoder `RerankerService`; both lazy-loaded singletons |
 | `adapta/services/documents.py` | PDF/DOCX/MD/TXT/HTML parsing + sentence-boundary chunking |
-| `adapta/services/rag.py` | ChromaDB per-project collections, retrieval, citations |
+| `adapta/services/rag.py` | ChromaDB per-project collections; hybrid retrieval (`_bm25_scores`, `_rrf_fuse`, cross-encoder rerank), context block + citations |
 | `adapta/services/chat.py` | Single real `ChatService` — RAG injection + inference call + usage metering |
 | `adapta/services/jobs.py` | Redis BLPOP job queue |
 | `adapta/services/training.py` | JSONL + zip-bundle validation (`extract_bundle`, image checks) + `enqueue_training_job` (modality match) |

@@ -47,15 +47,27 @@ before.) Bonus: those same indexed documents are what
 `POST …/datasets/synthesize` reads when you bootstrap a dataset from documents.
 
 !!! info "How retrieval works — hybrid vector + BM25"
-    Retrieval is hybrid by default: a dense vector search (sentence-transformers
-    embeddings) and a sparse keyword search (BM25) run in parallel; their
-    ranked lists are merged via Reciprocal Rank Fusion (RRF). A cross-encoder
-    reranker then re-scores the fused candidates before the top-k are injected.
+    Retrieval is hybrid by default. A dense vector search (sentence-transformers
+    embeddings) first fetches a wide candidate pool — four times the number of
+    chunks that will actually be used. A sparse keyword search (BM25) then
+    re-scores that same pool, and the two rankings are merged via Reciprocal
+    Rank Fusion (RRF). Finally a cross-encoder reranker re-scores the shortlist
+    before the top-k are injected, and the `score` in each citation comes from
+    that last stage.
+
     The result is more accurate than pure vector search on keyword-heavy queries
     (product codes, names, exact phrases) and more robust than pure BM25 on
     paraphrase-style questions. No configuration is needed — this is always on.
-    To disable the reranker (lower latency, slightly lower accuracy), set
-    `ADAPTA_RAG_RERANKER_MODEL=""` in the worker environment.
+
+    To tune it, set these on the **`app`** container (retrieval runs there, not
+    in the training worker):
+
+    | Variable | Default | Effect |
+    |---|---|---|
+    | `ADAPTA_RAG_TOP_K` | `5` | Chunks injected into the prompt |
+    | `ADAPTA_RAG_HYBRID_FETCH_MULTIPLIER` | `4` | Candidate pool = `top_k × N`; raise it if BM25 should see more |
+    | `ADAPTA_RAG_RERANKER_MODEL` | `cross-encoder/ms-marco-MiniLM-L-6-v2` | Set to `""` to disable reranking (lower latency and RAM, slightly lower accuracy) |
+    | `ADAPTA_RAG_TIMEOUT_SECONDS` | `10` | Whole retrieval path; exceeding it returns a typed `504` |
 
 ## Worked example — a support assistant for "Nordwind Appliances"
 
