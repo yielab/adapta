@@ -1419,8 +1419,14 @@ row with `source_dataset_id` lineage, validated against the full training schema
 
 ### E1. P0 — corrections that change the publishable evidence (weeks 1–2)
 
-### E1.1 `[DOCS]` License consistency + repo-root hygiene (P0)
-- [ ] **Context.** `LICENSE` is Apache-2.0 (commit `049374a`) but `pyproject.toml:11` says MIT and the
+### E1.1 `[DOCS]` License consistency + repo-root hygiene (P0) — ✅ DONE (2026-09-03)
+- [x] **Done.** `pyproject.toml` license → `Apache-2.0`; README badge, status note and footer say
+  Apache-2.0 (three `MIT` strings removed, `LICENSE` untouched). The four untracked root notes moved to
+  `notes/` (now in `.gitignore`); `site/`, `caddy.log`, `logs/`, `__pycache__/` were already ignored.
+  Skipped: no classifier added — `pyproject.toml` has no `classifiers` list; `prueba-human-01.md` is a
+  tracked file and was left in place. Gate: `make docs-build` green; `git status --porcelain` shows no
+  untracked root `.md`.
+- [x] **Context.** `LICENSE` is Apache-2.0 (commit `049374a`) but `pyproject.toml:11` says MIT and the
   README carries an MIT badge plus a "MIT-licensed" status note. Untracked personal notes
   (`guia-*.md`, `entrevista-tecnica-adapta.md`, `prueba-human-01.md`) sit at the repo root next to
   build noise (`site/`, `caddy.log`, `logs/`, `__pycache__/`).

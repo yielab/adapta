@@ -89,6 +89,9 @@ TASK_*.md
 AUDIT_*.md
 AUDIT_*.txt
 
+# Personal study notes (not docs)
+notes/
+
 # Claude-specific
 .claude/*
 !.claude/skills/

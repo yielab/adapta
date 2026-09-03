@@ -9,7 +9,7 @@ Give a model your **knowledge** (cited retrieval) and your **behavior** (a train
 and serve both behind a single **OpenAI-compatible** endpoint — on hardware you control.
 
 [![CI](https://github.com/yielab/adapta/actions/workflows/ci.yml/badge.svg)](https://github.com/yielab/adapta/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Python 3.11](https://img.shields.io/badge/python-3.11-blue.svg)](https://www.python.org/downloads/release/python-3110/)
 [![Docker Compose](https://img.shields.io/badge/docker-compose-2496ED?logo=docker&logoColor=white)](docker-compose.yml)
 [![OpenAI-compatible](https://img.shields.io/badge/API-OpenAI--compatible-412991?logo=openai&logoColor=white)](#using-the-api)
@@ -53,7 +53,7 @@ citations.
 > works end-to-end (RAG, LoRA training, eval gate, multi-tenant serving, image-understanding
 > fine-tunes), but it is **not production-hardened**: GPU test coverage is partial, and the auth and
 > eval-gate paths should be reviewed independently before being trusted with sensitive data.
-> MIT-licensed and built for private-team use — if you deploy it, expect to audit and harden it yourself.
+> Apache-2.0 licensed and built for private-team use — if you deploy it, expect to audit and harden it yourself.
 
 ---
 
@@ -513,4 +513,4 @@ Please follow the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## License & author
 
-[MIT](LICENSE) — © Santiago Yie (Senior Backend / Platform Engineer).
+[Apache-2.0](LICENSE) — © Santiago Yie (Senior Backend / Platform Engineer).
