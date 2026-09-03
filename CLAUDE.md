@@ -57,6 +57,25 @@ Corrective engineering roadmap (audit, error architecture, cleanup): [docs/refer
 
 ---
 
+## Agent skills — load the procedure, not the whole repo
+
+Procedural knowledge lives in `.claude/skills/` (invoke by name), backed by lookup
+tables in `.claude/context/`. Architecture and the token rules: [.claude/skills/README.md](.claude/skills/README.md).
+
+| Skill | Use it for |
+|---|---|
+| `feature` | any non-trivial change — contract first, implement, test, close |
+| `verify` | pick + run the cheapest sufficient gate; read a failing one |
+| `docs-sync` | propagate a shipped change through docs + `TODO.md` |
+| `ship` | what lands in one commit; message conventions |
+| `stack` | run/debug the live stack (GPU, worker, chroma, e2e) |
+
+Context files (read on demand, not upfront): `.claude/context/repo-map.md` (where code
+lives — consult before grepping), `gates.md` (change → gate + traps), `doc-surfaces.md`
+(change → docs that must stay true).
+
+---
+
 ## Workflow — Extended SDD (three contracts)
 
 Contract-driven: change the contract before the code. Full doc: [docs/reference/SDD_WORKFLOW.md](docs/reference/SDD_WORKFLOW.md).
@@ -180,7 +199,7 @@ Phases 0–5 shipped as of 2026-06-08.
 4. **Dataset synthesis** — indexed docs → LLM Q/A pairs → JSONL dataset.
 5. **Hardening** — DomainError taxonomy, `make check-leaks` + `make ci`, usage metering, real health checks, 65 in-process tests + enforced contract gate (Pillar 1).
 
-The §V image-understanding workstream (V0–V6) shipped 2026-06-11. Open work: the **Console v2 workstream (TODO.md §C, planned 2026-06-12)** — model-catalog UX, informative project/endpoint dashboards, settings section — plus the deferred-future list (TODO.md §6 — CLIP retrieval, SaaS edition, heavy MLOps, extra protocols, licensing) and one quality ratchet — lift the coverage floor (now 30%) once the model-bearing e2e jobs run in CI. See [TODO.md](TODO.md).
+The §V image-understanding workstream (V0–V6) shipped 2026-06-11; Console v2 (§C) and competitive positioning (§D) shipped 2026-06-13/26. **Open work is TODO.md §E (audit 2026-09-03):** P0 corrections first — Apache-licensed default models (three catalog entries are Qwen Research License), train = serve prompt render, response-only SFT loss, live console retrieval settings, streaming citations, ingestion guards — then real hybrid retrieval on a Postgres `chunks` table, Docling + RapidOCR for scanned documents, task metrics in the eval gate, adapter promotion/rollback. Each §E block is self-contained: read the block and its **Files** line only (see "How to pick up a task"). Deferred-future list: TODO.md §6 and §E6. See [TODO.md](TODO.md).
 
 ---
 

@@ -90,7 +90,9 @@ AUDIT_*.md
 AUDIT_*.txt
 
 # Claude-specific
-.claude/
+.claude/*
+!.claude/skills/
+!.claude/context/
 
 # Database
 *.db
