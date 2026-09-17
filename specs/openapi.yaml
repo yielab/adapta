@@ -25,7 +25,7 @@ info:
 
   version: 0.1.0
   license:
-    name: MIT
+    name: Apache-2.0
     url: https://github.com/yielab/adapta/blob/main/LICENSE
   contact:
     name: Adapta
@@ -1204,7 +1204,7 @@ components:
     # Models catalog
     BaseModelInfo:
       type: object
-      required: [name, modality, model_type, use_case, best_for, available, hf_repo_id, notes]
+      required: [name, modality, model_type, use_case, best_for, available, hf_repo_id, notes, license, license_url, commercial_use, is_default]
       properties:
         name: {type: string, description: "Catalog name — the value Project.base_model takes"}
         modality: {$ref: '#/components/schemas/Modality'}
@@ -1217,6 +1217,16 @@ components:
         serve_ram_gb: {type: integer, nullable: true}
         hf_repo_id: {type: string}
         notes: {type: string}
+        license:
+          type: string
+          description: "Model weights license id as published by the model author (e.g. apache-2.0, qwen-research)"
+        license_url: {type: string, description: "Link to the license text on the model hub"}
+        commercial_use:
+          type: boolean
+          description: "False for research-only licenses — such entries are for evaluation and are never the platform default"
+        is_default:
+          type: boolean
+          description: "True for the entry ADAPTA_DEFAULT_MODEL resolves to (always a commercial_use entry)"
 
     # Chat
     ChatCompletionRequest:

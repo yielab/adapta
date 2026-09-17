@@ -12,6 +12,9 @@ authors = [
     {name = "Santiago Yie"}
 ]
 license = {text = "Apache-2.0"}
+classifiers = [
+    "License :: OSI Approved :: Apache Software License",
+]
 dependencies = [
     # Web framework
     "fastapi>=0.110.0",

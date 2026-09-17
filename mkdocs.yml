@@ -5,7 +5,7 @@ site_author: Santiago Yie
 repo_url: https://github.com/yielab/adapta
 repo_name: yielab/adapta
 edit_uri: edit/develop/docs/
-copyright: MIT License — Santiago Yie
+copyright: Apache-2.0 — © 2026 Santiago Yie
 
 # Fail the build on a broken internal link or a nav entry that points at a
 # missing file. This is the enforcement that keeps the docs honest: a page that

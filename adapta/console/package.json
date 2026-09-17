@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "description": "Operator console for Adapta — thin client over the existing API.",
+  "license": "Apache-2.0",
   "scripts": {
     "dev": "vite",
     "build": "svelte-check --tsconfig ./tsconfig.json && vite build",

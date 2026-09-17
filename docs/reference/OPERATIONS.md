@@ -222,23 +222,35 @@ both train **and** serve — an unknown value is rejected with `400 invalid_requ
 listing the allowed names (which also feeds the console base-model dropdown).
 
 The **default and confirmed** family is **Qwen2.5-Instruct** (GGUF), which
-balances quality, license, and QLoRA-friendliness. The catalog entries (operator
-name → HF repo id):
+balances quality and QLoRA-friendliness. **Licenses differ within the family:**
+the 0.5B, 1.5B, 7B and VL-7B weights are Apache-2.0, while the **3B, Coder-3B and
+VL-3B are under the Qwen Research License (no commercial use)** — verified on
+Hugging Face 2026-09-03. Every catalog entry declares `license`, `license_url`
+and `commercial_use`; `GET /v1/models` and the console's Models page show them,
+research entries are labelled *evaluation only*, and the platform default
+(`ADAPTA_DEFAULT_MODEL`) must resolve to a `commercial_use` entry (a unit test
+enforces it). The catalog entries (operator name → HF repo id):
 
-| `base_model` (catalog name) | HF repo id (train/eval) | Use | VRAM (train) |
-|---|---|---|---|
-| `qwen2.5-0.5b-instruct` | `Qwen/Qwen2.5-0.5B-Instruct` | smallest / e2e base | ~3 GB |
-| `qwen2.5-3b-instruct` | `Qwen/Qwen2.5-3B-Instruct` | **default** — RAG + fine-tune | ~8–10 GB |
-| `qwen2.5-coder-3b` | `Qwen/Qwen2.5-Coder-3B-Instruct` | code understanding/generation | ~8–10 GB |
-| `qwen2.5-7b-instruct` | `Qwen/Qwen2.5-7B-Instruct` | higher quality, bigger GPU | ~12–16 GB |
-| `qwen2.5-vl-3b-instruct` | `Qwen/Qwen2.5-VL-3B-Instruct` | image understanding (vision LoRA, §V) | ~6–8 GB |
+| `base_model` (catalog name) | HF repo id (train/eval) | License | Use | VRAM (train) |
+|---|---|---|---|---|
+| `qwen2.5-0.5b-instruct` | `Qwen/Qwen2.5-0.5B-Instruct` | Apache-2.0 | smallest / e2e base | ~3 GB |
+| `qwen2.5-1.5b-instruct` | `Qwen/Qwen2.5-1.5B-Instruct` | Apache-2.0 | **default** — RAG + fine-tune on small GPUs | ~6 GB |
+| `qwen2.5-3b-instruct` | `Qwen/Qwen2.5-3B-Instruct` | Qwen Research (**evaluation only**) | RAG + fine-tune | ~8–10 GB |
+| `qwen2.5-coder-3b` | `Qwen/Qwen2.5-Coder-3B-Instruct` | Qwen Research (**evaluation only**) | code understanding/generation | ~8–10 GB |
+| `qwen2.5-7b-instruct` | `Qwen/Qwen2.5-7B-Instruct` | Apache-2.0 | higher quality, bigger GPU | ~12–16 GB |
+| `qwen2.5-vl-3b-instruct` | `Qwen/Qwen2.5-VL-3B-Instruct` | Qwen Research (**evaluation only**) | image understanding (vision LoRA, §V) | ~6–8 GB |
+| `qwen2.5-vl-7b-instruct` | `Qwen/Qwen2.5-VL-7B-Instruct` | Apache-2.0 | image understanding for commercial use (same architecture as the 3B) | ~14 GB |
 
 Vision entries additionally declare the `mmproj` (vision projector) GGUF the
 serving runtime needs; image fine-tunes train and pass the gate as of §V3, and
-their endpoints become servable with §V4.
+their endpoints become servable with §V4. The VL-7B keeps the VL-3B architecture,
+so the PEFT→GGUF conversion shim and the llama-cpp chat handler apply unchanged;
+its GGUF + mmproj come from the community `ggml-org/Qwen2.5-VL-7B-Instruct-GGUF`
+repo (download both files into `data/models/qwen2.5-vl-7b/`).
 
 To add a base (e.g. a Llama-3.x / Mistral instruct GGUF), append a `CatalogEntry`
-with its HF repo id + GGUF subdir/filename; validate VRAM against §6.2 first.
+with its HF repo id, GGUF subdir/filename **and its license fields** (`license`,
+`license_url`, `commercial_use`); validate VRAM against §6.2 first.
 The serving GGUF subdir/filename **must** match what `model_manager` loads (a unit
 test, `tests/test_model_catalog.py`, asserts the two agree).
 **Artifact storage** is the filesystem volume (§1); introduce object storage

@@ -306,6 +306,6 @@ vision base instead.
   job (minutes to hours on the GPU, depending on base model and dataset size).
 - The adapter only ever changes *how* answers read. If an answer's *facts* are
   wrong, fix the documents or their chunking — not the dataset.
-- Start with the default `qwen2.5-3b-instruct` base; move up to
+- Start with the default `qwen2.5-1.5b-instruct` base (Apache-2.0); move up to
   `qwen2.5-7b-instruct` if quality demands it and your GPU allows
   (`GET /v1/projects` validates the catalog names for you).

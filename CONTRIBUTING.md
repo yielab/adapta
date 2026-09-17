@@ -123,6 +123,12 @@ Steps for a schema change:
 
 ---
 
+## License
+
+Adapta is [Apache-2.0](LICENSE). By opening a PR you agree your contribution is licensed under those same terms (Apache-2.0 §5) — there is no separate CLA.
+
+---
+
 ## Questions?
 
 Open an issue on GitHub. For architecture decisions or large changes, open a discussion issue before writing code.

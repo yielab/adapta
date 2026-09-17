@@ -46,7 +46,7 @@ class Settings(BaseSettings):
     default_admin_password: str = "admin12345"
 
     # Inference
-    default_model: str = "qwen2.5-3b-instruct"
+    default_model: str = "qwen2.5-1.5b-instruct"  # §E1.2: must resolve to a commercial_use catalog entry
     max_context_length: int = 4096
     n_threads: int = 8
     n_gpu_layers: int = 0  # 0 = CPU only; >0 = GPU layers

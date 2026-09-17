@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "description": "Local-only screenshot and GIF capture for the Adapta console. Not part of CI.",
+  "license": "Apache-2.0",
   "scripts": {
     "screenshots": "playwright test screenshots.spec.ts --reporter=line",
     "gif": "playwright test hero-gif.spec.ts --reporter=line"

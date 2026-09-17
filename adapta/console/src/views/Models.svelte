@@ -56,10 +56,11 @@
     <div class="picker-guide">
       <strong>Which model should I pick?</strong>
       Use <em>0.5B</em> for quick local experiments.
-      <em>3B-Instruct</em> is the default for RAG + general fine-tuning.
-      <em>Coder-3B</em> for code understanding or generation tasks.
+      <em>1.5B-Instruct</em> is the default for RAG + general fine-tuning (Apache-2.0, fits small GPUs).
       <em>7B-Instruct</em> for the highest output quality (requires ≥16 GB VRAM to train).
-      <em>VL-3B</em> for image + text understanding.
+      <em>VL-7B</em> for image + text understanding in production.
+      Entries marked <em>evaluation only</em> (3B, Coder-3B, VL-3B) carry the Qwen Research License —
+      not for commercial use.
     </div>
 
     <div class="model-grid">
@@ -72,10 +73,20 @@
                 {m.modality === "vision" ? "Vision" : "Text"}
               </span>
               <span class="type-badge">{MODEL_TYPE_LABEL[m.model_type] ?? m.model_type}</span>
+              {#if m.is_default}<span class="default-badge">Default</span>{/if}
             </div>
             <div class="avail-badge" class:available={m.available} class:missing={!m.available}>
               {m.available ? "Ready" : "Not downloaded"}
             </div>
+          </div>
+
+          <div class="license-row">
+            <a class="license-badge" class:research={!m.commercial_use} href={m.license_url} target="_blank" rel="noopener">
+              {m.license}
+            </a>
+            {#if !m.commercial_use}
+              <span class="license-note">Evaluation only — not licensed for commercial use</span>
+            {/if}
           </div>
 
           <p class="use-case">{m.use_case}</p>
@@ -205,6 +216,11 @@
   .resource-val { font-size: .8rem; font-weight: 600; color: var(--text); }
 
   .notes { margin: 0; font-size: .78rem; color: var(--muted); font-style: italic; }
+  .default-badge { font-size: .7rem; padding: .1rem .4rem; border-radius: 4px; background: var(--brand-weak); color: var(--brand); border: 1px solid var(--brand); }
+  .license-row { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+  .license-badge { font-family: var(--mono); font-size: .72rem; padding: .1rem .4rem; border-radius: 4px; background: var(--green-weak); color: var(--green); border: 1px solid var(--green); text-decoration: none; }
+  .license-badge.research { background: var(--amber-weak); color: var(--amber); border-color: var(--amber); }
+  .license-note { font-size: .74rem; color: var(--amber); }
 
   .download-hint {
     margin: 0; font-size: .78rem;

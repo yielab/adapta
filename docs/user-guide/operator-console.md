@@ -194,7 +194,11 @@ The **Models** page (sidebar → *Models*) shows every base model the server kno
 about and — crucially — whether it is **available** (the GGUF file is present on
 the server). One entry per model, with:
 
-- **Modality badge** — `text` or `vision`.
+- **Modality badge** — `text` or `vision`; the platform default carries a **Default** badge.
+- **License badge** — the weights license (`apache-2.0`, or `qwen-research`), linking to the
+  license text. Research-licensed entries are marked **Evaluation only — not licensed for
+  commercial use**, are never the default, and are labelled the same way in the project
+  picker.
 - **Purpose** (use-case line) and **Best for** chips — e.g. *knowledge retention*,
   *code*, *vision*.
 - **Resource requirements** — approximate VRAM needed to train and RAM needed to

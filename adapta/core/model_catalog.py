@@ -51,6 +51,12 @@ class CatalogEntry:
     best_for: List[str] = field(default_factory=list)
     train_vram_gb: Optional[int] = None
     serve_ram_gb: Optional[int] = None
+    # §E1.2: model license, declared per entry so the console and GET /v1/models can
+    # show it. `commercial_use=False` entries (Qwen Research License) are kept for
+    # evaluation only and are never the default. Verified on Hugging Face 2026-09-03.
+    license: str = "apache-2.0"
+    license_url: str = ""
+    commercial_use: bool = True
 
     def gguf_path(self) -> Path:
         return settings.models_dir / self.gguf_subdir / self.gguf_filename
@@ -76,6 +82,20 @@ _ENTRIES: List[CatalogEntry] = [
         best_for=["knowledge", "behavior"],
         train_vram_gb=3,
         serve_ram_gb=1,
+        license_url="https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct/blob/main/LICENSE",
+    ),
+    CatalogEntry(
+        name="qwen2.5-1.5b-instruct",
+        hf_repo_id="Qwen/Qwen2.5-1.5B-Instruct",
+        gguf_subdir="qwen2.5-1.5b",
+        gguf_filename="qwen2.5-1.5b-instruct-q4_k_m.gguf",
+        model_type=ModelType.CHAT,
+        notes="Default — Apache-2.0; RAG + fine-tune on small GPUs (~6 GB train).",
+        use_case="RAG knowledge bases and behavior fine-tuning on any host.",
+        best_for=["knowledge", "behavior"],
+        train_vram_gb=6,
+        serve_ram_gb=2,
+        license_url="https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct/blob/main/LICENSE",
     ),
     CatalogEntry(
         name="qwen2.5-3b-instruct",
@@ -83,11 +103,14 @@ _ENTRIES: List[CatalogEntry] = [
         gguf_subdir="qwen2.5-3b",
         gguf_filename="qwen2.5-3b-instruct-q4_k_m.gguf",
         model_type=ModelType.CHAT,
-        notes="Default — RAG + fine-tune (~8-10 GB train).",
-        use_case="RAG knowledge bases and general behavior fine-tuning.",
+        notes="Evaluation only — Qwen Research License (no commercial use). RAG + fine-tune (~8-10 GB train).",
+        use_case="Evaluation of RAG knowledge bases and behavior fine-tuning.",
         best_for=["knowledge", "behavior"],
         train_vram_gb=10,
         serve_ram_gb=2,
+        license="qwen-research",
+        license_url="https://huggingface.co/Qwen/Qwen2.5-3B-Instruct/blob/main/LICENSE",
+        commercial_use=False,
     ),
     CatalogEntry(
         name="qwen2.5-coder-3b",
@@ -95,11 +118,14 @@ _ENTRIES: List[CatalogEntry] = [
         gguf_subdir="qwen2.5-coder-3b",
         gguf_filename="qwen2.5-coder-3b-instruct-q4_k_m.gguf",
         model_type=ModelType.CODE,
-        notes="Code understanding/generation (~8-10 GB train).",
-        use_case="Code review, completion, explanation and documentation.",
+        notes="Evaluation only — Qwen Research License (no commercial use). Code (~8-10 GB train).",
+        use_case="Evaluation of code review, completion, explanation and documentation.",
         best_for=["code"],
         train_vram_gb=10,
         serve_ram_gb=2,
+        license="qwen-research",
+        license_url="https://huggingface.co/Qwen/Qwen2.5-Coder-3B-Instruct/blob/main/LICENSE",
+        commercial_use=False,
     ),
     CatalogEntry(
         name="qwen2.5-7b-instruct",
@@ -112,6 +138,7 @@ _ENTRIES: List[CatalogEntry] = [
         best_for=["knowledge"],
         train_vram_gb=16,
         serve_ram_gb=4,
+        license_url="https://huggingface.co/Qwen/Qwen2.5-7B-Instruct/blob/main/LICENSE",
     ),
     CatalogEntry(
         name="qwen2.5-vl-3b-instruct",
@@ -121,11 +148,29 @@ _ENTRIES: List[CatalogEntry] = [
         model_type=ModelType.CHAT,
         modality="vision",
         mmproj_filename="mmproj-qwen2.5-vl-3b-f16.gguf",
-        notes="Vision (image+text→text) — document AI / visual QC (~6 GB train, batch 1).",
-        use_case="Document AI, visual QA, image captioning, and OCR tasks.",
+        notes="Evaluation only — Qwen Research License (no commercial use). Vision (~6 GB train, batch 1).",
+        use_case="Evaluation of document AI, visual QA and OCR tasks.",
         best_for=["vision"],
         train_vram_gb=6,
         serve_ram_gb=2,
+        license="qwen-research",
+        license_url="https://huggingface.co/Qwen/Qwen2.5-VL-3B-Instruct/blob/main/LICENSE",
+        commercial_use=False,
+    ),
+    CatalogEntry(
+        name="qwen2.5-vl-7b-instruct",
+        hf_repo_id="Qwen/Qwen2.5-VL-7B-Instruct",
+        gguf_subdir="qwen2.5-vl-7b",
+        gguf_filename="qwen2.5-vl-7b-instruct-q4_k_m.gguf",
+        model_type=ModelType.CHAT,
+        modality="vision",
+        mmproj_filename="mmproj-qwen2.5-vl-7b-f16.gguf",
+        notes="Vision, Apache-2.0 — same architecture as the 3B (conversion + serving shims apply); ~14 GB train, batch 1.",
+        use_case="Document AI, visual QA, image captioning, and OCR tasks — commercial use.",
+        best_for=["vision"],
+        train_vram_gb=14,
+        serve_ram_gb=5,
+        license_url="https://huggingface.co/Qwen/Qwen2.5-VL-7B-Instruct/blob/main/LICENSE",
     ),
 ]
 

@@ -356,6 +356,22 @@ class BaseModelInfo(BaseModel):
     serve_ram_gb: int | None = None
     hf_repo_id: str
     notes: str
+    license: str
+    """
+    Model weights license id as published by the model author (e.g. apache-2.0, qwen-research)
+    """
+    license_url: str
+    """
+    Link to the license text on the model hub
+    """
+    commercial_use: bool
+    """
+    False for research-only licenses — such entries are for evaluation and are never the platform default
+    """
+    is_default: bool
+    """
+    True for the entry ADAPTA_DEFAULT_MODEL resolves to (always a commercial_use entry)
+    """
 
 
 class TextContentPart(BaseModel):

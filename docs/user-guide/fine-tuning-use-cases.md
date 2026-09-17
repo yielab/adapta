@@ -1,7 +1,7 @@
 # Fine-tuning use cases — a validation record (real 3B runs)
 
 This page registers a real, GPU-backed validation of the fine-tuning path on the
-**default `qwen2.5-3b-instruct`** base — the model an operator actually ships. Every
+`qwen2.5-3b-instruct` base (the default at the time; since §E1.2 the default is the Apache-licensed `qwen2.5-1.5b-instruct` — re-measured in §E1.3). Every
 result and screenshot below comes from training real QLoRA adapters on the worker,
 scoring them on held-out data through the eval gate, and serving them from the console.
 It is reproduced by the opt-in suite `tests/integration/test_lora_use_cases.py`.

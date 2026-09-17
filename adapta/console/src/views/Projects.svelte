@@ -21,7 +21,13 @@
   });
 
   function defaultBase(models: BaseModelInfo[]): string {
-    return models.find((m) => m.name === "qwen2.5-3b-instruct")?.name ?? models[0].name;
+    // §E1.2: the server marks the platform default; research-licensed entries
+    // (commercial_use=false) are never preselected.
+    return (
+      models.find((m) => m.is_default)?.name ??
+      models.find((m) => m.commercial_use)?.name ??
+      models[0].name
+    );
   }
 
   // ── C1.3: selected model info for the detail panel ────────────────────────
@@ -308,7 +314,7 @@
             {:else}
               {#each baseModels as m (m.name)}
                 <option value={m.name} disabled={!m.available}>
-                  {m.name}{m.modality === "vision" ? " — vision" : ""}{!m.available ? " (not downloaded)" : ""}
+                  {m.name}{m.modality === "vision" ? " — vision" : ""}{!m.commercial_use ? " — evaluation only (research license)" : ""}{!m.available ? " (not downloaded)" : ""}
                 </option>
               {/each}
             {/if}

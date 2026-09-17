@@ -8,7 +8,8 @@ from typing import List
 
 from fastapi import APIRouter, Depends
 
-from adapta.core.model_catalog import all_entries
+from adapta.config import settings
+from adapta.core.model_catalog import all_entries, resolve
 from adapta.models.generated import BaseModelInfo
 from adapta.services.auth import get_current_user
 
@@ -17,7 +18,10 @@ router = APIRouter(prefix="/models", tags=["models"])
 
 @router.get("", response_model=List[BaseModelInfo])
 async def list_base_models(current_user=Depends(get_current_user)):
-    """One entry per servable+trainable base model with catalog metadata."""
+    """One entry per servable+trainable base model with catalog metadata,
+    including the weights license (§E1.2) and which entry is the platform default."""
+    default_entry = resolve(settings.default_model)
+    default_name = default_entry.name if default_entry else settings.default_model
     return [
         BaseModelInfo(
             name=e.name,
@@ -31,6 +35,10 @@ async def list_base_models(current_user=Depends(get_current_user)):
             serve_ram_gb=e.serve_ram_gb,
             hf_repo_id=e.hf_repo_id,
             notes=e.notes,
+            license=e.license,
+            license_url=e.license_url,
+            commercial_use=e.commercial_use,
+            is_default=(e.name == default_name),
         )
         for e in all_entries()
     ]

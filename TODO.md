@@ -56,7 +56,7 @@ Honour the [Definition of done](#definition-of-done-per-task) on every task. Wor
 
 | Area | State |
 |---|---|
-| **Audit 2026-09-03 (§E)** | 🟥 **open** — 0/29 blocks done. P0 (E1.1–E1.8): license consistency, Apache-licensed default models, train = serve prompt render, response-only loss, config SSOT, live console retrieval settings, streaming citations, ingestion guards. Then E2 (Ollama + launch kit), E3 (Postgres chunks → real hybrid FTS, Docling + RapidOCR scanned documents, citations with page/OCR provenance, system prompt + threshold + filters, multilingual, queued indexing, golden set), E4 (task metrics in the gate, adapter promotion/rollback, synthesis re-aimed, JSON mode, multi-turn), E5 (contextual retrieval, RAG gate, history-aware retrieval, VLM extraction in ingestion). Scope guard + deferred list in the §E header. |
+| **Audit 2026-09-03 (§E)** | 🟥 **open** — 2/29 done (E1.1 ✅, E1.2 ✅). P0 (E1.1–E1.8): license consistency, Apache-licensed default models, train = serve prompt render, response-only loss, config SSOT, live console retrieval settings, streaming citations, ingestion guards. Then E2 (Ollama + launch kit), E3 (Postgres chunks → real hybrid FTS, Docling + RapidOCR scanned documents, citations with page/OCR provenance, system prompt + threshold + filters, multilingual, queued indexing, golden set), E4 (task metrics in the gate, adapter promotion/rollback, synthesis re-aimed, JSON mode, multi-turn), E5 (contextual retrieval, RAG gate, history-aware retrieval, VLM extraction in ingestion). Scope guard + deferred list in the §E header. |
 | Product build (phases 0–5) | ✅ code-complete |
 | Pillar 2 — DB migration gate | ✅ `make migrate-test` verified (up→down→up); CI `full` job runs it |
 | Pillar 3 — eval gate (the moat) | ✅ enforced + **validated on GPU end-to-end** (2026-06-10): held-out, response-only, dual gate (absolute ≥0.6 **OR** clear improvement over base — `passes_eval_gate`); `tests/test_eval_gate.py` + the live LoRA e2e (`test_lora_e2e.py`, score 0.215, base 0.044, Δ+0.17 → pass → served adapter returns the invented word). |
@@ -1419,13 +1419,22 @@ row with `source_dataset_id` lineage, validated against the full training schema
 
 ### E1. P0 — corrections that change the publishable evidence (weeks 1–2)
 
-### E1.1 `[DOCS]` License consistency + repo-root hygiene (P0) — ✅ DONE (2026-09-03)
+### E1.1 `[DOCS]` License consistency + repo-root hygiene (P0) — ✅ DONE (2026-09-03, completed 2026-09-17)
 - [x] **Done.** `pyproject.toml` license → `Apache-2.0`; README badge, status note and footer say
   Apache-2.0 (three `MIT` strings removed, `LICENSE` untouched). The four untracked root notes moved to
   `notes/` (now in `.gitignore`); `site/`, `caddy.log`, `logs/`, `__pycache__/` were already ignored.
   Skipped: no classifier added — `pyproject.toml` has no `classifiers` list; `prueba-human-01.md` is a
   tracked file and was left in place. Gate: `make docs-build` green; `git status --porcelain` shows no
   untracked root `.md`.
+- [x] **Second pass (2026-09-17).** The first pass only grepped `README.md` + `pyproject.toml`, so two
+  `MIT` strings survived where they were most visible: `specs/openapi.yaml` `info.license.name` (the
+  API contract SSOT — it renders into `/docs`, `/redoc` and the docs API page) and `mkdocs.yml`
+  `copyright` (the footer of **every** docs page). Both → Apache-2.0. Also added: the
+  `License :: OSI Approved :: Apache Software License` classifier in `pyproject.toml` (the skip above,
+  now unskipped), `"license": "Apache-2.0"` in `adapta/console/package.json` + `e2e/package.json` (and
+  their lockfile root entries), and a **License** section in `CONTRIBUTING.md` stating inbound =
+  outbound (Apache-2.0 §5, no CLA). Gate: `make docs-build` green (`--strict`); the built footer and
+  the copied `site/reference/openapi.yaml` both read Apache-2.0.
 - [x] **Context.** `LICENSE` is Apache-2.0 (commit `049374a`) but `pyproject.toml:11` says MIT and the
   README carries an MIT badge plus a "MIT-licensed" status note. Untracked personal notes
   (`guia-*.md`, `entrevista-tecnica-adapta.md`, `prueba-human-01.md`) sit at the repo root next to
@@ -1440,12 +1449,24 @@ row with `source_dataset_id` lineage, validated against the full training schema
   repo root.
 - **Contract impact.** None.
 - **Gate.** `make docs-build` (host) → `git status --porcelain` shows no root noise.
-- **Acceptance.** `grep -n "MIT" README.md pyproject.toml` returns nothing; `LICENSE` unchanged;
-  `git status --porcelain` lists no untracked `.md` at the root.
+- **Acceptance.** A repo-wide `grep -rniE '\bMIT\b' --exclude-dir={.git,node_modules,site,.venv,.venv-docs}`
+  returns only third-party mentions (Ollama, Docling) and this roadmap's own history — no Adapta
+  artifact declares MIT; `LICENSE` unchanged; `git status --porcelain` lists no untracked `.md` at the
+  root.
 - **Close.** README only. Done note.
 
-### E1.2 `[BE+FE]` Model catalog: license field + Apache-licensed defaults (P0)
-- [ ] **Context.** `Qwen2.5-3B-Instruct` (the `settings.default_model`), `Qwen2.5-Coder-3B-Instruct`
+### E1.2 `[BE+FE]` Model catalog: license field + Apache-licensed defaults (P0) — ✅ DONE (2026-09-03, completed 2026-09-17)
+- [x] **Done.** `CatalogEntry` gained `license`/`license_url`/`commercial_use`; three Qwen Research
+  entries flagged `commercial_use=False`; new Apache entries `qwen2.5-1.5b-instruct` and
+  `qwen2.5-vl-7b-instruct`; spec `BaseModelInfo` += the three fields + `is_default`; default model →
+  `qwen2.5-1.5b-instruct`; console badges + picker guard; docs updated. Gates run 2026-09-17 against
+  the live stack: `make generate`, `validate-spec`, `check-models`, `test` (239 passed, 1 skipped) all
+  green; `make test-contracts` ran but shows 11 pre-existing failures unrelated to this block (OPTIONS
+  `Allow`-header mismatches and auth-endpoint email-fuzz rejections on `/projects`, `/settings`,
+  `/auth/*` — none touch `/models` or `BaseModelInfo`), left as-is per Files scope. Host `make
+  console-build` and `make docs-build --strict` both green. `make lint`'s pre-existing mypy error
+  (`embeddings.py:43`) also left for its own change.
+- [x] **Context.** `Qwen2.5-3B-Instruct` (the `settings.default_model`), `Qwen2.5-Coder-3B-Instruct`
   and `Qwen2.5-VL-3B-Instruct` are under the *Qwen Research License* (non-commercial; HF README
   frontmatter, verified 2026-09-03). `CatalogEntry` has no license field (`model_catalog.py:30-130`),
   so `GET /v1/models` and the Models page cannot show it and an operator ships a model they may not

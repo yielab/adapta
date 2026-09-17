@@ -106,6 +106,13 @@ export interface BaseModelInfo {
   serve_ram_gb: number | null;
   hf_repo_id: string;
   notes: string;
+  /** Weights license id (e.g. "apache-2.0", "qwen-research") — §E1.2 */
+  license: string;
+  license_url: string;
+  /** False for research-only licenses: evaluation only, never the default */
+  commercial_use: boolean;
+  /** The entry ADAPTA_DEFAULT_MODEL resolves to */
+  is_default: boolean;
 }
 
 export type DatasetStatus = "uploaded" | "validating" | "valid" | "invalid";

@@ -70,3 +70,45 @@ def test_model_manager_resolves_hf_id_through_catalog():
     assert mm._resolve_serving_name("Qwen/Qwen2.5-3B-Instruct") == "qwen2.5-3b-instruct"
     # Direct serving names pass through.
     assert mm._resolve_serving_name("qwen2.5-3b-instruct") == "qwen2.5-3b-instruct"
+
+
+# ── §E1.2: every entry carries its weights license; the default is commercial ──
+
+
+def test_every_entry_declares_a_license():
+    for entry in mc.all_entries():
+        assert entry.license, f"{entry.name} has no license id"
+        assert entry.license_url.startswith("https://"), f"{entry.name} has no license link"
+
+
+def test_research_licensed_entries_are_flagged_non_commercial():
+    # Qwen Research License (verified on HF 2026-09-03): evaluation only.
+    for name in ("qwen2.5-3b-instruct", "qwen2.5-coder-3b", "qwen2.5-vl-3b-instruct"):
+        entry = mc.resolve(name)
+        assert entry is not None
+        assert entry.license == "qwen-research"
+        assert entry.commercial_use is False
+    for name in ("qwen2.5-0.5b-instruct", "qwen2.5-1.5b-instruct", "qwen2.5-7b-instruct", "qwen2.5-vl-7b-instruct"):
+        entry = mc.resolve(name)
+        assert entry is not None
+        assert entry.license == "apache-2.0"
+        assert entry.commercial_use is True
+
+
+def test_default_model_is_a_commercial_use_entry():
+    from adapta.config import settings
+
+    entry = mc.resolve(settings.default_model)
+    assert entry is not None, f"default_model {settings.default_model!r} is not in the catalog"
+    assert entry.commercial_use is True, (
+        f"default_model {entry.name} is {entry.license} — the platform default must be usable commercially"
+    )
+
+
+def test_vision_entries_pair_apache_and_research_on_the_same_architecture():
+    # The Apache VL-7B keeps the 3B's architecture so the PEFT→GGUF shims and the
+    # llama-cpp chat handler apply unchanged; both declare an mmproj.
+    for name in ("qwen2.5-vl-3b-instruct", "qwen2.5-vl-7b-instruct"):
+        entry = mc.resolve(name)
+        assert entry is not None and entry.modality == "vision"
+        assert entry.mmproj_filename

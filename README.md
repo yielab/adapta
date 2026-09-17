@@ -92,10 +92,10 @@ service map. On a host without an NVIDIA GPU it transparently uses the CPU profi
 LoRA jobs are rejected with a clear "GPU required" message.
 
 ```bash
-# 3. Download a base GGUF model into ./data/models/  (smallest, good for a first run)
-huggingface-cli download Qwen/Qwen2.5-3B-Instruct-GGUF \
-  qwen2.5-3b-instruct-q4_k_m.gguf \
-  --local-dir ./data/models/qwen2.5-3b-instruct
+# 3. Download the default base GGUF into ./data/models/  (Apache-2.0, runs on any host)
+huggingface-cli download Qwen/Qwen2.5-1.5B-Instruct-GGUF \
+  qwen2.5-1.5b-instruct-q4_k_m.gguf \
+  --local-dir ./data/models/qwen2.5-1.5b
 ```
 
 **4. Open the console → [http://localhost:8000/console/](http://localhost:8000/console/)** and sign in
@@ -126,11 +126,13 @@ Base models the catalog validates against (full VRAM table in [Operations §6](d
 
 | Model | HF repo | VRAM (Q4) |
 | --- | --- | --- |
-| Qwen2.5-0.5B-Instruct | `Qwen/Qwen2.5-0.5B-Instruct-GGUF` | ~2 GB |
-| Qwen2.5-3B-Instruct | `Qwen/Qwen2.5-3B-Instruct-GGUF` | ~4 GB |
-| Qwen2.5-Coder-3B | `Qwen/Qwen2.5-Coder-3B-Instruct-GGUF` | ~4 GB |
-| Qwen2.5-7B-Instruct | `Qwen/Qwen2.5-7B-Instruct-GGUF` | ~8 GB |
-| Qwen2.5-VL-3B (vision) | GGUF + mmproj | ~6 GB train |
+| Qwen2.5-0.5B-Instruct (Apache-2.0) | `Qwen/Qwen2.5-0.5B-Instruct-GGUF` | ~2 GB |
+| Qwen2.5-1.5B-Instruct (Apache-2.0, **default**) | `Qwen/Qwen2.5-1.5B-Instruct-GGUF` | ~3 GB |
+| Qwen2.5-3B-Instruct (research license — evaluation only) | `Qwen/Qwen2.5-3B-Instruct-GGUF` | ~4 GB |
+| Qwen2.5-Coder-3B (research license — evaluation only) | `Qwen/Qwen2.5-Coder-3B-Instruct-GGUF` | ~4 GB |
+| Qwen2.5-7B-Instruct (Apache-2.0) | `Qwen/Qwen2.5-7B-Instruct-GGUF` | ~8 GB |
+| Qwen2.5-VL-3B (vision, research license — evaluation only) | GGUF + mmproj | ~6 GB train |
+| Qwen2.5-VL-7B (vision, Apache-2.0) | GGUF + mmproj (`ggml-org/Qwen2.5-VL-7B-Instruct-GGUF`) | ~14 GB train |
 
 Prefer the API? `curl -X POST http://localhost:8000/v1/auth/register -H 'Content-Type: application/json' -d '{"org_name":"Acme","email":"admin@acme.com","password":"changeme123"}'`
 
@@ -181,11 +183,15 @@ nothing else breaks (RAG keeps working on CPU).
 
 **Pick a base model to match your GPU** — bigger means better quality but more VRAM:
 
-| Base model | VRAM to **train** | VRAM to **serve** | Use it for |
-|---|---|---|---|
-| `qwen2.5-0.5b-instruct` | ~3 GB | ~1 GB | Quick experiments, low-resource hosts, the CI test floor |
-| `qwen2.5-3b-instruct` **(default)** | ~8–10 GB | ~2 GB | Real RAG + behavior fine-tunes — **start here** |
-| `qwen2.5-7b-instruct` | ~12–16 GB | ~4 GB | Highest quality, needs a bigger card |
+| Base model | License | VRAM to **train** | VRAM to **serve** | Use it for |
+|---|---|---|---|---|
+| `qwen2.5-0.5b-instruct` | Apache-2.0 | ~3 GB | ~1 GB | Quick experiments, low-resource hosts, the CI test floor |
+| `qwen2.5-1.5b-instruct` **(default)** | Apache-2.0 | ~6 GB | ~2 GB | RAG + behavior fine-tunes on small GPUs — **start here** |
+| `qwen2.5-3b-instruct` | Qwen Research — **evaluation only** | ~8–10 GB | ~2 GB | Not licensed for commercial use; kept for evaluation |
+| `qwen2.5-7b-instruct` | Apache-2.0 | ~12–16 GB | ~4 GB | Highest quality, needs a bigger card |
+
+Every entry's license is shown by `GET /v1/models` and on the console's Models page; the platform
+default is always an Apache-2.0 entry.
 
 Figures are for QLoRA (4-bit) training and GGUF (4-bit) serving. The serving model stays
 **resident**, so on a single shared card budget *serve + train* together: an 8 GB card trains the
