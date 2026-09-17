@@ -21,6 +21,7 @@ from adapta.db.session import get_db
 from adapta.domain.errors import InvalidRequest, NotFound
 from adapta.models.generated import FileResponse
 from adapta.services.auth import get_current_user, require_team_member, require_team_writer
+from adapta.services.app_settings import resolve_setting
 from adapta.services.documents import parse_and_chunk
 from adapta.services.rag import collection_name_for, get_rag_service
 
@@ -54,7 +55,12 @@ async def _get_project(db: AsyncSession, project_id: str) -> Project:
 
 
 async def _index_file(
-    file_id: str, file_path: Path, content_type: str, filename: str, project_id: str
+    file_id: str,
+    file_path: Path,
+    content_type: str,
+    filename: str,
+    project_id: str,
+    team_id: str,
 ) -> None:
     """Background task: parse → chunk → embed → store in Chroma, update DB status.
 
@@ -88,12 +94,24 @@ async def _index_file(
             pfile.status = FileStatus.processing
             await db.commit()
 
+            # Resolve the org's chunking overrides (E1.6) before the thread —
+            # `resolve_setting` is async (DB-backed, TTL-cached) and must not be
+            # called from inside the worker thread below.
+            chunk_size = await resolve_setting(db, team_id, "chunk_size")
+            chunk_overlap = await resolve_setting(db, team_id, "chunk_overlap")
+
             # Parsing, embedding and the Chroma write are CPU/IO-blocking and
             # synchronous — run them in a thread so a large document (or the
             # first-time embedding-model load) doesn't freeze the event loop and
             # starve concurrent API requests.
             def _do_index() -> int:
-                chunks = parse_and_chunk(file_path, content_type, filename)
+                chunks = parse_and_chunk(
+                    file_path,
+                    content_type,
+                    filename,
+                    chunk_size=chunk_size,
+                    chunk_overlap=chunk_overlap,
+                )
                 rag = get_rag_service()
                 rag.ensure_collection(project_id)
                 return rag.index_chunks(project_id, file_id, chunks)
@@ -179,7 +197,9 @@ async def upload_file(
     # committing here ensures the row is visible to that session immediately.
     file_id = pfile.id
     await db.commit()
-    background_tasks.add_task(_index_file, file_id, dest_path, content_type, filename, project_id)
+    background_tasks.add_task(
+        _index_file, file_id, dest_path, content_type, filename, project_id, project.team_id
+    )
 
     return {"id": file_id, "filename": filename, "status": "pending"}
 

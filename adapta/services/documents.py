@@ -128,9 +128,20 @@ def chunk_text(
     return chunks
 
 
-def parse_and_chunk(path: Path, content_type: str, filename: str) -> List[Chunk]:
-    """Full pipeline: extract text → chunk."""
+def parse_and_chunk(
+    path: Path,
+    content_type: str,
+    filename: str,
+    chunk_size: Optional[int] = None,
+    chunk_overlap: Optional[int] = None,
+) -> List[Chunk]:
+    """Full pipeline: extract text → chunk.
+
+    `chunk_size`/`chunk_overlap` default to the env config inside `chunk_text`
+    when omitted; callers on the indexing path resolve the org's app-settings
+    override first (E1.6).
+    """
     text = extract_text(path, content_type)
     if not text.strip():
         raise InvalidRequest(message=f"File {filename} yielded no extractable text")
-    return chunk_text(text, source=filename)
+    return chunk_text(text, source=filename, chunk_size=chunk_size, chunk_overlap=chunk_overlap)

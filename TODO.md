@@ -56,7 +56,7 @@ Honour the [Definition of done](#definition-of-done-per-task) on every task. Wor
 
 | Area | State |
 |---|---|
-| **Audit 2026-09-03 (§E)** | 🟥 **open** — 2/29 done (E1.1 ✅, E1.2 ✅). P0 (E1.1–E1.8): license consistency, Apache-licensed default models, train = serve prompt render, response-only loss, config SSOT, live console retrieval settings, streaming citations, ingestion guards. Then E2 (Ollama + launch kit), E3 (Postgres chunks → real hybrid FTS, Docling + RapidOCR scanned documents, citations with page/OCR provenance, system prompt + threshold + filters, multilingual, queued indexing, golden set), E4 (task metrics in the gate, adapter promotion/rollback, synthesis re-aimed, JSON mode, multi-turn), E5 (contextual retrieval, RAG gate, history-aware retrieval, VLM extraction in ingestion). Scope guard + deferred list in the §E header. |
+| **Audit 2026-09-03 (§E)** | 🟥 **open** — 3/29 done (E1.1 ✅, E1.2 ✅, E1.6 ✅). P0 (E1.1–E1.8): license consistency, Apache-licensed default models, train = serve prompt render, response-only loss, config SSOT, streaming citations, ingestion guards. Then E2 (Ollama + launch kit), E3 (Postgres chunks → real hybrid FTS, Docling + RapidOCR scanned documents, citations with page/OCR provenance, system prompt + threshold + filters, multilingual, queued indexing, golden set), E4 (task metrics in the gate, adapter promotion/rollback, synthesis re-aimed, JSON mode, multi-turn), E5 (contextual retrieval, RAG gate, history-aware retrieval, VLM extraction in ingestion). Scope guard + deferred list in the §E header. |
 | Product build (phases 0–5) | ✅ code-complete |
 | Pillar 2 — DB migration gate | ✅ `make migrate-test` verified (up→down→up); CI `full` job runs it |
 | Pillar 3 — eval gate (the moat) | ✅ enforced + **validated on GPU end-to-end** (2026-06-10): held-out, response-only, dual gate (absolute ≥0.6 **OR** clear improvement over base — `passes_eval_gate`); `tests/test_eval_gate.py` + the live LoRA e2e (`test_lora_e2e.py`, score 0.215, base 0.044, Δ+0.17 → pass → served adapter returns the invented word). |
@@ -1571,8 +1571,16 @@ row with `source_dataset_id` lineage, validated against the full training schema
   progress lines appear during the E1.3 SFT run.
 - **Close.** api.md is auto; consuming-the-api if it lists `training_config`; Status snapshot.
 
-### E1.6 `[BE]` Console retrieval settings actually apply (P0)
-- [ ] **Context.** `rag_top_k`, `chunk_size`, `chunk_overlap` are persisted by the Settings UI
+### E1.6 `[BE]` Console retrieval settings actually apply (P0) — ✅ DONE (2026-09-17)
+- [x] **Done.** `files.py` `_index_file` resolves `chunk_size`/`chunk_overlap` (via the project's
+  `team_id`) before the worker thread; `parse_and_chunk` (`documents.py` — one extra file beyond this
+  block's Files line, needed to thread the values to `chunk_text`) forwards them. `chat.py` adds
+  `_resolve_rag_top_k` (self-contained DB session, `services/usage.py`'s pattern), called by
+  `chat()`/`chat_stream()` whenever no explicit `top_k_rag` is given. Added the 30 s TTL cache to
+  `app_settings.resolve_setting`, invalidated on upsert/delete. Gate: `make test` — 249 passed, 1
+  skipped, 62 deselected; `make check-leaks` clean. New/extended tests: `test_app_settings.py`,
+  `test_rag_hybrid.py`, `test_basic.py`. Skipped: operator-console doc — no false claim to fix there.
+- [x] **Context.** `rag_top_k`, `chunk_size`, `chunk_overlap` are persisted by the Settings UI
   (`app_settings.py:80-109`, `api/v1/settings.py`) and the UI says they apply to future indexing
   (`Settings.svelte:323`), but `rag.py:213` and `documents.py:94-95` read the env-backed globals;
   `resolve_setting` has no caller outside the settings router.

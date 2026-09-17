@@ -9,8 +9,9 @@ other security-critical config host-only.
 from __future__ import annotations
 
 import json
+import time
 from dataclasses import dataclass
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, List, Tuple, Union
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -138,16 +139,58 @@ def _env_default(key: str) -> Any:
     return getattr(settings, key)
 
 
+# ---------------------------------------------------------------------------
+# In-process TTL cache (E1.6): `resolve_setting` sits on hot request paths
+# (retrieval top-k, chunking) that must not hit Postgres per request. Keyed by
+# (team_id, key); a write through `upsert_setting`/`delete_setting` evicts the
+# entry immediately so an operator's change is visible within one request, not
+# after the TTL expires.
+# ---------------------------------------------------------------------------
+
+_CACHE_TTL_SECONDS = 30.0
+_cache: Dict[Tuple[str, str], Tuple[Any, float]] = {}
+
+
+def _cache_get(team_id: str, key: str) -> Any:
+    entry = _cache.get((team_id, key))
+    if entry is None:
+        return None
+    value, expires_at = entry
+    if time.monotonic() >= expires_at:
+        return None
+    return value
+
+
+def _cache_set(team_id: str, key: str, value: Any) -> None:
+    _cache[(team_id, key)] = (value, time.monotonic() + _CACHE_TTL_SECONDS)
+
+
+def _cache_invalidate(team_id: str, key: str) -> None:
+    _cache.pop((team_id, key), None)
+
+
 async def resolve_setting(db: AsyncSession, team_id: str, key: str) -> Any:
-    """Return the effective value for key: DB override → env default."""
+    """Return the effective value for key: DB override → env default.
+
+    Cached for `_CACHE_TTL_SECONDS` per (team_id, key) so a hot serving path
+    (RAG retrieval, chunking) doesn't hit Postgres on every request.
+    """
+    cached = _cache_get(team_id, key)
+    if cached is not None:
+        return cached
+
     result = await db.execute(
         select(AppSetting.value).where(AppSetting.team_id == team_id, AppSetting.key == key)
     )
     row = result.scalar_one_or_none()
     if row is not None:
         spec = WHITELIST[key]
-        return spec.type(json.loads(row))
-    return _env_default(key)
+        value = spec.type(json.loads(row))
+    else:
+        value = _env_default(key)
+
+    _cache_set(team_id, key, value)
+    return value
 
 
 async def resolve_all(db: AsyncSession, team_id: str) -> List[Dict[str, Any]]:
@@ -229,6 +272,7 @@ async def upsert_setting(
         row = AppSetting(team_id=team_id, key=key, value=encoded, updated_by=updated_by)
         db.add(row)
     await db.commit()
+    _cache_invalidate(team_id, key)
     spec = WHITELIST[key]
     return {"key": key, "value": typed, "source": "override", "default": spec.default}
 
@@ -244,3 +288,4 @@ async def delete_setting(db: AsyncSession, team_id: str, key: str) -> None:
     if row:
         await db.delete(row)
         await db.commit()
+    _cache_invalidate(team_id, key)

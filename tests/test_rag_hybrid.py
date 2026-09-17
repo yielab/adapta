@@ -288,3 +288,77 @@ def test_citations_match_reranked_order(monkeypatch):
         assert cit["index"] == i + 1
         assert cit["source"] == chunk.source
         assert cit["score"] == round(chunk.score, 4)
+
+
+# ---------------------------------------------------------------------------
+# chat.py wiring (E1.6) — a team's `rag_top_k` app-settings override must
+# reach `RAGService.retrieve(top_k=...)`, not the env-backed global.
+# ---------------------------------------------------------------------------
+
+
+class _TeamLookupSession:
+    """Fake AsyncSession: answers the `select(Project.team_id)` lookup only."""
+
+    def __init__(self, team_id):
+        self._team_id = team_id
+
+    async def execute(self, _stmt):
+        return _ScalarResult(self._team_id)
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return False
+
+
+class _ScalarResult:
+    def __init__(self, value):
+        self._value = value
+
+    def scalar_one_or_none(self):
+        return self._value
+
+
+async def test_rag_top_k_override_reaches_retrieve(monkeypatch):
+    """An org override of rag_top_k=2 must flow through chat.py's resolution
+    into the exact top_k RAGService.retrieve() is called with."""
+    from adapta.services import chat
+
+    monkeypatch.setattr(
+        "adapta.db.session.AsyncSessionLocal", lambda: _TeamLookupSession("team-1")
+    )
+
+    async def _fake_resolve_setting(_db, team_id, key):
+        assert (team_id, key) == ("team-1", "rag_top_k")
+        return 2
+
+    monkeypatch.setattr(
+        "adapta.services.app_settings.resolve_setting", _fake_resolve_setting
+    )
+
+    resolved = await chat._resolve_rag_top_k("proj-1", None)
+    assert resolved == 2
+
+    calls = []
+
+    class _SpyRagService:
+        def retrieve(self, project_id, query, top_k):
+            calls.append((project_id, query, top_k))
+            return []
+
+    await chat._retrieve(_SpyRagService(), "proj-1", "hello", resolved)
+    assert calls == [("proj-1", "hello", 2)]
+
+
+async def test_explicit_top_k_rag_bypasses_settings_lookup(monkeypatch):
+    """A caller-supplied top_k_rag wins outright — no DB round trip needed."""
+    from adapta.services import chat
+
+    def _boom():
+        raise AssertionError("should not resolve settings when top_k_rag is given")
+
+    monkeypatch.setattr("adapta.db.session.AsyncSessionLocal", _boom)
+
+    resolved = await chat._resolve_rag_top_k("proj-1", 9)
+    assert resolved == 9

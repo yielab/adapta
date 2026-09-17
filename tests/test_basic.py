@@ -75,6 +75,27 @@ def test_chunk_text_short_text_single_chunk():
     assert chunks[0].text.strip() == "Short."
 
 
+def test_parse_and_chunk_forwards_chunk_size_and_overlap(tmp_path):
+    """E1.6: an org's chunk_size/chunk_overlap override must reach the actual
+    chunking call, not just the unused env-backed default."""
+    from adapta.services.documents import chunk_text, parse_and_chunk
+
+    text = "Hello world. " * 200
+    f = tmp_path / "doc.txt"
+    f.write_text(text)
+
+    overridden = parse_and_chunk(f, "text/plain", "doc.txt", chunk_size=256, chunk_overlap=32)
+    expected = chunk_text(text, source="doc.txt", chunk_size=256, chunk_overlap=32)
+
+    assert len(overridden) == len(expected) > 1
+    assert [c.text for c in overridden] == [c.text for c in expected]
+
+    # A different override changes the chunking outcome — proves the value is
+    # actually threaded through, not silently ignored.
+    smaller = parse_and_chunk(f, "text/plain", "doc.txt", chunk_size=64, chunk_overlap=8)
+    assert len(smaller) > len(overridden)
+
+
 def test_extract_text_plaintext(tmp_path):
     from adapta.services.documents import extract_text
 

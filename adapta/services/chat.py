@@ -27,6 +27,31 @@ from adapta.domain.errors import (
 from adapta.services.rag import get_rag_service
 
 
+async def _resolve_rag_top_k(project_id: Optional[str], top_k_rag: Optional[int]) -> int:
+    """Effective RAG top-k for a request: explicit arg → org app-settings
+    override (E1.6) → env default. Opens its own short-lived session (same
+    self-contained pattern as `services/usage.py`'s `record_usage`) since
+    `chat()`/`chat_stream()` don't otherwise take a DB session.
+    """
+    if top_k_rag is not None:
+        return top_k_rag
+    if not project_id:
+        return settings.rag_top_k
+
+    from sqlalchemy import select
+
+    from adapta.db.models import Project
+    from adapta.db.session import AsyncSessionLocal
+    from adapta.services.app_settings import resolve_setting
+
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(select(Project.team_id).where(Project.id == project_id))
+        team_id = result.scalar_one_or_none()
+        if team_id is None:
+            return settings.rag_top_k
+        return await resolve_setting(db, team_id, "rag_top_k")
+
+
 async def _retrieve(rag_service, project_id: str, query: str, top_k: int) -> list:
     """RAG retrieval off the event loop with a timeout (A4.12). A hung Chroma must
     degrade to a typed 504, not block every chat request — and the blocking client
@@ -291,9 +316,8 @@ async def chat(
     if project_id:
         rag_service = get_rag_service()
         query = flatten_text(messages[-1].get("content", "")) if messages else ""
-        rag_chunks = await _retrieve(
-            rag_service, project_id, query, top_k_rag or settings.rag_top_k
-        )
+        effective_top_k = await _resolve_rag_top_k(project_id, top_k_rag)
+        rag_chunks = await _retrieve(rag_service, project_id, query, effective_top_k)
 
     # Content may be a parts array (all-text on the text path); flatten to the
     # plain string the manual prompt formatter expects.
@@ -479,9 +503,8 @@ async def chat_stream(
     if project_id:
         rag_service = get_rag_service()
         query = flatten_text(messages[-1].get("content", "")) if messages else ""
-        rag_chunks = await _retrieve(
-            rag_service, project_id, query, top_k_rag or settings.rag_top_k
-        )
+        effective_top_k = await _resolve_rag_top_k(project_id, top_k_rag)
+        rag_chunks = await _retrieve(rag_service, project_id, query, effective_top_k)
 
     inference_messages = [
         Message(role=m["role"], content=flatten_text(m["content"])) for m in messages
