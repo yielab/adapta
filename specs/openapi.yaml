@@ -710,6 +710,12 @@ paths:
         rejected with 400. In v1, requests carrying images are non-streaming
         (`stream` must be false) and skip document retrieval (no RAG composition
         with image input yet).
+
+        **Streaming:** with `stream: true`, tokens arrive as
+        `chat.completion.chunk` SSE frames. The final frame — the one carrying
+        `usage` and `finish_reason: "stop"` — also carries `citations` when the
+        project has indexed documents, in the same shape as the non-streaming
+        response.
       security: [{ApiKeyAuth: []}]
       requestBody:
         required: true
@@ -1312,6 +1318,12 @@ components:
         index: {type: integer}
         source: {type: string}
         score: {type: number}
+        score_kind:
+          type: string
+          enum: [reranker, vector]
+          description: >
+            How `score` was computed: `reranker` is a cross-encoder sigmoid in
+            (0, 1); `vector` is `1 − cosine distance` (no reranker configured).
     ChatCompletionResponse:
       # Response-only (the OpenAI-passthrough dict is validated against this by
       # schemathesis, not constructed from this model), so fields stay optional.

@@ -15,7 +15,7 @@ import logging
 import math
 import re
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from adapta.config import settings
 from adapta.services.embeddings import get_embedding_service, get_reranker_service
@@ -29,6 +29,10 @@ class RetrievedChunk:
     source: str
     score: float
     chunk_index: int
+    # (E1.7) `score` means two different things depending on the retrieval path —
+    # a cross-encoder sigmoid or 1 − cosine distance. Callers (citations) need to
+    # know which, so both construction sites below fill this explicitly.
+    score_kind: Literal["reranker", "vector"]
 
 
 def _get_chroma_client():
@@ -247,6 +251,7 @@ class RAGService:
                 source=metas[idx].get("source", "unknown"),
                 score=1.0 - dists[idx],  # cosine distance → similarity
                 chunk_index=metas[idx].get("chunk_index", 0),
+                score_kind="vector",
             )
             for idx in fused_order
         ]
@@ -269,6 +274,7 @@ class RAGService:
                     source=c.source,
                     score=round(1.0 / (1.0 + math.exp(-s)), 4),
                     chunk_index=c.chunk_index,
+                    score_kind="reranker",
                 )
                 for s, c in ranked
             ]
@@ -293,7 +299,12 @@ class RAGService:
 
     def format_citations(self, chunks: List[RetrievedChunk]) -> list[dict]:
         return [
-            {"index": i + 1, "source": c.source, "score": round(c.score, 4)}
+            {
+                "index": i + 1,
+                "source": c.source,
+                "score": round(c.score, 4),
+                "score_kind": c.score_kind,
+            }
             for i, c in enumerate(chunks)
         ]
 

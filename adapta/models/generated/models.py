@@ -409,10 +409,20 @@ class ChatUsage(BaseModel):
     total_tokens: int | None = None
 
 
+class ScoreKind(Enum):
+    reranker = "reranker"
+    vector = "vector"
+
+
 class Citation(BaseModel):
     index: int | None = None
     source: str | None = None
     score: float | None = None
+    score_kind: ScoreKind | None = None
+    """
+    How `score` was computed: `reranker` is a cross-encoder sigmoid in (0, 1); `vector` is `1 − cosine distance` (no reranker configured).
+
+    """
 
 
 class ChatCompletionResponse(BaseModel):

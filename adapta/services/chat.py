@@ -564,6 +564,12 @@ async def chat_stream(
                 "total_tokens": prompt_tokens + completion_tokens,
             },
         }
+        # Citations can only be known once retrieval has happened — same
+        # shape as chat()'s non-streaming response, carried on the final
+        # frame (E1.7) since the model prompt (with [N] markers) is what
+        # the SSE tokens are being streamed for.
+        if rag_chunks:
+            finish["citations"] = rag_service.format_citations(rag_chunks)
         yield f"data: {json.dumps(finish)}\n\n"
         yield "data: [DONE]\n\n"
 

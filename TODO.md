@@ -56,7 +56,7 @@ Honour the [Definition of done](#definition-of-done-per-task) on every task. Wor
 
 | Area | State |
 |---|---|
-| **Audit 2026-09-03 (§E)** | 🟥 **open** — 3/29 done (E1.1 ✅, E1.2 ✅, E1.6 ✅). P0 (E1.1–E1.8): license consistency, Apache-licensed default models, train = serve prompt render, response-only loss, config SSOT, streaming citations, ingestion guards. Then E2 (Ollama + launch kit), E3 (Postgres chunks → real hybrid FTS, Docling + RapidOCR scanned documents, citations with page/OCR provenance, system prompt + threshold + filters, multilingual, queued indexing, golden set), E4 (task metrics in the gate, adapter promotion/rollback, synthesis re-aimed, JSON mode, multi-turn), E5 (contextual retrieval, RAG gate, history-aware retrieval, VLM extraction in ingestion). Scope guard + deferred list in the §E header. |
+| **Audit 2026-09-03 (§E)** | 🟥 **open** — 4/29 done (E1.1 ✅, E1.2 ✅, E1.6 ✅, E1.7 ✅). P0 (E1.1–E1.8): license consistency, Apache-licensed default models, train = serve prompt render, response-only loss, config SSOT, ingestion guards. Then E2 (Ollama + launch kit), E3 (Postgres chunks → real hybrid FTS, Docling + RapidOCR scanned documents, citations with page/OCR provenance, system prompt + threshold + filters, multilingual, queued indexing, golden set), E4 (task metrics in the gate, adapter promotion/rollback, synthesis re-aimed, JSON mode, multi-turn), E5 (contextual retrieval, RAG gate, history-aware retrieval, VLM extraction in ingestion). Scope guard + deferred list in the §E header. |
 | Product build (phases 0–5) | ✅ code-complete |
 | Pillar 2 — DB migration gate | ✅ `make migrate-test` verified (up→down→up); CI `full` job runs it |
 | Pillar 3 — eval gate (the moat) | ✅ enforced + **validated on GPU end-to-end** (2026-06-10): held-out, response-only, dual gate (absolute ≥0.6 **OR** clear improvement over base — `passes_eval_gate`); `tests/test_eval_gate.py` + the live LoRA e2e (`test_lora_e2e.py`, score 0.215, base 0.044, Δ+0.17 → pass → served adapter returns the invented word). |
@@ -1600,8 +1600,19 @@ row with `source_dataset_id` lineage, validated against the full training schema
   `Settings.svelte:323` claim is now true (copy unchanged).
 - **Close.** operator-console settings paragraph only if wording changes; Status snapshot.
 
-### E1.7 `[BE]` Citations on streaming responses + one meaning for `score` (P0)
-- [ ] **Context.** `chat_stream` never emits `citations` (`chat.py:520-545`) although the system prompt
+### E1.7 `[BE]` Citations on streaming responses + one meaning for `score` (P0) — ✅ DONE (2026-09-17)
+- [x] **Done.** `chat_stream`'s finish frame (the one carrying `usage`) now includes `citations` when
+  `rag_chunks` is non-empty, built the same way as `chat()`'s — `rag_service.format_citations(rag_chunks)`.
+  `RetrievedChunk` gained `score_kind: Literal["reranker", "vector"]`, filled explicitly at both
+  construction sites in `rag.py` (vector path, post-rerank path); `format_citations` emits it.
+  Spec: `Citation.score_kind` (enum `[reranker, vector]`) + a streaming paragraph on
+  `POST /chat/completions` describing the final-frame extension. Gate: `make validate-spec` →
+  `make generate` → `make check-models` → `make test` (250 passed, 1 skipped, 62 deselected) →
+  `make test-contracts` (10 pre-existing failures this run — see block below) → `make check-leaks`
+  clean. New/extended tests: `test_rag_hybrid.py` (`score_kind` assertions on the two reranker tests,
+  `format_citations`; new `test_chat_stream_final_frame_carries_citations` faking the backend + RAG
+  service, no GPU). Docs: consuming-the-api.md streaming section.
+- [x] **Context.** `chat_stream` never emits `citations` (`chat.py:520-545`) although the system prompt
   asks the model to cite `[N]`; `Citation.score` is a reranker sigmoid when the reranker is on
   (`rag.py:270`) and `1 − cosine` when off (`rag.py:248`).
 - **Scope.** SSE payload + score semantics. Out: chunk text/page in citations (E3.4).

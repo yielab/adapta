@@ -96,7 +96,10 @@ Rules (v1, all violations come back as typed 4xx errors, never a crash):
 
 Set `"stream": true` (or `stream=True` in the SDK) to receive tokens as
 server-sent events, the same as the OpenAI streaming protocol. The final chunk
-carries the usage totals. (Not available for requests carrying images — see above.)
+carries the usage totals, and — when the project has indexed documents —
+`citations` in the same shape as the non-streaming response (each entry's
+`score_kind` says whether `score` came from the reranker or from vector
+similarity alone). (Not available for requests carrying images — see above.)
 
 ## Errors
 

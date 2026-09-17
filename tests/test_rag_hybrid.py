@@ -8,6 +8,7 @@ monkeypatching Chroma and the reranker so no network or GPU is needed.
 
 from adapta.services.rag import (
     RAGService,
+    RetrievedChunk,
     _bm25_scores,
     _rrf_fuse,
     _tokenize,
@@ -266,6 +267,7 @@ def test_retrieve_reranker_scores_are_sigmoid_normalized(monkeypatch):
     chunks = RAGService().retrieve("p", "alpha gamma", top_k=3)
     for c in chunks:
         assert 0.0 < c.score < 1.0, f"score {c.score} not in (0,1)"
+        assert c.score_kind == "reranker"
 
 
 def test_citations_match_reranked_order(monkeypatch):
@@ -288,6 +290,7 @@ def test_citations_match_reranked_order(monkeypatch):
         assert cit["index"] == i + 1
         assert cit["source"] == chunk.source
         assert cit["score"] == round(chunk.score, 4)
+        assert cit["score_kind"] == chunk.score_kind == "reranker"
 
 
 # ---------------------------------------------------------------------------
@@ -362,3 +365,63 @@ async def test_explicit_top_k_rag_bypasses_settings_lookup(monkeypatch):
 
     resolved = await chat._resolve_rag_top_k("proj-1", 9)
     assert resolved == 9
+
+
+# ---------------------------------------------------------------------------
+# chat_stream citations (E1.7) — the final SSE frame (the one carrying `usage`)
+# must also carry `citations`, same shape as chat()'s non-streaming response.
+# No GPU/model needed: the backend and RAG service are faked.
+# ---------------------------------------------------------------------------
+
+
+class _FakeStreamHandle:
+    def context_size(self):
+        return 4096
+
+    def count_prompt_tokens(self, messages, system_prompt):
+        return 10
+
+
+class _FakeStreamBackend:
+    async def prepare(self, model_name, adapter_path):
+        return _FakeStreamHandle()
+
+    async def generate_stream(self, handle, request):
+        for tok in ("Hel", "lo"):
+            yield tok
+
+
+async def test_chat_stream_final_frame_carries_citations(monkeypatch):
+    import json
+
+    from adapta.services import chat
+
+    chunk = RetrievedChunk(
+        text="doc text", source="src1", score=0.9, chunk_index=0, score_kind="vector"
+    )
+    fake_rag = RAGService()
+    fake_rag.retrieve = lambda project_id, query, top_k: [chunk]
+
+    monkeypatch.setattr("adapta.services.chat.get_rag_service", lambda: fake_rag)
+    monkeypatch.setattr(
+        "adapta.services.chat.get_backend",
+        lambda model_name, adapter_path: _FakeStreamBackend(),
+    )
+
+    frames = [
+        sse
+        async for sse in chat.chat_stream(
+            model_name="m",
+            messages=[{"role": "user", "content": "hi"}],
+            project_id="proj-1",
+            top_k_rag=3,
+        )
+    ]
+
+    data_frames = [f for f in frames if f.startswith("data: ") and "[DONE]" not in f]
+    finish = json.loads(data_frames[-1][len("data: ") :])
+
+    assert finish["choices"][0]["finish_reason"] == "stop"
+    assert finish["citations"] == [
+        {"index": 1, "source": "src1", "score": 0.9, "score_kind": "vector"}
+    ]
