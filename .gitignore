@@ -113,3 +113,4 @@ docs/reference/openapi.yaml
 # e2e — local screenshot/GIF tooling (not CI)
 e2e/node_modules/
 e2e/videos/
+.schemathesis/

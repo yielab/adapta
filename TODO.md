@@ -56,7 +56,7 @@ Honour the [Definition of done](#definition-of-done-per-task) on every task. Wor
 
 | Area | State |
 |---|---|
-| **Audit 2026-09-03 (§E)** | 🟥 **open** — 5/29 done (E1.1 ✅, E1.2 ✅, E1.6 ✅, E1.7 ✅, E1.8 ✅, E1.3 🟡, E1.4 🟡, E1.5 🟡). P0 (E1.1–E1.8): license consistency, Apache-licensed default models, train = serve prompt render, response-only loss, config SSOT. Then E2 (Ollama + launch kit), E3 (Postgres chunks → real hybrid FTS, Docling + RapidOCR scanned documents, citations with page/OCR provenance, system prompt + threshold + filters, multilingual, queued indexing, golden set), E4 (task metrics in the gate, adapter promotion/rollback, synthesis re-aimed, JSON mode, multi-turn), E5 (contextual retrieval, RAG gate, history-aware retrieval, VLM extraction in ingestion). Scope guard + deferred list in the §E header. |
+| **Audit 2026-09-03 (§E)** | 🟥 **open** — **wave E1 closed 2026-09-17**: 9/34 done (E1.1–E1.8 ✅ + E1.9 ✅). The eight P0 corrections shipped — license consistency, Apache-licensed default, train = serve ChatML render, response-only SFT loss, config SSOT + thread-safe progress, live console retrieval settings, streaming citations + `score_kind`, ingestion guards — each commit gated, and the fine-tune matrix re-measured on the new 1.5B default (extraction 0.9997, classify 0.9949, format 0.5290, garbage **blocked**). The GPU re-measure exposed three infrastructure defects no in-process gate could see, now opened as **E1.10** (heavy deps are unpinned — a rebuild resolved torch 2.14 and broke every training job, fixed in E1.9), **E1.11** (`make test-contracts` is red: 9–11 schemathesis 4.x failures, so Pillar 1 is not enforced despite the claim), **E1.12** (the LoRA e2e reports *passed* when the training job crashes) and **E1.13** (progress-during-run unproven). **E1.11 and E1.12 gate any further §E work — they are the gates everything else is verified by.** Then E2 (Ollama + launch kit), E3 (Postgres chunks → real hybrid FTS, Docling + RapidOCR scanned documents, citations with page/OCR provenance, system prompt + threshold + filters, multilingual, queued indexing, golden set), E4 (task metrics in the gate, adapter promotion/rollback, synthesis re-aimed, JSON mode, multi-turn), E5 (contextual retrieval, RAG gate, history-aware retrieval, VLM extraction in ingestion). Scope guard + deferred list in the §E header. |
 | Product build (phases 0–5) | ✅ code-complete |
 | Pillar 2 — DB migration gate | ✅ `make migrate-test` verified (up→down→up); CI `full` job runs it |
 | Pillar 3 — eval gate (the moat) | ✅ enforced + **validated on GPU end-to-end** (2026-06-10): held-out, response-only, dual gate (absolute ≥0.6 **OR** clear improvement over base — `passes_eval_gate`); `tests/test_eval_gate.py` + the live LoRA e2e (`test_lora_e2e.py`, score 0.215, base 0.044, Δ+0.17 → pass → served adapter returns the invented word). |
@@ -1499,7 +1499,7 @@ row with `source_dataset_id` lineage, validated against the full training schema
 - **Close.** OPERATIONS sizing + adding-a-model; operator-console Models page; README quick start if
   the default name changed; Status snapshot.
 
-### E1.3 `[BE]` Train = serve: one prompt renderer for SFT/DPO training, eval and serving (P0) — 🟡 PARTIAL (2026-09-17, in-process gate green; shared GPU re-measure pending)
+### E1.3 `[BE]` Train = serve: one prompt renderer for SFT/DPO training, eval and serving (P0) — ✅ DONE (2026-09-17)
 - [ ] **Context.** `trainer.py:117-125` renders `System:/User:/Assistant:` plain text and
   `evaluator.py:59-71` mirrors it; serving renders ChatML (`chat_templates.py:53-61` via
   `inference.py:126`). Adapters are trained and gated on a conditioning the endpoint never sends.
@@ -1515,10 +1515,16 @@ row with `source_dataset_id` lineage, validated against the full training schema
   ChatML-format assertion in `tests/test_eval_gate.py`. `docker compose exec -T app make test`:
   260 passed, 1 skipped, 62 deselected (GPU-marked). `docker compose exec -T app make
   check-leaks`: pass, 0 leak sites.
-- [ ] **Pending to tick.** The shared GPU re-measure (`tests/integration/test_lora_e2e.py` +
-  `ADAPTA_RUN_LORA_USECASES=1 tests/integration/test_lora_use_cases.py`) on the new
-  `qwen2.5-1.5b-instruct` default, run once together with E1.4; then replace the numbers in
-  `docs/user-guide/fine-tuning-use-cases.md` with the re-measured ones.
+- [x] **GPU re-measure (shared with E1.4/E1.5), 2026-09-17, RTX 3050 8 GB.**
+  `test_lora_e2e.py` (0.5B) **1 passed** — score 1.0000 vs base 0.0409 (Δ+0.9591), served answer
+  correct. `test_lora_use_cases.py` on `Qwen/Qwen2.5-1.5B-Instruct` **4 passed, 1 failed**:
+  extraction 0.9997 (base 0.2989, Δ+0.7007), classify 0.9949 (base 0.7989, Δ+0.1960), format 0.5290
+  (base 0.0312, Δ+0.4977, improvement path), garbage control **blocked** 0.0022 (base 0.0062,
+  Δ−0.0040). The combined scenario **cleared the gate** (3B, 0.2923 vs base 0.0010, Δ+0.2913) but its
+  test failed at the serving step — five timeouts loading the 3B GGUF right after training on an
+  8 GB card; a resource limit, not a gate or training failure. `fine-tuning-use-cases.md` rewritten
+  with these numbers, stating plainly that the base model changed at the same time as the fixes, so
+  the jump is the combined effect and a near-1.0 score is not a task-quality claim.
 - **Scope.** The text render only (SFT + DPO `prompt`). Not the training loop, not the engine
   (hard constraint #1).
 - **Steps.** (1) `chat_templates.py`: expose a pure `render(template_name, system, messages) -> str`
@@ -1542,7 +1548,7 @@ row with `source_dataset_id` lineage, validated against the full training schema
 - **Close.** PRODUCT_DEFINITION eval-gate paragraph ("train, eval and serve share one renderer"),
   learning-the-system gate section, fine-tuning-use-cases; Status snapshot.
 
-### E1.4 `[BE]` Response-only loss for text SFT (P0) — 🟡 PARTIAL (2026-09-17, in-process gate green; shared GPU re-measure pending)
+### E1.4 `[BE]` Response-only loss for text SFT (P0) — ✅ DONE (2026-09-17)
 - [~] **Done so far.** New pure `adapta/training/masking.py` (`response_labels`, longest-common-prefix
   masking lifted from `evaluator._tokenize_with_response_mask`); `evaluator.py` now calls it (behaviour
   unchanged — its own regression test in `tests/test_eval_gate.py` still passes). `trainer.py`
@@ -1552,10 +1558,11 @@ row with `source_dataset_id` lineage, validated against the full training schema
   `tests/test_training_masking.py` (5 cases incl. the bare-label §A3.2 regression). Gate:
   `docker compose exec -T app make test` → 265 passed, 1 skipped, 62 deselected; `make check-leaks` →
   clean. No GPU test run, no training job started.
-- [ ] **Pending to tick.** The shared GPU re-measure (with E1.3) on the new `qwen2.5-1.5b-instruct`
-  default — watch that a real SFT run still produces a finite, improving loss with the new collator
-  and that DPO/vision are unaffected. `docs/user-guide/fine-tuning-use-cases.md`'s statement that
-  loss is response-only on both train and eval is not yet made (left alone per scope).
+- [x] **GPU re-measure (shared with E1.3/E1.5), 2026-09-17.** Six real SFT runs with
+  `DataCollatorForSeq2Seq`: loss curves finite and monotonically improving (e.g. 2.825 → 1.9e-05 over
+  20 epochs), no NaN, no padding artefact. Held-out scores are in E1.3's note. DPO and vision were
+  not exercised by this suite — unchanged by inspection only. `fine-tuning-use-cases.md` now states
+  that training loss is response-only and that train, eval and serving share one ChatML render.
 - [ ] **Context.** `trainer.py:236-240` uses `DataCollatorForLanguageModeling(mlm=False)` → labels =
   input_ids except pads, so gradient is spent on the prompt while the gate scores response-only
   (`evaluator.py:73-112`, longest-common-prefix masking). Vision masks correctly
@@ -1575,7 +1582,7 @@ row with `source_dataset_id` lineage, validated against the full training schema
   loss on both train and eval".
 - **Close.** learning-the-system gate section; Status snapshot (shared with E1.3).
 
-### E1.5 `[BE]` One source of truth for training defaults + thread-safe progress (P0) — 🟡 PARTIAL (2026-09-17, in-process gate green; shared GPU re-measure pending)
+### E1.5 `[BE]` One source of truth for training defaults + thread-safe progress (P0) — ✅ DONE (2026-09-17)
 - [~] **Done so far.** Worker builds `TrainingConfig` from `{k: v for k, v in tc_raw.items() if
   k in fields}` via new `_build_training_config` (`worker/main.py`) — zero literals; `method` still
   comes from the payload, not `training_config`. Dataclass defaults now `lora_dropout=0.1`,
@@ -1586,9 +1593,13 @@ row with `source_dataset_id` lineage, validated against the full training schema
   validate-spec` ✓ → `make generate` ✓ (seed field added) → `make check-models` ✓ (in sync) →
   `make test` 269 passed, 1 skipped, 62 deselected (incl. 4 new `test_jobs.py` cases) → `make
   check-leaks` ✓. No GPU test run.
-- [ ] **Pending to tick.** Confirm on the shared GPU re-measure that progress lines actually appear
-  live during the E1.3 SFT run (this block's threading fix is unverified against a real blocking
-  `trainer.train()` call — only unit-level config-building was exercised here).
+- [x] **GPU re-measure (shared with E1.3/E1.4), 2026-09-17 — partially conclusive.** Six real
+  training runs completed with the rescheduled callback and **zero** `no running event loop`,
+  `coroutine was never awaited` or `RuntimeError` in the worker log, which is the concrete regression
+  the old bare `asyncio.create_task` would have produced. What the run could **not** confirm is that
+  progress records reach Redis *during* training rather than in a burst at the end: progress
+  publishing emits no log line, so there is no evidence either way. Recorded as a follow-up rather
+  than claimed — see **E1.13**.
 - [ ] **Context.** `TrainingConfig` says `lora_dropout=0.05`, `max_seq_length=2048`
   (`training/models.py:105,116`); the worker rebuilds the config from literals `0.1` / `512`
   (`worker/main.py:116-125`); the spec sides with the worker (`openapi.yaml` `TrainingConfigInput`).
@@ -1706,6 +1717,107 @@ row with `source_dataset_id` lineage, validated against the full training schema
   oversized upload is rejected 413 before touching disk; a swapped embedding env var yields a typed
   409, not a Chroma error; the e2e asserts fact + citations.
 - **Close.** OPERATIONS "changing the embedding model" procedure; Status snapshot.
+
+### E1.9 `[INFRA]` Worker image: a C compiler at runtime, or every training job dies (P0) — ✅ DONE (2026-09-17)
+- [x] **Done.** The `worker` runtime stage inherits `base`, which installs only `curl libgomp1 make`;
+  `gcc` lived exclusively in `worker-builder`. The 2026-09-17 rebuild resolved **torch 2.14 + triton
+  3.8**, which routes matmuls through triton kernels and JIT-compiles its CUDA driver module at
+  **runtime** — so every training job died with `Failed to find C compiler` the moment the first
+  kernel launched (`triton/runtime/build.py:32`). Added `gcc libc6-dev` to the final `worker` stage
+  only; the `app` image is untouched (CPU-only, never loads triton). Found by the E1.3/E1.4 GPU
+  re-measure, which is the only gate that runs a real training job — no in-process gate can see this.
+  Verified: `docker compose up -d --build worker` → `gcc 14.2.0` present → six real QLoRA runs
+  completed. Root cause is shared with **E1.10**.
+
+### E1.10 `[INFRA]` Pin the heavy dependencies — an unbounded floor lets any rebuild move the product (P0)
+- [ ] **Context.** `pyproject.toml` declares `torch>=2.2.0` (:58) and `schemathesis>=3.28.0` (:83)
+  with no upper bound. A single image rebuild on 2026-09-17 resolved torch **2.14** (broke every
+  training job — E1.9) and schemathesis **4.27.3** (broke `make test-contracts` — E1.11). Neither
+  was a code change; both were a floor that moved. The repo's own claim that the contract gate is
+  green (CLAUDE.md, Status snapshot) dates from 2026-06-22 and is no longer true.
+- **Scope.** Upper bounds on the dependencies whose major versions change behaviour — torch,
+  triton (transitively), transformers, peft, trl, schemathesis, chromadb. Out: a full lockfile
+  (`uv.lock`/`pip-tools`) — propose it as its own block if bounds prove insufficient.
+- **Steps.** (1) Record the versions the current working image resolves (`pip freeze` in both `app`
+  and `worker`). (2) Add `<next-major` bounds in `pyproject.toml` for the list above, with a comment
+  per line saying what breaks if it moves. (3) `make up` and confirm the resolved set is unchanged.
+  (4) Note the policy in CONTRIBUTING (how to raise a bound deliberately).
+- **Files.** `pyproject.toml:50-90`, `CONTRIBUTING.md` (dependency section).
+- **Contract impact.** None.
+- **Gate.** `make up` → `make ci` → one real training job (`ADAPTA_RUN_LORA_E2E=1
+  tests/integration/test_lora_e2e.py`), because that is the only gate that exercises torch/triton.
+- **Acceptance.** A clean `make up` on another machine resolves the same major versions; raising a
+  bound is a deliberate, reviewed edit rather than a silent rebuild.
+- **Close.** CONTRIBUTING dependency policy; OPERATIONS upgrade section; Status snapshot.
+
+### E1.11 `[TEST]` Restore `make test-contracts` to green (P0)
+- [ ] **Context.** Schemathesis 4.27.3 reports **9–11 failures** on every run: 9 “Invalid Allow
+  header” on `OPTIONS` (`/projects`, `/projects/{id}`, `/projects/{id}/files`, `…/datasets`,
+  `…/datasets/synthesize`, `…/endpoint`, `…/jobs`, `…/keys`, `/settings`) and 1–2 “API rejected
+  schema-compliant request” on `POST /auth/register` and `POST /auth/login` from fuzzed
+  unicode/oversized emails (the auth pair is randomised per run). Verified 2026-09-17 across four
+  separate runs during §E1: none touch `/v1/chat/completions`, `Citation` or `BaseModelInfo`, so
+  §E did not cause them — but Pillar 1 is no longer enforced, which several docs still assert.
+- **Scope.** Make the gate honest again: either the responses are wrong (fix them) or the spec is
+  wrong (fix it). Decide per failure class, do not silence checks wholesale.
+- **Steps.** (1) `OPTIONS`: decide whether the CORS middleware should emit a valid `Allow` header or
+  whether those paths should declare `options` in the spec; fix the side that is actually wrong.
+  (2) Auth: the fuzzed emails are schema-compliant but rejected — tighten the spec's `email` format
+  and length so the contract matches the validator, rather than loosening the validator.
+  (3) Re-run until 0 failures; restore the “all operations, zero 5xx” claim with its real count.
+- **Files.** `adapta/api/app.py` (CORS/middleware), `specs/openapi.yaml` (`grep -n 'options:'`, the
+  auth request schemas), `Makefile:128-145`, `CLAUDE.md` Pillar-1 paragraph, `TODO.md` Status snapshot.
+- **Contract impact.** API.
+- **Gate.** `make validate-spec` → `make generate` → `make check-models` → `make test-contracts`
+  (must be **0 failures**, not “only the known ones”).
+- **Acceptance.** `make test-contracts` green twice in a row (the auth failure is randomised, so one
+  green run is not proof); the Pillar-1 claim in CLAUDE.md and the Status snapshot carries the new
+  operation count and date.
+- **Close.** CLAUDE.md Pillar-1 paragraph; Status snapshot.
+
+### E1.12 `[TEST]` The LoRA e2e must fail when the training job fails (P0)
+- [ ] **Context.** `tests/integration/test_lora_e2e.py:180` asserts `body["status"] in ("succeeded",
+  "failed")` and then branches: on `failed` it only checks that the endpoint is refused (`:291-293`).
+  So on 2026-09-17, with **every** training job crashing on a missing C compiler (E1.9), the suite
+  printed `status=failed eval_score=None` and still reported **1 passed**. A gate that cannot tell
+  “the gate correctly blocked a bad adapter” from “the trainer crashed” is not a gate. The
+  use-case matrix did fail, which is what surfaced the problem — the e2e should have too.
+- **Scope.** The two integration suites' terminal-state assertions. Do not change the eval gate.
+- **Steps.** (1) `test_lora_e2e.py`: a job whose `error_message` is set, or whose `eval_score` is
+  `None`, is an **infrastructure failure** → `pytest.fail` with the worker error, never the blocked
+  branch. Keep a blocked-adapter branch only for `status == "succeeded" and eval_passed is False`.
+  (2) Apply the same distinction in `test_lora_use_cases.py`'s waiter so a crashed job reports the
+  worker's error rather than a gate verdict. (3) Assert the negative control is blocked **because**
+  it succeeded and lost to base, not because it crashed.
+- **Files.** `tests/integration/test_lora_e2e.py:160-200, 285-295`,
+  `tests/integration/test_lora_use_cases.py` (the job waiter + garbage scenario assertions).
+- **Contract impact.** None.
+- **Gate.** `ADAPTA_RUN_LORA_E2E=1 tests/integration/test_lora_e2e.py` on GPU; plus a negative check
+  — temporarily break the worker (e.g. `CC=/nonexistent`) and confirm the suite now **fails**.
+- **Acceptance.** A crashed training job fails the e2e with the worker's error in the message; a
+  genuinely blocked adapter still passes the blocked branch.
+- **Close.** Status snapshot; the §E1.12 line in the Pillar-3 row if it claims e2e coverage.
+
+### E1.13 `[BE]` Prove training progress reaches Redis during the run, not after it (P1)
+- [ ] **Context.** E1.5 replaced the SFT/DPO progress callback's bare `asyncio.create_task` (fired
+  from inside the blocking HF `trainer.train()` call) with `asyncio.run_coroutine_threadsafe`. Six
+  real GPU runs on 2026-09-17 produced **no** `no running event loop` / `coroutine was never awaited`
+  errors, so the regression is gone — but progress publishing emits no log line, so there is no
+  evidence that records reach Redis *during* training rather than in a burst once it returns. The
+  console's live progress bar depends on the answer.
+- **Scope.** Observability + one assertion. No change to the training loop.
+- **Steps.** (1) Log one line per published progress record (step, epoch, percent) at DEBUG in the
+  worker. (2) In the GPU e2e, poll `GET /jobs/{id}` while the job is `running` and assert `progress`
+  strictly increases at least twice **before** the terminal state. (3) If it does not, the real bug
+  is that the blocking call never yields to the loop — then move the HF call to `asyncio.to_thread`
+  (it is a call site change, not a rewrite of the loop — hard constraint #1 still holds).
+- **Files.** `adapta/training/trainer.py:212-234` (both `ProgressCallback` classes),
+  `adapta/services/jobs.py`, `tests/integration/test_lora_e2e.py`.
+- **Contract impact.** None.
+- **Gate.** `make test` → `ADAPTA_RUN_LORA_E2E=1 tests/integration/test_lora_e2e.py` on GPU.
+- **Acceptance.** The e2e observes progress advancing mid-run; the console's progress bar is
+  demonstrably live rather than a post-hoc jump to 100 %.
+- **Close.** operator-console fine-tune flow (progress bar claim); Status snapshot.
 
 ### E2. Distribution + launch kit (weeks 2–3)
 

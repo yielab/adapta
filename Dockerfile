@@ -128,6 +128,13 @@ RUN git clone --depth 1 --branch ${LLAMA_CPP_TAG} https://github.com/ggerganov/l
     && rm -rf /tmp/llamacpp
 
 FROM base AS worker
+# Triton JIT-compiles its CUDA driver module at RUNTIME (this image resolves to
+# torch 2.14 + triton 3.8, which routes matmuls through triton kernels), so the worker
+# needs a C compiler and libc headers on the FINAL image, not just in worker-builder.
+# Without them every training job dies with "Failed to find C compiler" the moment a
+# kernel is first launched. The app image stays slim — it is CPU-only, never loads triton.
+RUN apt-get update && apt-get install -y --no-install-recommends gcc libc6-dev \
+    && rm -rf /var/lib/apt/lists/*
 COPY --from=worker-builder /opt/venv /opt/venv
 COPY --from=worker-builder /opt/llamacpp /opt/llamacpp
 COPY adapta/ ./adapta/
