@@ -116,6 +116,34 @@ class ProjectNotFound(NotFound):
 
 
 @dataclass
+class PayloadTooLarge(DomainError):
+    """An upload exceeded the configured size cap (HTTP 413).
+
+    Raised by the shared streaming-upload guard (``adapta/api/_upload.py``)
+    before the oversized body is allowed to reach disk.
+    """
+
+    code: str = field(default="payload_too_large", init=False)
+    status: int = field(default=413, init=False)
+
+
+@dataclass
+class EmbeddingModelMismatch(DomainError):
+    """The embedding model configured now differs from the one a collection
+    was actually built with (HTTP 409).
+
+    ``ADAPTA_EMBEDDING_MODEL`` changing after documents were indexed would
+    otherwise silently corrupt retrieval (query embedded in a different
+    vector space than the stored chunks) or crash Chroma on a dimension
+    mismatch. ``message`` must name the fix (re-index, or restore the prior
+    env var) — this is a config-drift error an operator can act on.
+    """
+
+    code: str = field(default="embedding_model_mismatch", init=False)
+    status: int = field(default=409, init=False)
+
+
+@dataclass
 class TrainingFailed(DomainError):
     """A training job failed for a non-eval reason (HTTP 500).
 

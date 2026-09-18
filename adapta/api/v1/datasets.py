@@ -11,6 +11,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, File, Query, UploadFile
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from adapta.api._upload import save_capped_upload
 from adapta.config import settings
 from adapta.db.models import Dataset, DatasetStatus, Project, ProjectType
 from adapta.db.session import get_db
@@ -170,22 +171,10 @@ async def upload_dataset(
     await db.flush()
 
     # Stream to disk with a HARD cap so a hostile/oversized upload can't fill the disk
-    # before validation runs (Content-Length is client-controlled; count real bytes).
+    # before validation runs — shared with the files router (adapta/api/_upload.py);
+    # over-cap raises PayloadTooLarge (413) and the uncommitted row rolls back.
     dest = ds_dir / f"{dataset.id}_{filename}"
-    max_upload = settings.max_upload_mb * 1024 * 1024
-    written = 0
-    try:
-        with dest.open("wb") as out:
-            while chunk := await file.read(1024 * 1024):
-                written += len(chunk)
-                if written > max_upload:
-                    raise InvalidRequest(
-                        message=f"Upload exceeds the {settings.max_upload_mb} MB limit"
-                    )
-                out.write(chunk)
-    except InvalidRequest:
-        dest.unlink(missing_ok=True)  # drop the partial; the uncommitted row rolls back
-        raise
+    await save_capped_upload(file, dest)
 
     dataset.storage_path = str(dest)
     # Commit before scheduling — the background task opens its own DB session;

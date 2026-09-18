@@ -7,7 +7,6 @@ documents, behavior from the fine-tune)."""
 
 import asyncio
 import logging
-import shutil
 from pathlib import Path
 from typing import List
 
@@ -15,10 +14,11 @@ from fastapi import APIRouter, BackgroundTasks, Depends, File, UploadFile
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from adapta.api._upload import save_capped_upload
 from adapta.config import settings
 from adapta.db.models import Collection, FileStatus, Project, ProjectFile
 from adapta.db.session import get_db
-from adapta.domain.errors import InvalidRequest, NotFound
+from adapta.domain.errors import EmbeddingModelMismatch, InvalidRequest, NotFound
 from adapta.models.generated import FileResponse
 from adapta.services.auth import get_current_user, require_team_member, require_team_writer
 from adapta.services.app_settings import resolve_setting
@@ -94,6 +94,26 @@ async def _index_file(
             pfile.status = FileStatus.processing
             await db.commit()
 
+            # Fetch (not create) the collection row up front: if it already
+            # exists and was built with a different embedding model than the
+            # one configured now, embedding this file into the same Chroma
+            # collection would silently mix vector spaces (or blow up on a
+            # dimension mismatch at retrieve time). Fail fast, before paying
+            # for parsing/embedding.
+            col_result = await db.execute(
+                select(Collection).where(Collection.project_id == project_id)
+            )
+            collection = col_result.scalar_one_or_none()
+            if collection is not None and collection.embedding_model != settings.embedding_model:
+                raise EmbeddingModelMismatch(
+                    message=(
+                        f"This project's documents were indexed with '{collection.embedding_model}' "
+                        f"but the server is now configured for '{settings.embedding_model}'. "
+                        "Re-index the project's files, or restore "
+                        f"ADAPTA_EMBEDDING_MODEL={collection.embedding_model}."
+                    )
+                )
+
             # Resolve the org's chunking overrides (E1.6) before the thread —
             # `resolve_setting` is async (DB-backed, TTL-cached) and must not be
             # called from inside the worker thread below.
@@ -119,10 +139,6 @@ async def _index_file(
             count = await asyncio.to_thread(_do_index)
 
             # Update collection metadata
-            col_result = await db.execute(
-                select(Collection).where(Collection.project_id == project_id)
-            )
-            collection = col_result.scalar_one_or_none()
             if collection:
                 collection.num_documents += 1
                 collection.num_chunks += count
@@ -188,10 +204,9 @@ async def upload_file(
     await db.flush()
 
     dest_path = project_upload_dir / f"{pfile.id}_{filename}"
-    with dest_path.open("wb") as out:
-        shutil.copyfileobj(file.file, out)
+    written = await save_capped_upload(file, dest_path)
 
-    pfile.size_bytes = dest_path.stat().st_size
+    pfile.size_bytes = written
     pfile.storage_path = str(dest_path)
     # Commit before scheduling — the background task opens its own DB session;
     # committing here ensures the row is visible to that session immediately.
@@ -241,6 +256,17 @@ async def delete_file(
         Path(pfile.storage_path).unlink(missing_ok=True)
     except Exception:
         pass
+
+    # Decrement the collection's counters so `has_knowledge` (chat.py) goes
+    # false once the last file is gone, instead of staying true against an
+    # empty collection. Floored at 0 — num_chunks was captured on this file
+    # at index time (pfile.num_chunks), so it can't itself go negative, but
+    # floor defensively against any drift.
+    col_result = await db.execute(select(Collection).where(Collection.project_id == project_id))
+    collection = col_result.scalar_one_or_none()
+    if collection:
+        collection.num_documents = max(0, collection.num_documents - 1)
+        collection.num_chunks = max(0, collection.num_chunks - (pfile.num_chunks or 0))
 
     await db.delete(pfile)
     await db.commit()  # durable before response so an immediate re-list reflects the deletion

@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from typing import List, Literal, Optional
 
 from adapta.config import settings
+from adapta.domain.errors import EmbeddingModelMismatch
 from adapta.services.embeddings import get_embedding_service, get_reranker_service
 
 logger = logging.getLogger(__name__)
@@ -128,14 +129,20 @@ class RAGService:
     def ensure_collection(self, project_id: str) -> str:
         """Create the Chroma collection if it doesn't exist; returns the name.
 
-        Sets ``hnsw:space: cosine`` so the index uses cosine distance.  This
-        metadata is applied only at creation — Chroma ignores it on
-        ``get_or_create_collection`` calls for an existing collection, so the
-        distance metric is locked in after the first call.
+        Sets ``hnsw:space: cosine`` so the index uses cosine distance, and
+        records the embedding model active right now as ``embedding_model``.
+        This metadata is applied only at creation — Chroma ignores it on
+        ``get_or_create_collection`` calls for an existing collection, so both
+        the distance metric and the embedding-model record are locked in
+        after the first call. ``retrieve()`` reads the latter back to detect
+        ``ADAPTA_EMBEDDING_MODEL`` drift.
         """
         name = collection_name_for(project_id)
         client = self._client()
-        client.get_or_create_collection(name=name, metadata={"hnsw:space": "cosine"})
+        client.get_or_create_collection(
+            name=name,
+            metadata={"hnsw:space": "cosine", "embedding_model": settings.embedding_model},
+        )
         return name
 
     def delete_collection(self, project_id: str) -> None:
@@ -171,7 +178,10 @@ class RAGService:
 
         name = collection_name_for(project_id)
         client = self._client()
-        collection = client.get_or_create_collection(name=name, metadata={"hnsw:space": "cosine"})
+        collection = client.get_or_create_collection(
+            name=name,
+            metadata={"hnsw:space": "cosine", "embedding_model": settings.embedding_model},
+        )
 
         ids = [f"{file_id}_{c.index}" for c in chunks]
         metadatas = [
@@ -217,15 +227,33 @@ class RAGService:
         top_k = top_k or settings.rag_top_k
         fetch_k = max(top_k * settings.rag_hybrid_fetch_multiplier, top_k + 1)
 
-        emb_service = get_embedding_service()
-        query_embedding = emb_service.embed_one(query)
-
         name = collection_name_for(project_id)
         client = self._client()
         try:
             collection = client.get_collection(name)
         except Exception:
             return []
+
+        # Config-drift guard: the collection's Chroma metadata records the
+        # embedding model it was actually built with (set once, at creation —
+        # see ensure_collection). If ADAPTA_EMBEDDING_MODEL changed since, a
+        # query embedded with the new model would search the wrong vector
+        # space — or blow up Chroma on a dimension mismatch — either way not
+        # a signal a caller should have to decode from a Chroma error. `None`
+        # (a collection indexed before this guard existed) is unknown
+        # provenance, not treated as a mismatch.
+        stored_model = (getattr(collection, "metadata", None) or {}).get("embedding_model")
+        if stored_model and stored_model != settings.embedding_model:
+            raise EmbeddingModelMismatch(
+                message=(
+                    f"This project's documents were indexed with '{stored_model}' "
+                    f"but the server is now configured for '{settings.embedding_model}'. "
+                    f"Re-index the project's files, or restore ADAPTA_EMBEDDING_MODEL={stored_model}."
+                )
+            )
+
+        emb_service = get_embedding_service()
+        query_embedding = emb_service.embed_one(query)
 
         results = collection.query(
             query_embeddings=[query_embedding],

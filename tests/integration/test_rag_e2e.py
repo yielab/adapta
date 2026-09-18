@@ -3,7 +3,9 @@
 Full path: create RAG project → upload a document → background-index it (real
 sentence-transformers embeddings into Chroma) → create the endpoint → mint a
 scoped key → ask a question through the OpenAI-compatible endpoint and get an
-answer grounded in the document.
+answer grounded in the document, with citations. Then (§E1.8): delete the only
+file and confirm the collection's counters are floored at zero — chat must
+keep answering, but without a retrieval pass against a now-empty collection.
 
 Marked integration + slow; skipped unless a GGUF is present (the offline gate
 ships no model). The first index downloads the embedding model, so the poll uses
@@ -103,3 +105,41 @@ async def test_rag_upload_index_serve_cited(client, admin):
     answer = body["choices"][0]["message"]["content"]
     assert answer.strip(), "expected a non-empty grounded answer"
     assert body["usage"]["total_tokens"] > 0
+    # The old assertion (non-empty answer only) would pass even on an ungrounded
+    # or hallucinated reply. Pin it to the fact actually planted in the document,
+    # and require the retrieval pass to have run at all (§E1.8).
+    assert "pebble" in answer.lower(), f"expected the planted mascot fact in the answer: {answer!r}"
+    assert body.get("citations"), "expected non-empty citations from the indexed document"
+
+    # 7. Delete the only file. `Collection.num_documents/num_chunks` must be
+    #    decremented (floored at 0) in the same transaction as the delete — the
+    #    origin bug left them untouched, so `has_knowledge` stayed true against an
+    #    empty Chroma collection. Prove it from the outside: chat must still work,
+    #    but without a citations-bearing retrieval pass.
+    delete_resp = await client.delete(f"/v1/projects/{pid}/files/{fid}", headers=h)
+    assert delete_resp.status_code == 204, delete_resp.text
+
+    listed = await client.get(f"/v1/projects/{pid}/files", headers=h)
+    assert listed.status_code == 200, listed.text
+    assert listed.json() == [], "file list should be empty after deleting the only file"
+
+    chat_after_delete = await client.post(
+        "/v1/chat/completions",
+        headers={"Authorization": f"Bearer {brn}"},
+        json={
+            "model": slug,
+            "messages": [
+                {"role": "user", "content": "What is the name of Project Nimbus's mascot?"}
+            ],
+            "max_tokens": 64,
+        },
+    )
+    assert chat_after_delete.status_code == 200, chat_after_delete.text
+    after_body = chat_after_delete.json()
+    assert after_body["choices"][0]["message"]["content"].strip(), (
+        "chat must keep answering once the collection is empty, not error out"
+    )
+    assert not after_body.get("citations"), (
+        "num_chunks should be floored at 0 after deleting the only file, so "
+        "has_knowledge is false and chat runs without a retrieval pass"
+    )

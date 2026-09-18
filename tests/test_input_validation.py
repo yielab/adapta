@@ -4,11 +4,18 @@ Input validation hardening tests.
 Covers:
 - ADAPTA_MAX_INPUT_CHARS — oversized chat messages are rejected
 - File upload extension guard — only allowed extensions are accepted (§7.3)
+- Shared upload-size cap (adapta/api/_upload.py) — oversized uploads rejected
+  as a typed 413, before or during the stream, never left half-written (§E1.8)
+- Embedding-model config-drift guard (RAGService.retrieve) — a collection built
+  with a different ADAPTA_EMBEDDING_MODEL than the one configured now raises a
+  typed 409 instead of feeding a mismatched query vector to Chroma (§E1.8)
 """
 
 import json
+from io import BytesIO
 
 import pytest
+from fastapi import UploadFile
 
 from adapta.config import settings
 
@@ -227,3 +234,144 @@ def test_input_guard_threshold_behavior():
     messages_over = [{"role": "user", "content": "x" * (limit + 1)}]
     total_over = sum(len(str(m.get("content", ""))) for m in messages_over if isinstance(m.get("content"), str))
     assert total_over > limit
+
+
+# ---------------------------------------------------------------------------
+# Shared upload-size cap (§E1.8) — adapta/api/_upload.py, used by both the
+# files and datasets routers
+# ---------------------------------------------------------------------------
+
+
+def test_payload_too_large_is_413():
+    """PayloadTooLarge carries the dedicated HTTP status/code, not a generic 400."""
+    from adapta.domain.errors import PayloadTooLarge
+
+    err = PayloadTooLarge(message="Upload exceeds the 1 MB limit")
+    assert err.status == 413
+    assert err.code == "payload_too_large"
+
+
+@pytest.mark.asyncio
+async def test_save_capped_upload_rejects_by_declared_size(tmp_path):
+    """A declared Content-Length over the cap is rejected before `dest` is opened."""
+    from adapta.api._upload import save_capped_upload
+    from adapta.domain.errors import PayloadTooLarge
+
+    uf = UploadFile(file=BytesIO(b"x" * 10), size=10_000_000, filename="big.bin")
+    dest = tmp_path / "out.bin"
+    with pytest.raises(PayloadTooLarge):
+        await save_capped_upload(uf, dest, max_upload_mb=1)
+    assert not dest.exists()
+
+
+@pytest.mark.asyncio
+async def test_save_capped_upload_rejects_by_streamed_bytes(tmp_path):
+    """Real byte count over the cap is caught mid-stream even with no declared size
+    (Content-Length is client-controlled and can't be trusted alone)."""
+    from adapta.api._upload import save_capped_upload
+    from adapta.domain.errors import PayloadTooLarge
+
+    data = b"x" * (2 * 1024 * 1024)  # 2 MB against a 1 MB cap
+    uf = UploadFile(file=BytesIO(data), size=None, filename="big.bin")
+    dest = tmp_path / "out.bin"
+    with pytest.raises(PayloadTooLarge):
+        await save_capped_upload(uf, dest, max_upload_mb=1)
+    # The partial write is removed — an oversized upload never lands whole on disk.
+    assert not dest.exists()
+
+
+@pytest.mark.asyncio
+async def test_save_capped_upload_accepts_under_cap(tmp_path):
+    from adapta.api._upload import save_capped_upload
+
+    data = b"hello world"
+    uf = UploadFile(file=BytesIO(data), size=len(data), filename="ok.txt")
+    dest = tmp_path / "ok.txt"
+    written = await save_capped_upload(uf, dest, max_upload_mb=1)
+    assert written == len(data)
+    assert dest.read_bytes() == data
+
+
+# ---------------------------------------------------------------------------
+# Embedding-model config-drift guard (§E1.8) — RAGService.retrieve
+# ---------------------------------------------------------------------------
+
+
+class _FakeMismatchedCollection:
+    metadata = {"embedding_model": "some-other-embedding-model"}
+
+
+class _FakeUnknownCollection:
+    metadata = {}  # an older collection, indexed before this guard existed
+
+
+class _RaisesIfCalledEmbedder:
+    """Fails the test if retrieve() gets far enough to embed the query — the
+    mismatch guard must fire first, without paying for an embedding call."""
+
+    def embed_one(self, text: str):
+        raise AssertionError("embed_one called — the mismatch guard did not fire first")
+
+
+def test_retrieve_raises_typed_409_on_embedding_model_mismatch(monkeypatch):
+    from adapta.domain.errors import EmbeddingModelMismatch
+    from adapta.services.rag import RAGService
+
+    class FakeClient:
+        def get_collection(self, name):
+            return _FakeMismatchedCollection()
+
+    monkeypatch.setattr("adapta.services.rag._get_chroma_client", lambda: FakeClient())
+    monkeypatch.setattr(
+        "adapta.services.rag.get_embedding_service", lambda: _RaisesIfCalledEmbedder()
+    )
+
+    with pytest.raises(EmbeddingModelMismatch) as exc_info:
+        RAGService().retrieve("some-project", "a question")
+
+    assert exc_info.value.status == 409
+    # Message names the fix, per the block's requirement.
+    assert "some-other-embedding-model" in exc_info.value.message
+    assert settings.embedding_model in exc_info.value.message
+    assert "re-index" in exc_info.value.message.lower()
+    assert "ADAPTA_EMBEDDING_MODEL" in exc_info.value.message
+
+
+def test_retrieve_matching_embedding_model_does_not_raise(monkeypatch):
+    from adapta.services.rag import RAGService
+
+    class _Matching:
+        metadata = {"embedding_model": settings.embedding_model}
+
+    class FakeClient:
+        def get_collection(self, name):
+            return _Matching()
+
+    monkeypatch.setattr("adapta.services.rag._get_chroma_client", lambda: FakeClient())
+    monkeypatch.setattr(
+        "adapta.services.rag.get_embedding_service", lambda: _RaisesIfCalledEmbedder()
+    )
+
+    # Past the guard, retrieve() proceeds to embed the query — which our fake
+    # embedder deliberately fails, proving the guard let a matching model through.
+    with pytest.raises(AssertionError):
+        RAGService().retrieve("some-project", "a question")
+
+
+def test_retrieve_missing_metadata_is_unknown_not_mismatch(monkeypatch):
+    """A collection indexed before this guard existed has no `embedding_model` key
+    in its Chroma metadata — treat that as unknown provenance, not a mismatch,
+    so pre-existing collections don't suddenly start 409ing."""
+    from adapta.services.rag import RAGService
+
+    class FakeClient:
+        def get_collection(self, name):
+            return _FakeUnknownCollection()
+
+    monkeypatch.setattr("adapta.services.rag._get_chroma_client", lambda: FakeClient())
+    monkeypatch.setattr(
+        "adapta.services.rag.get_embedding_service", lambda: _RaisesIfCalledEmbedder()
+    )
+
+    with pytest.raises(AssertionError):
+        RAGService().retrieve("some-project", "a question")

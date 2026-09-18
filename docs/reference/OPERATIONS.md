@@ -281,12 +281,14 @@ vision projector (CLIP) through one llama-cpp runtime. Operational notes for rea
 
 ### 6.5 Upload & ingestion limits (enforced)
 
-Dataset upload is bounded defensively so an oversized or hostile bundle can't
-exhaust the host — relevant for any multi-tenant / untrusted-operator deployment:
+Upload is bounded defensively so an oversized or hostile file can't exhaust the
+host — relevant for any multi-tenant / untrusted-operator deployment. The files
+and datasets routers share one streamed-upload guard (`adapta/api/_upload.py`,
+§E1.8):
 
 | Limit | Setting | Default | Enforced |
 |---|---|---|---|
-| Single upload (wire size) | `ADAPTA_MAX_UPLOAD_MB` | 1024 MB | streamed-to-disk byte cap; over-limit → `400`, partial file removed |
+| Single upload (wire size) | `ADAPTA_MAX_UPLOAD_MB` | 1024 MB | declared size rejected before disk is touched when known; real byte count capped mid-stream otherwise; over-limit → typed `413`, partial file removed |
 | Bundle uncompressed total | `ADAPTA_MAX_BUNDLE_UNCOMPRESSED_MB` | 500 MB | **actual** decompressed bytes capped during extraction (zip-bomb safe) |
 | Files per bundle | `ADAPTA_MAX_BUNDLE_FILES` | 2000 | rejected before extraction |
 | Per-image size / side | `ADAPTA_MAX_IMAGE_MB` / `ADAPTA_MAX_IMAGE_SIDE_PX` | 10 MB / 8192 px | per-image validation |
@@ -303,6 +305,35 @@ An operator preparing a large bundle (e.g. hundreds of scanned invoices) sees th
 full list of missing/corrupt/oversized images or malformed rows in one upload and
 fixes them together, rather than discovering them one re-upload at a time. The
 console renders the multi-line report verbatim under the dataset row.
+
+### 6.6 Changing the embedding model (§E1.8)
+
+`ADAPTA_EMBEDDING_MODEL` (default `all-MiniLM-L6-v2`) is recorded once per
+project — in `Collection.embedding_model` (Postgres) and again in the Chroma
+collection's own metadata — the moment its first document is indexed. Both
+records are set at creation and never rewritten.
+
+If you change `ADAPTA_EMBEDDING_MODEL` on a deployment that already has indexed
+projects, anything touching an existing collection under the new setting gets a
+typed `EmbeddingModelMismatch` (`409`) rather than a silently wrong answer or a
+raw Chroma dimension-mismatch error:
+
+- **Uploading a new file** to a project indexed under the old model is rejected
+  before parsing/embedding runs.
+- **Chatting against** a project indexed under the old model is rejected before
+  the query is embedded and sent to Chroma.
+
+The error message names both models and the fix. To recover, either:
+
+1. **Re-index** — delete the project's files and re-upload them under the new
+   model (the collection is rebuilt from empty, so its recorded model updates
+   too); or
+2. **Roll back** — restore `ADAPTA_EMBEDDING_MODEL` to the value the message
+   names and restart the app.
+
+A collection indexed before this guard existed (no `embedding_model` key in its
+Chroma metadata) is treated as unknown provenance, not a mismatch — it does not
+retroactively start 409ing.
 
 ---
 

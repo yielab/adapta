@@ -56,7 +56,7 @@ Honour the [Definition of done](#definition-of-done-per-task) on every task. Wor
 
 | Area | State |
 |---|---|
-| **Audit 2026-09-03 (§E)** | 🟥 **open** — 4/29 done (E1.1 ✅, E1.2 ✅, E1.6 ✅, E1.7 ✅). P0 (E1.1–E1.8): license consistency, Apache-licensed default models, train = serve prompt render, response-only loss, config SSOT, ingestion guards. Then E2 (Ollama + launch kit), E3 (Postgres chunks → real hybrid FTS, Docling + RapidOCR scanned documents, citations with page/OCR provenance, system prompt + threshold + filters, multilingual, queued indexing, golden set), E4 (task metrics in the gate, adapter promotion/rollback, synthesis re-aimed, JSON mode, multi-turn), E5 (contextual retrieval, RAG gate, history-aware retrieval, VLM extraction in ingestion). Scope guard + deferred list in the §E header. |
+| **Audit 2026-09-03 (§E)** | 🟥 **open** — 5/29 done (E1.1 ✅, E1.2 ✅, E1.6 ✅, E1.7 ✅, E1.8 ✅). P0 (E1.1–E1.8): license consistency, Apache-licensed default models, train = serve prompt render, response-only loss, config SSOT. Then E2 (Ollama + launch kit), E3 (Postgres chunks → real hybrid FTS, Docling + RapidOCR scanned documents, citations with page/OCR provenance, system prompt + threshold + filters, multilingual, queued indexing, golden set), E4 (task metrics in the gate, adapter promotion/rollback, synthesis re-aimed, JSON mode, multi-turn), E5 (contextual retrieval, RAG gate, history-aware retrieval, VLM extraction in ingestion). Scope guard + deferred list in the §E header. |
 | Product build (phases 0–5) | ✅ code-complete |
 | Pillar 2 — DB migration gate | ✅ `make migrate-test` verified (up→down→up); CI `full` job runs it |
 | Pillar 3 — eval gate (the moat) | ✅ enforced + **validated on GPU end-to-end** (2026-06-10): held-out, response-only, dual gate (absolute ≥0.6 **OR** clear improvement over base — `passes_eval_gate`); `tests/test_eval_gate.py` + the live LoRA e2e (`test_lora_e2e.py`, score 0.215, base 0.044, Δ+0.17 → pass → served adapter returns the invented word). |
@@ -1632,8 +1632,17 @@ row with `source_dataset_id` lineage, validated against the full training schema
   `score_kind`; Playground unchanged.
 - **Close.** consuming-the-api streaming section; Status snapshot.
 
-### E1.8 `[BE+TEST]` Ingestion correctness: counters, upload cap, embedding-model guard, e2e that proves retrieval (P0)
-- [ ] **Context.** `Collection.num_documents/num_chunks` are incremented on index (`files.py:108-118`)
+### E1.8 `[BE+TEST]` Ingestion correctness: counters, upload cap, embedding-model guard, e2e that proves retrieval (P0) — ✅ DONE (2026-09-17)
+- [x] **Done.** Delete decrements `Collection.num_documents/num_chunks` (floored at 0), committed
+  before return. Upload cap factored into shared `adapta/api/_upload.py` (`save_capped_upload`,
+  used by `files.py` and `datasets.py`); over-cap → typed `PayloadTooLarge` (413), partial file
+  removed. New `EmbeddingModelMismatch` (409): `files.py` checks `Collection.embedding_model`
+  before indexing; `rag.py`'s `retrieve()` checks the same fact via Chroma collection metadata
+  (no DB access there); both skip pre-guard (unknown-provenance) collections. `test_rag_e2e.py`
+  now asserts the planted fact + citations, then delete-all → empty list → citation-less chat.
+  Gate (live, 2026-09-17): `check-leaks` clean → `make test` 257 passed/1 skipped/62 deselected →
+  live e2e passed (29s, real qwen2.5-3b). Spec: added `409`/`413` response codes only (no DTO change).
+- [x] **Context.** `Collection.num_documents/num_chunks` are incremented on index (`files.py:108-118`)
   and never decremented on delete (`files.py:199-227`), so `has_knowledge` stays true on an empty
   collection (`api/v1/chat.py:130-133`). `POST /files` has no size cap (`files.py:173-174`) while
   datasets enforce `max_upload_mb` (`datasets.py:175-183`). `Collection.embedding_model` is written
