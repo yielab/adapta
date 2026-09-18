@@ -97,12 +97,17 @@ class TrainingConfig:
 
     All fields have sane defaults. Clients pass only the fields they want to
     override (``exclude_unset`` in the router); the rest fill from these defaults.
+
+    This dataclass is the single source of truth for defaults (§E1.5) —
+    ``specs/openapi.yaml`` (``TrainingConfigInput``) documents the same values and
+    the worker (``adapta/worker/main.py``) holds no hyperparameter literals of its
+    own; it fills only what the operator's payload actually sets.
     """
 
     # LoRA parameters
     lora_r: int = 16  # Rank
     lora_alpha: int = 32  # Scaling factor
-    lora_dropout: float = 0.05
+    lora_dropout: float = 0.1
     target_modules: List[str] = field(
         default_factory=lambda: ["q_proj", "v_proj", "k_proj", "o_proj"]
     )
@@ -113,7 +118,7 @@ class TrainingConfig:
     learning_rate: float = 2e-4
     warmup_steps: int = 100
     gradient_accumulation_steps: int = 4
-    max_seq_length: int = 2048
+    max_seq_length: int = 512
 
     # Pinned seed — recorded into training provenance so a run is reproducible.
     seed: int = 42

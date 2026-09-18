@@ -13,6 +13,8 @@ import pytest
 from redis.exceptions import TimeoutError as RedisTimeoutError
 
 from adapta.services.jobs import JOB_KEY_PREFIX, QUEUE_KEY, JobQueue
+from adapta.training.models import TrainingConfig
+from adapta.worker.main import _build_training_config
 
 
 class _FakePipeline:
@@ -147,3 +149,35 @@ def test_queue_requires_connection():
     q = JobQueue("redis://fake:6379/0")
     with pytest.raises(RuntimeError):
         _ = q.redis
+
+
+# _build_training_config (adapta/worker/main.py) — §E1.5: the worker holds no
+# hyperparameter literals of its own; TrainingConfig's own dataclass defaults are
+# the single source of truth (mirrored, not duplicated, in specs/openapi.yaml).
+
+
+def test_build_training_config_empty_payload_uses_dataclass_defaults():
+    config = _build_training_config({}, "sft")
+    defaults = TrainingConfig()
+    assert config.lora_dropout == defaults.lora_dropout == 0.1
+    assert config.max_seq_length == defaults.max_seq_length == 512
+    assert config.seed == defaults.seed == 42
+    assert config.method == "sft"
+
+
+def test_build_training_config_seed_round_trips():
+    config = _build_training_config({"seed": 12345}, "sft")
+    assert config.seed == 12345
+
+
+def test_build_training_config_method_comes_from_payload_not_training_config():
+    # `method` is a top-level job field, not part of training_config — a stray
+    # "method" key in the raw payload must never override the explicit argument.
+    config = _build_training_config({"method": "dpo"}, "sft")
+    assert config.method == "sft"
+
+
+def test_build_training_config_ignores_unknown_keys():
+    config = _build_training_config({"not_a_real_field": 1, "lora_r": 8}, "sft")
+    assert config.lora_r == 8
+    assert not hasattr(config, "not_a_real_field")

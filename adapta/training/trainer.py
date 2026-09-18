@@ -113,6 +113,10 @@ class LoRATrainer:
             )
 
         self.training_active = True
+        # Captured before the blocking `trainer.train()` call below so the progress
+        # callback — invoked by transformers off the coroutine that's awaiting this
+        # method — can schedule back onto it thread-safely (§E1.5).
+        loop = asyncio.get_running_loop()
 
         try:
             # Import training libraries
@@ -260,9 +264,10 @@ class LoRATrainer:
             from transformers import TrainerCallback
 
             class ProgressCallback(TrainerCallback):
-                def __init__(self, callback_fn, job_id):
+                def __init__(self, callback_fn, job_id, loop):
                     self.callback_fn = callback_fn
                     self.job_id = job_id
+                    self.loop = loop
 
                 def on_log(self, args, state, control, logs=None, **kwargs):
                     if logs and self.callback_fn:
@@ -272,15 +277,20 @@ class LoRATrainer:
                         loss = logs.get("loss", 0.0)
                         lr = logs.get("learning_rate", 0.0)
 
-                        # Call progress callback
-                        asyncio.create_task(
+                        # Call progress callback. transformers invokes on_log off the
+                        # coroutine that's awaiting train() (§E1.5), so scheduling with
+                        # plain asyncio.create_task() targets no running loop on that
+                        # thread and silently drops the update — run_coroutine_threadsafe
+                        # hands it back to the loop captured above instead.
+                        asyncio.run_coroutine_threadsafe(
                             self.callback_fn(
                                 job_id=self.job_id,
                                 step=step,
                                 epoch=epoch,
                                 loss=loss,
                                 learning_rate=lr,
-                            )
+                            ),
+                            self.loop,
                         )
 
             # The preprocessor already emits response-only-masked `labels` per row
@@ -298,7 +308,9 @@ class LoRATrainer:
                 eval_dataset=tokenized_dataset.get("validation"),
                 data_collator=data_collator,
                 callbacks=(
-                    [ProgressCallback(progress_callback, job_id)] if progress_callback else []
+                    [ProgressCallback(progress_callback, job_id, loop)]
+                    if progress_callback
+                    else []
                 ),
             )
 
@@ -581,6 +593,9 @@ class LoRATrainer:
             )
 
         self.training_active = True
+        # Captured before the blocking dpo_trainer.train() call below — see
+        # the identical comment in train() (§E1.5).
+        loop = asyncio.get_running_loop()
 
         try:
             import torch
@@ -670,20 +685,24 @@ class LoRATrainer:
             from transformers import TrainerCallback
 
             class ProgressCallback(TrainerCallback):
-                def __init__(self, callback_fn, job_id):
+                def __init__(self, callback_fn, job_id, loop):
                     self.callback_fn = callback_fn
                     self.job_id = job_id
+                    self.loop = loop
 
                 def on_log(self, args, state, control, logs=None, **kwargs):
                     if logs and self.callback_fn:
-                        asyncio.create_task(
+                        # See the SFT ProgressCallback above (§E1.5) — same
+                        # thread-safe rescheduling, same reason.
+                        asyncio.run_coroutine_threadsafe(
                             self.callback_fn(
                                 job_id=self.job_id,
                                 step=state.global_step,
                                 epoch=state.epoch,
                                 loss=logs.get("loss", 0.0),
                                 learning_rate=logs.get("learning_rate", 0.0),
-                            )
+                            ),
+                            self.loop,
                         )
 
             dpo_args = DPOConfig(
@@ -712,7 +731,9 @@ class LoRATrainer:
                 train_dataset=dpo_dataset["train"],
                 tokenizer=tokenizer,
                 callbacks=(
-                    [ProgressCallback(progress_callback, job_id)] if progress_callback else []
+                    [ProgressCallback(progress_callback, job_id, loop)]
+                    if progress_callback
+                    else []
                 ),
             )
 

@@ -46,6 +46,24 @@ async def _set_status(queue, job_id: str, *, critical: bool = False, **fields) -
             raise
 
 
+def _build_training_config(tc_raw: dict, method: str) -> "TrainingConfig":  # noqa: F821
+    """Build a ``TrainingConfig`` from the operator's payload (§E1.5).
+
+    The worker holds no hyperparameter literals of its own: any key the payload
+    omits falls through to the dataclass's own default (the single source of
+    truth `specs/openapi.yaml` mirrors), rather than a second copy kept here.
+    ``method`` comes from the job payload, not ``training_config``, so it's
+    always set explicitly.
+    """
+    from dataclasses import fields as _fields
+
+    from adapta.training.models import TrainingConfig
+
+    field_names = {f.name for f in _fields(TrainingConfig) if f.name != "method"}
+    kwargs = {k: v for k, v in tc_raw.items() if k in field_names}
+    return TrainingConfig(method=method, **kwargs)
+
+
 async def _run_job(meta: dict) -> None:
     payload = meta.get("payload", meta)
     job_id = payload["job_id"]
@@ -106,24 +124,12 @@ async def _run_job(meta: dict) -> None:
     output_dir = settings.adapters_dir / adapter_id
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    from adapta.training.models import TrainingConfig
     from adapta.training.trainer import LoRATrainer
 
     # Build config from payload; fill defaults.
     # TrainingConfig only holds hyperparameters — base_model/output_dir go to train().
     tc_raw = training_config_raw if isinstance(training_config_raw, dict) else {}
-    config = TrainingConfig(
-        num_epochs=tc_raw.get("num_epochs", 3),
-        batch_size=tc_raw.get("batch_size", 4),
-        learning_rate=tc_raw.get("learning_rate", 2e-4),
-        lora_r=tc_raw.get("lora_r", 16),
-        lora_alpha=tc_raw.get("lora_alpha", 32),
-        lora_dropout=tc_raw.get("lora_dropout", 0.1),
-        max_seq_length=tc_raw.get("max_seq_length", 512),
-        seed=tc_raw.get("seed", 42),  # recorded into provenance (A4.7)
-        method=method,
-        dpo_beta=tc_raw.get("dpo_beta", 0.1),
-    )
+    config = _build_training_config(tc_raw, method)
 
     # Convert to messages format and split into train/eval files.
     # The eval gate must measure generalization, so the model is scored on rows it never

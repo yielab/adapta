@@ -213,6 +213,7 @@ class TrainingConfigInput(BaseModel):
     lora_dropout: Annotated[float, Field(ge=0.0, le=0.9)] = 0.1
     max_seq_length: Annotated[int, Field(ge=16, le=8192)] = 512
     dpo_beta: Annotated[float, Field(ge=0.0, le=1.0)] = 0.1
+    seed: Annotated[int, Field(ge=0, le=2147483647)] = 42
 
 
 class Method(Enum):

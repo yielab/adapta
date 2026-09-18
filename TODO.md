@@ -56,7 +56,7 @@ Honour the [Definition of done](#definition-of-done-per-task) on every task. Wor
 
 | Area | State |
 |---|---|
-| **Audit 2026-09-03 (§E)** | 🟥 **open** — 5/29 done (E1.1 ✅, E1.2 ✅, E1.6 ✅, E1.7 ✅, E1.8 ✅, E1.3 🟡, E1.4 🟡). P0 (E1.1–E1.8): license consistency, Apache-licensed default models, train = serve prompt render, response-only loss, config SSOT. Then E2 (Ollama + launch kit), E3 (Postgres chunks → real hybrid FTS, Docling + RapidOCR scanned documents, citations with page/OCR provenance, system prompt + threshold + filters, multilingual, queued indexing, golden set), E4 (task metrics in the gate, adapter promotion/rollback, synthesis re-aimed, JSON mode, multi-turn), E5 (contextual retrieval, RAG gate, history-aware retrieval, VLM extraction in ingestion). Scope guard + deferred list in the §E header. |
+| **Audit 2026-09-03 (§E)** | 🟥 **open** — 5/29 done (E1.1 ✅, E1.2 ✅, E1.6 ✅, E1.7 ✅, E1.8 ✅, E1.3 🟡, E1.4 🟡, E1.5 🟡). P0 (E1.1–E1.8): license consistency, Apache-licensed default models, train = serve prompt render, response-only loss, config SSOT. Then E2 (Ollama + launch kit), E3 (Postgres chunks → real hybrid FTS, Docling + RapidOCR scanned documents, citations with page/OCR provenance, system prompt + threshold + filters, multilingual, queued indexing, golden set), E4 (task metrics in the gate, adapter promotion/rollback, synthesis re-aimed, JSON mode, multi-turn), E5 (contextual retrieval, RAG gate, history-aware retrieval, VLM extraction in ingestion). Scope guard + deferred list in the §E header. |
 | Product build (phases 0–5) | ✅ code-complete |
 | Pillar 2 — DB migration gate | ✅ `make migrate-test` verified (up→down→up); CI `full` job runs it |
 | Pillar 3 — eval gate (the moat) | ✅ enforced + **validated on GPU end-to-end** (2026-06-10): held-out, response-only, dual gate (absolute ≥0.6 **OR** clear improvement over base — `passes_eval_gate`); `tests/test_eval_gate.py` + the live LoRA e2e (`test_lora_e2e.py`, score 0.215, base 0.044, Δ+0.17 → pass → served adapter returns the invented word). |
@@ -1575,7 +1575,20 @@ row with `source_dataset_id` lineage, validated against the full training schema
   loss on both train and eval".
 - **Close.** learning-the-system gate section; Status snapshot (shared with E1.3).
 
-### E1.5 `[BE]` One source of truth for training defaults + thread-safe progress (P0)
+### E1.5 `[BE]` One source of truth for training defaults + thread-safe progress (P0) — 🟡 PARTIAL (2026-09-17, in-process gate green; shared GPU re-measure pending)
+- [~] **Done so far.** Worker builds `TrainingConfig` from `{k: v for k, v in tc_raw.items() if
+  k in fields}` via new `_build_training_config` (`worker/main.py`) — zero literals; `method` still
+  comes from the payload, not `training_config`. Dataclass defaults now `lora_dropout=0.1`,
+  `max_seq_length=512` (matches spec). Spec + generated model gain `TrainingConfigInput.seed`
+  (bounded 0–2147483647, mirrored in `_HYPERPARAM_BOUNDS`). Both SFT and DPO `ProgressCallback.on_log`
+  now schedule via `asyncio.run_coroutine_threadsafe(coro, loop)` (loop captured before the blocking
+  `trainer.train()`/`dpo_trainer.train()` call), not bare `asyncio.create_task`. Gate: `make
+  validate-spec` ✓ → `make generate` ✓ (seed field added) → `make check-models` ✓ (in sync) →
+  `make test` 269 passed, 1 skipped, 62 deselected (incl. 4 new `test_jobs.py` cases) → `make
+  check-leaks` ✓. No GPU test run.
+- [ ] **Pending to tick.** Confirm on the shared GPU re-measure that progress lines actually appear
+  live during the E1.3 SFT run (this block's threading fix is unverified against a real blocking
+  `trainer.train()` call — only unit-level config-building was exercised here).
 - [ ] **Context.** `TrainingConfig` says `lora_dropout=0.05`, `max_seq_length=2048`
   (`training/models.py:105,116`); the worker rebuilds the config from literals `0.1` / `512`
   (`worker/main.py:116-125`); the spec sides with the worker (`openapi.yaml` `TrainingConfigInput`).

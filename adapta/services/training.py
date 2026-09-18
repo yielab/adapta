@@ -359,6 +359,7 @@ _HYPERPARAM_BOUNDS: dict = {
     "lora_dropout": (0.0, 0.9),
     "max_seq_length": (16, 8192),
     "dpo_beta": (0.0, 1.0),
+    "seed": (0, 2_147_483_647),
 }
 
 

@@ -1032,7 +1032,9 @@ components:
     TrainingConfigInput:
       # Bounds mirror the server's enqueue-time validation (A4.12,
       # adapta/services/training.py _HYPERPARAM_BOUNDS) — out-of-range
-      # values are rejected with 422 before a job is created.
+      # values are rejected with 422 before a job is created. Defaults mirror
+      # adapta.training.models.TrainingConfig (§E1.5) — that dataclass is the
+      # single source of truth; the worker holds no hyperparameter literals.
       type: object
       properties:
         num_epochs: {type: integer, default: 3, minimum: 1, maximum: 100}
@@ -1046,6 +1048,9 @@ components:
         # keeps the fine-tuned model closer to the reference (base) distribution;
         # lower β allows stronger preference learning. Only used when method=dpo.
         dpo_beta: {type: number, default: 0.1, minimum: 0.0, maximum: 1.0}
+        # Pinned seed — recorded into training provenance so a run is
+        # reproducible given the recorded seed + dataset hash + lib versions (A4.7).
+        seed: {type: integer, default: 42, minimum: 0, maximum: 2147483647}
 
     JobCreateRequest:
       type: object
