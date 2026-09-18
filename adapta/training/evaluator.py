@@ -14,7 +14,10 @@ import uuid
 from pathlib import Path
 from typing import Optional
 
+from adapta.core import chat_templates
+
 from .models import EvaluationMetrics, EvaluationResult, score_from_loss
+from .trainer import render_training_example, resolve_chat_template
 
 logger = logging.getLogger(__name__)
 
@@ -48,29 +51,23 @@ class ModelEvaluator:
             )
 
     @staticmethod
-    def _render_prompt_and_target(messages: list) -> tuple[str, str]:
+    def _render_prompt_and_target(
+        messages: list, template_name: str = chat_templates.DEFAULT_TEMPLATE
+    ) -> tuple[str, str]:
         """Render a chat row into (prompt_text, target_response).
 
-        ``prompt_text`` is everything up to and including the ``Assistant: `` cue but
-        WITHOUT the answer (what the model is conditioned on); ``target_response`` is the
-        assistant's content. Mirrors the trainer's plain ``Role: content`` formatting so
-        the masking boundary is consistent with how the model was trained.
+        Delegates to ``adapta.training.trainer.render_training_example`` — the SAME
+        call the trainer uses to build its training text (§E1.3) — so the masking
+        boundary below is consistent with how the model was actually trained, not a
+        format the gate invented independently. ``prompt_text`` ends at the assistant
+        cue WITHOUT the answer (what the model is conditioned on); ``target_response``
+        is the assistant's content.
         """
-        prompt_text = ""
-        target_text = ""
-        for msg in messages:
-            role = msg["role"]
-            content = msg["content"]
-            if role == "system":
-                prompt_text += f"System: {content}\n"
-            elif role == "user":
-                prompt_text += f"User: {content}\n"
-            elif role == "assistant":
-                target_text = content
-        prompt_text += "Assistant: "
-        return prompt_text, target_text
+        return render_training_example(template_name, messages)
 
-    def _tokenize_with_response_mask(self, tokenizer, messages: list):
+    def _tokenize_with_response_mask(
+        self, tokenizer, messages: list, template_name: str = chat_templates.DEFAULT_TEMPLATE
+    ):
         """Tokenize one row into (input_ids, labels) where labels mask the prompt.
 
         Loss must be computed on the **response tokens only**: prompt tokens get label
@@ -78,7 +75,7 @@ class ModelEvaluator:
         ability to produce the target answer, not to model the operator's prompt text.
         Returns CPU tensors of shape (1, T); the caller moves them to the device.
         """
-        prompt_text, target_text = self._render_prompt_and_target(messages)
+        prompt_text, target_text = self._render_prompt_and_target(messages, template_name)
         full_text = prompt_text + target_text
 
         prompt_ids = tokenizer(prompt_text, add_special_tokens=False)["input_ids"]
@@ -200,6 +197,10 @@ class ModelEvaluator:
             if tokenizer.pad_token is None:
                 tokenizer.pad_token = tokenizer.eos_token
 
+            # Same template resolution as training (§E1.3) — the gate must score the
+            # adapter on the exact conditioning it was trained (and will be served) on.
+            template_name = resolve_chat_template(base_model)
+
             # Load base model in 4-bit (NF4) — the SAME quantization QLoRA trained against and
             # GGUF serving uses, so the eval matches both. It also keeps a 3B base near ~2 GB
             # instead of ~6 GB in fp16: on a shared 8 GB card the fp16 base spilled to CPU
@@ -242,7 +243,7 @@ class ModelEvaluator:
             # the exact same tensors for the adapter pass and the base pass so the delta
             # is apples-to-apples.
             tokenized = [
-                self._tokenize_with_response_mask(tokenizer, example["messages"])
+                self._tokenize_with_response_mask(tokenizer, example["messages"], template_name)
                 for example in eval_data
             ]
 
@@ -265,7 +266,9 @@ class ModelEvaluator:
                 for idx, example in enumerate(eval_data):
                     if idx >= num_samples:
                         break
-                    prompt_text, target_text = self._render_prompt_and_target(example["messages"])
+                    prompt_text, target_text = self._render_prompt_and_target(
+                        example["messages"], template_name
+                    )
                     input_ids = tokenizer(
                         prompt_text, return_tensors="pt", truncation=True, max_length=2048
                     )

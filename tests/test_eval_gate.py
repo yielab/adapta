@@ -447,7 +447,7 @@ class TestResponseOnlyMasking:
             {"role": "assistant", "content": "hello there"},
         ]
         prompt, target = ModelEvaluator._render_prompt_and_target(messages)
-        assert prompt.endswith("Assistant: ")
+        assert prompt.endswith("<|im_start|>assistant\n")  # same cue serving renders to (§E1.3)
         assert "hello there" not in prompt  # the answer is NOT in the prompt
         assert target == "hello there"
 

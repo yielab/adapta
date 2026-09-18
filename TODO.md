@@ -56,7 +56,7 @@ Honour the [Definition of done](#definition-of-done-per-task) on every task. Wor
 
 | Area | State |
 |---|---|
-| **Audit 2026-09-03 (§E)** | 🟥 **open** — 5/29 done (E1.1 ✅, E1.2 ✅, E1.6 ✅, E1.7 ✅, E1.8 ✅). P0 (E1.1–E1.8): license consistency, Apache-licensed default models, train = serve prompt render, response-only loss, config SSOT. Then E2 (Ollama + launch kit), E3 (Postgres chunks → real hybrid FTS, Docling + RapidOCR scanned documents, citations with page/OCR provenance, system prompt + threshold + filters, multilingual, queued indexing, golden set), E4 (task metrics in the gate, adapter promotion/rollback, synthesis re-aimed, JSON mode, multi-turn), E5 (contextual retrieval, RAG gate, history-aware retrieval, VLM extraction in ingestion). Scope guard + deferred list in the §E header. |
+| **Audit 2026-09-03 (§E)** | 🟥 **open** — 5/29 done (E1.1 ✅, E1.2 ✅, E1.6 ✅, E1.7 ✅, E1.8 ✅, E1.3 🟡). P0 (E1.1–E1.8): license consistency, Apache-licensed default models, train = serve prompt render, response-only loss, config SSOT. Then E2 (Ollama + launch kit), E3 (Postgres chunks → real hybrid FTS, Docling + RapidOCR scanned documents, citations with page/OCR provenance, system prompt + threshold + filters, multilingual, queued indexing, golden set), E4 (task metrics in the gate, adapter promotion/rollback, synthesis re-aimed, JSON mode, multi-turn), E5 (contextual retrieval, RAG gate, history-aware retrieval, VLM extraction in ingestion). Scope guard + deferred list in the §E header. |
 | Product build (phases 0–5) | ✅ code-complete |
 | Pillar 2 — DB migration gate | ✅ `make migrate-test` verified (up→down→up); CI `full` job runs it |
 | Pillar 3 — eval gate (the moat) | ✅ enforced + **validated on GPU end-to-end** (2026-06-10): held-out, response-only, dual gate (absolute ≥0.6 **OR** clear improvement over base — `passes_eval_gate`); `tests/test_eval_gate.py` + the live LoRA e2e (`test_lora_e2e.py`, score 0.215, base 0.044, Δ+0.17 → pass → served adapter returns the invented word). |
@@ -1499,12 +1499,26 @@ row with `source_dataset_id` lineage, validated against the full training schema
 - **Close.** OPERATIONS sizing + adding-a-model; operator-console Models page; README quick start if
   the default name changed; Status snapshot.
 
-### E1.3 `[BE]` Train = serve: one prompt renderer for SFT/DPO training, eval and serving (P0)
+### E1.3 `[BE]` Train = serve: one prompt renderer for SFT/DPO training, eval and serving (P0) — 🟡 PARTIAL (2026-09-17, in-process gate green; shared GPU re-measure pending)
 - [ ] **Context.** `trainer.py:117-125` renders `System:/User:/Assistant:` plain text and
   `evaluator.py:59-71` mirrors it; serving renders ChatML (`chat_templates.py:53-61` via
   `inference.py:126`). Adapters are trained and gated on a conditioning the endpoint never sends.
   The vision path is already correct (`processor.apply_chat_template` in `trainer.py:406` and
   `evaluator.py:450`).
+- [~] **Done so far.** `chat_templates.py` already exposed pure `render`/`default_stops`
+  (no engine import) — unchanged. Added `trainer.py`'s `resolve_chat_template` +
+  `render_training_example` (module-level, pure), wired into SFT `preprocess_function` and
+  DPO's `_keep_dpo_cols`. `evaluator.py`'s `_render_prompt_and_target`/
+  `_tokenize_with_response_mask` now delegate to the same `render_training_example` with a
+  `template_name` resolved from `base_model`. New `tests/test_training_render.py` pins
+  train-prompt == serving-prompt and the `<|im_start|>assistant\n` boundary; updated the one
+  ChatML-format assertion in `tests/test_eval_gate.py`. `docker compose exec -T app make test`:
+  260 passed, 1 skipped, 62 deselected (GPU-marked). `docker compose exec -T app make
+  check-leaks`: pass, 0 leak sites.
+- [ ] **Pending to tick.** The shared GPU re-measure (`tests/integration/test_lora_e2e.py` +
+  `ADAPTA_RUN_LORA_USECASES=1 tests/integration/test_lora_use_cases.py`) on the new
+  `qwen2.5-1.5b-instruct` default, run once together with E1.4; then replace the numbers in
+  `docs/user-guide/fine-tuning-use-cases.md` with the re-measured ones.
 - **Scope.** The text render only (SFT + DPO `prompt`). Not the training loop, not the engine
   (hard constraint #1).
 - **Steps.** (1) `chat_templates.py`: expose a pure `render(template_name, system, messages) -> str`

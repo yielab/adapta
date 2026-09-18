@@ -342,6 +342,16 @@ How the score is computed (`adapta/training/evaluator.py`,
    **absolute bar** (default 0.6) **or** it clears a low sanity floor **and**
    surpasses the base model on the same held-out split by a margin.
 
+A gate is only meaningful if it scores the model on the conditioning it will
+actually be served with. Training, the gate and serving now render every prompt
+through the **same** function — `adapta.core.chat_templates.render`, called via
+`adapta.training.trainer.render_training_example` for training/eval and via
+`InferenceEngine._format_chat_prompt` for serving — so the text an adapter is
+trained on, scored on, and later receives from a live endpoint are byte-for-byte
+the same shape (`tests/test_training_render.py` pins this). Before this, the
+trainer and gate rendered a plain `Role: content` format while serving rendered
+ChatML: an adapter could pass the gate on a conditioning no request ever sends.
+
 The reason for the second path is itself instructive about calibrating a gate to
 reality. A small base model cannot reach the absolute bar even on an ideal task
 (the invented answer tokens carry an irreducible per-token cost — see the

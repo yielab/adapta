@@ -7,9 +7,45 @@ import logging
 import time
 import traceback
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Callable, Optional
 
+from adapta.core import chat_templates, model_catalog
+
 logger = logging.getLogger(__name__)
+
+
+def resolve_chat_template(base_model: str) -> str:
+    """The template name training/eval must render with for ``base_model`` —
+    the same one serving resolves from the catalog (§E1.3, train = serve)."""
+    entry = model_catalog.resolve(base_model)
+    return entry.chat_template if entry else chat_templates.DEFAULT_TEMPLATE
+
+
+def render_training_example(template_name: str, messages: list) -> tuple[str, str]:
+    """Render one chat row into ``(prompt, target)`` with the SAME renderer serving
+    uses (``chat_templates.render``) — this is the single place train, eval and
+    serve share, so an adapter is never gated or generated on a conditioning the
+    endpoint doesn't actually send.
+
+    ``prompt`` ends at the assistant cue (no answer in it, matching a live
+    completion request); ``target`` is the assistant turn's content. The
+    trainer's full training text is ``prompt + target + <stop token>``; the
+    evaluator masks the shared prefix so loss is scored response-only.
+    """
+    system: Optional[str] = None
+    lead_turns = []
+    target = ""
+    for msg in messages:
+        role, content = msg["role"], msg["content"]
+        if role == "system":
+            system = content
+        elif role == "assistant":
+            target = content
+        else:
+            lead_turns.append(SimpleNamespace(role=role, content=content))
+    prompt = chat_templates.render(template_name, system, lead_turns)
+    return prompt, target
 
 
 class LoRATrainer:
@@ -107,23 +143,20 @@ class LoRATrainer:
             logger.info(f"Loading dataset from {dataset_path}")
             dataset = load_dataset("json", data_files=str(dataset_path))
 
-            # Preprocess dataset
+            # Preprocess dataset. Template resolved once for the whole job (§E1.3):
+            # the same renderer + stop token serving uses for this base model.
+            template_name = resolve_chat_template(base_model)
+            stop_token = chat_templates.default_stops(template_name)[0]
+
             def preprocess_function(examples):
-                """Convert messages to text format"""
+                """Render each row through the shared chat-template renderer, so the
+                text trained on is exactly a live completion prompt + the answer +
+                the stop token — not a bespoke plain-text format the endpoint never
+                sends (§E1.3)."""
                 texts = []
                 for messages in examples["messages"]:
-                    # Format as conversation
-                    text = ""
-                    for msg in messages:
-                        role = msg["role"]
-                        content = msg["content"]
-                        if role == "system":
-                            text += f"System: {content}\n"
-                        elif role == "user":
-                            text += f"User: {content}\n"
-                        elif role == "assistant":
-                            text += f"Assistant: {content}\n"
-                    texts.append(text)
+                    prompt, target = render_training_example(template_name, messages)
+                    texts.append(prompt + target + stop_token)
 
                 # Tokenize
                 return tokenizer(
@@ -552,12 +585,22 @@ class LoRATrainer:
 
             raw_dataset = load_dataset("json", data_files=str(dataset_path))
 
-            # DPO dataset columns: prompt, chosen, rejected (plain strings — TRL
-            # templates them internally via the chat template if one exists).
-            # Keep only the three required columns; extras (system, metadata) are dropped.
+            # DPO dataset columns: prompt, chosen, rejected. `prompt` is rendered
+            # through the SAME chat-template renderer as SFT/serving (§E1.3) so DPO
+            # preference pairs condition the model on a prompt the endpoint actually
+            # sends, not a raw, unformatted user string. `chosen`/`rejected` are left
+            # as plain completions — TRL's DPOTrainer appends them after the rendered
+            # prompt. Extra columns (system, metadata) are dropped.
+            template_name = resolve_chat_template(base_model)
+
             def _keep_dpo_cols(examples):
                 return {
-                    "prompt": examples["prompt"],
+                    "prompt": [
+                        render_training_example(
+                            template_name, [{"role": "user", "content": p}]
+                        )[0]
+                        for p in examples["prompt"]
+                    ],
                     "chosen": examples["chosen"],
                     "rejected": examples["rejected"],
                 }

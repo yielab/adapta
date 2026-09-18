@@ -55,7 +55,7 @@ A **single-tenant, self-hosted** application. A company runs it on their own inf
 - **Serving:** base model + adapter, hot-swappable, OpenAI-compatible.
 - **Cost:** minutes–hours, **requires a GPU**, heavier.
 - **Updates:** re-train the adapter.
-- **Eval gate:** an adapter must clear the held-out eval gate to back an endpoint — either an absolute score ≥ 0.6, **or** a clear improvement over the base model on the same held-out split (a small base can't reach 0.6 perplexity even on an ideal task, so "beats base by a margin" is the meaningful signal). An adapter that does neither cannot serve.
+- **Eval gate:** an adapter must clear the held-out eval gate to back an endpoint — either an absolute score ≥ 0.6, **or** a clear improvement over the base model on the same held-out split (a small base can't reach 0.6 perplexity even on an ideal task, so "beats base by a margin" is the meaningful signal). An adapter that does neither cannot serve. Train, eval and serve share one prompt renderer (`adapta/core/chat_templates.py`, called via `render_training_example` for training/eval and `InferenceEngine._format_chat_prompt` for serving), so the gate always scores an adapter on the exact conditioning the endpoint will send.
 
 ### Combining A + B — knowledge and behavior on one endpoint
 
