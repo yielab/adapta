@@ -11,6 +11,7 @@ from types import SimpleNamespace
 from typing import Callable, Optional
 
 from adapta.core import chat_templates, model_catalog
+from adapta.training.masking import response_labels
 
 logger = logging.getLogger(__name__)
 
@@ -121,7 +122,7 @@ class LoRATrainer:
             from transformers import (
                 AutoModelForCausalLM,
                 AutoTokenizer,
-                DataCollatorForLanguageModeling,
+                DataCollatorForSeq2Seq,
                 Trainer,
                 TrainingArguments,
                 set_seed,
@@ -152,19 +153,35 @@ class LoRATrainer:
                 """Render each row through the shared chat-template renderer, so the
                 text trained on is exactly a live completion prompt + the answer +
                 the stop token — not a bespoke plain-text format the endpoint never
-                sends (§E1.3)."""
-                texts = []
+                sends (§E1.3). Labels are masked response-only (§E1.4): tokenize the
+                prompt alone and the full text, then mask their shared prefix with
+                ``masking.response_labels`` — the SAME boundary the eval gate scores
+                with (``evaluator.py``) — so training loss, like the gate's score, is
+                spent on the answer, not on re-deriving the operator's prompt. No
+                fixed-length padding here; ``DataCollatorForSeq2Seq`` pads dynamically
+                per batch and pads labels with -100 (not the pad token id)."""
+                input_ids_batch, attention_mask_batch, labels_batch = [], [], []
                 for messages in examples["messages"]:
                     prompt, target = render_training_example(template_name, messages)
-                    texts.append(prompt + target + stop_token)
+                    full_text = prompt + target + stop_token
 
-                # Tokenize
-                return tokenizer(
-                    texts,
-                    truncation=True,
-                    max_length=config.max_seq_length,
-                    padding="max_length",
-                )
+                    prompt_ids = tokenizer(prompt, add_special_tokens=False)["input_ids"]
+                    full_ids = tokenizer(
+                        full_text,
+                        truncation=True,
+                        max_length=config.max_seq_length,
+                        add_special_tokens=False,
+                    )["input_ids"]
+
+                    input_ids_batch.append(full_ids)
+                    attention_mask_batch.append([1] * len(full_ids))
+                    labels_batch.append(response_labels(prompt_ids, full_ids))
+
+                return {
+                    "input_ids": input_ids_batch,
+                    "attention_mask": attention_mask_batch,
+                    "labels": labels_batch,
+                }
 
             logger.info("Preprocessing dataset")
             tokenized_dataset = dataset.map(
@@ -266,11 +283,12 @@ class LoRATrainer:
                             )
                         )
 
-            # Causal-LM loss needs `labels`. The preprocessor emits only input_ids/
-            # attention_mask, so without a collator the model returns logits with no
-            # loss ("The model did not return a loss"). DataCollatorForLanguageModeling
-            # (mlm=False) derives labels from input_ids and masks pad positions to -100.
-            data_collator = DataCollatorForLanguageModeling(tokenizer, mlm=False)
+            # The preprocessor already emits response-only-masked `labels` per row
+            # (§E1.4), so the collator's only job is dynamic padding: pad input_ids/
+            # attention_mask normally and pad `labels` with -100 (never the pad token
+            # id, which DataCollatorForLanguageModeling would do by deriving labels
+            # from input_ids — that path is gone, it re-included the prompt in the loss).
+            data_collator = DataCollatorForSeq2Seq(tokenizer, label_pad_token_id=-100)
 
             # Create trainer
             trainer = Trainer(

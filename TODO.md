@@ -56,7 +56,7 @@ Honour the [Definition of done](#definition-of-done-per-task) on every task. Wor
 
 | Area | State |
 |---|---|
-| **Audit 2026-09-03 (§E)** | 🟥 **open** — 5/29 done (E1.1 ✅, E1.2 ✅, E1.6 ✅, E1.7 ✅, E1.8 ✅, E1.3 🟡). P0 (E1.1–E1.8): license consistency, Apache-licensed default models, train = serve prompt render, response-only loss, config SSOT. Then E2 (Ollama + launch kit), E3 (Postgres chunks → real hybrid FTS, Docling + RapidOCR scanned documents, citations with page/OCR provenance, system prompt + threshold + filters, multilingual, queued indexing, golden set), E4 (task metrics in the gate, adapter promotion/rollback, synthesis re-aimed, JSON mode, multi-turn), E5 (contextual retrieval, RAG gate, history-aware retrieval, VLM extraction in ingestion). Scope guard + deferred list in the §E header. |
+| **Audit 2026-09-03 (§E)** | 🟥 **open** — 5/29 done (E1.1 ✅, E1.2 ✅, E1.6 ✅, E1.7 ✅, E1.8 ✅, E1.3 🟡, E1.4 🟡). P0 (E1.1–E1.8): license consistency, Apache-licensed default models, train = serve prompt render, response-only loss, config SSOT. Then E2 (Ollama + launch kit), E3 (Postgres chunks → real hybrid FTS, Docling + RapidOCR scanned documents, citations with page/OCR provenance, system prompt + threshold + filters, multilingual, queued indexing, golden set), E4 (task metrics in the gate, adapter promotion/rollback, synthesis re-aimed, JSON mode, multi-turn), E5 (contextual retrieval, RAG gate, history-aware retrieval, VLM extraction in ingestion). Scope guard + deferred list in the §E header. |
 | Product build (phases 0–5) | ✅ code-complete |
 | Pillar 2 — DB migration gate | ✅ `make migrate-test` verified (up→down→up); CI `full` job runs it |
 | Pillar 3 — eval gate (the moat) | ✅ enforced + **validated on GPU end-to-end** (2026-06-10): held-out, response-only, dual gate (absolute ≥0.6 **OR** clear improvement over base — `passes_eval_gate`); `tests/test_eval_gate.py` + the live LoRA e2e (`test_lora_e2e.py`, score 0.215, base 0.044, Δ+0.17 → pass → served adapter returns the invented word). |
@@ -1542,7 +1542,20 @@ row with `source_dataset_id` lineage, validated against the full training schema
 - **Close.** PRODUCT_DEFINITION eval-gate paragraph ("train, eval and serve share one renderer"),
   learning-the-system gate section, fine-tuning-use-cases; Status snapshot.
 
-### E1.4 `[BE]` Response-only loss for text SFT (P0)
+### E1.4 `[BE]` Response-only loss for text SFT (P0) — 🟡 PARTIAL (2026-09-17, in-process gate green; shared GPU re-measure pending)
+- [~] **Done so far.** New pure `adapta/training/masking.py` (`response_labels`, longest-common-prefix
+  masking lifted from `evaluator._tokenize_with_response_mask`); `evaluator.py` now calls it (behaviour
+  unchanged — its own regression test in `tests/test_eval_gate.py` still passes). `trainer.py`
+  preprocessing tokenizes prompt-only and full text (both via E1.3's renderer) and builds labels with
+  the helper; the collator is now `DataCollatorForSeq2Seq(tokenizer, label_pad_token_id=-100)`
+  (dynamic padding, labels padded with -100, not `DataCollatorForLanguageModeling`). New
+  `tests/test_training_masking.py` (5 cases incl. the bare-label §A3.2 regression). Gate:
+  `docker compose exec -T app make test` → 265 passed, 1 skipped, 62 deselected; `make check-leaks` →
+  clean. No GPU test run, no training job started.
+- [ ] **Pending to tick.** The shared GPU re-measure (with E1.3) on the new `qwen2.5-1.5b-instruct`
+  default — watch that a real SFT run still produces a finite, improving loss with the new collator
+  and that DPO/vision are unaffected. `docs/user-guide/fine-tuning-use-cases.md`'s statement that
+  loss is response-only on both train and eval is not yet made (left alone per scope).
 - [ ] **Context.** `trainer.py:236-240` uses `DataCollatorForLanguageModeling(mlm=False)` → labels =
   input_ids except pads, so gradient is spent on the prompt while the gate scores response-only
   (`evaluator.py:73-112`, longest-common-prefix masking). Vision masks correctly

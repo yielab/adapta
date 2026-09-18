@@ -16,6 +16,7 @@ from typing import Optional
 
 from adapta.core import chat_templates
 
+from .masking import response_labels
 from .models import EvaluationMetrics, EvaluationResult, score_from_loss
 from .trainer import render_training_example, resolve_chat_template
 
@@ -78,6 +79,8 @@ class ModelEvaluator:
         prompt_text, target_text = self._render_prompt_and_target(messages, template_name)
         full_text = prompt_text + target_text
 
+        import torch
+
         prompt_ids = tokenizer(prompt_text, add_special_tokens=False)["input_ids"]
         full = tokenizer(
             full_text,
@@ -87,25 +90,13 @@ class ModelEvaluator:
             add_special_tokens=False,
         )
         input_ids = full["input_ids"]
-        labels = input_ids.clone()
-        # Mask exactly the shared PREFIX of the prompt-only and full tokenizations, not
-        # ``len(prompt_ids)``. Tokenizing the prompt and the full text separately can MERGE
-        # at the boundary: a prompt ending in ``"Assistant: "`` tokenizes its trailing space
-        # as a lone " " token, but in the full text that space fuses into the response's
-        # first token (e.g. " account"). Masking ``len(prompt_ids)`` tokens would then bury
-        # the response token too, leaving SINGLE-TOKEN responses (a classification label,
-        # a yes/no) entirely un-scorable → loss skipped → the gate wrongly fails an adapter
-        # that did learn the behavior. The longest common prefix is the true boundary: it
-        # masks the shared context and keeps the first divergent (response) token scorable.
+        # The masking boundary itself (longest common prefix, not len(prompt_ids)) is
+        # the shared implementation in ``masking.response_labels`` (§E1.4) — the trainer
+        # builds labels the same way, so the gate scores the model on the same
+        # response-only objective it was trained against. See that module's docstring
+        # for why prefix masking (not a fixed length) is required.
         full_ids = input_ids[0].tolist()
-        mask_len = 0
-        # strict=False on purpose: the two tokenizations diverge at the boundary, so the
-        # shorter (the prompt) bounds the scan — we only want the shared leading run.
-        for p, f in zip(prompt_ids, full_ids, strict=False):
-            if p != f:
-                break
-            mask_len += 1
-        labels[0, :mask_len] = -100
+        labels = torch.tensor([response_labels(prompt_ids, full_ids)])
         return {"input_ids": input_ids, "labels": labels}
 
     @staticmethod

@@ -334,7 +334,11 @@ How the score is computed (`adapta/training/evaluator.py`,
    remainder. Only the held-out rows are scored.
 2. **Response-only loss.** The score measures how well the model produces the
    *target answer*; the prompt tokens are masked, so the answer is graded rather
-   than the question.
+   than the question. Training's own gradient is masked the same way (§E1.4):
+   the trainer and the gate build labels with the same
+   `adapta.training.masking.response_labels`, so the objective the adapter is
+   trained against and the objective it is scored against are one masking
+   boundary, not two.
 3. **Score = `exp(-loss)`.** This converts average per-token "surprise"
    (perplexity) into a value between 0 and 1, where higher is better. A score of
    1.0 indicates that the held-out answers were predicted perfectly.
@@ -380,7 +384,10 @@ clear the gate on a real GPU run, while an unlearnable control dataset fails it.
     fuses into the answer's first token — so masking by prompt *length* would bury
     the only answer token and make the row un-scorable. Prefix masking keeps the
     first divergent (answer) token graded, so classification fine-tunes score
-    correctly.
+    correctly. `adapta/training/masking.py` is this boundary as one pure
+    function; the trainer's preprocessing and the evaluator's scoring both call
+    it, so a training run and its own gate can never disagree about which
+    tokens the label prefix covers.
 
 An adapter that fails the gate raises `EvalGateFailed (422)`, is **not
 registered**, and **cannot back an endpoint**. This is the platform's central
