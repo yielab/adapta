@@ -49,7 +49,7 @@ async def _resolve_rag_top_k(project_id: Optional[str], top_k_rag: Optional[int]
         team_id = result.scalar_one_or_none()
         if team_id is None:
             return settings.rag_top_k
-        return await resolve_setting(db, team_id, "rag_top_k")
+        return int(await resolve_setting(db, team_id, "rag_top_k"))
 
 
 async def _retrieve(rag_service, project_id: str, query: str, top_k: int) -> list:
@@ -569,6 +569,8 @@ async def chat_stream(
         # frame (E1.7) since the model prompt (with [N] markers) is what
         # the SSE tokens are being streamed for.
         if rag_chunks:
+            if rag_service is None:
+                raise InvalidRequest(message="RAG service not configured")
             finish["citations"] = rag_service.format_citations(rag_chunks)
         yield f"data: {json.dumps(finish)}\n\n"
         yield "data: [DONE]\n\n"

@@ -11,10 +11,13 @@ from __future__ import annotations
 
 import logging
 from functools import lru_cache
-from typing import List, Optional
+from typing import TYPE_CHECKING, List, Optional
 
 from adapta.config import settings
 from adapta.domain.errors import EmbeddingFailed
+
+if TYPE_CHECKING:
+    from sentence_transformers import CrossEncoder, SentenceTransformer
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +34,7 @@ class EmbeddingService:
 
     def __init__(self, model_name: str):
         self._model_name = model_name
-        self._model = None
+        self._model: Optional[SentenceTransformer] = None
 
     def _load(self) -> None:
         if self._model is not None:
@@ -103,7 +106,7 @@ class RerankerService:
 
     def __init__(self, model_name: str):
         self._model_name = model_name
-        self._model = None
+        self._model: Optional[CrossEncoder] = None
 
     def _load(self) -> None:
         if self._model is not None:

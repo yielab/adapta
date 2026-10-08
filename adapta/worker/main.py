@@ -15,6 +15,7 @@ import signal
 import sys
 import uuid
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from adapta.config import settings
 from adapta.core.gpu import torch_cuda_status
@@ -22,6 +23,9 @@ from adapta.core.logging_config import configure_logging
 from adapta.services.adapters import get_adapter_registry
 from adapta.services.jobs import get_job_queue
 from adapta.services.training import update_job_record
+
+if TYPE_CHECKING:
+    from adapta.training.models import TrainingConfig
 
 configure_logging()
 logger = logging.getLogger("adapta.worker")
@@ -46,7 +50,7 @@ async def _set_status(queue, job_id: str, *, critical: bool = False, **fields) -
             raise
 
 
-def _build_training_config(tc_raw: dict, method: str) -> "TrainingConfig":  # noqa: F821
+def _build_training_config(tc_raw: dict, method: str) -> "TrainingConfig":
     """Build a ``TrainingConfig`` from the operator's payload (§E1.5).
 
     The worker holds no hyperparameter literals of its own: any key the payload
