@@ -8,6 +8,53 @@
 
 ---
 
+## 2026-10-08 — §E wave 0: the gates every other block is verified by
+
+Wave 0 = E1.14, E1.10, E1.11 (`make lint`, dependency bounds, `make test-contracts`), the first multi-agent wave:
+lead + one worktree worker per block, live/rebuild/GPU gates serialized on the main checkout. E1.10 and E1.11 join
+this section when their live gates close (E1.10 is merged and waiting on the rebuild — see TODO.md).
+
+### E1.14 `[TEST]` Restore `make lint` to green — every worker's offline gate is red today (P0)
+- [x] **Context.** Verified 2026-10-08 on a clean checkout of `develop` (`90ac7ac`): `ruff` reported one
+  `I001` unsorted import block (`adapta/api/v1/files.py:8`, fixed the same day with `ruff --fix --select I`)
+  and `mypy adapta/` reports **4 errors in 3 files**: `embeddings.py:43` assignment of `SentenceTransformer`
+  to a variable typed `None`; `worker/main.py:49` `Name "TrainingConfig" is not defined`; `chat.py:52`
+  returning `Any` from a function declared `-> int`; `chat.py:572` `Item "None" of "RAGService | None" has no
+  attribute "format_citations"`. `make lint` is part of `make ci`, so the fast CI gate and every
+  worktree offline gate fail before a worker has changed anything.
+- **Depends.** none. **Unblocks.** every block — the offline gate (`make lint && make test`) is the proof
+  each worker returns with.
+- **Agent.** haiku · gate class **offline** · serialize with: E1.13 (`worker/main.py` region if it moves
+  the progress hook), E3.2/E3.5 (`chat.py`) — land this first · **Handoff.** must name any signature or
+  annotation changed (e.g. a narrowed `Optional`).
+- **Scope.** Type-correctness only: annotate, narrow, or guard. No behaviour change, no `# type: ignore`
+  unless the error is a library-stub gap (say so in the Done note). `worker/main.py:49` is a string
+  annotation (`-> "TrainingConfig"`, `# noqa: F821`) whose import sits inside the function — annotation-only,
+  not a runtime bug (training jobs ran on 2026-09-17).
+- **Steps.** (1) `embeddings.py:43`: type the lazy singleton as `Optional[SentenceTransformer]`. (2)
+  `worker/main.py:49`: import `TrainingConfig` under `TYPE_CHECKING` and drop the `noqa`. (3) `chat.py:52`: cast/convert the token count to `int`. (4) `chat.py:572`: guard the
+  `RAGService | None` before `format_citations` (raise the typed error the surrounding code already uses
+  for "RAG not configured"). (5) `make lint` → 0 errors; `make test` unchanged.
+- **Files.** `adapta/services/embeddings.py:40-45`, `adapta/worker/main.py:40-55`,
+  `adapta/services/chat.py:48-53, 568-573`.
+- **Contract impact.** None.
+- **Gate.** `make lint` → `make test` (offline, from a worktree).
+- **Acceptance.** `mypy adapta/` and `ruff check adapta/ tests/` both exit 0 on a clean checkout; `make ci`
+  passes its `lint` step.
+- **Close.** Status snapshot (CI runner row: say the fast gate is green again, dated); nothing else.
+- **Done.** 2026-10-08. `make lint` is green again on `develop`: `embeddings.py` types the lazy singletons as
+  `Optional[SentenceTransformer]` / `Optional[CrossEncoder]` (imports under `TYPE_CHECKING`); `worker/main.py` imports
+  `TrainingConfig` under `TYPE_CHECKING` and drops the `noqa: F821`; `chat.py` converts the resolved `rag_top_k` with
+  `int(...)` and guards `rag_service is None` before `format_citations` (typed `InvalidRequest`); the ruff `I001` in
+  `files.py` had already landed. No `# type: ignore` added, no behaviour change. Offline gate from the worktree:
+  ruff "All checks passed", mypy "Success: no issues found in 68 source files", pytest 269 passed / 1 skipped.
+- **Handoff.** Annotations narrowed: `EmbeddingService._model: Optional[SentenceTransformer]`,
+  `RerankerService._model: Optional[CrossEncoder]` (were untyped `None`). New guard in `chat_stream`: `rag_chunks`
+  with `rag_service is None` now raises `InvalidRequest` instead of an `AttributeError` (unreachable in practice — chunks
+  only exist when the service did). E1.13 / E3.2 / E3.5: `worker/main.py` and `chat.py` regions otherwise unchanged.
+
+---
+
 ## 2026-10-08 — Roadmap split, multi-agent structure, repo hygiene
 
 - `TODO.md` now holds open work only; every shipped section moved here (sections §0–§5, §A, §A3, §A4, §V, §C,

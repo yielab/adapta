@@ -64,8 +64,8 @@ procedure. Rules that keep parallel work from colliding:
 |---|---|
 | Product build (phases 0–5), operator console, image fine-tunes, brand, positioning | ✅ complete — history in [CHANGELOG.md](CHANGELOG.md) |
 | SDD gates | Pillar 2 ✅ `make migrate-test` · Pillar 3 ✅ eval gate validated on GPU (`test_eval_gate`, `test_lora_e2e`) · **Pillar 1 🟥 red** since the 2026-09-17 rebuild (schemathesis 4.x, 9–11 failures — E1.11) |
-| CI fast gate (`make ci`) | 🟥 `make lint` fails in the app image (4 mypy errors — E1.14); everything else green |
-| **Audit 2026-09-03 (§E)** | 🟥 **open** — 9/35 done (E1.1–E1.9 shipped 2026-09-17, now in the changelog). Wave 0: **E1.14 ∥ E1.10 → E1.11** (the gates everything else is verified by), then E1.12/E1.13, E2 (Ollama + launch kit), E3 (Postgres chunks → real hybrid FTS, Docling + RapidOCR, citations with page/OCR provenance, system prompt + threshold + filters, multilingual, queued indexing, golden set), E4 (task metrics in the gate, adapter promotion/rollback, synthesis re-aimed, JSON mode, multi-turn), E5 (contextual retrieval, RAG gate, history-aware retrieval, VLM extraction). Scheduling: the §E board. |
+| CI fast gate (`make ci`) | ✅ green again 2026-10-08 — E1.14 closed the 4 mypy errors (ruff + mypy clean, 269 unit tests pass); last run in the pre-E1.10 image, re-run after the pinned rebuild |
+| **Audit 2026-09-03 (§E)** | 🟥 **open** — 10/35 done (E1.1–E1.9 shipped 2026-09-17, E1.14 on 2026-10-08). Wave 0 in flight: E1.10 merged, waiting on the rebuild + GPU gate (board: ready-for-live), then E1.11; then E1.12/E1.13, E2 (Ollama + launch kit), E3 (Postgres chunks → real hybrid FTS, Docling + RapidOCR, citations with page/OCR provenance, system prompt + threshold + filters, multilingual, queued indexing, golden set), E4 (task metrics in the gate, adapter promotion/rollback, synthesis re-aimed, JSON mode, multi-turn), E5 (contextual retrieval, RAG gate, history-aware retrieval, VLM extraction). Scheduling: the §E board. |
 
 ---
 
@@ -110,8 +110,8 @@ classes are defined in [`.claude/context/gates.md`](.claude/context/gates.md) ("
 
 | Block | Wave | Tier | Gate class | Depends on | Serialize with | Status |
 |---|---|---|---|---|---|---|
-| E1.14 | 0 | haiku | offline | none | E1.13, E3.2/E3.5 (`chat.py`) | open |
-| E1.10 | 0 | sonnet | rebuild + gpu | none | E3.3b | open |
+| E1.14 | 0 | haiku | offline | none | E1.13, E3.2/E3.5 (`chat.py`) | done 2026-10-08 |
+| E1.10 | 0 | sonnet | rebuild + gpu | none | E3.3b | ready-for-live (develop `411c5d3`; rebuild pending) |
 | E1.11 | 0 | sonnet | live | E1.10 | any in-flight `specs/openapi.yaml` edit | open |
 | E1.12 | 1 | haiku | gpu | none | E1.13 | open |
 | E2.1 | 1 | sonnet | live | none | E4.4 | open |
@@ -139,8 +139,8 @@ classes are defined in [`.claude/context/gates.md`](.claude/context/gates.md) ("
 
 ### E1. P0 — corrections that change the publishable evidence (weeks 1–2)
 
-E1.1–E1.9 shipped 2026-09-17 → [CHANGELOG.md](CHANGELOG.md). Open: E1.10–E1.14 (E1.14 and the E1.10 → E1.11
-pair are wave 0 — every other block's gate depends on them).
+E1.1–E1.9 shipped 2026-09-17 → [CHANGELOG.md](CHANGELOG.md). E1.14 closed 2026-10-08. Open: E1.10 (ready-for-live) → E1.11 (wave 0 — every other
+block's gate depends on them), E1.12, E1.13.
 
 
 ### E1.10 `[INFRA]` Pin the heavy dependencies — an unbounded floor lets any rebuild move the product (P0)
@@ -159,6 +159,14 @@ pair are wave 0 — every other block's gate depends on them).
   and `worker`). (2) Add `<next-major` bounds in `pyproject.toml` for the list above, with a comment
   per line saying what breaks if it moves. (3) `make up` and confirm the resolved set is unchanged.
   (4) Note the policy in CONTRIBUTING (how to raise a bound deliberately).
+- **Status 2026-10-08.** Code merged on `develop` (`a66fa15`, `411c5d3`): bounds on torch `<3`, triton `<4`,
+  transformers `<6`, peft `<1`, trl `<2`, schemathesis `<5`, sqlalchemy `[asyncio]` `<3`, asyncpg `<1`, alembic `<2`,
+  fastapi `<1`, pydantic `<3`, redis `<9`; chromadb stays `==1.5.9`; policy in CONTRIBUTING. First rebuild **proved the
+  thesis on an unnamed package**: SQLAlchemy 2.0.54 → 2.1.4 dropped `greenlet`, app + worker died at
+  `import sqlalchemy.ext.asyncio` → fixed by `sqlalchemy[asyncio]`. Second rebuild aborted (PyPI at ~270 KB/s, multi-GB
+  CUDA wheels). **Remaining, on the main checkout:** `make up` → `pip freeze` in app + worker shows `greenlet` and
+  only minor moves vs the table in the Handoff draft (torch 2.14.1, transformers 5.19.0, peft 0.21.2, trl 1.14.2,
+  schemathesis 4.29.4) → `make ci` → `ADAPTA_RUN_LORA_E2E=1` e2e → close (Done/Handoff → CHANGELOG, OPERATIONS §3 note).
 - **Files.** `pyproject.toml:50-90`, `CONTRIBUTING.md` (dependency section).
 - **Contract impact.** None.
 - **Gate.** `make up` → `make ci` → one real training job (`ADAPTA_RUN_LORA_E2E=1
@@ -247,35 +255,6 @@ pair are wave 0 — every other block's gate depends on them).
 - **Acceptance.** The e2e observes progress advancing mid-run; the console's progress bar is
   demonstrably live rather than a post-hoc jump to 100 %.
 - **Close.** operator-console fine-tune flow (progress bar claim); Status snapshot.
-
-### E1.14 `[TEST]` Restore `make lint` to green — every worker's offline gate is red today (P0)
-- [ ] **Context.** Verified 2026-10-08 on a clean checkout of `develop` (`90ac7ac`): `ruff` reported one
-  `I001` unsorted import block (`adapta/api/v1/files.py:8`, fixed the same day with `ruff --fix --select I`)
-  and `mypy adapta/` reports **4 errors in 3 files**: `embeddings.py:43` assignment of `SentenceTransformer`
-  to a variable typed `None`; `worker/main.py:49` `Name "TrainingConfig" is not defined`; `chat.py:52`
-  returning `Any` from a function declared `-> int`; `chat.py:572` `Item "None" of "RAGService | None" has no
-  attribute "format_citations"`. `make lint` is part of `make ci`, so the fast CI gate and every
-  worktree offline gate fail before a worker has changed anything.
-- **Depends.** none. **Unblocks.** every block — the offline gate (`make lint && make test`) is the proof
-  each worker returns with.
-- **Agent.** haiku · gate class **offline** · serialize with: E1.13 (`worker/main.py` region if it moves
-  the progress hook), E3.2/E3.5 (`chat.py`) — land this first · **Handoff.** must name any signature or
-  annotation changed (e.g. a narrowed `Optional`).
-- **Scope.** Type-correctness only: annotate, narrow, or guard. No behaviour change, no `# type: ignore`
-  unless the error is a library-stub gap (say so in the Done note). `worker/main.py:49` is a string
-  annotation (`-> "TrainingConfig"`, `# noqa: F821`) whose import sits inside the function — annotation-only,
-  not a runtime bug (training jobs ran on 2026-09-17).
-- **Steps.** (1) `embeddings.py:43`: type the lazy singleton as `Optional[SentenceTransformer]`. (2)
-  `worker/main.py:49`: import `TrainingConfig` under `TYPE_CHECKING` and drop the `noqa`. (3) `chat.py:52`: cast/convert the token count to `int`. (4) `chat.py:572`: guard the
-  `RAGService | None` before `format_citations` (raise the typed error the surrounding code already uses
-  for "RAG not configured"). (5) `make lint` → 0 errors; `make test` unchanged.
-- **Files.** `adapta/services/embeddings.py:40-45`, `adapta/worker/main.py:40-55`,
-  `adapta/services/chat.py:48-53, 568-573`.
-- **Contract impact.** None.
-- **Gate.** `make lint` → `make test` (offline, from a worktree).
-- **Acceptance.** `mypy adapta/` and `ruff check adapta/ tests/` both exit 0 on a clean checkout; `make ci`
-  passes its `lint` step.
-- **Close.** Status snapshot (CI runner row: say the fast gate is green again, dated); nothing else.
 
 ### E2. Distribution + launch kit (weeks 2–3)
 
