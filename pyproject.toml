@@ -17,17 +17,29 @@ classifiers = [
 ]
 dependencies = [
     # Web framework
-    "fastapi>=0.110.0",
+    # fastapi: <1 — pre-1.0, minors may drop deprecated APIs and bump the starlette major
+    # the routers/middleware use. Working set: 0.143.
+    "fastapi>=0.110.0,<1",
     "uvicorn[standard]>=0.27.0",
-    "pydantic[email]>=2.6.0",
+    # pydantic: <3 — the generated DTOs (datamodel-codegen) and settings target v2 semantics.
+    # Working set: 2.14.
+    "pydantic[email]>=2.6.0,<3",
     "pydantic-settings>=2.1.0",
     "python-multipart>=0.0.9",
     # Database
-    "sqlalchemy>=2.0.25",
-    "asyncpg>=0.29.0",
-    "alembic>=1.13.0",
+    # sqlalchemy[asyncio]: the extra declares greenlet explicitly — SQLAlchemy 2.1 dropped it
+    # as a hard dependency and a rebuild then failed at `import sqlalchemy.ext.asyncio` in
+    # app and worker. <3: a major changes the async/session API. Working set: 2.1.4.
+    "sqlalchemy[asyncio]>=2.0.25,<3",
+    # asyncpg: <1 — pre-1.0 minors have broken the SQLAlchemy asyncpg dialect. Working set: 0.32.
+    "asyncpg>=0.29.0,<1",
+    # alembic: <2 — a major changes the env.py/autogenerate API migrations/env.py uses.
+    # Working set: 1.20.
+    "alembic>=1.13.0,<2",
     # Cache / job queue
-    "redis[hiredis]>=5.0.0",
+    # redis: <9 — the BLPOP job queue and progress keys use the client API; majors change
+    # return types/decoding. Working set: 8.1.
+    "redis[hiredis]>=5.0.0,<9",
     # Auth
     "python-jose[cryptography]>=3.3.0",
     "bcrypt>=4.1.0",
