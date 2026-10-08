@@ -38,6 +38,24 @@ make up             # rebuilds with --build
 
 Never run `pip install` on the host or add `requirements*.txt` files — `pyproject.toml` is the single dependency source.
 
+### Dependency policy: bounds on the heavy stack
+
+Floors alone let any image rebuild move the product (torch 2.14 broke training and
+schemathesis 4.x broke `make test-contracts`, both on a rebuild with no code change). So
+`torch`, `triton`, `transformers`, `peft`, `trl` and `schemathesis` carry a `<next-major`
+upper bound, each with a comment saying what breaks; `chromadb` is an exact pin that must
+equal the `chromadb/chroma` image tag in `docker-compose.yml` (`make check-chroma`).
+
+To raise a bound deliberately:
+
+1. Change the bound (and for chromadb, the pin and the compose tag together) in its own
+   commit, never bundled with feature work.
+2. Rebuild (`make up`) and record the newly resolved versions
+   (`docker compose exec worker pip freeze`) in the commit body.
+3. Run `make ci` and one real training job (`ADAPTA_RUN_LORA_E2E=1 pytest
+   tests/integration/test_lora_e2e.py`); for schemathesis also `make ci-full`.
+4. Update the "Working set" in the pyproject comment and the OPERATIONS upgrade note.
+
 ---
 
 ## Workflow — contract-driven (Extended SDD)

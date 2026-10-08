@@ -35,7 +35,9 @@ dependencies = [
     "llama-cpp-python>=0.2.55",
     # Embeddings + vector store
     "sentence-transformers>=2.3.1",
-    "chromadb==1.5.9",  # pinned in sync with the chroma server image (docker-compose.yml)
+    # chromadb: EXACT pin, must equal the chromadb/chroma image tag in docker-compose.yml
+    # (client/server skew -> KeyError('_type') 500 on all indexing). `make check-chroma` guards it.
+    "chromadb==1.5.9",
     # Document parsing + dataset-image validation (§V2 — bundle images are
     # decoded/checked at upload time in the app, not just in the worker)
     "pillow>=10.0.0",
@@ -55,13 +57,24 @@ Issues = "https://github.com/yielab/adapta/issues"
 
 [project.optional-dependencies]
 training = [
-    "torch>=2.2.0",
+    # torch: <3 — a minor/major move changes kernels, triton and CUDA wheels; 2.14 on the
+    # 2026-09-17 rebuild broke every training job (E1.9). Working set: 2.14.
+    "torch>=2.2.0,<3",
+    # triton: <4 — torch's compiled-kernel backend; a new major needs a matching torch and
+    # breaks the worker's JIT build of the CUDA driver. Working set: 3.8.
+    "triton>=3.0,<4; sys_platform == 'linux'",
     # torchvision pairs with torch (VLM processors import it — §V image fine-tune).
     "torchvision",
-    "transformers>=4.38.0",
-    "peft>=0.8.2",
+    # transformers: <6 — major releases rename/remove model, processor and tokenizer APIs
+    # that trainer.py, the VLM path and the GGUF conversion rely on. Working set: 5.17.
+    "transformers>=4.38.0,<6",
+    # peft: <1 — pre-1.0 minors change adapter config/save format that GGUF LoRA conversion
+    # reads. Working set: 0.21.
+    "peft>=0.8.2,<1",
     "datasets>=2.16.1",
-    "trl>=0.7.10",
+    # trl: <2 — SFTTrainer/DPOTrainer arguments and chat-template handling change between
+    # majors; train = serve prompt rendering (E1.x) depends on them. Working set: 1.13.
+    "trl>=0.7.10,<2",
     "bitsandbytes>=0.42.0",
     "accelerate>=0.27.0",
     # PEFT→GGUF LoRA conversion for serving (A3.1): llama.cpp's convert_lora_to_gguf.py
@@ -80,7 +93,9 @@ dev = [
     "mypy>=1.8.0",
     # SDD toolchain
     "datamodel-code-generator>=0.25.0",
-    "schemathesis>=3.28.0",
+    # schemathesis: <5 — majors change the CLI/pytest-plugin API and checks; 4.27.3 turned
+    # `make test-contracts` red (E1.11). Working set: 4.27.
+    "schemathesis>=3.28.0,<5",
     "openapi-spec-validator>=0.7.0",
     "import-linter>=2.0",
 ]
