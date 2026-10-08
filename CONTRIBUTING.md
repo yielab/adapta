@@ -105,21 +105,12 @@ Steps for a schema change:
 
 ---
 
-## Areas needing contribution
+## Where to contribute
 
-### High priority
-
-- **Test coverage ratchet** — floor is enforced at 30%; target is 50%. More integration tests (tests that hit real Postgres, Redis, and Chroma) are the highest-value additions. The full stack is needed for these; the CI `full` job provides the pattern.
-- **Additional base models** — test with GGUF models beyond the Qwen2.5 family; document VRAM requirements and quality trade-offs in `docs/reference/OPERATIONS.md`.
-
-### Medium priority
-
-- **Grafana dashboards** — the `observability` compose profile (Prometheus + Grafana) exists; pre-built dashboards for the app's `/metrics` are welcome.
-
-### Lower priority
-
-- **Cross-team RBAC e2e test** — seeding a second user/team to test viewer isolation end-to-end.
-- **Additional dataset synthesis strategies** — the current synthesizer produces Q/A pairs; other instruction formats (summarization, classification) are possible extensions.
+Open work lives only in [TODO.md](TODO.md): pick a block from the **§E board** whose *Depends on* are all
+`done`, read that block and the files its **Files** line names, and follow its Gate. Blocks marked `haiku`
+are small and fully specified — good first contributions. Blocks whose gate class is `offline` need no GPU.
+Shipped work, with the reasoning behind it, is in [CHANGELOG.md](CHANGELOG.md).
 
 ---
 

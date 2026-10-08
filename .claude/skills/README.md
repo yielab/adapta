@@ -1,6 +1,6 @@
 # Skill architecture — how agents work this repo without burning context
 
-Five skills, three shared context files, one rule: **every fact lives in exactly one
+Six skills, three shared context files, one rule: **every fact lives in exactly one
 place, and is loaded only when the task needs it.**
 
 ```
@@ -52,6 +52,8 @@ place, and is loaded only when the task needs it.**
 
 pick task from `TODO.md` → **feature** (contract → code → test) → **verify** →
 **docs-sync** → **ship**. Debugging a running system starts at **stack** instead.
+Several blocks at once: **orchestrate** (lead reads the §E board, workers run **feature** in
+worktrees, the lead serializes live/GPU gates on the main checkout and applies each **Handoff.**).
 
 ## Maintaining these
 

@@ -37,3 +37,27 @@ Never `pip install`; to change deps edit `pyproject.toml` then `make up` (host).
 - **Mutating handlers must commit before returning** — `get_db()`'s deferred commit races
   the response and causes read-your-write and stuck-BackgroundTask bugs.
 - **Coverage floor is 30%** and is a ratchet — don't lower it to make a run pass.
+
+## Gate classes — where a gate may run when several agents work at once
+
+The stack bind-mounts the **main checkout** (`.:/app` in both `app` and `worker`). A git
+worktree is not mounted, so editing there never trips hot reload. Each `TODO.md` block's
+**Agent.** line names its class; the `orchestrate` skill schedules by it.
+
+| Class | Gates | Where | Concurrency |
+|---|---|---|---|
+| **offline** | `lint`, `test`, `check-leaks`, `lint-imports`, `validate-spec`, `generate`, `check-models`, `docs-build` | a worktree, against the built `adapta-app` image (command below) | any number in parallel (≈ 3 is the CPU limit) |
+| **live** | `test-contracts`, `migrate`, `migrate-test`, `tests/integration/*` (rag e2e, sweep, golden), `console-build` (needs `node_modules`), `test_inference_slow` (needs the GGUF under `data/`), compose profiles | main checkout, stack up | **one at a time**; no edit or merge lands on the main checkout meanwhile |
+| **gpu** | `test_lora_e2e`, `test_lora_use_cases`, `test_vlm_lora_e2e` | main checkout; `docker compose restart worker` first if `adapta/training/` or `adapta/worker/` changed | one at a time (one GPU); same freeze as live |
+| **rebuild** | anything after a `pyproject.toml` or `Dockerfile` change (`make up`) | main checkout | exclusive — every container restarts, so nothing else may be running or in a live slot |
+
+Offline gates from a worktree (no `pip install`, no second compose project; the entrypoint
+would try to migrate against a DB that is not there, so bypass it):
+
+```
+docker run --rm --entrypoint sh --user "$(id -u):$(id -g)" -e HOME=/tmp \
+  -v "$PWD:/app" -w /app adapta-app:latest -c 'make lint && make test'
+```
+
+(`--user` keeps `.ruff_cache`/`__pycache__` owned by you; a root-owned `.ruff_cache` on the
+main checkout makes `ruff` fail with *Permission denied* — `sudo rm -rf .ruff_cache` fixes it.)

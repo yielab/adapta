@@ -37,11 +37,12 @@ rows that apply, and nothing else.
   Acceptance (observable), Close (which doc surfaces from `doc-surfaces.md`). Written so
   an agent with no prior context can execute it by reading **the block and its Files only**.
   A block longer than ~20 lines is two tasks.
-- **Closing a task:** flip `[ ]` → `[x]`, append `— ✅ DONE (YYYY-MM-DD)` to the heading,
-  add one **Done.** paragraph (≤ 8 lines: what changed · gate run + result · skipped items
-  + why), and update the matching **Status snapshot** row plus its "updated" date. Keep the
-  entry as a record; don't delete history. Noticed-but-out-of-scope work becomes one
-  `- **Follow-up.**` line or a new block — never silent extra diff.
+- **Closing a task:** append `— ✅ DONE (YYYY-MM-DD)` to the heading, add **Done.** (≤ 8 lines: what
+  changed · gate run + result · skipped items + why) and **Handoff.** (what downstream blocks must now
+  use), then **move the whole block to `CHANGELOG.md`** under the top dated section (create one for
+  today if needed), flip its §E board row to `done YYYY-MM-DD`, and refresh the **Status snapshot**
+  row + date. History is kept in the changelog, never deleted. Noticed-but-out-of-scope work becomes
+  one `- **Follow-up.**` line under the board or a new block — never silent extra diff.
 - **Legend:** `[x]` done & verified · `[~]` partial/not wired · `[ ]` not started.
   P0 blocks a trustworthy `main` · P1 before first customer · P2 nice-to-have.
 

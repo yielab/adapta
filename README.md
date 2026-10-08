@@ -68,7 +68,7 @@ interactive API docs are live at **`/docs`**.
 | **Using the console / API** | [User Guide](docs/user-guide/index.md) — console walkthrough, consuming the API, [knowledge + behavior together](docs/user-guide/knowledge-and-behavior.md) |
 | **Building on / contributing** | [Developer Guide](docs/developer-guide/index.md) — architecture, contract-driven workflow, and [Learning the system](docs/developer-guide/learning-the-system.md) (RAG, embeddings, LoRA, GGUF and the eval gate, explained with backend analogies) |
 | **Operating it** | [Operations](docs/reference/OPERATIONS.md) — backup/restore, upgrades, VRAM sizing, hardening checklist |
-| **Reference** | [Product definition](docs/reference/PRODUCT_DEFINITION.md) · [API reference](docs/reference/api.md) · [SDD workflow](docs/reference/SDD_WORKFLOW.md) · [Architecture decisions](docs/reference/API_EVOLUTION_PLAN.md) |
+| **Reference** | [Product definition](docs/reference/PRODUCT_DEFINITION.md) · [API reference](docs/reference/api.md) · [SDD workflow](docs/reference/SDD_WORKFLOW.md) · [Changelog](CHANGELOG.md) · [ADRs](docs/adr/) |
 | **What's planned** | [Roadmap (TODO.md)](TODO.md) — the only place with open work |
 
 ---
@@ -468,8 +468,11 @@ report a vulnerability via [SECURITY.md](SECURITY.md).
 
 ## Project status
 
-Phases 0–5 and the image-understanding workstream are complete — the full lifecycle works end-to-end.
-The remaining work (raising the coverage floor, deferred features) lives in the [roadmap](TODO.md).
+Phases 0–5 and the image-understanding workstream are complete — the full lifecycle works end-to-end
+(history in [CHANGELOG.md](CHANGELOG.md)). The open work is the 2026-09-03 audit, roadmap §E, in
+[TODO.md](TODO.md): its wave 0 restores two gates that went red after a 2026-09-17 dependency rebuild
+(`make lint`, `make test-contracts`), then real hybrid retrieval on Postgres, OCR ingestion and a governed
+adapter lifecycle.
 
 <details>
 <summary><b>Capability matrix</b></summary>

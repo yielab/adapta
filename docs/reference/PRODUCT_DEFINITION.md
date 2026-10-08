@@ -7,7 +7,7 @@
 **Implementation status:** Phases 0–5 complete as of 2026-06-08
 **One-liner:** A platform technical teams deploy **on their own servers** to customize and serve private language models two ways — **Knowledge (RAG)** or **Fine-tuning (LoRA)** — each exposed as an OpenAI-compatible API.
 
-> This document supersedes the sprawling "AI platform" framing. The engineering origin record (audit + error architecture) is [API_EVOLUTION_PLAN.md](API_EVOLUTION_PLAN.md); the spec process is [SDD_WORKFLOW.md](SDD_WORKFLOW.md); the roadmap/open work is [TODO.md](../roadmap.md).
+> This document supersedes the sprawling "AI platform" framing. The engineering history (June 2026 audit, error architecture) is in the repository [CHANGELOG.md](https://github.com/yielab/adapta/blob/main/CHANGELOG.md); the spec process is [SDD_WORKFLOW.md](SDD_WORKFLOW.md); the roadmap/open work is [TODO.md](../roadmap.md).
 
 ---
 

@@ -114,6 +114,7 @@ nav:
       - API reference: reference/api.md
       - Operations runbook: reference/OPERATIONS.md
       - Workflow (the three contracts): reference/SDD_WORKFLOW.md
-      - Origin record & error architecture: reference/API_EVOLUTION_PLAN.md
+      - ADR 0001 — Adapta as a Tack assistant (proposed): adr/0001-adapta-as-tack-assistant.md
       - Competitive landscape: reference/COMPETITIVE_LANDSCAPE.md
   - Roadmap: roadmap.md
+  - Changelog: changelog.md

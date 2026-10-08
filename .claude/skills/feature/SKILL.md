@@ -74,10 +74,10 @@ change. Not `ci-full` by default.
 Then close in this order, nothing more:
 
 1. **docs-sync** — only the surfaces the block's Close line lists.
-2. **Closure note in `TODO.md`** (the block's `- [ ]` → `- [x]`, heading gets
-   `— ✅ DONE (YYYY-MM-DD)`, one **Done.** paragraph ≤ 8 lines: what changed, which gate
-   ran and its result, anything skipped and why). Keep the original Context/Steps as the
-   record; don't rewrite them.
+2. **Close in `TODO.md`:** heading gets `— ✅ DONE (YYYY-MM-DD)`, one **Done.** paragraph ≤ 8 lines
+   (what changed, which gate ran and its result, anything skipped and why) and one **Handoff.**
+   line; then move the whole block — Context/Steps intact — to `CHANGELOG.md` (top dated section)
+   and flip its board row to `done`. The roadmap keeps only open blocks.
 3. **ship** if the user asked for a commit; otherwise report and stop.
 
 Do not continue into the next task, "while you're here" fixes, or refactors the block

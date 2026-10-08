@@ -20,8 +20,8 @@ from adapta.db.models import Collection, FileStatus, Project, ProjectFile
 from adapta.db.session import get_db
 from adapta.domain.errors import EmbeddingModelMismatch, InvalidRequest, NotFound
 from adapta.models.generated import FileResponse
-from adapta.services.auth import get_current_user, require_team_member, require_team_writer
 from adapta.services.app_settings import resolve_setting
+from adapta.services.auth import get_current_user, require_team_member, require_team_writer
 from adapta.services.documents import parse_and_chunk
 from adapta.services.rag import collection_name_for, get_rag_service
 

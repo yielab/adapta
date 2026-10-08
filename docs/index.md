@@ -119,4 +119,5 @@ Docs rot. This system is built so the parts that drift hardest can't:
 | **Code reference** | Auto-extracted from source docstrings (mkdocstrings). The reference *is* the code. |
 | **Internal links** | `mkdocs build --strict` runs in CI. A broken internal link fails the build. |
 | **Roadmap** | Canonical source at `TODO.md` in the repository — the roadmap page links to it directly rather than embedding it (the file links to source paths that only resolve in-repo). |
+| **Changelog** | `CHANGELOG.md` at the repository root — every shipped roadmap block, newest first; linked, not embedded, for the same reason. |
 | **Scope vs. tasks** | Reference docs describe what *is*. The Roadmap is the only place with open work. The two are never mixed. |
