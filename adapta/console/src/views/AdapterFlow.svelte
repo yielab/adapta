@@ -18,6 +18,8 @@
   const MIN_SAMPLES = 20;
   import { BRAND } from "../lib/brand";
   const DOCS_URL = BRAND.docs;
+  const IMPORT_GUIDE_URL =
+    "https://github.com/yielab/adapta/blob/main/docs/user-guide/bring-your-own-adapter.md";
 
   // ---- Documents (optional knowledge + synthesis source) -------------------
   let files = $state<ProjectFile[]>([]);
@@ -847,7 +849,7 @@
     </p>
     <p class="muted" style="margin: 0 0 12px; font-size: 13px;">
       Where do I train it? Adapta does not train. Train a LoRA with any tool, then import it here.
-      <a href={DOCS_URL} target="_blank" rel="noopener">Training guide →</a>
+      <a href={IMPORT_GUIDE_URL} target="_blank" rel="noopener">Import guide →</a>
     </p>
 
     {#if validDatasets.length === 0}

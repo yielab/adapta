@@ -14,8 +14,8 @@
 
 Adapta is a **one-person project** with a significant portion of its implementation
 written using AI-assisted code generation (Claude). It is at **prototype maturity**: the pieces
-are wired up for RAG and multi-tenant serving (adapter import and its eval gate are being
-rebuilt after in-product training was removed on 2026-10-10), and the system has not been
+are wired up for RAG and multi-tenant serving (adapter import and its CPU eval gate shipped
+after in-product training was removed on 2026-10-10), and the system has not been
 validated at real team scale or independently audited.
 
 If you're considering deploying this with sensitive data, read the relevant code paths yourself.
@@ -76,9 +76,9 @@ The brand keeps it. We are infrastructure, not a growth-hacked SaaS.
 
 **Principles**
 
-1. **Verbs, not adverbs.** We *upload, index, train, compose, serve, evaluate*. We never
+1. **Verbs, not adverbs.** We *upload, index, import, compose, serve, evaluate*. We never
    *unlock, supercharge, harness,* or *empower*.
-2. **State the mechanism.** "Held-out eval, response-only loss" beats "trusted AI." Naming the
+2. **State the mechanism.** "Held-out eval, task metric vs the base" beats "trusted AI." Naming the
    machinery *is* the reassurance for this audience.
 3. **Privacy is stated flatly, once, and not oversold.** "Your data never leaves your
    infrastructure." No fear-mongering, no badges of compliance we don't have.

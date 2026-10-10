@@ -50,11 +50,12 @@ In-product training was removed on 2026-10-10. Adapters are imported instead, an
 the import and its CPU eval gate run on every upload; a finetune endpoint
 exists once an adapter has passed the gate. The gate is the product's safety promise that an
 unverified adapter never reaches your users. See
-[the eval gate](operator-console.md#3b-adapter-finetune-flow).
+[the eval gate](operator-console.md#3b-adapter-finetune-flow) and the
+[bring-your-own-adapter guide](bring-your-own-adapter.md) (what to import, how it is scored).
 
 **Both together (the production pattern):** a finetune project can *also*
 index documents. Its endpoint then answers **from your documents, in your
-trained voice and format** — facts from retrieval (with citations), form from
+adapter's voice and format** — facts from retrieval (with citations), form from
 the adapter, in one call. See
 [Knowledge + behavior together](knowledge-and-behavior.md) for a worked
 real-life example.

@@ -14,7 +14,8 @@ supplies the facts, the adapter makes the answer come out in *your* voice and
 !!! note "Adapta does not train adapters"
     In-product training was removed on 2026-10-10. You bring a GGUF or PEFT LoRA;
     import converts it, probe-loads it and scores it against the base on your eval
-    set. Only a passed adapter can back an endpoint.
+    set. Only a passed adapter can back an endpoint. See
+    [Bring your own adapter](bring-your-own-adapter.md).
 
 **Knowledge inputs:** PDF, DOCX, Markdown, TXT, HTML and images (PNG, JPG, TIFF). Scanned
 pages are OCR'd (Docling + RapidOCR) only where there is no text layer; low-confidence OCR

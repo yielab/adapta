@@ -50,12 +50,12 @@ A **single-tenant, self-hosted** application. A company runs it on their own inf
 
 "Change **how the model behaves** — its style, format, or skill."
 
-- **Input:** a LoRA adapter trained elsewhere (GGUF or PEFT) plus an **eval set** (JSONL of prompt/response pairs, `specs/schemas/eval_dataset.schema.json`), which can be synthesized from indexed documents (`POST /v1/projects/{id}/datasets/synthesize`).
+- **Input:** a LoRA adapter trained elsewhere (GGUF or PEFT; Adapta does not train, see the [import guide](../user-guide/bring-your-own-adapter.md)) plus an **eval set** (JSONL of prompt/response pairs, `specs/schemas/eval_dataset.schema.json`), which can be synthesized from indexed documents (`POST /v1/projects/{id}/datasets/synthesize`).
 - **Mechanism:** import the adapter → gate it on CPU against the base on the project's eval set → register it. *Import is built (E4.2: `POST /v1/projects/{id}/adapters` takes a GGUF LoRA or a zip of `adapter_model.safetensors` + `adapter_config.json`, validated statically for format and base model, stored with its sha256 as `uploaded`), the CPU scorer is built (E4.3), and the adapter job on the CPU worker (E4.4) converts a PEFT upload to GGUF, probe-loads it, scores adapter and base on the eval set, and marks it `passed` or `failed`. `POST /v1/projects/{id}/endpoint` on a finetune project answers "No adapter has passed the eval gate yet" until one passes.*
 - **Serving:** base model + adapter, OpenAI-compatible.
 - **Cost:** CPU only; no service in the stack needs a GPU.
-- **Updates:** import a new adapter.
-- **Eval gate (design contract):** an adapter must clear the held-out eval gate to back an endpoint — scored on CPU through the serving path with a **task metric** (classify = label accuracy, extract = JSON validity × per-key match, freeform = token F1), adapter and base on the same held-out eval set; it passes when it beats the base by ≥ 0.05, **or** scores ≥ 0.8 without falling below the base (`adapta/services/eval_gate.py`, E4.3). An adapter that does neither cannot serve. Gate and serving share one prompt renderer (`adapta/core/chat_templates.py`), so the gate always scores an adapter on the exact conditioning the endpoint will send.
+- **Updates:** import a new adapter, then promote it; promote/rollback is recorded in an audit history (E4.5).
+- **Eval gate:** an adapter must clear the held-out eval gate to back an endpoint — scored on CPU through the serving path with a **task metric** (classify = label accuracy, extract = JSON validity × per-key match, freeform = token F1), adapter and base on the same held-out eval set; it passes when it beats the base by ≥ 0.05, **or** scores ≥ 0.8 without falling below the base (`adapta/services/eval_gate.py`, E4.3). An adapter that does neither cannot serve. Gate and serving share one prompt renderer (`adapta/core/chat_templates.py`), so the gate always scores an adapter on the exact conditioning the endpoint will send.
 
 ### Combining A + B — knowledge and behavior on one endpoint
 
@@ -155,8 +155,8 @@ All six phases shipped as of 2026-06-08. Each leaves `main` green.
 
 - **Phase 0 — Foundation.** Postgres data model; real auth + teams; Project entity; single `docker compose up`; delete mock, images, cut list.
 - **Phase 1 — RAG MVP.** Document upload + parse + chunk; real embeddings; per-project Chroma collection; Endpoint + API key; cited OpenAI-compatible answers.
-- **Phase 2 — Training infrastructure.** Redis queue; dedicated GPU `worker`; TrainingJob lifecycle; GPU detection/guards.
-- **Phase 3 — LoRA service.** JSONL dataset upload + validation; QLoRA training; adapter registry + eval gate; endpoint serving.
+- **Phase 2 — Job infrastructure.** Redis queue; `worker`; job lifecycle. (The GPU worker and TrainingJob were removed 2026-10-10.)
+- **Phase 3 — LoRA service.** JSONL eval-set upload + validation; adapter registry + eval gate; endpoint serving. (Originally with QLoRA training; replaced by adapter import, E4.2–E4.4.)
 - **Phase 4 — Dataset synthesis.** Documents → chunk → LLM-synthesized instruction pairs → dedup → JSONL dataset. `POST /v1/projects/{id}/datasets/synthesize`.
 - **Phase 5 — Hardening.** DomainError taxonomy; `make check-leaks` + `make ci`; usage metering; real health checks (Postgres/Redis/Chroma); 65 in-process tests + an enforced API contract gate (schemathesis, Pillar 1).
 

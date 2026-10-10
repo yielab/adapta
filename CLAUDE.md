@@ -8,7 +8,7 @@ leaves their infrastructure) to specialize and serve private language models beh
 - **Knowledge (RAG):** upload documents → Docling parsing + OCR → chunk → embed (sentence-transformers) → per-project ChromaDB →
   hybrid retrieval (vector + Postgres full-text, RRF, optional cross-encoder rerank) → cited answers. CPU-only.
 - **Bring your own adapter (LoRA):** import a GGUF/PEFT adapter; the CPU worker converts, probe-loads and gates it
-  against the base on the project's eval set (`passed`/`failed`), and only a passed adapter serves. In-product training was removed 2026-10-10;
+  against the base on the project's eval set (`passed`/`failed`), and only a passed adapter serves. Adapta verifies and serves adapters; it does not train them (removed 2026-10-10; [guide](docs/user-guide/bring-your-own-adapter.md));
   image *generation* is out, permanently.
 - **Composed serving:** one endpoint can inject retrieved context *and* apply the adapter — facts from RAG,
   tone/format from the adapter.

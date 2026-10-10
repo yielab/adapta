@@ -274,12 +274,13 @@ not a new copy of the whole model.
 ### Bring your own adapter
 
 Adapta does not train adapters: in-product training (and with it the CUDA
-worker) was removed on 2026-10-10. Training an adapter — typically QLoRA, with
-the base quantized to four bits — is done with dedicated tooling elsewhere. What
+worker) was removed on 2026-10-10. Training an adapter is done with a LoRA
+trainer elsewhere. What
 the platform owns is everything after: import the adapter (PEFT, converted to
 GGUF by `adapta/core/adapter_conversion.py`, or GGUF directly), gate it on CPU
 against the base on the project's eval set, and serve it with RAG. The import
-flow is live (E4.2–E4.4, 2026-10-10).
+flow is live (E4.2–E4.4, 2026-10-10); the
+[import guide](../user-guide/bring-your-own-adapter.md) says what an adapter must match.
 
 ### The eval set — labeled examples
 

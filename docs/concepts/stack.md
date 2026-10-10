@@ -319,7 +319,7 @@ Key file: `adapta/services/rag.py` (`_fts_search`, `_rrf_fuse`,
 In-product training (PEFT, TRL, QLoRA on a CUDA worker) was removed on
 2026-10-10: it was the only reason the stack needed a GPU, and training is
 better done with dedicated tooling. The direction is *bring your own adapter*:
-import a GGUF or PEFT LoRA, convert and gate it on CPU, serve it with RAG (E4.2–E4.4, live 2026-10-10). Two fixture adapters live in
+import a GGUF or PEFT LoRA, convert and gate it on CPU, serve it with RAG (E4.2–E4.4, live 2026-10-10; see the [import guide](../user-guide/bring-your-own-adapter.md)). Two fixture adapters live in
 `tests/fixtures/adapters/` (`classify-pass`, `garbage-control`).
 
 ---

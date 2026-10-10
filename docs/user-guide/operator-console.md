@@ -73,7 +73,7 @@ citations** — the source chunks it used are returned alongside the answer.
 
 ## 3b. Adapter (finetune) flow
 
-In-product training was removed on 2026-10-10: the console no longer trains
+In-product training was removed on 2026-10-10 (see the [import guide](bring-your-own-adapter.md)): the console no longer trains
 anything, and a finetune project cannot create an endpoint until an imported
 adapter has passed the eval gate (import: `POST /v1/projects/{id}/adapters`; the
 adapter job on the CPU worker marks it `passed` or `failed`). What the **Setup** tab

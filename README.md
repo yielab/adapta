@@ -35,21 +35,21 @@ It answers two needs that have no good *private* solution today:
   **hybrid**: multilingual semantic vector search *and* Postgres full-text keyword search over the whole corpus,
   fused, so exact terms (product codes, names) survive alongside meaning. **Spanish and English out of the box** — a
   question in one language finds documents in the other. The model's weights never change. **CPU-only.**
-- 🎛️ **Change how it behaves (bring your own adapter)** — import a GGUF/PEFT LoRA, gate it on CPU against the base on your eval set, then serve it. Imports convert, probe and score on CPU; a passed adapter serves, a failed one is refused. In-product training was removed on 2026-10-10; no service needs a GPU.
+- 🎛️ **Change how it behaves (bring your own adapter)** — train a LoRA with any tool, then import the GGUF or PEFT file. Adapta converts it, probe-loads it and scores it against the base model on your eval set, all on CPU; only an adapter that passes is served, a failed one is refused. **Adapta verifies and serves adapters; it does not train them** (in-product training was removed on 2026-10-10, so no service needs a GPU). Promote and roll back with an audit trail. See the [import guide](docs/user-guide/bring-your-own-adapter.md).
 
 And knowledge and behavior **compose on a single endpoint**: facts retrieved from your documents
 (cited) *and* the tone/format of your adapter, in the same call.
 
 No confirmed competitor combines all of these in one self-hosted product. vLLM and LoRAX serve
 adapters at scale but do no RAG. H2O LLM Studio trains LoRA/QLoRA (including DPO) but
-has no serving or RAG. AnythingLLM does RAG but has no adapter lifecycle. NVIDIA NeMo covers most of the
+has no serving or RAG. Trainers such as Unsloth and Axolotl are upstream of Adapta: they make the adapter, Adapta gates and serves it. AnythingLLM does RAG but has no adapter lifecycle. NVIDIA NeMo covers most of the
 surface but requires Kubernetes and 10+ microservices. See the
 [competitive landscape](docs/reference/COMPETITIVE_LANDSCAPE.md) for the full comparison matrix with
 citations.
 
 > [!IMPORTANT]
 > **Status: working prototype — a one-person, AI-assisted (Claude) project.** The full lifecycle
-> works end-to-end for RAG and multi-tenant serving (adapter import and its eval gate are being rebuilt),
+> works end-to-end for RAG, bring-your-own-adapter (import, CPU eval gate, promote/rollback) and multi-tenant serving,
 > but it is **not production-hardened**: the auth path should be reviewed independently before being trusted with sensitive data.
 > Apache-2.0 licensed and built for private-team use — if you deploy it, expect to audit and harden it yourself.
 
@@ -231,8 +231,8 @@ larger scale.
 | Capability | Dify / RAGFlow / AnythingLLM | Unsloth / LLaMA-Factory | **Adapta** |
 | --- | :---: | :---: | :---: |
 | Self-hosted RAG with citations | ✅ | — | ✅ |
-| Integrated LoRA training | — | ✅ | — (bring your own adapter) |
-| Eval gate blocks a weak adapter | — | — | 🚧 (rebuilt on CPU in E4.3) |
+| LoRA training | — | ✅ | — (not built: bring your own adapter) |
+| Eval gate blocks a weak adapter (CPU, per eval set) | — | — | ✅ |
 | RAG + adapter composed on one endpoint | — | — | ✅ |
 | Multi-tenant orgs / teams / RBAC | partial | — | ✅ |
 | OpenAI-compatible serving | ✅ | — | ✅ |
@@ -251,7 +251,7 @@ what to change before exposing the stack.** Beyond that, put it behind a TLS rev
 Postgres/Redis off any public network.
 
 **What the platform does for you:** no telemetry or external callbacks · a weak adapter is blocked
-from serving mechanically (not by a flag; gate being rebuilt, E4.3) · cross-tenant isolation enforced at the ORM layer and
+from serving mechanically (not by a flag; CPU eval gate on every import) · cross-tenant isolation enforced at the ORM layer and
 tested as typed 403s · uploads are bounded against oversized/hostile input
 (streamed byte caps — [Operations §6.4](docs/reference/OPERATIONS.md)) and validation reports every bad row in one pass.
 
@@ -266,7 +266,7 @@ report a vulnerability via [SECURITY.md](SECURITY.md).
 
 Phases 0–5 shipped (history in [CHANGELOG.md](CHANGELOG.md)). In-product training was removed on
 2026-10-10 (E4.1): no CUDA worker, vLLM or GPU gates remain. The open work is the 2026-09-03 audit,
-roadmap §E, in [TODO.md](TODO.md): *bring your own adapter* (import, CPU eval gate, serve with RAG).
+roadmap §E, in [TODO.md](TODO.md). *Bring your own adapter* (import, CPU eval gate, promote/rollback, console flow) shipped 2026-10-10 (E4.2–E4.6).
 Hybrid retrieval over Postgres full-text shipped 2026-10-10 (E3.2); Docling + OCR ingestion shipped 2026-10-10 (E3.3b).
 
 <details>
@@ -277,8 +277,8 @@ Hybrid retrieval over Postgres full-text shipped 2026-10-10 (E3.2); Docling + OC
 | Operator console (RAG lifecycle, datasets, endpoint+keys, playground, usage) | ✅ Done |
 | OpenAI-compatible serving (base + GGUF LoRA adapter, key-scoped) | ✅ Done |
 | RAG retrieval with citations (sentence-transformers; PDF/DOCX/MD/TXT/HTML/images, scanned PDFs and images included via Docling + OCR; per-project ChromaDB) | ✅ Done |
-| Adapter import + CPU eval gate (unverified adapter never serves) | ✅ Done (E4.2–E4.4) |
-| Dataset synthesis (indexed docs → LLM Q/A pairs → JSONL) | ✅ Done |
+| Adapter import + CPU eval gate + promote/rollback with audit (unverified adapter never serves; [guide](docs/user-guide/bring-your-own-adapter.md)) | ✅ Done (E4.2–E4.6) |
+| Eval-set synthesis (indexed docs → classify/extract/RAG eval rows → JSONL) | ✅ Done (E4.8) |
 | Combined serving (retrieval + adapter in one call) | ✅ Done |
 | Auth / teams / RBAC (bcrypt + JWT; invite flow; cross-team access is a typed 403) | ✅ Done |
 | Usage metering (per-endpoint daily token rollup) | ✅ Done |

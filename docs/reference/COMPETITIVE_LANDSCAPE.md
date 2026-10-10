@@ -3,16 +3,18 @@
 > **Kind: 📖 Reference.** This page describes what *is* — verified competitor capabilities with primary
 > source citations. Open tasks live in the [Roadmap](../roadmap.md). Last updated: 2026-06-25.
 
-!!! warning "Adapta's own column predates 2026-10-10"
-    The competitor facts below are dated 2026-06-25. Statements about *Adapta's* training and VLM
-    fine-tuning describe the product before E4.1, which removed in-product training. Adapta now
-    imports adapters and gates them on CPU (E4.2–E4.4); the competitive positioning is
-    rewritten once in E4.7.
+!!! warning "Competitor facts are dated 2026-06-25; Adapta's column is current (2026-10-10)"
+    Adapta no longer trains adapters (E4.1, 2026-10-10). It **verifies and serves** adapters
+    you bring: import, CPU eval gate, promote/rollback ([guide](../user-guide/bring-your-own-adapter.md)).
+    Unsloth, Axolotl and LLaMA-Factory are therefore **upstream tools** (where an adapter is
+    made), not competitors. The competitor rows below were not re-verified after 2026-06-25,
+    and the new "Serves an imported adapter" column is filled only where the existing sources
+    already say so (`–` = not assessed).
 
 Adapta occupies a genuinely rare niche: **no single confirmed competitor matches its full combination**
-of self-hosted RAG + LoRA/QLoRA fine-tune + VLM (image-understanding) fine-tune + an automated
-*blocking* eval gate + OpenAI-compatible serving that *composes* RAG retrieval and the fine-tuned
-adapter in a single endpoint call.
+of self-hosted RAG + an imported-LoRA lifecycle (import, CPU eval gate, promote/rollback) + an
+automated *blocking* eval gate + OpenAI-compatible serving that *composes* RAG retrieval and the
+adapter in a single endpoint call. Training happens elsewhere; Adapta does not do it.
 
 ---
 
@@ -21,30 +23,29 @@ adapter in a single endpoint call.
 Every cell below is backed by a primary source cited in [§Verified claims](#verified-claims).
 ✓ = confirmed capability · ✗ = confirmed absent · ~ = partial / requires external tooling
 
-| | Self-hosted single product | RAG w/ citations | LoRA/QLoRA fine-tune | **VLM fine-tune (end-to-end)** | **Automatic blocking eval gate** | **Composes RAG + adapter in one call** | OpenAI-compatible |
+| | Self-hosted single product | RAG w/ citations | Trains LoRA in-product | **Serves an imported adapter** | **Automatic blocking eval gate** | **Composes RAG + adapter in one call** | OpenAI-compatible |
 |---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| **Adapta** | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| vLLM | ✓ | ✗ | ✗ (serves only) | ✗ | ✗ | ✗ | ✓ |
-| LoRAX (Predibase OSS) | ✓ | ✗ | ✗ (serves only) | ✗ | ✗ | ✗ | ✓ |
-| H2O LLM Studio | ✓ | ✗ | ✓ | ~ (experimental) | ✗ | ✗ | ✗ |
-| AnythingLLM | ✓ | ✓ | ✗ | ✗ | ✗ | ✗ | ~ |
-| Dify | ✓ | ✓ | ✗ | ✗ | ✗ | ✗ | ~ |
-| RAGFlow | ✓ | ✓ | ✗ | ✗ | ✗ | ✗ | ~ |
-| Axolotl / Unsloth / LLaMA-Factory | ✓ | ✗ | ✓ | ~ (train only) | ✗ | ✗ | ✗ |
-| NVIDIA NeMo (Kubernetes) | ~ | ~ | ✓ | ✓ | ~ (monitor only) | ✗ | ✓ (via NIM) |
-| Red Hat AI 3 (InstructLab) | ~ | ✗ | ✓ | ✗ | ~ (monitor only) | ✗ | ~ |
-| Ollama / LM Studio / LocalAI | ✓ | ~ | ~ (LocalAI only, via TRL) | ✗ | ✗ | ✗ | ✓ |
+| **Adapta** | ✓ | ✓ | ✗ (bring your own) | ✓ | ✓ | ✓ | ✓ |
+| vLLM | ✓ | ✗ | ✗ | ✓ (serves) | ✗ | ✗ | ✓ |
+| LoRAX (Predibase OSS) | ✓ | ✗ | ✗ | ✓ (serves) | ✗ | ✗ | ✓ |
+| H2O LLM Studio | ✓ | ✗ | ✓ | – | ✗ | ✗ | ✗ |
+| AnythingLLM | ✓ | ✓ | ✗ | – | ✗ | ✗ | ~ |
+| Dify | ✓ | ✓ | ✗ | – | ✗ | ✗ | ~ |
+| RAGFlow | ✓ | ✓ | ✗ | – | ✗ | ✗ | ~ |
+| Axolotl / Unsloth / LLaMA-Factory (upstream tools) | ✓ | ✗ | ✓ | – | ✗ | ✗ | ✗ |
+| NVIDIA NeMo (Kubernetes) | ~ | ~ | ✓ | – | ~ (monitor only) | ✗ | ✓ (via NIM) |
+| Red Hat AI 3 (InstructLab) | ~ | ✗ | ✓ | – | ~ (monitor only) | ✗ | ~ |
+| Ollama / LM Studio / LocalAI | ✓ | ~ | ~ (LocalAI only, via TRL) | – | ✗ | ✗ | ✓ |
 
-**Adapta is the only all-✓ row.**
+**Adapta is the only row with ✓ in every column except in-product training, which it deliberately does not do.**
 
 ### Reading the partial cells
 
-- **VLM fine-tune ~:** Axolotl and Unsloth train VLM LoRAs, but leave serving to the user (vLLM, which
-  explicitly [does not support LoRA for vision/encoder layers](https://unsloth.ai/docs/get-started/fine-tuning-llms-guide)).
-  LLaMA-Factory is the closest — train + eval + export — but delegates inference to vLLM/SGLang.
-  None of them do the full `train → gate → convert → serve` cycle in one product.
+- **Trains LoRA in-product:** Adapta does not. Axolotl, Unsloth and LLaMA-Factory train adapters and
+  leave serving to the user; Adapta takes their output (PEFT or GGUF) and adds the gate, serving and RAG.
+  The guide says [what it expects](../user-guide/bring-your-own-adapter.md).
 - **Eval gate ~:** NVIDIA NeMo Evaluator and Red Hat AI 3's evaluation hub are **monitoring/validation
-  dashboards** — a human reviews results. Adapta's gate is an **automatic blocking gate**: a fine-tune
+  dashboards** — a human reviews results. Adapta's gate is an **automatic blocking gate**: an adapter
   that does not clear the held-out threshold (or beat the base model) never becomes an endpoint.
 - **Self-hosted ~:** NeMo and Red Hat AI 3 are technically self-hostable but require a Kubernetes
   cluster and 10+ microservices (see [§Deployment complexity](#deployment-complexity) below).
@@ -67,9 +68,9 @@ Candidly: Adapta is not always the right tool.
 | If you need… | Better fit |
 |---|---|
 | Serve 100s of distinct LoRA adapters concurrently on one GPU | LoRAX or vLLM (`max_loras`) |
-| Pure document Q&A with an off-the-shelf model, no fine-tuning | AnythingLLM, Dify, RAGFlow |
+| Pure document Q&A with an off-the-shelf model, no adapter | AnythingLLM, Dify, RAGFlow |
 | Serve any GGUF model with one command, no customization | Ollama |
-| DPO / RLHF / FSDP-distributed training, no serving required | H2O LLM Studio, Axolotl |
+| Training itself (Adapta does not train), incl. DPO / RLHF / FSDP-distributed training | H2O LLM Studio, Axolotl, Unsloth, LLaMA-Factory |
 | Enterprise Kubernetes platform with MLOps suite | NVIDIA NeMo Microservices |
 
 ---
@@ -98,26 +99,18 @@ primary-source citation (verified 2026-06-25).
 Adapta's `chat.py` injects retrieved chunks *and* resolves the adapter on every `/v1/chat/completions`
 call — no orchestration layer required.
 
-### Q2 — Who does VLM LoRA fine-tuning end-to-end self-hosted?
+### Q2 — Who trains and serves a VLM LoRA in one self-hosted product?
 
-**Answer: No tool does the full cycle (train → gate → convert → serve) in one product.**
+**Answer (as of 2026-06-25): none.** Adapta no longer attempts it: in-product training, VLM
+included, was removed on 2026-10-10. It still serves vision base models, and LoRA import is for
+text adapters.
 
-- **LLaMA-Factory**: Closest. Train + eval + export to GGUF, but inference is
-  [delegated to vLLM/SGLang](https://voltagent.dev/blog/llama-factory/): *"You can export LoRA adapters
-  into a merged model for Hugging Face, or call your model via an OpenAI-compatible API, with inference
-  backends including vLLM worker and SGLang worker."* No integrated serving or eval gate.
-- **Axolotl**: Supports [VLM fine-tuning](https://docs.axolotl.ai/) (LLaMA-Vision, Qwen2-VL, LLaVA…)
-  but is primarily a training framework: *"specialized serving platforms like vLLM would typically handle
-  production inference workloads."*
-- **Unsloth**: Trains VLM LoRAs, but [explicitly documents](https://unsloth.ai/docs/get-started/fine-tuning-llms-guide)
-  that vLLM cannot serve them: *"vLLM does not support LoRA for vision/encoder layers."* Users must
-  serve through transformers or Unsloth's own inference, not an OpenAI-compatible endpoint.
-- **H2O LLM Studio**: Multimodal support is marked experimental; no VLM LoRA serving infrastructure documented.
-
-Adapta's §V workstream (VLM end-to-end) covers: zip-bundle upload → validation → QLoRA training
-(vision tower frozen) → held-out eval gate → GGUF conversion (base + mmproj) → llama-cpp serving with
-OpenAI image content-parts. It is the only self-hosted product that does all of this in one `make up`.
-(In-product VLM training was removed on 2026-10-10; Adapta still serves vision models.)
+- **LLaMA-Factory**: Train + eval + export to GGUF, but inference is
+  [delegated to vLLM/SGLang](https://voltagent.dev/blog/llama-factory/).
+- **Axolotl**: Supports [VLM fine-tuning](https://docs.axolotl.ai/) but is primarily a training framework.
+- **Unsloth**: Trains VLM LoRAs, but [documents](https://unsloth.ai/docs/get-started/fine-tuning-llms-guide)
+  that vLLM cannot serve them: *"vLLM does not support LoRA for vision/encoder layers."*
+- **H2O LLM Studio**: Multimodal support is marked experimental.
 
 ### Q3 — Can llama-cpp/GGUF batch multiple LoRA adapters concurrently?
 
@@ -135,7 +128,7 @@ This is the root cause of Adapta's **serving density gap** (§D3 in TODO.md). Co
   heterogeneous continuous batching that packs requests for different adapters together into the same
   batch, keeping latency and throughput nearly constant with the number of concurrent adapters."*
 
-**Implication for Adapta:** each fine-tune endpoint gets its own llama-cpp model instance (one
+**Implication for Adapta:** each adapter endpoint gets its own llama-cpp model instance (one
 `(base, adapter)` cache slot). N active endpoints ≈ N resident models (bounded by §A4.8 LRU).
 This is fine at small scale; it becomes a cost disadvantage as the number of active endpoints grows.
 The opt-in vLLM backend that was meant to close this gap was removed on 2026-10-10 with the GPU stack.
@@ -175,19 +168,19 @@ secrets. This is a real and quantifiable advantage for a team that is not a plat
 
 | | Orchestration | Services / containers | GPU requirement | Time to first endpoint |
 |---|---|---|---|---|
-| **Adapta** | Docker Compose | 5 (app, worker, postgres, redis, chroma) | Optional (RAG = CPU only) | ~5 min |
+| **Adapta** | Docker Compose | 5 (app, worker, postgres, redis, chroma) | None (CPU only) | ~5 min |
 | NVIDIA NeMo | Kubernetes + Helm | 10+ | A100/H100 80 GB minimum | Hours (cluster setup) |
 | Red Hat AI 3 | OpenShift / Kubernetes | Multi-component InstructLab toolkit | GPU recommended | Hours |
 | H2O LLM Studio | Docker or bare metal | 1 (training only) | NVIDIA GPU | Minutes (no serving) |
 | vLLM / LoRAX | Docker or k8s | 1 (serving only) | GPU | Minutes (no training) |
-| AnythingLLM | Docker | 1 | None | Minutes (no fine-tuning) |
+| AnythingLLM | Docker | 1 | None | Minutes (no adapter lifecycle) |
 
 ---
 
 ## The moat in one sentence
 
 > Adapta is the only self-hosted product that gives a team **knowledge** (RAG over private documents,
-> CPU-only) and **behavior** (LoRA fine-tuning, including VLM image-understanding) in a single
-> `docker compose up`, with an automatic eval gate that blocks any fine-tune that did not demonstrably
+> CPU-only) and **behavior** (a LoRA adapter you bring, imported and verified on CPU) in a single
+> `docker compose up`, with an automatic eval gate that blocks any adapter that did not demonstrably
 > improve over the base model, all served through one OpenAI-compatible endpoint that composes both
 > in every call.
