@@ -15,6 +15,7 @@ import asyncio
 import hashlib
 import logging
 import math
+import threading
 import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, List, Literal, Optional
@@ -135,42 +136,66 @@ class _FtsHit:
     chunk_index: int
 
 
-# OR semantics over the question's lexemes: websearch_to_tsquery ANDs every term, so a
-# natural-language question would match no single chunk. Each lexeme is quoted so
-# punctuation-bearing tokens (urls, paths, emails) cannot break the tsquery parser.
-# ts_rank_cd normalization 1 divides by 1 + log(length) so long chunks do not dominate.
+# Sparse leg SQL. websearch_to_tsquery ANDs every term, so a natural-language question
+# would match no chunk; instead each query lexeme is its own quoted tsquery (quoting keeps
+# urls/paths/emails from breaking the parser). ts_rank_cd has no IDF, so with OR semantics
+# stopwords drown the content words. Language-agnostic fix, no stopword lists:
+#   * df = how many of the project's chunks contain the lexeme (GIN-backed count);
+#   * lexemes present in more than :max_df of the chunks are dropped (statistical
+#     stopwords), but never when df <= 3, so tiny corpora keep their terms;
+#   * chunks are ranked by the summed BM25-style idf of the lexemes they contain.
+# No surviving lexeme -> no rows (not an error).
 _FTS_SQL = """
-WITH q AS (
-  SELECT CASE WHEN cardinality(lex) = 0 THEN NULL ELSE CAST(
-    (SELECT string_agg('''' || replace(l, '''', '''''') || '''', ' | ') FROM unnest(lex) AS l)
-    AS tsquery) END AS tq
-  FROM (SELECT tsvector_to_array(to_tsvector(CAST(:cfg AS regconfig), :q)) AS lex) x
+WITH lex AS (
+  SELECT l, CAST(quote_literal(l) AS tsquery) AS tq
+  FROM unnest(tsvector_to_array(to_tsvector(CAST(:cfg AS regconfig), :q))) AS l
+),
+n AS (SELECT count(*) AS n FROM chunks WHERE project_id = :p),
+df AS (
+  SELECT lex.tq,
+         (SELECT count(*) FROM chunks c WHERE c.project_id = :p AND c.tsv @@ lex.tq) AS df
+  FROM lex
+),
+w AS (
+  SELECT df.tq, ln((n.n - df.df + 0.5) / (df.df + 0.5) + 1) AS idf
+  FROM df, n
+  WHERE df.df > 0 AND df.df <= GREATEST(:max_df * n.n, 3)
 )
 SELECT c.id, c.text, c.chunk_index, f.filename
-FROM q, chunks c JOIN project_files f ON f.id = c.file_id
-WHERE q.tq IS NOT NULL AND c.project_id = :p AND c.tsv @@ q.tq
-ORDER BY ts_rank_cd(c.tsv, q.tq, 1) DESC, c.id
+FROM w
+JOIN chunks c ON c.project_id = :p AND c.tsv @@ w.tq
+JOIN project_files f ON f.id = c.file_id
+GROUP BY c.id, c.text, c.chunk_index, f.filename
+ORDER BY sum(w.idf) DESC, c.id
 LIMIT :n
 """
 
+_fts_loop: Optional[asyncio.AbstractEventLoop] = None
 _fts_engine = None
+_fts_lock = threading.Lock()
 
 
-def _get_fts_engine():
-    """Lazy NullPool engine for the sparse leg.
+def _fts_runtime() -> asyncio.AbstractEventLoop:
+    """A long-lived daemon thread owning one event loop and one pooled async engine.
 
-    ``retrieve()`` is synchronous and runs in worker threads (``chat._retrieve``) or
-    plain scripts, so it cannot borrow the app's loop-bound async engine. NullPool opens
-    each connection inside the loop ``asyncio.run`` creates for the call, so the engine
-    is safe to share across threads and loops.
+    ``retrieve()`` is synchronous and called from worker threads and scripts, which cannot
+    share the app's loop-bound engine. Keeping a single private loop lets the sparse leg
+    reuse pooled Postgres connections instead of paying a connect + auth handshake per
+    query; callers submit coroutines with ``run_coroutine_threadsafe``.
     """
-    global _fts_engine
-    if _fts_engine is None:
-        from sqlalchemy.ext.asyncio import create_async_engine
-        from sqlalchemy.pool import NullPool
+    global _fts_loop, _fts_engine
+    with _fts_lock:
+        if _fts_loop is None:
+            from sqlalchemy.ext.asyncio import create_async_engine
 
-        _fts_engine = create_async_engine(settings.database_url, poolclass=NullPool)
-    return _fts_engine
+            loop = asyncio.new_event_loop()
+            threading.Thread(target=loop.run_forever, name="rag-fts-loop", daemon=True).start()
+            # Connections are opened lazily, inside the loop thread, on first use.
+            _fts_engine = create_async_engine(
+                settings.database_url, pool_size=4, max_overflow=4, pool_pre_ping=True
+            )
+            _fts_loop = loop
+        return _fts_loop
 
 
 def _fts_search(project_id: str, query: str, limit: int) -> List[_FtsHit]:
@@ -186,15 +211,29 @@ def _fts_search(project_id: str, query: str, limit: int) -> List[_FtsHit]:
             "RAGService.retrieve() is blocking; inside an event loop call it via asyncio.to_thread"
         )
 
+    loop = _fts_runtime()
+
     async def _run() -> List[_FtsHit]:
-        async with _get_fts_engine().connect() as conn:
+        assert _fts_engine is not None
+        async with _fts_engine.connect() as conn:
             rows = await conn.execute(
                 sql_text(_FTS_SQL),
-                {"p": project_id, "cfg": settings.rag_fts_config, "q": query, "n": limit},
+                {
+                    "p": project_id,
+                    "cfg": settings.rag_fts_config,
+                    "q": query,
+                    "n": limit,
+                    "max_df": settings.rag_sparse_max_df,
+                },
             )
             return [_FtsHit(r.id, r.text, r.filename, r.chunk_index) for r in rows]
 
-    return asyncio.run(_run())
+    fut = asyncio.run_coroutine_threadsafe(_run(), loop)
+    try:
+        return fut.result(timeout=settings.rag_timeout_seconds)
+    except BaseException:
+        fut.cancel()
+        raise
 
 
 def _rrf_fuse(*rank_lists: list, k: int = 60) -> list:

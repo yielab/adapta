@@ -512,12 +512,28 @@ async def test_fts_search_inside_running_loop_raises():
         _REAL_FTS_SEARCH("p", "q", 4)
 
 
-def test_fts_sql_uses_or_semantics_over_lexemes():
-    """A multi-word question must become an OR query (websearch_to_tsquery ANDs every
-    term, so a natural-language question matched no chunk), with an empty-lexeme guard."""
+def test_fts_sql_is_or_semantics_with_statistical_stopwords_and_idf_ranking():
+    """A multi-word question becomes an OR over its lexemes (websearch_to_tsquery ANDs every
+    term, so a natural-language question matched no chunk); lexemes found in too large a
+    share of the project's chunks are dropped (language-agnostic stopwords) and chunks are
+    ranked by summed idf, since ts_rank_cd has none."""
     sql = rag_mod._FTS_SQL
     assert "websearch_to_tsquery" not in sql
-    assert "string_agg" in sql and "' | '" in sql
-    assert "tsvector_to_array(to_tsvector(" in sql
-    assert "cardinality(lex) = 0 THEN NULL" in sql and "q.tq IS NOT NULL" in sql
-    assert "ts_rank_cd(c.tsv, q.tq, 1)" in sql
+    assert "tsvector_to_array(to_tsvector(" in sql and "quote_literal(l)" in sql
+    assert "df.df <= GREATEST(:max_df * n.n, 3)" in sql
+    assert "ORDER BY sum(w.idf) DESC" in sql
+    # No surviving lexeme joins to nothing: empty result, not an error.
+    assert "FROM w" in sql
+
+
+def test_fts_runtime_reuses_one_loop_and_engine(monkeypatch):
+    monkeypatch.setattr(rag_mod, "_fts_loop", None)
+    monkeypatch.setattr(rag_mod, "_fts_engine", None)
+    loop = rag_mod._fts_runtime()
+    try:
+        assert rag_mod._fts_runtime() is loop
+        engine = rag_mod._fts_engine
+        assert engine is not None and rag_mod._fts_runtime() is loop and rag_mod._fts_engine is engine
+        assert loop.is_running()
+    finally:
+        loop.call_soon_threadsafe(loop.stop)

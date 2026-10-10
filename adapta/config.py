@@ -87,6 +87,9 @@ class Settings(BaseSettings):
     rag_hybrid_fetch_multiplier: int = 4
     # Sparse leg (E3.2): Postgres full-text search over chunks.tsv, top_k * N hits.
     rag_sparse_fetch_multiplier: int = 4
+    # Sparse leg drops query lexemes found in more than this fraction of the project's
+    # chunks (language-agnostic statistical stopwords; E3.2). Terms in <= 3 chunks are kept.
+    rag_sparse_max_df: float = 0.5
     # Text-search config for the query side: simple | english | spanish. chunks.tsv is
     # generated with 'simple' (E3.1), so anything else only matches after E3.6 regenerates it.
     rag_fts_config: Literal["simple", "english", "spanish"] = "simple"
