@@ -1,0 +1,45 @@
+{"q": "How many vacation days do I earn each month?", "expected_file": "en-vacation-policy.md", "lang": "en"}
+{"q": "How many unused vacation days can I roll over to next year?", "expected_file": "en-vacation-policy.md", "lang": "en"}
+{"q": "What is the daily meal allowance when travelling for work?", "expected_file": "en-expense-policy.md", "lang": "en"}
+{"q": "Above what amount do I need to attach a receipt?", "expected_file": "en-expense-policy.md", "lang": "en"}
+{"q": "How many days a week can I work from home?", "expected_file": "en-remote-work.md", "lang": "en"}
+{"q": "What is the one-time money given for setting up my home workspace?", "expected_file": "en-remote-work.md", "lang": "en"}
+{"q": "Who needs a physical security key to sign in?", "expected_file": "en-password-policy.md", "lang": "en"}
+{"q": "How quickly must a Sev 1 outage be acknowledged?", "expected_file": "en-incident-response.md", "lang": "en"}
+{"q": "How do I factory reset the AeroLink router?", "expected_file": "en-router-manual.md", "lang": "en"}
+{"q": "What does a flashing orange WAN light mean?", "expected_file": "en-router-manual.md", "lang": "en"}
+{"q": "How often should the espresso machine be descaled?", "expected_file": "en-espresso-manual.md", "lang": "en"}
+{"q": "How long does it take to fully charge the e-bike battery?", "expected_file": "en-ebike-manual.md", "lang": "en"}
+{"q": "Can I get my money back for software I already opened?", "expected_file": "en-returns-policy.md", "lang": "en"}
+{"q": "Does the laptop warranty cover a coffee spill?", "expected_file": "en-warranty.md", "lang": "en"}
+{"q": "What must a new employee finish during the first week?", "expected_file": "en-onboarding.md", "lang": "en"}
+{"q": "How long do you keep backups before deleting them?", "expected_file": "en-data-retention.md", "lang": "en"}
+{"q": "How much paid leave does a secondary caregiver get after a birth?", "expected_file": "en-parental-leave.md", "lang": "en"}
+{"q": "Where do we meet when the fire alarm goes off?", "expected_file": "en-fire-safety.md", "lang": "en"}
+{"q": "What is the maximum nightly hotel price for business trips?", "expected_file": "en-travel-policy.md", "lang": "en"}
+{"q": "¿Cuántos días de vacaciones tengo al año?", "expected_file": "es-vacaciones.md", "lang": "es"}
+{"q": "¿Con cuánta anticipación debo pedir mis vacaciones?", "expected_file": "es-vacaciones.md", "lang": "es"}
+{"q": "¿A cuánto asciende el viático diario?", "expected_file": "es-gastos-viaje.md", "lang": "es"}
+{"q": "¿Qué días de la semana puedo trabajar desde casa?", "expected_file": "es-teletrabajo.md", "lang": "es"}
+{"q": "¿Cada cuántos días hay que renovar la clave de acceso?", "expected_file": "es-contrasenas.md", "lang": "es"}
+{"q": "¿Qué significa el error E21 en mi lavadora?", "expected_file": "es-manual-lavadora.md", "lang": "es"}
+{"q": "¿Cuántas páginas imprime el cartucho negro de la Tintaplus?", "expected_file": "es-manual-impresora.md", "lang": "es"}
+{"q": "¿A qué temperatura se limpia el horno con pirólisis?", "expected_file": "es-manual-horno.md", "lang": "es"}
+{"q": "¿Puedo devolver un producto perecedero?", "expected_file": "es-devoluciones.md", "lang": "es"}
+{"q": "¿Cuántos años de garantía tiene el motor de la lavadora?", "expected_file": "es-garantia.md", "lang": "es"}
+{"q": "¿Cuántas semanas dura la licencia de maternidad?", "expected_file": "es-licencia-maternidad.md", "lang": "es"}
+{"q": "¿Dónde nos reunimos cuando suena la alarma de incendio?", "expected_file": "es-seguridad-incendios.md", "lang": "es"}
+{"q": "¿Cuánto tiempo guardan mis datos personales después de dejar de ser cliente?", "expected_file": "es-politica-datos.md", "lang": "es"}
+{"q": "¿En qué contenedor se tira el vidrio?", "expected_file": "es-reciclaje.md", "lang": "es"}
+{"q": "¿Cuál es el tope de una compra con caja chica?", "expected_file": "es-caja-chica.md", "lang": "es"}
+{"q": "¿Cuándo se evalúa el periodo de prueba de un empleado nuevo?", "expected_file": "es-induccion.md", "lang": "es"}
+{"q": "How many days per year of holiday do employees get in the Spanish-language policy?", "expected_file": "es-vacaciones.md", "lang": "en"}
+{"q": "How long does the Lavamax Eco cycle take?", "expected_file": "es-manual-lavadora.md", "lang": "en"}
+{"q": "How many weeks of maternity leave are granted?", "expected_file": "es-licencia-maternidad.md", "lang": "en"}
+{"q": "What is the daily travel allowance in dollars for staff trips?", "expected_file": "es-gastos-viaje.md", "lang": "en"}
+{"q": "¿Cuánto tarda en cargarse por completo la batería de la bicicleta eléctrica?", "expected_file": "en-ebike-manual.md", "lang": "es"}
+{"q": "¿Cuántos caracteres mínimos debe tener la contraseña de un administrador?", "expected_file": "en-password-policy.md", "lang": "es"}
+{"q": "¿Cuántos días tengo para reclamar un reembolso de una compra?", "expected_file": "en-returns-policy.md", "lang": "es"}
+{"q": "¿Cómo reinicio el router AeroLink a valores de fábrica?", "expected_file": "en-router-manual.md", "lang": "es"}
+{"q": "Where is the main gathering spot during an evacuation drill?", "expected_file": "es-seguridad-incendios.md", "lang": "en"}
+{"q": "How often must I clean the pump filter of the washing machine?", "expected_file": "es-manual-lavadora.md", "lang": "en"}

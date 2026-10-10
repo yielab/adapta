@@ -27,7 +27,7 @@ COMPOSE := $(if $(GPU_AVAILABLE),docker compose,$(CPU_COMPOSE))
 
 .PHONY: help up up-cpu status down generate validate-spec test-contracts migrate migration migrate-test \
         test coverage lint fmt check-leaks check-chroma docs-install docs-build docs-serve ci ci-full \
-        console-build screenshots gif
+        console-build screenshots gif golden
 
 help:
 	@echo "Available targets:"
@@ -53,6 +53,7 @@ help:
 	@echo "  coverage        Run in-process tests with coverage report"
 	@echo "  lint            Run ruff + mypy"
 	@echo "  fmt             Run black formatter"
+	@echo "  golden          Retrieval-quality golden set: recall@5 / MRR / p50 (live stack)"
 	@echo "  -- documentation (MkDocs, run on the HOST) --"
 	@echo "  docs-serve      Live-reload docs preview at http://localhost:8000"
 	@echo "  docs-build      Build the docs site (--strict; fails on broken links)"
@@ -160,6 +161,11 @@ migrate-test:
 
 test:
 	pytest tests/ -v
+
+# Retrieval-quality golden set (§E3.8) — needs the live stack + embedding model.
+# Prints recall@5 / MRR / p50 and asserts recall@5 >= tests/fixtures/golden/floor.json.
+golden:
+	ADAPTA_RUN_GOLDEN=1 ADAPTA_BASE_URL=http://localhost:8000 pytest -m "integration and slow" tests/integration/test_rag_golden.py -s
 
 coverage:
 	pytest tests/ -v --cov=adapta --cov-report=term-missing --cov-fail-under=30

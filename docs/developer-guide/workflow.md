@@ -112,5 +112,12 @@ with stale content. Both seed demo data fresh on each run (wipes existing projec
 creates 3). Commit the updated `docs/screenshots/` files alongside the console change.
 These targets are **host-only and never run in CI**.
 
+**Retrieval quality.** `make golden` (live stack, opt-in via `ADAPTA_RUN_GOLDEN=1`) indexes the bilingual
+corpus in `tests/fixtures/golden/docs`, runs every question in `questions.jsonl`
+(`{q, expected_file, expected_page?, lang}`) through `retrieve()`, prints recall@5, MRR and p50 latency, and fails
+if recall@5 drops below `tests/fixtures/golden/floor.json`. Run it before and after any change to chunking,
+embeddings, fusion or reranking and report both numbers; the floor is a ratchet, so raise it deliberately and
+never lower it silently.
+
 For coding style, branch/commit conventions, and the contributor checklist, see
 [CONTRIBUTING.md](https://github.com/yielab/adapta/blob/main/CONTRIBUTING.md).

@@ -14,6 +14,7 @@ Never `pip install`; to change deps edit `pyproject.toml` then `make up` (host).
 | Training / eval / dataset schema | `make test` (`test_eval_gate`, `test_dataset_bundles`) + a real GPU run if the gate logic moved |
 | Training prompt render or label masking (`trainer.py` preprocess/collator, `evaluator.py` render) | `make test` → GPU: `ADAPTA_RUN_LORA_USECASES=1 … tests/integration/test_lora_use_cases.py` (the recorded scores are the product's evidence — re-measure, never hand-edit) |
 | Retrieval path (`services/rag.py`, `services/documents.py`, chunk metadata) | `make test` (`test_rag_hybrid`, `test_basic`) → `tests/integration/test_rag_e2e.py` (asserts the planted fact + citations) |
+| Retrieval quality (chunking, embeddings, fusion, rerank, thresholds) | `make test` → `make golden` (live; recall@5 / MRR / p50 vs `tests/fixtures/golden/floor.json`) |
 | Model catalog (`core/model_catalog.py`, defaults in `config.py`) | `make test` (`test_model_catalog`) → `make validate-spec` → `make check-models` → `make test-contracts` if `BaseModelInfo` changed |
 | New pip dependency (parser, OCR) | `make up` (rebuild) → record image size delta + one timing in `OPERATIONS.md` → `make test` |
 | Console (`adapta/console/src/`) | `make console-build` (host) |

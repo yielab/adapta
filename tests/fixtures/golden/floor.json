@@ -1,0 +1,4 @@
+{
+  "comment": "Placeholder floor. The lead sets recall_at_5 from the baseline `make golden` run on the current code. It is a ratchet: raise it deliberately, never lower it silently.",
+  "recall_at_5": 0.0
+}
