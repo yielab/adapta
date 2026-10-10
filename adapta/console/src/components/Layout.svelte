@@ -103,7 +103,6 @@
     line-height: 1.2;
     letter-spacing: -0.01em;
   }
-  .wordmark .sub { color: var(--muted); font-weight: 500; }
   .navlink {
     display: block;
     padding: 8px 10px;

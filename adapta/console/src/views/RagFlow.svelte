@@ -2,7 +2,7 @@
   // Knowledge (RAG) setup flow — upload documents → index → create endpoint.
   // The model's weights never change; answers are grounded in these documents
   // with citations. (TODO §5.5)
-  import { onDestroy } from "svelte";
+  import { onDestroy, untrack } from "svelte";
   import { api, ApiError } from "../lib/api";
   import { toastError, toastSuccess } from "../lib/toast";
   import type { Project, ProjectFile } from "../lib/types";
@@ -148,8 +148,10 @@
     null,
     2,
   );
-  let schemaDraft = $state(project.extraction_schema ? JSON.stringify(project.extraction_schema, null, 2) : "");
-  let savedSchema = $state(project.extraction_schema ? JSON.stringify(project.extraction_schema, null, 2) : "");
+  // Seeded once from the project prop; later edits go through saveSchema().
+  const initialSchema = untrack(() => project.extraction_schema ? JSON.stringify(project.extraction_schema, null, 2) : "");
+  let schemaDraft = $state(initialSchema);
+  let savedSchema = $state(initialSchema);
   let savingSchema = $state(false);
   let extracting = $state<string | null>(null);
   const canExtract = $derived(savedSchema !== "");
