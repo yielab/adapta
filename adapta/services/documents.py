@@ -221,7 +221,9 @@ def _build_chunker(chunk_size: int) -> Any:
     )
     # Tables render as markdown; an oversized table splits by rows with the header
     # repeated (HybridChunker's ``repeat_table_header``, on by default).
-    return HybridChunker(tokenizer=tokenizer, serializer_provider=_MarkdownTables())
+    return HybridChunker(
+        tokenizer=tokenizer, serializer_provider=_MarkdownTables(), merge_peers=False
+    )
 
 
 def chunk(parsed: ParsedDocument, source: str, chunk_size: Optional[int] = None) -> List[Chunk]:
@@ -232,9 +234,10 @@ def chunk(parsed: ParsedDocument, source: str, chunk_size: Optional[int] = None)
 
     ``page`` is the first page of the chunk's first element: one Docling item (a long
     paragraph or table) can span several pages and a chunk can merge neighbouring items,
-    so a chunk may continue onto later pages. ``ocr``/``ocr_confidence`` are that page's.
+    so a chunk may continue onto later pages. Peer merging is done here per page/section. ``ocr``/``ocr_confidence`` are that page's.
     """
-    chunker = _build_chunker(chunk_size or settings.chunk_size)
+    budget = chunk_size or settings.chunk_size
+    chunker = _build_chunker(budget)
     chunks: List[Chunk] = []
     for raw in chunker.chunk(dl_doc=parsed.doc):
         text = (raw.text or "").strip()
@@ -248,13 +251,25 @@ def chunk(parsed: ParsedDocument, source: str, chunk_size: Optional[int] = None)
                 break
         headings = getattr(raw.meta, "headings", None) or []
         info = parsed.pages.get(page) if page is not None else None
+        section = " > ".join(headings) if headings else None
+        prev = chunks[-1] if chunks else None
+        # HybridChunker's own peer merging ignores pages (it would file page-2 text under
+        # page 1), so small neighbours are merged here, only within one page and section.
+        if (
+            prev is not None
+            and prev.page == page
+            and prev.section == section
+            and len(prev.text) + len(text) + 1 <= budget
+        ):
+            chunks[-1] = prev._replace(text=prev.text + "\n" + text)
+            continue
         chunks.append(
             Chunk(
                 text=text,
                 source=source,
                 index=len(chunks),
                 page=page,
-                section=" > ".join(headings) if headings else None,
+                section=section,
                 ocr=bool(info and info.ocr),
                 ocr_confidence=info.confidence if info and info.ocr else None,
             )

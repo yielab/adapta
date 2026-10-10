@@ -66,12 +66,15 @@ COPY pyproject.toml ./
 RUN pip install --no-cache-dir -e ".[dev]" --config-settings editable_mode=compat
 
 # Bake the Docling layout/table models and the RapidOCR (latin) models into the image so
-# first use needs no network. docling-tools fetches layout + tableformer into
+# first use needs no network (the chunker's tokenizer goes to HF_HOME=/opt/hf; keep it in
+# sync with settings.embedding_model). docling-tools fetches layout + tableformer into
 # DOCLING_ARTIFACTS_PATH (outside HF_HOME, which prod compose remaps); the warm-up then
 # converts one generated PNG with the exact pipeline options adapta uses, which makes
 # RapidOCR fetch its ONNX models into the venv (site-packages) and proves the path works.
 ENV DOCLING_ARTIFACTS_PATH=/opt/docling-models
+ENV HF_HOME=/opt/hf
 RUN docling-tools models download layout tableformer -o /opt/docling-models \
+    && docling-tools models download rapidocr --rapidocr-backend-lang onnxruntime:latin -o /opt/docling-models \
     && python -c "\
 from PIL import Image, ImageDraw, ImageFont; \
 from docling.datamodel.base_models import InputFormat; \
@@ -83,7 +86,8 @@ im.save('/tmp/warm.png'); \
 o = PdfPipelineOptions(do_ocr=True, ocr_options=RapidOcrOptions(lang=['latin'])); \
 r = DocumentConverter(format_options={InputFormat.IMAGE: ImageFormatOption(pipeline_options=o)}).convert('/tmp/warm.png'); \
 print('docling warm-up ok:', len(r.document.export_to_markdown()), 'chars')" \
-    && chmod -R a+rX /opt/docling-models
+    && python -c "from transformers import AutoTokenizer; AutoTokenizer.from_pretrained('sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2')" \
+    && chmod -R a+rX /opt/docling-models /opt/hf
 
 # ===== console-builder (thin operator console — Vite + Svelte) ================
 # Builds the static SPA to dist/, baked into the app image below. With the repo
@@ -102,7 +106,8 @@ RUN npm run build:fast
 FROM base AS app
 COPY --from=builder /opt/venv /opt/venv
 COPY --from=builder /opt/docling-models /opt/docling-models
-ENV DOCLING_ARTIFACTS_PATH=/opt/docling-models
+COPY --from=builder /opt/hf /opt/hf
+ENV DOCLING_ARTIFACTS_PATH=/opt/docling-models HF_HOME=/opt/hf
 COPY adapta/ ./adapta/
 COPY --from=console-builder /build/dist ./adapta/console/dist/
 COPY specs/ ./specs/

@@ -271,7 +271,7 @@ E1.1–E1.9 shipped 2026-09-17 → [CHANGELOG.md](CHANGELOG.md). E1.14 closed 20
   keep the sentence chunker (golden floor untouched). `build_chunk_rows` writes page/section/ocr/ocr_confidence
   and `needs_review`; `files.py` accepts `.markdown .png .jpg .jpeg .tif .tiff`; console copy and `accept` aligned;
   `pypdf`/`python-docx`/`markdown` dropped. Dockerfile: torchvision `+cpu` in the torch layer, models baked
-  (`docling-tools` + warm-up). Gates: lint, test, lint-imports, check-leaks green; 6 Docling tests skip offline.
+  (`docling-tools` + warm-up). Gates (image adapta-app:e3.3b): lint + test green, all 9 Docling tests pass with the network off.
 - **Handoff.** `Chunk(text, source, index, page, section, ocr, ocr_confidence)`; `page` = first page of the
   chunk's first element (an item can span pages), `ocr` = page had OCR cells and no native cells,
   `ocr_confidence` = mean OCR line score of that page. Accepted: `.pdf .docx .txt .md .markdown .html .htm
