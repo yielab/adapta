@@ -1,11 +1,11 @@
 # Adapta
 
 **A self-hosted platform for customizing and serving private language models.**
-Upload documents or train a fine-tuned adapter on your own GPU — then expose
+Upload documents and (soon) import your own LoRA adapter — then expose
 the result as an OpenAI-compatible API. Your data never leaves your servers.
 
 !!! warning "Prototype maturity"
-    This is a one-person project at prototype stage. The pieces are wired up — RAG, LoRA training, eval gate, multi-tenant serving, vision fine-tunes — but the system has not been independently audited or validated at real team scale. If you are deploying with sensitive data, review the auth, error-handling, and eval-gate code paths yourself before going to production. See [Brand §0](reference/BRAND.md#0-project-status) for the full disclosure.
+    This is a one-person project at prototype stage. The pieces are wired up — RAG and multi-tenant serving (adapter import and its eval gate are being rebuilt) — but the system has not been independently audited or validated at real team scale. If you are deploying with sensitive data, review the auth, error-handling, and eval-gate code paths yourself before going to production. See [Brand §0](reference/BRAND.md#0-project-status) for the full disclosure.
 
 This documentation serves two purposes: it is the operational and developer
 reference for the platform, and it is a concrete learning resource for anyone
@@ -33,7 +33,7 @@ building or studying AI infrastructure on a real, production-grade codebase.
     ---
 
     For the operator running the platform. How to create projects, give a model
-    knowledge from your documents, change how it behaves through fine-tuning,
+    knowledge from your documents, change how it behaves through adapters,
     and hand an application a scoped API key.
 
     [:octicons-arrow-right-24: User Guide](user-guide/index.md)
@@ -76,15 +76,14 @@ re-scored by a cross-encoder reranker) → the model answers grounded in
 your documents, with citations pointing at the source passages. The model's
 weights never change. CPU-only.
 
-**Fine-tuning (LoRA)** — provide an instruction dataset → a GPU worker trains
-a LoRA adapter → the adapter must pass an evaluation gate before it can serve
-→ the endpoint serves base model + adapter. On a vision base model, the dataset
-is a zip bundle of image + instruction examples and the endpoint accepts images
-— for invoice extraction, visual QC, document AI.
+**Bring your own adapter (LoRA)** — import a GGUF/PEFT adapter, gate it on CPU
+against the base on your eval set, then serve base model + adapter (import
+flow: [roadmap](roadmap.md) E4.2–E4.4, not built yet). In-product training was
+removed on 2026-10-10; no service needs a GPU.
 
-**Both together** — a fine-tune project can also index documents. Its endpoint
-then injects retrieved context and applies the adapter in one call: facts from
-retrieval with citations, tone and structure from the fine-tune.
+**Both together** — a finetune project can also index documents. Its endpoint
+injects retrieved context and applies the adapter in one call: facts from
+retrieval with citations, tone and structure from the adapter.
 
 The `POST /v1/chat/completions` endpoint is the only protocol customer
 applications call. If your code already calls OpenAI, it already calls

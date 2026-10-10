@@ -22,37 +22,36 @@ hardware the customer owns:
    │  app (FastAPI) ──────────────────────────► PostgreSQL     │
    │    │   control plane + RAG data plane + serving           │
    │    ├─── RAG pipeline ──► ChromaDB (per-project vectors)   │
-   │    └─── Fine-tune pipeline ──► Redis queue ──► worker      │
-   │                                                  │(GPU)   │
-   │                                          adapter registry │
-   │                                          + eval gate      │
-   │   Inference (llama-cpp): base GGUF + GGUF LoRA adapter    │
+   │    └─── Job queue ──► Redis ──► worker (app image)        │
+   │                                                           │
+   │   Inference (llama-cpp, CPU): base GGUF + GGUF LoRA       │
    └─────────────────────────────────────────────────────────┘
 ```
 
 | Container | Role | Analogy |
 |---|---|---|
 | `app` | Control plane + RAG + serving + console | Your usual web service |
-| `worker` | Consumes training jobs, runs QLoRA on GPU, registers adapters | A background job runner (Sidekiq/Celery) — but GPU-bound |
+| `worker` | Same image as `app`; consumes the Redis queue and dispatches on the job's `meta["kind"]` through `HANDLERS` (empty today) | A background job runner (Sidekiq/Celery) |
 | `postgres` | All metadata (system of record) | Your usual relational DB |
-| `redis` | Training job queue (BLPOP) | A job queue / message broker |
+| `redis` | Job queue (BLPOP) | A job queue / message broker |
 | `chroma` | Per-project vector collections | A second database, but indexed by *meaning* |
 
-The key separation a backend developer should internalize: **the `app` never
-trains.** Training is slow, GPU-bound, and crash-prone, so it's pushed onto the
-`worker` through a queue — exactly how you'd offload any heavy job off a request
-thread.
+In-product training was removed on 2026-10-10: nothing in the stack needs a GPU, and
+the `worker` is the `app` image started with `python -m adapta.worker.main`. Its loop
+(heartbeat, healthcheck, requeue on SIGTERM) is kept; an unknown job kind fails with a
+typed error. Adapters will be imported rather than trained (E4.2–E4.4, see the
+[roadmap](../roadmap.md)).
 
 ## Two data planes
 
 There are two distinct flows that share the control plane but otherwise don't
 overlap:
 
-- **Control plane** — auth, teams, projects, files, datasets, jobs, endpoints,
+- **Control plane** — auth, teams, projects, files, datasets, endpoints,
   keys, usage. Plain CRUD over Postgres. Nothing exotic.
 - **Data plane (serving)** — `POST /v1/chat/completions`. For RAG this retrieves
-  from Chroma and calls the inference engine; for fine-tune it loads the base
-  model with the adapter. This is the only path a customer's *application* hits.
+  from Chroma and calls the inference engine; for a finetune project it will load the base
+  model with an imported adapter (not built yet). This is the only path a customer's *application* hits.
 
 ## Layers (and the import rule)
 
@@ -63,7 +62,7 @@ adapta/api/v1/*      HTTP routers  — translate HTTP ⇄ services, no business 
       │
 adapta/services/*    business logic — the real work; raises DomainError
       │
-adapta/core/*        engine wrappers — inference, model cache, health, GPU
+adapta/core/*        engine wrappers — inference, model cache, health
 adapta/domain/*      errors + pure types — imports nothing from adapta
 adapta/db/*          SQLAlchemy ORM + session
 ```
@@ -83,8 +82,7 @@ Team ─< Project (type: rag|finetune, base_model, status)
 Project ─< ProjectFile (upload, parse status)       # both modes
 ProjectFile ─< ProjectChunk (text, content_hash, page, tsv)  # rag; table `chunks`
 Project ─1 Collection (chroma_collection_name)      # rag
-Project ─< Dataset (JSONL, num_samples, status)     # finetune
-Project ─< TrainingJob (status, progress, eval_score, eval_passed, eval_metrics, attempts)
+Project ─< Dataset (JSONL, num_samples, status)     # finetune (eval set)
 Project ─1 Endpoint (slug, adapter_path, status)
 Endpoint ─< ApiKey (key_prefix, key_hash, is_active)
 Endpoint ─< UsageEvent (day, prompt/completion/request counts)
@@ -122,49 +120,6 @@ Every error along the way is a typed [`DomainError`](code-reference.md) that the
 single boundary handler in `adapta/api/app.py` turns into the safe
 `{error:{code,message,correlation_id}}` envelope. A raw exception never reaches
 the client.
-
-## Request lifecycle: a fine-tune training job
-
-1. **Enqueue** — `POST /v1/projects/{id}/jobs` validates the dataset size and
-   hyperparameter bounds, writes a `TrainingJob` row (`queued`), and pushes the
-   job id onto the Redis queue.
-2. **Dequeue** — the `worker` BLPOP-blocks on the queue, picks up the job, and
-   marks it `running` (persisted critically, so a crash leaves an auditable
-   trail).
-3. **Train** — QLoRA (4-bit) on the GPU produces a PEFT LoRA adapter.
-4. **Evaluate** — the worker scores the adapter on a held-out split and applies
-   the [eval gate](learning-the-system.md#the-eval-gate-ci-for-a-model). Fail →
-   the job ends `failed`, nothing is registered.
-5. **Convert & register** — on pass, the adapter is converted to a GGUF LoRA
-   (the format the serving runtime loads) and registered; the job ends
-   `succeeded`.
-6. **Serve** — an endpoint created for the project loads the base GGUF **with**
-   the adapter applied.
-
-Crash durability matters here: a hard-crashed worker would otherwise leave a job
-stuck at `running` forever, so the worker recovers orphaned jobs at startup
-(requeue once, then fail). This is the kind of robustness any job-queue system
-needs; it just matters more when each job costs GPU-minutes.
-
-## Vision fine-tunes ride the same rails (§V)
-
-Image-understanding fine-tunes reuse every stage above with a modality branch,
-not a parallel system:
-
-- **Dataset** — a `.zip` bundle (images + one JSONL manifest with an
-  `images: [path]` field per row) instead of a bare JSONL; extraction is
-  hardened (zip-slip/symlink rejection, size/count caps) and every image is
-  validated at upload, never mid-train.
-- **Train** — the worker dispatches on the catalog entry's `modality`: the VLM
-  trains with its **vision tower frozen** and LoRA on the language-model
-  attention only (the constraint that keeps the PEFT→GGUF conversion working).
-- **Gate** — the same held-out, response-only eval gate, with the image in the
-  forward pass.
-- **Serve** — the same llama-cpp runtime loads the base GGUF **plus** an
-  `mmproj` (vision projector) via a multimodal chat handler; requests carry
-  OpenAI `image_url` content-parts (inline data-URLs only). The catalog
-  (`adapta/core/model_catalog.py`) is the single place a base model declares its
-  HF repo, GGUF, modality, and mmproj — so a base that trains can always serve.
 
 ---
 

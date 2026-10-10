@@ -127,20 +127,20 @@ A base model is a generalist, whereas most deployments require a specialist.
 There are two fundamentally different ways to obtain one, and conflating them is
 the most common conceptual error:
 
-| Question | Give it **knowledge** (RAG) | Change its **behavior** (fine-tuning) |
+| Question | Give it **knowledge** (RAG) | Change its **behavior** (adapter) |
 |---|---|---|
 | What it addresses | "What do *the documents* say?" | "How should the model *act*?" |
 | Modifies the weights? | No | Yes (through an adapter) |
 | Comparable to | An **open-book examination** | **Practice until a behavior is habitual** |
-| Input | Documents | Instruction examples (prompt → response) |
-| Cost | Seconds, CPU | Minutes to hours, GPU |
-| Reversibility | Delete a file and re-index | Re-train the adapter |
+| Input | Documents | A LoRA adapter (imported; import is coming in E4.2–E4.4) and an eval set of prompt → response examples |
+| Cost | Seconds, CPU | Training happens outside the platform; gating and serving are CPU |
+| Reversibility | Delete a file and re-index | Swap the adapter |
 
 !!! tip "A working distinction"
     Facts the model should look up are a matter of **knowledge (RAG)**. A manner
-    in which the model should behave is a matter of **fine-tuning**. "Answer from
+    in which the model should behave is a matter of an **adapter**. "Answer from
     a 500-page handbook" calls for RAG; "always reply in a terse, bulleted
-    support voice" calls for fine-tuning.
+    support voice" calls for an adapter.
 
 ---
 
@@ -252,7 +252,7 @@ truncating the question.
 
 ---
 
-## 4. Fine-tuning (LoRA), from first principles
+## 4. LoRA adapters, from first principles
 
 Fine-tuning changes *how a model behaves* by adjusting its weights from examples.
 Fully retraining a model with billions of parameters is prohibitively expensive,
@@ -271,47 +271,47 @@ adapter is a **patch or diff applied over it at load time** — comparable to a
 plugin, a version-control patch, or a style override. The small patch is shipped,
 not a new copy of the whole model.
 
-### QLoRA — training against a compressed base
+### Bring your own adapter
 
-**QLoRA** is LoRA in which the frozen base model is **quantized to four bits**
-during training (the image-compression analogy from §1 applies again). This is
-what allows a genuine fine-tune to fit on an 8 GB consumer GPU: gradients are
-computed only for the small adapter, while the large base model is held in its
-compressed form. `adapta/training/trainer.py` performs this using PEFT and TRL.
+Adapta does not train adapters: in-product training (and with it the CUDA
+worker) was removed on 2026-10-10. Training an adapter — typically QLoRA, with
+the base quantized to four bits — is done with dedicated tooling elsewhere. What
+the platform owns is everything after: import the adapter (PEFT, converted to
+GGUF by `adapta/core/adapter_conversion.py`, or GGUF directly), gate it on CPU
+against the base on the project's eval set, and serve it with RAG. The import
+flow is on the [roadmap](../roadmap.md) (E4.2–E4.4) and is not built yet.
 
-### The dataset — labeled examples
+### The eval set — labeled examples
 
-The training input is an **instruction dataset**: a JSONL file in which each line
-is a `{prompt, response}` pair (optionally with a `system` message). This is
-labeled training data — input paired with desired output — the same shape as any
-supervised-learning task. The platform can also **synthesize** a dataset from
+The eval set is an **instruction dataset**: a JSONL file in which each line
+is a `{prompt, response}` pair (optionally with a `system` message), validated by
+`adapta/services/datasets.py` against `specs/schemas/eval_dataset.schema.json`.
+It is labeled data — input paired with desired output — the same shape as any
+supervised-learning task. The platform can also **synthesize** one from
 indexed documents (converting chunks into question/answer pairs), removing the
-need to author one by hand.
+need to author it by hand.
 
-### Why training uses a separate worker and queue
+### The job queue and worker
 
-Training takes minutes to hours, occupies a GPU, and can fail (out-of-memory,
-power loss). Such work is never performed inside a request handler, for the same
+Long-running work is never performed inside a request handler, for the same
 reason that resizing ten thousand images synchronously within an HTTP request
 would be unacceptable.
 
 !!! analogy "An order ticket on a kitchen rail"
-    The `app` is the front of house taking orders: it writes a ticket (a
-    `TrainingJob`, status `queued`) and places it on the rail (the Redis queue).
-    The `worker` is the kitchen: it takes the next ticket (via BLPOP), prepares it
-    on the GPU, and updates the ticket's status. The front of house never blocks
-    while the kitchen works.
+    The `app` is the front of house taking orders: it writes a ticket (a job,
+    pushed onto the Redis queue). The `worker` is the kitchen: it takes the next
+    ticket (via BLPOP), looks up the handler for its `kind`, and updates the
+    ticket's status. The front of house never blocks while the kitchen works.
 
-Because a ticket represents expensive work, the worker is **crash-durable**: a
-job marked `running` whose worker has died is recovered at startup (requeued once,
-then failed) rather than left indefinitely. This is standard job-queue hygiene,
-applied where the stakes are higher because each job consumes GPU time.
+The worker (the same image as `app`) keeps the loop — heartbeat, healthcheck,
+requeue of the in-flight job on SIGTERM — but its handler table is empty today;
+an unknown kind fails the job with a typed error.
 
 ---
 
 ## 5. The evaluation gate — continuous integration for a model {#the-eval-gate-ci-for-a-model}
 
-Fine-tuning introduces a specific risk: it can silently make a model worse.
+An adapter introduces a specific risk: it can silently make a model worse.
 Unlike a code change, the difference cannot be read in a diff — the change is a
 shift across billions of weights. The question, then, is how to determine whether
 an adapter is safe to serve.
@@ -321,24 +321,26 @@ and deployment is refused if it fails. That is the role of the evaluation gate.
 
 !!! analogy "A taste test on a fresh portion before a dish leaves the kitchen"
     A cook does not judge a dish by the spoon used to prepare it but by a fresh
-    portion. The gate scores the adapter on a **held-out slice of the dataset it
+    portion. The gate scores the adapter on a **held-out eval set it
     never trained on**, comparable to assessing a student with questions that were
     not on the study sheet. Scoring on the training data would be equivalent to
     grading an examination with the answer key in view, which reveals nothing
     about generalization.
 
-How the score is computed (`adapta/training/evaluator.py`,
-`adapta/training/models.py`):
+!!! note "Status"
+    The gate that shipped with in-product training was removed on 2026-10-10
+    (E4.1) and is being rebuilt to run on CPU against imported adapters (E4.3).
+    Until then no endpoint can serve an adapter. The design below is the
+    contract the rebuilt gate keeps.
 
-1. **Held-out split.** The final ~20% of rows are reserved; training uses the
-   remainder. Only the held-out rows are scored.
+How the score is computed:
+
+1. **Held-out rows.** Only rows the adapter never trained on are scored.
 2. **Response-only loss.** The score measures how well the model produces the
    *target answer*; the prompt tokens are masked, so the answer is graded rather
-   than the question. Training's own gradient is masked the same way (§E1.4):
-   the trainer and the gate build labels with the same
-   `adapta.training.masking.response_labels`, so the objective the adapter is
-   trained against and the objective it is scored against are one masking
-   boundary, not two.
+   than the question. The mask is the shared prefix of the tokenized prompt and
+   the full text, so a single-token answer (a bare classification label) is
+   still graded.
 3. **Score = `exp(-loss)`.** This converts average per-token "surprise"
    (perplexity) into a value between 0 and 1, where higher is better. A score of
    1.0 indicates that the held-out answers were predicted perfectly.
@@ -347,14 +349,9 @@ How the score is computed (`adapta/training/evaluator.py`,
    surpasses the base model on the same held-out split by a margin.
 
 A gate is only meaningful if it scores the model on the conditioning it will
-actually be served with. Training, the gate and serving now render every prompt
-through the **same** function — `adapta.core.chat_templates.render`, called via
-`adapta.training.trainer.render_training_example` for training/eval and via
-`InferenceEngine._format_chat_prompt` for serving — so the text an adapter is
-trained on, scored on, and later receives from a live endpoint are byte-for-byte
-the same shape (`tests/test_training_render.py` pins this). Before this, the
-trainer and gate rendered a plain `Role: content` format while serving rendered
-ChatML: an adapter could pass the gate on a conditioning no request ever sends.
+actually be served with, so scoring and serving must render every prompt through
+the **same** function — `adapta.core.chat_templates.render`. Otherwise an adapter
+could pass the gate on a conditioning no request ever sends.
 
 The reason for the second path is itself instructive about calibrating a gate to
 reality. A small base model cannot reach the absolute bar even on an ideal task
@@ -372,26 +369,12 @@ format/voice** (replies in a house template). These are exactly the cases where
 the held-out answer is predictable enough for the response-only loss to drop. A
 dataset with no learnable pattern (every answer different, or facts the adapter
 would have to *memorize*) cannot move the held-out score and is correctly
-blocked. The behavior is pinned by `tests/integration/test_lora_use_cases.py`
-(opt-in `ADAPTA_RUN_LORA_USECASES=1`): extraction, classification and format
-clear the gate on a real GPU run, while an unlearnable control dataset fails it.
-
-!!! note "Short answers and the masking boundary"
-    The response-only loss masks the prompt by tokenizing the prompt and the full
-    text and masking their **shared prefix**. This matters for *single-token*
-    answers (a bare classification label): a prompt ending in `"Assistant: "`
-    tokenizes its trailing space as a lone token, but in the full text that space
-    fuses into the answer's first token — so masking by prompt *length* would bury
-    the only answer token and make the row un-scorable. Prefix masking keeps the
-    first divergent (answer) token graded, so classification fine-tunes score
-    correctly. `adapta/training/masking.py` is this boundary as one pure
-    function; the trainer's preprocessing and the evaluator's scoring both call
-    it, so a training run and its own gate can never disagree about which
-    tokens the label prefix covers.
+blocked. Two fixture adapters in `tests/fixtures/adapters/` (`classify-pass` and
+`garbage-control`) are the pass and fail cases the rebuilt gate is checked against.
 
 An adapter that fails the gate raises `EvalGateFailed (422)`, is **not
 registered**, and **cannot back an endpoint**. This is the platform's central
-safety guarantee: an unverified fine-tune never serves.
+safety guarantee: an unverified adapter never serves.
 
 ---
 
@@ -404,9 +387,10 @@ can be read straightforwardly. The platform consists of:
   two specialized flows;
 - **RAG**, an open-book-examination model powered by **embeddings** (coordinates
   for meaning) and a **vector store** (a database indexed by meaning);
-- **fine-tuning**, in which **LoRA adapters** — patches over the frozen base —
-  are trained by a **GPU worker** drawing from a **Redis queue** and gated by a
-  **continuous-integration-style evaluation** before they may serve;
+- **adapters**, in which **LoRA adapters** — patches over the frozen base —
+  are imported and gated by a **continuous-integration-style evaluation** before
+  they may serve (import and gate: roadmap E4.2–E4.4); a **Redis queue** and
+  **worker** handle background jobs;
 - a single **OpenAI-compatible** API for serving, with `llama-cpp` executing
   **quantized GGUF** models under a **per-model lock**.
 
@@ -418,11 +402,11 @@ The same concepts support two activities, and the documentation separates them
 deliberately:
 
 - **Operating** the platform — creating projects, supplying documents or
-  datasets, running training, observing the evaluation gate, and issuing keys — is
+  datasets, observing the evaluation gate, and issuing keys — is
   described in the [User Guide](../user-guide/index.md). The operator's mental
   model is the left-hand column of the §2 table (knowledge vs. behavior) plus the
   gate in §5.
-- **Developing** the platform — changing the API, the schema, the training path,
+- **Developing** the platform — changing the API, the schema, the adapter path,
   or the serving path — is described in the [Workflow](workflow.md) page and the
   [Architecture](architecture.md) page. The developer's mental model adds the
   internal mechanisms in §1, §3, and §4, and the contract-driven process that
@@ -435,7 +419,7 @@ deliberately:
 | Term | Engineering equivalent |
 |---|---|
 | Inference | Executing a compiled function; the hot path |
-| Training | Compilation — expensive, performed offline |
+| Training | Compilation — expensive, performed offline (outside Adapta) |
 | Token | A syllable or word fragment; the unit of text and of cost |
 | Weights | The billions of constants that define the model function |
 | GGUF | A compiled binary of the model; `llama-cpp` is its runtime |
@@ -448,10 +432,9 @@ deliberately:
 | RAG | An open-book examination: retrieve the relevant passages, then answer |
 | Chunk | One indexed passage of a document (a "page" placed in view) |
 | Citation | The chunks supplied to the model, returned for transparency |
-| Fine-tuning | Practice until a behavior is habitual (modifies weights) |
+| Fine-tuning | Practice until a behavior is habitual (modifies weights); done elsewhere, then the adapter is imported |
 | LoRA adapter | A small patch or diff applied over the frozen base weights |
-| QLoRA | LoRA in which the frozen base is held at four-bit precision |
-| Instruction dataset | Labeled training data: `prompt → desired response` |
+| Instruction dataset | Labeled examples: `prompt → desired response` (here, the eval set) |
 | Held-out split | The fresh portion that is tasted / the unseen examination questions |
 | Perplexity | Average per-token "surprise"; lower indicates a better fit |
 | Evaluation gate | Continuous integration for a model — it cannot ship unless it passes |

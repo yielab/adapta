@@ -19,13 +19,12 @@ alternatives, and where it lives in the codebase.
 | Pydantic v2 | Request/response validation from the OpenAPI spec | Web |
 | PostgreSQL + SQLAlchemy 2.x async | System of record — all metadata | Data |
 | Alembic | Versioned schema migrations | Data |
-| Redis + BLPOP | Training job queue | Jobs |
-| Docker Compose + multi-stage Dockerfile | Single-stack deployment, GPU auto-detect | Deploy |
-| llama-cpp-python | GGUF model inference (CPU and GPU) | AI: Inference |
+| Redis + BLPOP | Background job queue (worker dispatch table is empty today) | Jobs |
+| Docker Compose + multi-stage Dockerfile | Single-stack deployment, CPU-only | Deploy |
+| llama-cpp-python | GGUF model inference (CPU) | AI: Inference |
 | sentence-transformers | Text → dense embedding vectors; cross-encoder reranking | AI: Retrieval |
 | ChromaDB | Per-project vector collections | AI: Retrieval |
 | Postgres FTS + RRF | Keyword signal over the whole corpus fused with vector search — no extra service | AI: Retrieval |
-| PEFT + TRL | QLoRA fine-tuning (adapter training) | AI: Training |
 | bcrypt + JWT | Password hashing, session auth, scoped API keys | Auth |
 
 ---
@@ -139,21 +138,20 @@ generated text.
 ### llama-cpp-python — the inference engine
 
 `llama-cpp-python` is a Python binding for `llama.cpp`, a C++ inference engine
-for GGUF-format models. It runs on CPU with no configuration; on a machine with
-an NVIDIA GPU it offloads layers to the GPU automatically at startup.
+for GGUF-format models. The shipped image runs it on CPU with no configuration.
 
-**llama.cpp is the default for CPU+GPU portability and quantized GGUF support. Alternatives:**
+**llama.cpp is the choice for CPU portability and quantized GGUF support. Alternatives:**
 
 | Alternative | Notes |
 |---|---|
-| **vLLM** | High-throughput multi-GPU serving for full-precision weights. Adapta ships an **optional vLLM backend** (`ADAPTA_SERVING_BACKEND=vllm`, `--profile vllm`) for deployments with many fine-tune endpoints — it packs multiple text LoRA adapters into one GPU process via continuous batching. llama-cpp remains the default; vLLM is opt-in for the multi-adapter density use case. See [Operations §9](../reference/OPERATIONS.md). |
+| **vLLM** | High-throughput multi-GPU serving for full-precision weights. Adapta had an optional vLLM backend; it was removed on 2026-10-10 with in-product training, since nothing in the stack needs a GPU. |
 | **HuggingFace `transformers`** | Research library; not a production serving runtime. Less battle-tested throughput management. |
 | **Ollama** | A good wrapper around llama.cpp, but adds an extra service and network hop with no benefit when the platform owns the process. |
 
-The decisive advantage is **hardware flexibility**: the same codebase runs on an
-old developer laptop (CPU-only) and a production GPU server, with no code
-changes. For a self-hosted product shipped to diverse hardware environments,
-that portability is worth more than the throughput optimizations vLLM offers.
+The decisive advantage is **hardware flexibility**: the same image runs on an
+old developer laptop and a production server. For a self-hosted product shipped
+to diverse hardware environments, that portability is worth more than the
+throughput optimizations vLLM offers.
 
 Key files: `adapta/core/inference.py`, `adapta/core/model_manager.py`
 
@@ -169,11 +167,11 @@ analogous to a JVM or a container runtime loading an artifact.
 **Quantization** stores weights at reduced precision. A 7-billion-parameter model
 at full 16-bit precision requires ~14 GB of memory. At 4-bit precision (`Q4_K_M`)
 it requires ~4 GB, with a measured but small quality loss. This is what makes
-large models runnable on consumer GPUs: the platform's model catalog uses
+large models runnable on ordinary hardware: the platform's model catalog uses
 quantized GGUF files exclusively.
 
 The quality trade-off is concrete: the eval gate (below) ensures that even on
-a quantized base, a trained adapter passes held-out quality checks before it
+a quantized base, an adapter passes held-out quality checks before it
 can serve.
 
 Key file: `adapta/core/model_catalog.py`
@@ -313,65 +311,44 @@ Key file: `adapta/services/rag.py` (`_fts_search`, `_rrf_fuse`,
 
 ## Model customization
 
-### PEFT + TRL — QLoRA fine-tuning
+### Adapters are imported, not trained
 
-**PEFT** (Parameter-Efficient Fine-Tuning) and **TRL** (Transformer
-Reinforcement Learning) are the HuggingFace libraries that run the training
-loop. The platform uses **QLoRA**: the frozen base model is held at 4-bit
-precision during training, and only a small set of additional weight matrices
-— the LoRA adapter — are trained from scratch.
-
-**Why not full fine-tuning?** A 7B-parameter model requires ~56 GB of GPU VRAM
-for full fine-tuning. QLoRA reduces that to ~8 GB by training only the adapter
-while holding the base frozen at 4-bit precision. The resulting adapter is a
-few hundred megabytes — a small patch over a multi-gigabyte base — and it
-shifts the model's behavior reliably. For a self-hosted product targeting
-consumer GPU hardware, QLoRA is the only practical option.
-
-**Why PEFT and TRL over writing the training loop directly?** PEFT handles
-the LoRA layer injection and adapter management. TRL's `SFTTrainer` handles
-the supervised fine-tuning loop with gradient accumulation, mixed precision,
-and the dataset collation that makes QLoRA work. Implementing these correctly
-from scratch is months of work; using these libraries means the training loop
-is the battle-tested implementation, not a custom one.
-
-Key file: `adapta/training/trainer.py`
+In-product training (PEFT, TRL, QLoRA on a CUDA worker) was removed on
+2026-10-10: it was the only reason the stack needed a GPU, and training is
+better done with dedicated tooling. The direction is *bring your own adapter*:
+import a GGUF or PEFT LoRA, gate it on CPU, serve it with RAG (roadmap blocks
+E4.2–E4.4; see the [roadmap](../roadmap.md)). Two fixture adapters live in
+`tests/fixtures/adapters/` (`classify-pass`, `garbage-control`).
 
 ---
 
 ### The evaluation gate — CI for a model
 
-Training can silently produce a worse model. Without a gate, a bad fine-tune
-would reach users. The eval gate is the hard stop.
+An adapter can silently be a worse model. Without a gate, a bad adapter would
+reach users. The eval gate is the hard stop.
 
-After training, the worker scores the adapter on a **held-out slice of the
-dataset** — rows the model never trained on. An adapter is permitted to serve
-only if it clears an **absolute quality threshold** or demonstrably **outperforms
-the base model** on that same held-out split.
-
-This is the model equivalent of a CI test suite. The analogy is exact: just as
-code cannot ship until tests pass, a fine-tuned adapter cannot serve until the
-gate passes. Fail → `EvalGateFailed (422)` → adapter not registered → endpoint
-creation blocked. There is no bypass.
+The design: score the adapter on the project's **held-out eval set** and permit
+it to serve only if it clears an **absolute quality threshold** or demonstrably
+**outperforms the base model** on that same set. This is the model equivalent of
+a CI test suite. The eval-set format is `specs/schemas/eval_dataset.schema.json`
+(SFT rows) and `adapta/services/datasets.py` validates it; the gate itself is
+being rebuilt to run on CPU against imported adapters (E4.3) and is not
+present in the code today, so a finetune project cannot create an endpoint yet.
 
 The "or clearly beats the base" path exists for a concrete reason: a small base
-model cannot always reach the absolute threshold even on an ideal fine-tune task
-(the model's invented answer tokens carry an irreducible per-token loss). An
+model cannot always reach the absolute threshold even on an ideal task. An
 adapter that reliably outperforms its starting point has demonstrably learned
 the target behavior — refusing it because it didn't hit an arbitrary absolute
 number would be a false negative.
-
-Key files: `adapta/training/evaluator.py`, `adapta/services/adapters.py`
 
 ---
 
 ### GGUF LoRA conversion
 
-Training produces a PEFT adapter (PyTorch tensors). The serving runtime
-(llama.cpp) loads GGUF LoRA adapters. After the eval gate passes, the adapter
-is converted from PEFT format to GGUF. This conversion is the explicit boundary
-between the training world (PyTorch, HuggingFace) and the serving world
-(llama.cpp, GGUF) — two ecosystems that don't share a file format.
+PEFT adapters are PyTorch tensors; the serving runtime (llama.cpp) loads GGUF
+LoRA adapters. The conversion helper is the explicit boundary between the
+HuggingFace world and the serving world — two ecosystems that don't share a
+file format. The import flow (E4.2) will use it.
 
 Key file: `adapta/core/adapter_conversion.py`
 
@@ -379,18 +356,17 @@ Key file: `adapta/core/adapter_conversion.py`
 
 ## Async job processing
 
-### Redis + BLPOP — the training job queue
+### Redis + BLPOP — the job queue
 
-Training takes minutes to hours, monopolizes the GPU, and can crash. Running
-it inside a request handler would block the event loop for the duration and
-leave the caller waiting indefinitely. Instead:
+Long-running work (minutes or more) must not run inside a request handler: it
+would block the event loop and leave the caller waiting. Instead:
 
-1. `POST /v1/projects/{id}/jobs` writes a `TrainingJob` row (`status: queued`)
-   and pushes the job ID onto a Redis list.
+1. A service pushes a job ID onto a Redis list (with `meta["kind"]`).
 2. The `worker` process blocks on `BRPOPLPUSH` — it wakes only when a job ID
    arrives.
-3. The worker runs training, updating job status as it progresses
-   (`queued → running → succeeded | failed`).
+3. The worker looks the kind up in its `HANDLERS` dispatch table
+   (`adapta/worker/main.py`). The table is empty today — an unknown kind fails
+   the job with a typed error — until jobs such as ingestion (E3.7) are added.
 
 This is the same pattern as Sidekiq (Ruby), Celery (Python), or BullMQ
 (Node.js) — a background queue with a persistent worker.
@@ -401,11 +377,10 @@ format to choose — a Redis list is enough for a single-queue, single-worker
 system. Celery adds value at scale (multiple queues, rate limiting, scheduling);
 BLPOP is the right tool here.
 
-**Why a dedicated process, not a background task in `app`?** Training occupies
-the GPU fully. If the training loop ran inside the `app` process, it would
-compete for GPU memory with inference. Separating them means a training run
-cannot degrade serving latency — the `app` never trains, the `worker` never
-serves.
+**Why a dedicated process, not a background task in `app`?** Heavy jobs would
+compete with inference for CPU and memory. Separating them means a long job
+cannot degrade serving latency. The worker is the same image as `app`, started
+with `python -m adapta.worker.main`.
 
 Key files: `adapta/services/jobs.py`, `adapta/worker/main.py`
 
@@ -442,17 +417,10 @@ Key file: `adapta/services/auth.py`
 
 The full stack runs as five containers (`app`, `worker`, `postgres`, `redis`,
 `chroma`) via a single `make up` (`docker compose up -d --build`). There is
-one Dockerfile with two build targets:
-
-- **`app`** — the main service: full toolchain, all `[dev]` extras, repo
-  bind-mounted for hot reload. This is the development and production image.
-- **`worker`** — the training worker: extends the base layer with `[training]`
-  extras (PyTorch, PEFT, TRL, CUDA-capable torch build).
-
-GPU acceleration is auto-detected at runtime: if the Docker host has an NVIDIA
-GPU and the NVIDIA Container Toolkit, the worker container uses it; otherwise
-training runs on CPU. There is no "GPU build" and "CPU build" — the same image
-works on both.
+one Dockerfile whose `app` target is the only runtime image: full toolchain,
+all `[dev]` extras, repo bind-mounted for hot reload. The `worker` service uses
+the same image with a different entrypoint. Nothing in the stack needs a GPU
+or the NVIDIA Container Toolkit.
 
 **There is no dev/production split.** The `app` image ships the full
 development toolchain, and the repo is bind-mounted with hot reload. This is
@@ -465,14 +433,14 @@ individual teams on single servers they own. The operational overhead of
 Kubernetes doesn't fit a self-hosted appliance; Docker Compose is exactly the
 right complexity.
 
-Key files: `Dockerfile`, `docker-compose.yml`, `docker-compose.cpu.yml`,
+Key files: `Dockerfile`, `docker-compose.yml`,
 `docker-compose.prod.yml`, `Makefile`
 
 ---
 
 ## How the pieces compose
 
-The three AI systems connect to the web layer through ordinary service calls:
+The AI systems connect to the web layer through ordinary service calls:
 
 ```text
 HTTP request
@@ -481,24 +449,18 @@ HTTP request
           ├── PostgreSQL   (metadata: read / write)
           ├── ChromaDB     (vector retrieval, if project has documents)
           ├── llama-cpp    (inference — via asyncio.Lock + thread pool)
-          └── Redis        (write-only: enqueue training job)
+          └── Redis        (write-only: enqueue a job)
 ```
 
-The training worker is a separate OS process connected to the same PostgreSQL
-and Redis instances. It never touches the HTTP layer; it reads from the job
-queue and writes status + adapter artifacts back to PostgreSQL and the shared
-filesystem volume.
-
-This separation is the design's load-bearing guarantee: **the `app` never
-trains.** The serving path and the training path share data but not compute.
-A training run — however long, however GPU-intensive — cannot degrade serving
-latency for requests already in flight.
+The worker is a separate OS process connected to the same PostgreSQL and Redis
+instances. It never touches the HTTP layer; it reads from the job queue and
+writes status back to PostgreSQL.
 
 ---
 
 !!! abstract "Further reading"
     - [Learning the system](../developer-guide/learning-the-system.md) — how
-      inference, RAG, and fine-tuning work from first principles, using
+      inference, RAG, and adapters work from first principles, using
       engineering analogies throughout.
     - [Architecture](../developer-guide/architecture.md) — the container map,
       data model, and full request lifecycle for both serving modes.

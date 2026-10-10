@@ -7,15 +7,15 @@ leaves their infrastructure) to specialize and serve private language models beh
 
 - **Knowledge (RAG):** upload documents → chunk → embed (sentence-transformers) → per-project ChromaDB →
   hybrid retrieval (vector + BM25, RRF, optional cross-encoder rerank) → cited answers. CPU-only.
-- **Fine-tuning (LoRA):** instruction dataset (or pairs synthesized from indexed documents) → QLoRA on a GPU
-  worker → adapter → served only after the **eval gate** (held-out score ≥ 0.6 **or** a clear improvement
-  over the base model). Text and image-understanding (VLM) fine-tunes; image *generation* is out, permanently.
+- **Bring your own adapter (LoRA):** import a GGUF/PEFT adapter (import flow: E4.2–E4.4, not built yet), gate it
+  on CPU against the base on the project's eval set, then serve it. In-product training was removed 2026-10-10;
+  image *generation* is out, permanently.
 - **Composed serving:** one endpoint can inject retrieved context *and* apply the adapter — facts from RAG,
-  tone/format from the fine-tune.
+  tone/format from the adapter.
 
 Multi-user: registering creates an organization; teammates join by invite. A dev admin
 (`admin@example.com` / `admin12345`) is seeded on an empty DB. The UI says *"give it knowledge"* (RAG) vs
-*"change how it behaves"* (fine-tuning) — never "training" for RAG.
+*"change how it behaves"* (adapters) — never "training" for RAG.
 
 Authoritative scope: [docs/reference/PRODUCT_DEFINITION.md](docs/reference/PRODUCT_DEFINITION.md). The code is
 the real implementation — no mocks, no dummy keys, no placeholder embeddings. The product definition wins over
@@ -23,14 +23,14 @@ any stale comment.
 
 ## Stack
 
-FastAPI + Uvicorn · Pydantic v2 models **generated** from `specs/openapi.yaml` · llama-cpp-python (GGUF; vLLM
-sidecar optional) · PEFT/TRL QLoRA on a separate CUDA worker · ChromaDB + sentence-transformers · PostgreSQL +
-SQLAlchemy 2 async + Alembic · Redis BLPOP job queue · Svelte 5 console · Docker Compose (GPU by default,
-`docker-compose.cpu.yml` opts out) · MkDocs Material docs.
+FastAPI + Uvicorn · Pydantic v2 models **generated** from `specs/openapi.yaml` · llama-cpp-python (GGUF, CPU) ·
+ChromaDB + sentence-transformers · PostgreSQL +
+SQLAlchemy 2 async + Alembic · Redis BLPOP job queue · Svelte 5 console · Docker Compose (one image for app and worker; no
+service needs a GPU) · MkDocs Material docs.
 
 ## Hard constraints
 
-1. **Wrap, never rewrite** `adapta/core/inference.py`, `adapta/core/model_manager.py`, `adapta/training/trainer.py`.
+1. **Wrap, never rewrite** `adapta/core/inference.py`, `adapta/core/model_manager.py`.
 2. **Dependencies live in `pyproject.toml` only** and are baked into the image. Never `pip install` by hand. One
    stack: `make up` (= `docker compose up -d --build`); gates run as `docker compose exec app make <target>`.
 3. **Generated artifacts are never hand-edited** — `adapta/models/generated/models.py` (`make generate`); Alembic
@@ -46,7 +46,7 @@ SQLAlchemy 2 async + Alembic · Redis BLPOP job queue · Svelte 5 console · Doc
 |---|---|---|---|
 | API | `specs/openapi.yaml` | `make generate` → routers consume the generated DTOs (guard: `tests/test_generated_models_wired.py`) | `make test-contracts` (schemathesis, live server, authenticated) — green 2026-10-09: 35 operations, ~2,060 cases, 0 failures |
 | DB schema | `migrations/versions/*` | `make migrate` | `make migrate-test` (up → down → up) |
-| Model / training | `specs/schemas/training_dataset.schema.json` + pinned `training_config` | training run → registered adapter | eval gate (`tests/test_eval_gate.py`, GPU e2e) |
+| Model / eval set | `specs/schemas/eval_dataset.schema.json` (SFT row) | adapter import → registered adapter | CPU eval gate on imported adapters (E4.3/E4.4, not built yet) |
 
 Full doc: [docs/reference/SDD_WORKFLOW.md](docs/reference/SDD_WORKFLOW.md). `make ci` runs check-leaks,
 check-chroma, lint, lint-imports, coverage, validate-spec and check-models; `make ci-full` adds migrate-test and
@@ -64,7 +64,7 @@ for change → gate (and the concurrency gate classes), `doc-surfaces.md` for ch
 | `verify` | pick + run the cheapest sufficient gate; read a failing one |
 | `docs-sync` | propagate a shipped change through docs + `TODO.md`/`CHANGELOG.md` |
 | `ship` | what lands in one commit; message conventions |
-| `stack` | run/debug the live stack (GPU, worker, chroma, e2e) |
+| `stack` | run/debug the live stack (worker, chroma, e2e) |
 | `orchestrate` | run several roadmap blocks at once — lead + Sonnet/Haiku workers, worktrees, one live slot, Handoff notes |
 
 ## API surface
@@ -75,8 +75,7 @@ POST /v1/auth/register · /login · /invite · /accept-invite      GET /v1/auth/
 GET/POST /v1/projects · GET/DELETE /v1/projects/{id}             GET /v1/teams/{team_id}/members
 POST/GET/DELETE /v1/projects/{id}/files                          upload + background index
 POST/GET /v1/projects/{id}/datasets · POST …/datasets/synthesize · GET …/datasets/{did}
-POST/GET /v1/projects/{id}/jobs · GET …/jobs/{jid}               training jobs (live progress from Redis)
-POST/GET /v1/projects/{id}/endpoint (eval_passed required) · POST/GET/DELETE …/keys · GET …/usage
+POST/GET /v1/projects/{id}/endpoint (finetune: "Import an adapter first") · POST/GET/DELETE …/keys · GET …/usage
 GET/PATCH /v1/settings                                           DB-backed platform overrides
 POST /v1/chat/completions                                        OpenAI-compatible; adp_* key; image content-parts
 ```
@@ -92,9 +91,9 @@ go. Never hand-write generated docs (API reference from the spec, code reference
 
 ## Where things stand
 
-Phases 0–5, console, image fine-tunes, brand and positioning shipped (history in `CHANGELOG.md`). Open work is
+Phases 0–5, console, brand and positioning shipped (history in `CHANGELOG.md`). Open work is
 the 2026-09-03 audit, roadmap §E: wave 0 (dependency pins E1.10, contract gate E1.11) closed 2026-10-09; the §E board picks the next wave.
-**Decided 2026-10-09:** in-product training goes — §E4 removes it (E4.1) and replaces it with *bring your own
-adapter*: import a GGUF/PEFT LoRA, gate it on CPU against the base, serve it with RAG. Do not extend
-`adapta/training/`, the CUDA worker or the GPU gates. Alongside: real hybrid retrieval on Postgres, Docling + OCR
+**In-product training was removed 2026-10-10 (E4.1):** no `adapta/training/`, CUDA worker, vLLM or GPU gates; the worker is
+the app image with an empty `HANDLERS` table. Direction: *bring your own adapter* (§E4.2–E4.4) — import a GGUF/PEFT LoRA,
+gate it on CPU against the base, serve it with RAG. Alongside: real hybrid retrieval on Postgres, Docling + OCR
 ingestion. Pick a block by its id; read the block and its Files line only.

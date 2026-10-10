@@ -40,7 +40,7 @@ Click **New project**. The console asks **"How do you want to specialize your
 model?"**:
 
 - **Give it knowledge (RAG)** — for answering from your documents.
-- **Change how it behaves (fine-tuning)** — for tone/format/skill.
+- **Change how it behaves (adapter)** — for tone/format/skill; the adapter is imported, not trained here (import: coming in E4.2–E4.4, see the [roadmap](../roadmap.md)).
 
 Pick one, name the project, and choose a **base model** from the catalog (e.g.
 a Qwen2.5 model). The base model is the foundation both paths build on.
@@ -71,87 +71,37 @@ citations** — the source chunks it used are returned alongside the answer.
 
 ---
 
-## 3b. Fine-tuning (LoRA) flow
+## 3b. Adapter (finetune) flow
 
-In the **Setup** tab:
+In-product training was removed on 2026-10-10: the console no longer trains
+anything, and a finetune project cannot create an endpoint until an adapter is
+imported (the API answers "Import an adapter first"). What the **Setup** tab
+does today:
 
 1. **Documents (optional)** — upload PDF/DOCX/TXT/MD/HTML, same as the RAG
-   flow. They do two jobs: they are the source the **Synthesize** button reads,
-   and once your endpoint is live the model **answers from them with
-   citations** — knowledge from the documents, behavior from the fine-tune.
-   See [Knowledge + behavior together](knowledge-and-behavior.md).
+   flow. They are the source the **Synthesize** button reads, and once an
+   adapter is served the model can answer from them with citations. See
+   [Knowledge + behavior together](knowledge-and-behavior.md).
 
-2. **Provide a dataset** — either:
-    - **Upload JSONL** — one instruction pair per line. Two formats are supported:
-        - **SFT** (supervised fine-tuning, the default): `{"prompt": "...", "response": "..."}`, optional `system`.
-        - **DPO** (Direct Preference Optimisation): `{"prompt": "...", "chosen": "...", "rejected": "..."}`. When the platform detects `chosen`/`rejected` fields it automatically uses the DPO trainer (TRL DPOTrainer, β-scaled KL penalty). Upload the same way — no separate flag needed.
-
-        The file is validated against the dataset schema; rows that don't match are reported.
+2. **Provide a dataset** — the project's eval set, used to judge an adapter
+   against the base model. Either:
+    - **Upload JSONL** — one instruction pair per line:
+      `{"prompt": "...", "response": "..."}`, optional `system`. The file is
+      validated against the eval-dataset schema; rows that don't match are
+      reported.
     - **Synthesize** — generate a dataset automatically from the documents you
       indexed in step 1. The platform turns your document chunks into Q/A pairs.
       This runs in the background; poll until it's ready.
 
-    A dataset must have at least 10 valid rows before you can train on it.
-
     **Reviewing and curating a dataset** — once a dataset is `valid`, a
     **Review** button appears next to it. It opens a paginated row viewer where
     you can inspect each pair, drop individual rows that look wrong, and edit
-    text fields inline. When you're satisfied, **Save curated** writes a new
-    derived dataset (marked `valid`) that you can train on instead of the
-    original. This lets you clean a synthesized dataset without re-uploading.
+    text fields inline. **Save curated** writes a new derived dataset (marked
+    `valid`). This lets you clean a synthesized dataset without re-uploading.
 
-    **Vision projects** (a base model labeled *vision* in the create dialog)
-    upload a **`.zip` bundle** instead: your images plus one `data.jsonl`
-    manifest whose rows add `"images": ["images/photo.png"]` (exactly one
-    bundle-relative path per row). The console's collapsible help in the
-    dataset step shows the full layout and caps; the served endpoint then
-    accepts images — see
-    [Image understanding](knowledge-and-behavior.md#image-understanding-vision-fine-tunes).
-    Synthesize is text-only and hidden for vision projects.
-
-3. **Start a training job** — enqueue it. A GPU worker picks it up. The job
-   moves `queued → running → succeeded | failed` with a live progress bar and a
-   tail of the training log.
-
-4. **The evaluation gate** — see the dedicated section below. This is the step
-   that decides whether the fine-tune is allowed to serve.
-
-5. **Create endpoint** — enabled **only** once a job has succeeded **and** passed
-   the eval gate. The endpoint serves the base model **with your trained
-   adapter** applied — and, if you indexed documents in step 1, it also injects
-   retrieved context and returns citations in the same call.
-
----
-
-## The evaluation gate
-
-This is the heart of the fine-tune flow and worth understanding, because it's
-what protects your users from a bad fine-tune.
-
-When training finishes, the worker scores the adapter on a **held-out slice of
-your dataset it never trained on** — the same way you'd judge a student on
-questions that weren't on the study sheet. The console shows the score and a
-bold **PASSED** or **BLOCKED**.
-
-An adapter **passes** if **either**:
-
-- it clears an **absolute quality bar**, **or**
-- it clearly **beats the base model** on that same held-out slice (a smaller
-  base model can't always hit the absolute bar even on an ideal task, but a
-  fine-tune that reliably out-performs its starting point has demonstrably
-  learned the target behavior).
-
-If it passes neither, **Create endpoint is disabled** with the reason shown —
-the adapter is not registered and there is no way to serve it. This mirrors the
-API's `EvalGateFailed (422)`.
-
-!!! info "Why this gate exists"
-    Fine-tuning can silently produce a worse model. Without a gate, you'd only
-    discover that in production. The gate is the model-world equivalent of a CI
-    test suite: nothing ships until it passes. The technical details of how the
-    score is computed are in the Developer Guide's
-    [Learning the system](../developer-guide/learning-the-system.md#the-eval-gate-ci-for-a-model)
-    page.
+The adapter import and its CPU eval gate are on the [roadmap](../roadmap.md)
+(E4.2–E4.4); until then the endpoint step stays unavailable for finetune
+projects.
 
 ---
 
@@ -201,8 +151,8 @@ the server). One entry per model, with:
   picker.
 - **Purpose** (use-case line) and **Best for** chips — e.g. *knowledge retention*,
   *code*, *vision*.
-- **Resource requirements** — approximate VRAM needed to train and RAM needed to
-  serve, derived from the model's spec entry.
+- **Resource requirements** — approximate RAM needed to serve, derived from the
+  model's spec entry.
 - **Availability status** — green *Ready* if the GGUF is on disk; amber *Not
   available* if the model is in the catalog but the file hasn't been downloaded
   yet (see [Downloading models](../reference/OPERATIONS.md)).
@@ -225,21 +175,17 @@ colored dot and label derived from the project's current state:
 | **Setting up** | Project just created, no data yet. |
 | **Awaiting data** | No files or datasets uploaded. |
 | **Indexing** | Documents processing in the background. |
-| **Training** | A training job is running. |
-| **Gate blocked** | Training finished but the eval gate was not passed. |
-| **Ready to serve** | A gate-passed adapter exists; endpoint not yet created. |
+| **Ready to serve** | Ready for an endpoint to be created. |
 | **Live** | Endpoint is active and serving. |
 
 A **next-action hint** below the label tells you what to do next ("Upload
-documents", "Start a training job", etc.).
+documents", "Upload a dataset", etc.).
 
 Inside the project, the **Overview** tab gives the full picture at a glance:
 
 - **Pipeline checklist** — which steps are done (documents indexed, dataset
-  uploaded, job run, gate passed, endpoint created, key generated). Each
-  incomplete step has a call-to-action link to the right tab.
-- **Latest training job** verdict — eval score, gate outcome (absolute or
-  improvement), and improvement over base if applicable.
+  uploaded, endpoint created, key generated). Each incomplete step has a
+  call-to-action link to the right tab.
 - **Endpoint snapshot** — slug, status, model composition (base + adapter + retrieval
   layer), indexed-chunk count, active-key count.
 - **7-day usage** — request and token totals.
@@ -271,7 +217,7 @@ Change your password. Enter your current password to confirm, then set a new one
 
 **Roles:**
 
-| Role | Projects | Files / datasets / jobs | Endpoint / keys | Platform settings |
+| Role | Projects | Files / datasets | Endpoint / keys | Platform settings |
 | --- | --- | --- | --- | --- |
 | admin | read + write | read + write | read + write | read + write |
 | member | read + write | read + write | read + write | read-only |
@@ -294,8 +240,8 @@ Priority order: DB override > environment variable > built-in default.
 
 Read-only status dashboard: Postgres, Redis, Chroma connectivity, disk usage,
 and memory usage — the same signals as `GET /health/deep` presented visually.
-GPU detection result is also shown here, so you can confirm that the worker has
-the accelerator it needs without opening logs.
+The GPU detection result (`GET /gpu`) is also shown here; nothing in the stack
+requires one.
 
 ---
 

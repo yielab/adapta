@@ -4,7 +4,7 @@
 > Describes what *is* — no open tasks (those live in [TODO.md](../roadmap.md)).
 
 Covers: backup/restore, upgrades & migrations, horizontal scaling, image/registry
-strategy, graceful shutdown, and host sizing (VRAM / base-model catalog).
+strategy, graceful shutdown, and host sizing (base-model catalog). No service needs a GPU.
 
 ---
 
@@ -12,11 +12,11 @@ strategy, graceful shutdown, and host sizing (VRAM / base-model catalog).
 
 | Store | What | Where (compose) | Backed up by |
 |---|---|---|---|
-| PostgreSQL | all metadata (orgs, users, projects, jobs, usage, invites) | `postgres-data` named volume | `pg_dump` |
+| PostgreSQL | all metadata (orgs, users, projects, usage, invites) | `postgres-data` named volume | `pg_dump` |
 | ChromaDB | per-project vector collections (RAG) | `chroma-data` named volume | volume snapshot |
-| Adapters | trained LoRA adapters (the moat) | `./data/adapters` (host bind-mount) | file copy |
+| Adapters | imported LoRA adapters (import flow: E4.2–E4.4, see [the roadmap](../roadmap.md)) | `./data/adapters` (host bind-mount) | file copy |
 | Uploads | source documents | `./data/uploads` | file copy |
-| Datasets | training JSONL | `./data/datasets` | file copy |
+| Datasets | eval-set JSONL | `./data/datasets` | file copy |
 | Models | base GGUF files | `./data/models` | re-downloadable |
 | Redis | the job queue + worker heartbeat | `redis-data` | ephemeral — not backed up |
 
@@ -114,7 +114,7 @@ atomic Redis `BLPOP`, so a job is delivered to exactly one worker.
 
 **Graceful shutdown (§4.4):** on `SIGTERM` the worker stops accepting new jobs
 and **requeues its in-flight job** (back to the front of the queue), so a deploy
-or scale-down never strands a training job at `running`. `stop_grace_period: 60s`
+or scale-down never strands a job at `running`. `stop_grace_period: 60s`
 gives it time before `SIGKILL`. A dead/hung worker is detected by its Redis
 heartbeat expiring (the container healthcheck goes unhealthy).
 
@@ -122,14 +122,13 @@ heartbeat expiring (the container healthcheck goes unhealthy).
 
 ## 5. Image tagging & registry strategy
 
-The multi-stage `Dockerfile` builds `app` (CPU-only, ~2.1 GB) and `worker`
-(CUDA, ~6.4 GB) targets. To distribute via a registry instead of building on
+The multi-stage `Dockerfile` builds one runtime image, `app` (CPU-only, ~2.1 GB);
+the worker runs the same image with a different entrypoint. To distribute via a registry instead of building on
 the host:
 
 - **Tag by version + git SHA**, not just `latest`, so a rollback is a tag change:
   ```bash
   docker build --target app    -t registry.example.com/adapta-app:1.4.0-$(git rev-parse --short HEAD) .
-  docker build --target worker -t registry.example.com/adapta-worker:1.4.0-$(git rev-parse --short HEAD) .
   docker push registry.example.com/adapta-app:1.4.0-...
   docker push registry.example.com/adapta-worker:1.4.0-...
   ```
@@ -182,51 +181,16 @@ Both models are downloaded from Hugging Face on first use. The embedding model
 is mandatory for RAG, so an air-gapped host must pre-seed its cache either way;
 disabling the reranker only removes the second download.
 
-### 6.2 Fine-tuning (the `worker`) — VRAM (§3.3/§3.4)
-
-QLoRA 4-bit. VRAM is the binding constraint; the table is for training, not
-serving:
-
-| Base model | Min VRAM (QLoRA 4-bit) | Fits on |
-|---|---|---|
-| 1–1.5B | ~6 GB | GTX 1660 / RTX 2060 |
-| 3B (Qwen2.5-3B) | ~8–10 GB | RTX 3050 8 GB (tight) / 3060 12 GB |
-| 3B VLM (Qwen2.5-VL-3B, §V) | ~6–8 GB | 8 GB card (validated) |
-| 7–8B | ~12–16 GB | RTX 3080 / 4070 Ti / A4000 |
-| 13B | ~24 GB | RTX 3090 / 4090 / A5000 |
-
-**Vision (VLM) fine-tunes — measured on an 8 GB card** (Qwen2.5-VL-3B, QLoRA
-4-bit, vision tower frozen, LoRA on LM attention only, batch 1, 224×224 images,
-`max_seq_length` 512): ~5.5 GiB peak VRAM during training; ~46 s/epoch on 24
-rows; held-out eval (incl. the base-model comparison pass) ~20 s; PEFT→GGUF
-conversion ~3 s — a full train→gate→convert→register job is **~5 minutes** once
-the base is cached. The **first** job on a host downloads the ~7 GB HF base;
-unauthenticated HF Hub throttling made that take ~35 minutes in validation —
-set `HF_TOKEN` on the worker for faster, rate-limit-free downloads. The worker
-frees VRAM between jobs (back-to-back vision jobs on one 8 GB card are
-validated). Disk impact of image datasets is bounded at upload time by the
-bundle caps (`max_bundle_uncompressed_mb`, default 500 MB; `max_bundle_files`,
-default 2000), and the existing free-disk preflight covers training writes.
-
-The GPU is the default: the worker reserves the host GPU, so a bare
-`docker compose up` expects a CUDA GPU + the NVIDIA Container Toolkit. A GPU-less
-host serves RAG fine — `make up` detects the missing GPU and automatically layers
-[docker-compose.cpu.yml](https://github.com/yielab/adapta/blob/main/docker-compose.cpu.yml)
-(`-f docker-compose.yml -f docker-compose.cpu.yml`) to drop the reservation; LoRA
-jobs are then rejected fast with a clear "GPU required" message. See the README
-"GPU" section and TODO §4.2b.
-
-### 6.3 Base-model catalog (§3.4)
+### 6.2 Base-model catalog (§3.4)
 
 A project's `base_model` is **validated against a single catalog** at creation
 (`adapta/core/model_catalog.py` — the SSOT). Each entry declares **both** meanings
-of the base in one place: the HuggingFace repo id the trainer/evaluator load and
-the GGUF the serving runtime loads. This guarantees a base that is selected can
-both train **and** serve — an unknown value is rejected with `400 invalid_request`
+of the base in one place: the HuggingFace repo id used for adapter conversion and
+the GGUF the serving runtime loads. An unknown value is rejected with `400 invalid_request`
 listing the allowed names (which also feeds the console base-model dropdown).
 
 The **default and confirmed** family is **Qwen2.5-Instruct** (GGUF), which
-balances quality and QLoRA-friendliness. **Licenses differ within the family:**
+balances quality and size. **Licenses differ within the family:**
 the 0.5B, 1.5B, 7B and VL-7B weights are Apache-2.0, while the **3B, Coder-3B and
 VL-3B are under the Qwen Research License (no commercial use)** — verified on
 Hugging Face 2026-09-03. Every catalog entry declares `license`, `license_url`
@@ -235,55 +199,53 @@ research entries are labelled *evaluation only*, and the platform default
 (`ADAPTA_DEFAULT_MODEL`) must resolve to a `commercial_use` entry (a unit test
 enforces it). The catalog entries (operator name → HF repo id):
 
-| `base_model` (catalog name) | HF repo id (train/eval) | License | Use | VRAM (train) |
-|---|---|---|---|---|
-| `qwen2.5-0.5b-instruct` | `Qwen/Qwen2.5-0.5B-Instruct` | Apache-2.0 | smallest / e2e base | ~3 GB |
-| `qwen2.5-1.5b-instruct` | `Qwen/Qwen2.5-1.5B-Instruct` | Apache-2.0 | **default** — RAG + fine-tune on small GPUs | ~6 GB |
-| `qwen2.5-3b-instruct` | `Qwen/Qwen2.5-3B-Instruct` | Qwen Research (**evaluation only**) | RAG + fine-tune | ~8–10 GB |
-| `qwen2.5-coder-3b` | `Qwen/Qwen2.5-Coder-3B-Instruct` | Qwen Research (**evaluation only**) | code understanding/generation | ~8–10 GB |
-| `qwen2.5-7b-instruct` | `Qwen/Qwen2.5-7B-Instruct` | Apache-2.0 | higher quality, bigger GPU | ~12–16 GB |
-| `qwen2.5-vl-3b-instruct` | `Qwen/Qwen2.5-VL-3B-Instruct` | Qwen Research (**evaluation only**) | image understanding (vision LoRA, §V) | ~6–8 GB |
-| `qwen2.5-vl-7b-instruct` | `Qwen/Qwen2.5-VL-7B-Instruct` | Apache-2.0 | image understanding for commercial use (same architecture as the 3B) | ~14 GB |
+| `base_model` (catalog name) | HF repo id | License | Use |
+|---|---|---|---|
+| `qwen2.5-0.5b-instruct` | `Qwen/Qwen2.5-0.5B-Instruct` | Apache-2.0 | smallest / e2e base |
+| `qwen2.5-1.5b-instruct` | `Qwen/Qwen2.5-1.5B-Instruct` | Apache-2.0 | **default** — RAG on small hosts |
+| `qwen2.5-3b-instruct` | `Qwen/Qwen2.5-3B-Instruct` | Qwen Research (**evaluation only**) | RAG |
+| `qwen2.5-coder-3b` | `Qwen/Qwen2.5-Coder-3B-Instruct` | Qwen Research (**evaluation only**) | code understanding/generation |
+| `qwen2.5-7b-instruct` | `Qwen/Qwen2.5-7B-Instruct` | Apache-2.0 | higher quality, more RAM |
+| `qwen2.5-vl-3b-instruct` | `Qwen/Qwen2.5-VL-3B-Instruct` | Qwen Research (**evaluation only**) | image understanding |
+| `qwen2.5-vl-7b-instruct` | `Qwen/Qwen2.5-VL-7B-Instruct` | Apache-2.0 | image understanding for commercial use (same architecture as the 3B) |
 
 Vision entries additionally declare the `mmproj` (vision projector) GGUF the
-serving runtime needs; image fine-tunes train and pass the gate as of §V3, and
-their endpoints become servable with §V4. The VL-7B keeps the VL-3B architecture,
-so the PEFT→GGUF conversion shim and the llama-cpp chat handler apply unchanged;
-its GGUF + mmproj come from the community `ggml-org/Qwen2.5-VL-7B-Instruct-GGUF`
+serving runtime needs. The VL-7B keeps the VL-3B architecture,
+so the llama-cpp chat handler applies unchanged; its GGUF + mmproj come from the community `ggml-org/Qwen2.5-VL-7B-Instruct-GGUF`
 repo (download both files into `data/models/qwen2.5-vl-7b/`).
 
 To add a base (e.g. a Llama-3.x / Mistral instruct GGUF), append a `CatalogEntry`
 with its HF repo id, GGUF subdir/filename **and its license fields** (`license`,
-`license_url`, `commercial_use`); validate VRAM against §6.2 first.
+`license_url`, `commercial_use`).
 The serving GGUF subdir/filename **must** match what `model_manager` loads (a unit
 test, `tests/test_model_catalog.py`, asserts the two agree).
 **Artifact storage** is the filesystem volume (§1); introduce object storage
 (MinIO/S3) only if multi-host scale (§4) or HA demands it.
 
-### 6.4 Vision (VLM) serving in production (§V4)
+### 6.3 Vision (VLM) serving in production (§V4)
 
-Serving an image-understanding fine-tune loads the base GGUF **plus** the `mmproj`
+Serving a vision model loads the base GGUF **plus** the `mmproj`
 vision projector (CLIP) through one llama-cpp runtime. Operational notes for real use:
 
-- **Use a GPU for vision serving.** The `app` defaults to CPU inference
-  (`ADAPTA_N_GPU_LAYERS=0`). Text on CPU is fine, but a VLM on CPU is
-  impractically slow — a single image request can take tens of seconds and holds
-  that model's serialization lock the whole time. Set **`ADAPTA_N_GPU_LAYERS>0`**
-  (a GPU host) for any production vision endpoint; the worker logs a loud warning
-  when it serves a vision model on CPU.
-- **RAM/VRAM for serving:** the 3B VL base GGUF is ~2 GB + the mmproj is ~1.3 GB,
+- **Vision serving is CPU by default.** The `app` defaults to CPU inference
+  (`ADAPTA_N_GPU_LAYERS=0`) and the shipped image is CPU-only. Text on CPU is fine, but a
+  VLM on CPU is impractically slow — a single image request can take tens of seconds and
+  holds that model's serialization lock the whole time. `ADAPTA_N_GPU_LAYERS>0` only helps
+  on a custom llama-cpp build with a GPU host; the app logs a loud warning when it serves
+  a vision model on CPU.
+- **RAM for serving:** the 3B VL base GGUF is ~2 GB + the mmproj is ~1.3 GB,
   so budget ~3.5 GB per resident vision model (on top of the embedding model and
   the app).
 - **Cap resident models on a shared box.** The serving cache keeps up to
   `ADAPTA_MAX_LOADED_MODELS` (default **2**) distinct models in memory and loads
   the projector **per model** (not shared). On a host serving several large
-  fine-tunes, set **`ADAPTA_MAX_LOADED_MODELS=1`** so a burst of distinct vision
+  models, set **`ADAPTA_MAX_LOADED_MODELS=1`** so a burst of distinct vision
   endpoints can't pile multiple heavy models into memory at once.
 - **v1 serving limits (enforced):** image parts must be inline `data:` URLs (no
   remote fetch), at most `max_images_per_request` (default 4) per call, requests
   with images are **non-streaming** and **skip RAG** (no citations on image turns).
 
-### 6.5 Upload & ingestion limits (enforced)
+### 6.4 Upload & ingestion limits (enforced)
 
 Upload is bounded defensively so an oversized or hostile file can't exhaust the
 host — relevant for any multi-tenant / untrusted-operator deployment. The files
@@ -320,7 +282,7 @@ Measured 2026-10-09 with `docling[rapidocr]` 2.137 / RapidOCR 3.10 (`latin_PP-OC
 - **Verified:** page number on every element (`prov.page_no`), DOCX table → markdown table, per-line OCR confidence (`TextCell.confidence`, needs `generate_parsed_pages=True`; per-page `ocr_score` is always present).
 - **Gotchas:** PyPI's `torchvision` does not match the CPU-only `torch` (`operator torchvision::nms does not exist`) — pin the `+cpu` wheel; Docling and RapidOCR download their models at first use, so bake them into the image for air-gapped installs.
 
-### 6.6 Changing the embedding model (§E1.8)
+### 6.5 Changing the embedding model (§E1.8)
 
 `ADAPTA_EMBEDDING_MODEL` (default `all-MiniLM-L6-v2`) is recorded once per
 project — in `Collection.embedding_model` (Postgres) and again in the Chroma
@@ -382,7 +344,7 @@ builder stage) served same-origin via FastAPI `StaticFiles`.
   teammates join an existing org via the invite flow (`POST /v1/auth/invite` →
   `accept-invite`).
 - **What it's for:** an operator drives the whole lifecycle — projects, file/
-  dataset upload, training + the eval gate, endpoints + `adp_` keys, a test
+  dataset upload, endpoints + `adp_` keys, a test
   playground, usage — in the browser. It is a thin client over the existing API;
   **the OpenAI-compatible API remains the only protocol customer *applications*
   call** (the console is not a second product surface).
@@ -396,86 +358,7 @@ builder stage) served same-origin via FastAPI `StaticFiles`.
   operator-configurable knobs — it is a platform invariant, not a per-team
   setting.
 - **Settings tab (System sub-tab):** read-only health dashboard (Postgres, Redis,
-  Chroma, disk, memory, GPU detection) — same data as `GET /health/deep`.
-
----
-
-## 9. vLLM serving backend (optional, D3)
-
-By default Adapta serves every fine-tune endpoint through llama-cpp: one GPU-resident
-model instance per `(base, adapter)` key. For deployments with many fine-tune endpoints,
-this means N adapters ≈ N GPU-resident models, which quickly exhausts VRAM.
-
-vLLM closes this gap: its `--enable-lora` mode packs N text LoRA adapters into one GPU
-process via continuous batching (the `max_loras` pool). Only **text LoRA** endpoints
-benefit — base-only, RAG-only, and vision endpoints always use llama-cpp directly (vLLM
-does not support LoRA on vision tower layers).
-
-### Prerequisites
-
-- NVIDIA Container Toolkit installed on the host (`nvidia-ctk` + CDI)
-- `HF_TOKEN` env var with a Hugging Face token that can download the base model
-- `./data/adapters/` accessible on the host (it is bind-mounted read-only into the
-  vllm-server container at `/app/data` — same path as the app/worker containers)
-
-### Start the vllm-server sidecar
-
-```bash
-# First time: pull the image and let vLLM download the base model weights
-VLLM_BASE_MODEL=Qwen/Qwen2.5-3B-Instruct \
-HF_TOKEN=<your-token> \
-docker compose --profile vllm up -d vllm-server
-
-# Tell the app to route text LoRA requests to vLLM (add to .env or override here)
-echo "ADAPTA_SERVING_BACKEND=vllm" >> .env
-# If vllm-server is on a different host, also set ADAPTA_VLLM_BASE_URL=http://<host>:8001
-
-# Restart the app to pick up the new setting
-docker compose restart app
-```
-
-The vllm-server exposes port `8001` on the host (mapped to `8000` inside the container).
-The app reaches it as `http://vllm-server:8000` on the internal Docker network.
-
-### Environment variables
-
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `ADAPTA_SERVING_BACKEND` | `llamacpp` | Set to `vllm` to activate |
-| `ADAPTA_VLLM_BASE_URL` | `http://vllm-server:8000` | vLLM server base URL (app → vllm-server) |
-| `ADAPTA_VLLM_MAX_LORAS` | `8` | Max simultaneously-loaded LoRA adapters in vLLM |
-| `VLLM_BASE_MODEL` | `Qwen/Qwen2.5-3B-Instruct` | HF model ID to load in vLLM |
-| `VLLM_MAX_MODEL_LEN` | `32768` | Token context window |
-| `HF_TOKEN` | *(empty, required for most base models)* | HuggingFace token for model downloads |
-
-### Adapter registration lifecycle
-
-When the app routes a text LoRA request to vLLM, it automatically:
-
-1. Derives the PEFT adapter directory from the stored GGUF path:
-   `Path(adapter.gguf).parent` → `adapter_model.safetensors` + `adapter_config.json`
-2. Calls `POST /v1/load_lora_adapter` on the vllm-server (idempotent; cached)
-3. Sends the completion request with `"model": "<registered-lora-name>"`
-
-vLLM keeps adapters in the `max_loras` pool; the least-recently-used is swapped out
-automatically under memory pressure. The app-side registration cache persists until the
-app restarts — the first request after a restart will re-register all used adapters.
-
-### Host sizing with vLLM
-
-| Base model | Adapter pool | Min VRAM |
-| --- | --- | --- |
-| 3B (Qwen2.5-3B) | 4–8 LoRAs | 6 GB |
-| 7B (Qwen2.5-7B) | 4–8 LoRAs | 14 GB |
-
-Allow an additional ~100 MB per loaded LoRA adapter in the `max_loras` pool.
-These are typical figures; actual usage depends on quantization and sequence length.
-
-### Fallback
-
-Setting `ADAPTA_SERVING_BACKEND=llamacpp` (or leaving it unset) restores the default
-llama-cpp path. The `vllm-server` container can remain running — it will simply not
-receive any requests until the setting is re-enabled.
+  Chroma, disk, memory) — same data as `GET /health/deep`.
 
 ---
 

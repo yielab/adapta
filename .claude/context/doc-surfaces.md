@@ -9,14 +9,14 @@ improve the spec or the docstring instead.
 | Change | Surfaces that must stay true |
 |---|---|
 | New/changed endpoint | `specs/openapi.yaml` → (api.md auto) · `CLAUDE.md` "API surface" block · `docs/user-guide/consuming-the-api.md` |
-| New capability (retrieval mode, training mode, modality) | `docs/reference/PRODUCT_DEFINITION.md` (scope) · `docs/developer-guide/architecture.md` · `docs/developer-guide/learning-the-system.md` (the analogy pass) · `CLAUDE.md` "What this project is" · `README.md` if it changes the pitch |
+| New capability (retrieval mode, adapter flow, modality) | `docs/reference/PRODUCT_DEFINITION.md` (scope) · `docs/developer-guide/architecture.md` · `docs/developer-guide/learning-the-system.md` (the analogy pass) · `CLAUDE.md` "What this project is" · `README.md` if it changes the pitch |
 | Service/module added or moved | `.claude/context/repo-map.md` · `docs/developer-guide/architecture.md` |
 | Ops/deploy/sizing change | `docs/reference/OPERATIONS.md` · `README.md` run instructions |
 | Console UI change | `docs/user-guide/operator-console.md` (+ the relevant walkthrough) |
 | Workflow/gate change | `docs/reference/SDD_WORKFLOW.md` · `CLAUDE.md` Workflow table · `.claude/context/gates.md` |
 | Retrieval behaviour (hybrid, reranker, chunking, citations, OCR) | `README.md` "Give it knowledge" bullet · `docs/reference/PRODUCT_DEFINITION.md` Service A · `docs/user-guide/knowledge-and-behavior.md` retrieval box · `docs/concepts/stack.md` hybrid section · `docs/reference/COMPETITIVE_LANDSCAPE.md` retrieval note |
-| Model catalog (entries, defaults, licenses, VRAM) | `docs/reference/OPERATIONS.md` sizing + "adding a base model" · `docs/user-guide/operator-console.md` Models page · `docs/user-guide/fine-tuning-use-cases.md` if the validated base changed · `README.md` quick start if the default changed |
-| Training/eval semantics (prompt render, masking, metrics, gate rule) | `docs/reference/PRODUCT_DEFINITION.md` eval-gate paragraph · `docs/developer-guide/learning-the-system.md` gate section · `docs/user-guide/fine-tuning-use-cases.md` (re-measured numbers only) · `CLAUDE.md` one-liner on the gate if the rule changed |
+| Model catalog (entries, defaults, licenses) | `docs/reference/OPERATIONS.md` sizing + "adding a base model" · `docs/user-guide/operator-console.md` Models page · `README.md` quick start if the default changed |
+| Eval semantics (gate rule, metrics, eval-set format) | `docs/reference/PRODUCT_DEFINITION.md` eval-gate paragraph · `docs/developer-guide/learning-the-system.md` gate section · `CLAUDE.md` one-liner on the gate if the rule changed |
 | Anything shipped | `TODO.md`: **Done.** + **Handoff.** under the block → move the block to `CHANGELOG.md` (top dated section) → flip its board row → refresh the **Status snapshot** date/row |
 
 Rules: never add open tasks to a reference doc; never let `TODO.md` re-describe

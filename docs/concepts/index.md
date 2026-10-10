@@ -3,7 +3,7 @@
 Adapta is a conventional web service augmented with three AI-specific
 systems. The web layer — FastAPI, PostgreSQL, Redis, Docker — follows patterns
 any backend engineer will recognize. The AI layer — an inference engine, a
-vector store, and a fine-tuning pipeline — follows the same engineering
+vector store, and an adapter layer — follows the same engineering
 principles but manages different resource constraints.
 
 This section explains the full stack: what every component is, why it was
@@ -23,7 +23,7 @@ how AI infrastructure is built.
 
     You ship backend services and know databases, caches, and job queues.
     This guide connects your existing knowledge to the AI-specific pieces:
-    inference engines, vector stores, and fine-tuning pipelines — each one
+    inference engines, vector stores, and LoRA adapters — each one
     explained in terms of its engineering equivalent.
 
     Start with [Stack & decisions](stack.md), then read
@@ -34,8 +34,7 @@ how AI infrastructure is built.
 
     ---
 
-    You need decision rationale: why llama-cpp is the default, when the
-    vLLM backend is the right option, why ChromaDB over pgvector, why
+    You need decision rationale: why llama-cpp is the default, why ChromaDB over pgvector, why
     BLPOP over Celery, why Docker Compose over Kubernetes. The
     [Stack & decisions](stack.md) page covers each choice explicitly —
     including the alternatives considered.
@@ -71,7 +70,7 @@ An AI-serving platform adds three systems that traditional stacks don't have:
 |---|---|---|
 | **Inference engine** | Run a model function to generate text | Evaluating a compiled binary at runtime |
 | **Vector store** | Retrieve documents by semantic similarity (here fused with BM25 keyword scoring and a cross-encoder rerank) | A database index — but for meaning, not exact value |
-| **Training pipeline** | Adjust model weights from labeled examples | A CI pipeline — but the artifact is a behavior change |
+| **LoRA adapter + eval gate** | A small weight patch that changes behavior, verified before it serves (imported, not trained here) | A feature flag guarded by a CI gate |
 
 Everything else — HTTP routing, relational storage, async job queues, auth,
 migrations — is standard web engineering. The AI pieces plug into the same

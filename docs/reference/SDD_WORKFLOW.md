@@ -8,9 +8,9 @@ This project is **contract-driven**: nothing of consequence changes unless its c
 |---|---|---|---|---|
 | 1 | **API** | `specs/openapi.yaml` (+ `specs/schemas/*.json`) | `make generate` → Pydantic models | `make test-contracts` (schemathesis) |
 | 2 | **Database schema** | Alembic migrations in `migrations/versions/` | `alembic upgrade head` | up/down migration test |
-| 3 | **Model / training** | dataset JSON Schema + pinned `training_config` | training run produces a registered adapter | **eval threshold gate** before an adapter can back an endpoint |
+| 3 | **Model / eval set** | `specs/schemas/eval_dataset.schema.json` (SFT row) | adapter import registers an adapter (E4.2, not built yet) | **eval threshold gate** before an adapter can back an endpoint (CPU, E4.3/E4.4, not built yet) |
 
-> Why three and not one: this is **self-hosted** software with a **model-training** core. Pillar 2 exists because you upgrade databases on servers you don't control — migrations are the only safe path. Pillar 3 exists because an unverified fine-tune must never be auto-served. See [PRODUCT_DEFINITION.md](PRODUCT_DEFINITION.md).
+> Why three and not one: this is **self-hosted** software with a **model-adapter** core. Pillar 2 exists because you upgrade databases on servers you don't control — migrations are the only safe path. Pillar 3 exists because an unverified adapter must never be auto-served. See [PRODUCT_DEFINITION.md](PRODUCT_DEFINITION.md).
 
 ---
 
@@ -47,7 +47,7 @@ Only after models exist, write handlers/services against the generated DTOs — 
 
 ## Pillar 2 — Database schema (migrations)
 
-Postgres holds users, teams, projects, files, datasets, training jobs, endpoints, and API keys. Because customers run this DB on **their own servers**, schema changes must be **versioned, reversible, and tested** — never hand-applied.
+Postgres holds users, teams, projects, files, datasets, endpoints, and API keys. Because customers run this DB on **their own servers**, schema changes must be **versioned, reversible, and tested** — never hand-applied.
 
 ### The rule
 
@@ -63,22 +63,22 @@ Postgres holds users, teams, projects, files, datasets, training jobs, endpoints
 
 ---
 
-## Pillar 3 — Model / training contract (dataset schema + eval gate)
+## Pillar 3 — Model / eval-set contract (dataset schema + eval gate)
 
-The fine-tuning pipeline is the product's moat, so its inputs and outputs are governed.
+The adapter lifecycle is the product's moat, so its inputs and outputs are governed. In-product training was removed on 2026-10-10 (E4.1); adapters are imported. The import flow and CPU gate (roadmap E4.2–E4.4) are not built yet, so this describes the contract they implement.
 
 ### The rule
 
 ```text
-1. DATASET conforms to the dataset JSON Schema  →  2. TRAIN with a pinned training_config  →
-3. Adapter is registered with its {dataset hash, config, base model}  →
-4. EVAL gate runs  →  5. Only a PASSING adapter may back an endpoint
+1. EVAL SET conforms to the dataset JSON Schema  →  2. Adapter is IMPORTED (GGUF/PEFT)  →
+3. Adapter is registered with its {eval-set hash, base model}  →
+4. EVAL gate runs on CPU against the base  →  5. Only a PASSING adapter may back an endpoint
 ```
 
-- **SSOT (input):** `specs/schemas/training_dataset.schema.json` — the instruction-pair format every dataset must validate against before a job is accepted.
-- **SSOT (run):** a pinned `training_config` (base model, LoRA rank/alpha, epochs, lr, seed) stored with the job. Reproducibility = `{dataset hash + training_config + base model}` uniquely identifies an adapter.
-- **Merge/promotion gate:** after training, an **evaluation** runs against a held-out set; the adapter is marked `servable` only if it clears the configured threshold. An unverified or failing adapter **cannot** be bound to an endpoint.
-- This is the SDD philosophy applied to ML: the *spec* is the dataset schema + training config; the *contract test* is the eval gate.
+- **SSOT (input):** `specs/schemas/eval_dataset.schema.json` — the instruction-pair format every eval set must validate against (validator: `adapta/services/datasets.py`).
+- **Merge/promotion gate:** an **evaluation** runs against the held-out set; the adapter is marked `servable` only if it clears the configured threshold. An unverified or failing adapter **cannot** be bound to an endpoint (today `create_endpoint` on a finetune project answers "Import an adapter first").
+- Fixtures for the gate live in `tests/fixtures/adapters/` (`classify-pass`, `garbage-control`).
+- This is the SDD philosophy applied to ML: the *spec* is the eval-set schema; the *contract test* is the eval gate.
 
 ---
 
@@ -89,7 +89,7 @@ specs/
 ├── openapi.yaml                         ← Pillar 1: API contract (SSOT)
 └── schemas/
     ├── *.json                           ← shared API payload schemas
-    └── training_dataset.schema.json     ← Pillar 3: dataset contract
+    └── eval_dataset.schema.json         ← Pillar 3: eval-set contract
 
 migrations/
 └── versions/*.py                        ← Pillar 2: schema contract (SSOT)
@@ -97,7 +97,7 @@ migrations/
 adapta/
 ├── models/generated/models.py           ← AUTO-GENERATED (Pillar 1) — do not edit
 ├── db/models.py                          ← SQLAlchemy models (Pillar 2 intent)
-└── training/                             ← training pipeline (Pillar 3)
+└── services/datasets.py                  ← eval-set validator (Pillar 3)
 
 Makefile   ← generate, validate-spec, test-contracts, migrate, test, lint, fmt
 ```
@@ -121,8 +121,8 @@ A: Pillar 1 (spec the endpoint) and Pillar 2 (migration for the table), in the s
 **Q: I improved chunking for RAG. Contract change?**
 A: No — chunking is internal strategy, not a contract. Unless it changes a request/response field (Pillar 1) or a stored schema (Pillar 2), just ship it with tests.
 
-**Q: A user's fine-tune scored below threshold. What happens?**
-A: The adapter is registered but `not servable`. If a prior gate-passing adapter exists on this project, the endpoint continues serving it. If this was the first training job and no prior adapter passed, the endpoint cannot be created until a job passes the gate. The eval gate did its job.
+**Q: An imported adapter scored below threshold. What happens?**
+A: It cannot back an endpoint; the eval gate did its job. (Import and gate: E4.2–E4.4, not built yet.)
 
 **Q: Do I run `make generate` / migrations in CI?**
 A: Generated Pydantic is committed (CI imports it). Migrations are committed and CI *tests* them (up/down). The deploy *applies* `alembic upgrade head` on startup.

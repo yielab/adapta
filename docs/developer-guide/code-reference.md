@@ -64,30 +64,11 @@ usage metering. See the [request lifecycle](architecture.md#request-lifecycle-a-
       heading_level: 4
       show_root_heading: false
 
-### Training (validation & enqueue)
+### Datasets (eval-set validation)
 
-::: adapta.services.training
+::: adapta.services.datasets
     options:
       heading_level: 4
-      show_root_heading: false
-
-### Adapters (registry + eval gate)
-
-::: adapta.services.adapters
-    options:
-      heading_level: 4
-      show_root_heading: false
-
----
-
-## Training core — the eval gate
-
-The gate's score math and the dual (absolute-or-improvement) gate live here. See
-[the eval gate explained](learning-the-system.md#the-eval-gate-ci-for-a-model).
-
-::: adapta.training.models
-    options:
-      heading_level: 3
       show_root_heading: false
 
 ---

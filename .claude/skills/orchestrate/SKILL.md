@@ -1,6 +1,6 @@
 ---
 name: orchestrate
-description: Run several TODO.md blocks at once with a lead agent and Sonnet/Haiku workers — pick a wave from the §E board, dispatch each block to a worker in a git worktree, serialize the live/GPU/rebuild gates on the main checkout, collect Done + Handoff notes, merge, re-anchor dependent blocks. Use when asked to run the roadmap, a wave, or "several tasks in parallel"; for a single task use `feature` directly.
+description: Run several TODO.md blocks at once with a lead agent and Sonnet/Haiku workers — pick a wave from the §E board, dispatch each block to a worker in a git worktree, serialize the live/rebuild gates on the main checkout, collect Done + Handoff notes, merge, re-anchor dependent blocks. Use when asked to run the roadmap, a wave, or "several tasks in parallel"; for a single task use `feature` directly.
 ---
 
 # Orchestrate — one lead, many workers, one live stack
@@ -15,7 +15,7 @@ either here — read them.
 The stack bind-mounts the **main checkout** into `adapta-app` and `adapta-worker`. Any edit
 there restarts uvicorn and kills a live test in flight; `make up` restarts every container.
 Therefore: **workers build in git worktrees and run `offline` gates there; the lead owns the
-main checkout and runs `live` / `gpu` / `rebuild` gates one at a time.** Worktrees live under
+main checkout and runs `live` / `rebuild` gates one at a time.** Worktrees live under
 `.claude/worktrees/`, i.e. *inside* the mount — they are safe only because uvicorn reloads on
 `/app/adapta` alone (`entrypoint.sh` `--reload-dir`); never widen that. A worktree may start from
 an older commit than the working branch: on merge, rebase and resolve `TODO.md` by taking the
@@ -29,7 +29,7 @@ grep -n '#### §E board' TODO.md        # then sed -n the table only — not the
 
 Eligible rows: every *Depends on* is `done`. Within the eligible set, rows that share a
 *Serialize with* entry run one after the other, never together. Cap at **3 workers** at once
-(mypy + pytest in three containers is the CPU limit; there is one GPU). Flip each dispatched
+(mypy + pytest in three containers is the CPU limit). Flip each dispatched
 row to `in progress (<agent>)` before spawning — that is the lock.
 
 ## 2. Dispatch one worker per block
@@ -44,7 +44,7 @@ Read ONLY: `grep -n '^### <id> ' TODO.md` → that block (sed -n), then the file
 Files line names, locating by symbol (anchors are hints). Its Depends are done.
 You are in a git worktree, not the live stack. Run only the offline rungs of the gate
 (the worktree command in .claude/context/gates.md "Gate classes"); do NOT run live,
-GPU or `make up` gates and do not start containers — the lead runs those after merge.
+`make up` gates and do not start containers — the lead runs those after merge.
 Edit only the block's Files, the block itself and its board row. Do not touch the
 Status snapshot, other blocks, or CLAUDE.md. No pip install.
 Finish with, in this order: (1) `git diff --stat`; (2) offline gate commands + results;
@@ -68,7 +68,7 @@ column, resolve, continue.
 
 Freeze: no other merge or edit lands on the main checkout until this gate finishes. Run the
 block's gate exactly as its Gate line says (`stack` skill for the mechanics; `worker` needs
-`docker compose restart worker` after any `adapta/training/` or `adapta/worker/` change;
+`docker compose restart worker` after any `adapta/worker/` change;
 `rebuild` means `make up` first). Reading a gate's output is mechanical — a Haiku may run and
 report it. Then:
 

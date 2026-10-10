@@ -11,8 +11,7 @@ Never `pip install`; to change deps edit `pyproject.toml` then `make up` (host).
 | Error raising / handlers | `make check-leaks` → `make test` |
 | `specs/openapi.yaml` | `make validate-spec` → `make generate` → `make check-models` → `make test` → `make test-contracts` (needs the live server) |
 | ORM / migration | `make migrate` → `make migrate-test` (up→down→up) |
-| Training / eval / dataset schema | `make test` (`test_eval_gate`, `test_dataset_bundles`) + a real GPU run if the gate logic moved |
-| Training prompt render or label masking (`trainer.py` preprocess/collator, `evaluator.py` render) | `make test` → GPU: `ADAPTA_RUN_LORA_USECASES=1 … tests/integration/test_lora_use_cases.py` (the recorded scores are the product's evidence — re-measure, never hand-edit) |
+| Eval / dataset schema | `make test` (`test_dataset_bundles`; `test_eval_gate` returns with the gate in E4.3) |
 | Retrieval path (`services/rag.py`, `services/documents.py`, chunk metadata) | `make test` (`test_rag_hybrid`, `test_basic`) → `tests/integration/test_rag_e2e.py` (asserts the planted fact + citations) |
 | Retrieval quality (chunking, embeddings, fusion, rerank, thresholds) | `make test` → `make golden` (live; recall@5 / MRR / p50 vs `tests/fixtures/golden/floor.json`) |
 | Model catalog (`core/model_catalog.py`, defaults in `config.py`) | `make test` (`test_model_catalog`) → `make validate-spec` → `make check-models` → `make test-contracts` if `BaseModelInfo` changed |
@@ -26,15 +25,13 @@ Never `pip install`; to change deps edit `pyproject.toml` then `make up` (host).
 
 ## Traps that waste whole sessions
 
-- **Hot reload kills live tests.** Editing any repo file during a live-stack or GPU test
+- **Hot reload kills live tests.** Editing any repo file during a live-stack test
   restarts uvicorn (watchfiles) and the test dies with a bogus transport error. Freeze
   edits while a live run is in flight.
-- **The worker does NOT hot-reload.** Changing `adapta/worker/` or `adapta/training/`
+- **The worker does NOT hot-reload.** Changing `adapta/worker/`
   requires `docker compose restart worker`.
 - **Chroma client/server versions must match** (`chromadb` pip pin vs the `chroma` image).
   Skew shows up as `KeyError('_type')` 500s on every index call. `make check-chroma` guards it.
-- **GPU is the default** (worker reserves it in the base compose file). `docker-compose.cpu.yml`
-  is the `!reset` opt-out. Never invert this.
 - **Mutating handlers must commit before returning** — `get_db()`'s deferred commit races
   the response and causes read-your-write and stuck-BackgroundTask bugs.
 - **Coverage floor is 30%** and is a ratchet — don't lower it to make a run pass.
@@ -50,7 +47,6 @@ The stack bind-mounts the **main checkout** (`.:/app` in both `app` and `worker`
 |---|---|---|---|
 | **offline** | `lint`, `test`, `check-leaks`, `lint-imports`, `validate-spec`, `generate`, `check-models`, `docs-build` | a worktree, against the built `adapta-app` image (command below) | any number in parallel (≈ 3 is the CPU limit) |
 | **live** | `test-contracts`, `migrate`, `migrate-test`, `tests/integration/*` (rag e2e, sweep, golden), `console-build` (needs `node_modules`), `test_inference_slow` (needs the GGUF under `data/`), compose profiles | main checkout, stack up | **one at a time**; no edit or merge lands on the main checkout meanwhile |
-| **gpu** | `test_lora_e2e`, `test_lora_use_cases`, `test_vlm_lora_e2e` | main checkout; `docker compose restart worker` first if `adapta/training/` or `adapta/worker/` changed | one at a time (one GPU); same freeze as live |
 | **rebuild** | anything after a `pyproject.toml` or `Dockerfile` change (`make up`) | main checkout | exclusive — every container restarts, so nothing else may be running or in a live slot |
 
 Offline gates from a worktree (no `pip install`, no second compose project; the entrypoint

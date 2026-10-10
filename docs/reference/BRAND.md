@@ -14,8 +14,8 @@
 
 Adapta is a **one-person project** with a significant portion of its implementation
 written using AI-assisted code generation (Claude). It is at **prototype maturity**: the pieces
-are all wired up — RAG, LoRA training, eval gate, multi-tenant serving, image-understanding
-fine-tunes — but the GPU training path has limited CI coverage, and the system has not been
+are wired up for RAG and multi-tenant serving (adapter import and its eval gate are being
+rebuilt after in-product training was removed on 2026-10-10), and the system has not been
 validated at real team scale or independently audited.
 
 If you're considering deploying this with sensitive data, read the relevant code paths yourself.
@@ -39,14 +39,14 @@ compose on one endpoint. Short, pronounceable, and literal about what the system
 ### Positioning statement
 
 For teams that can't send training data to a cloud API: run this on your own hardware. Upload
-documents for cited retrieval (RAG). Train a LoRA adapter on your data to change how the model
-responds. Combine both on the same endpoint. An adapter that doesn't clear the held-out eval gate
+documents for cited retrieval (RAG). Bring a LoRA adapter to change how the model
+responds (import: roadmap E4.2–E4.4). Combine both on the same endpoint. An adapter that doesn't clear the held-out eval gate
 is blocked from serving — mechanically, not by policy. No telemetry; embeddings and vectors stay
 local.
 
 The specific claim is narrow: **the composition**. RAG tooling is a crowded space (Dify, RAGFlow,
 AnythingLLM, many others with large teams and years of production hardening). Fine-tuning tooling
-is also crowded (Unsloth, LLaMA-Factory, Axolotl). The combination — retrieval + behavior training
+is also crowded (Unsloth, LLaMA-Factory, Axolotl) and Adapta does not compete there. The combination — retrieval + adapter
 + eval gate, behind one OpenAI-compatible endpoint, self-hosted — is less crowded. That is the
 differentiator, not the individual pieces.
 
@@ -61,7 +61,7 @@ designed to win.
 | **Primary** (hero, console login, README) | **Your model. Your data. Your servers.** |
 | Product idea (sub-hero) | *Adapt a base model to your data.* |
 | RAG / Knowledge mode | *Give it your knowledge.* |
-| Fine-tune / Behavior mode | *Change how it behaves.* |
+| Adapter / Behavior mode | *Change how it behaves.* |
 | Trust / safety (eval gate) | *Nothing unverified ever serves.* |
 
 > The two mode lines are **locked product framing**, not marketing decoration: the UI never calls
@@ -83,8 +83,8 @@ The brand keeps it. We are infrastructure, not a growth-hacked SaaS.
 3. **Privacy is stated flatly, once, and not oversold.** "Your data never leaves your
    infrastructure." No fear-mongering, no badges of compliance we don't have.
 4. **Two modes, two questions — never merged.** Specializing a model is always framed as a
-   choice between **Give it knowledge** (RAG) and **Change how it behaves** (fine-tuning). Do not
-   call RAG "training," do not call fine-tuning "uploading knowledge." This is a product rule.
+   choice between **Give it knowledge** (RAG) and **Change how it behaves** (adapters). Do not
+   call RAG "training," do not call adapters "uploading knowledge." This is a product rule.
 5. **Errors are honest and typed.** User-facing copy mirrors the `DomainError`
    discipline: a safe, plain message — never a stack trace, never false comfort.
 6. **State project maturity plainly.** This is one-person, AI-assisted work at prototype
@@ -96,7 +96,7 @@ The brand keeps it. We are infrastructure, not a growth-hacked SaaS.
 | ✅ On-brand | 🚫 Off-brand |
 |---|---|
 | "Index your documents. Answers come back cited." | "Unlock the power of your knowledge base!" |
-| "Fine-tuning runs on your GPU. It fails fast if there isn't one." | "Seamlessly supercharge your AI workflows." |
+| "No GPU needed: retrieval, gating and serving run on CPU." | "Seamlessly supercharge your AI workflows." |
 | "An adapter that doesn't clear the eval gate can't serve." | "Enterprise-grade, battle-tested reliability." |
 | "Early-stage. Read the auth and eval-gate code before deploying with sensitive data." | "Production-ready, hardened, trusted by teams." |
 
@@ -148,7 +148,7 @@ card tells you what kind of project it is.
 | Token | Hex | Role |
 |---|---|---|
 | `--success` (`--green`) | `#22C55E` | Passed eval, healthy, ready. (Distinct from knowledge-teal.) |
-| `--warning` (`--amber`) | `#F59E0B` | Pending, degraded, "needs a GPU." |
+| `--warning` (`--amber`) | `#F59E0B` | Pending, degraded. |
 | `--danger` (`--red`) | `#EF4444` | Failed, destructive, revoke/delete. |
 
 **Contrast:** every text/background pair must clear **WCAG AA (4.5:1)**; large text and non-text UI

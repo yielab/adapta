@@ -37,5 +37,4 @@ trap list. Do not paste it back; act on it.
 | `KeyError('_type')` 500 on indexing | chromadb pip/image version skew — `make check-chroma` |
 | docs build fails `--strict` | a broken internal link |
 | worker behavior unchanged after an edit | worker does not hot-reload — `docker compose restart worker` |
-| fine-tune eval scores look different from the recorded ones | training prompt render / label masking changed (§E1.3–E1.4): re-run `tests/integration/test_lora_use_cases.py` on GPU and update `docs/user-guide/fine-tuning-use-cases.md` — never edit the numbers by hand |
 | `test_rag_hybrid` passes but a keyword-only chunk is not retrieved live | the sparse leg only re-ranks vector candidates (pre-§E3.2) — expected until the Postgres FTS leg lands |

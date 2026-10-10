@@ -14,7 +14,7 @@ place, and is loaded only when the task needs it.**
     verify/                pick + run the cheapest sufficient gate
     docs-sync/             propagate a change through docs + TODO.md
     ship/                  commit discipline
-    stack/                 run + debug the live stack (GPU, worker, chroma)
+    stack/                 run + debug the live stack (worker, chroma)
 ```
 
 ## Why it's shaped this way
@@ -53,7 +53,7 @@ place, and is loaded only when the task needs it.**
 pick task from `TODO.md` → **feature** (contract → code → test) → **verify** →
 **docs-sync** → **ship**. Debugging a running system starts at **stack** instead.
 Several blocks at once: **orchestrate** (lead reads the §E board, workers run **feature** in
-worktrees, the lead serializes live/GPU gates on the main checkout and applies each **Handoff.**).
+worktrees, the lead serializes live gates on the main checkout and applies each **Handoff.**).
 
 ## Maintaining these
 

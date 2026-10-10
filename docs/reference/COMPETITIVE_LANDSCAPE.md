@@ -3,6 +3,12 @@
 > **Kind: 📖 Reference.** This page describes what *is* — verified competitor capabilities with primary
 > source citations. Open tasks live in the [Roadmap](../roadmap.md). Last updated: 2026-06-25.
 
+!!! warning "Adapta's own column predates 2026-10-10"
+    The competitor facts below are dated 2026-06-25. Statements about *Adapta's* training and VLM
+    fine-tuning describe the product before E4.1, which removed in-product training. Adapta now
+    imports adapters (roadmap E4.2–E4.4) and gates them on CPU; the competitive positioning is
+    rewritten once in E4.7.
+
 Adapta occupies a genuinely rare niche: **no single confirmed competitor matches its full combination**
 of self-hosted RAG + LoRA/QLoRA fine-tune + VLM (image-understanding) fine-tune + an automated
 *blocking* eval gate + OpenAI-compatible serving that *composes* RAG retrieval and the fine-tuned
@@ -111,7 +117,7 @@ call — no orchestration layer required.
 Adapta's §V workstream (VLM end-to-end) covers: zip-bundle upload → validation → QLoRA training
 (vision tower frozen) → held-out eval gate → GGUF conversion (base + mmproj) → llama-cpp serving with
 OpenAI image content-parts. It is the only self-hosted product that does all of this in one `make up`.
-See [VLM fine-tuning — why it's rare](../user-guide/vlm-fine-tuning.md) for the full end-to-end guide.
+(In-product VLM training was removed on 2026-10-10; Adapta still serves vision models.)
 
 ### Q3 — Can llama-cpp/GGUF batch multiple LoRA adapters concurrently?
 
@@ -130,10 +136,9 @@ This is the root cause of Adapta's **serving density gap** (§D3 in TODO.md). Co
   batch, keeping latency and throughput nearly constant with the number of concurrent adapters."*
 
 **Implication for Adapta:** each fine-tune endpoint gets its own llama-cpp model instance (one
-`(base, adapter)` cache slot). N active endpoints ≈ N GPU-resident models (bounded by §A4.8 LRU).
+`(base, adapter)` cache slot). N active endpoints ≈ N resident models (bounded by §A4.8 LRU).
 This is fine at small scale; it becomes a cost disadvantage as the number of active endpoints grows.
-Closing this gap requires an opt-in vLLM backend (TODO.md §D3) — adding a second serving path, not
-rewriting llama-cpp.
+The opt-in vLLM backend that was meant to close this gap was removed on 2026-10-10 with the GPU stack.
 
 ### Q4 — How complex is NVIDIA NeMo to deploy self-hosted vs Adapta?
 
@@ -160,8 +165,8 @@ The [Evaluator docs](https://docs.nvidia.com/nemo/microservices/latest/set-up/de
 explicitly note: *"Docker Compose is not recommended for production but is useful for evaluation and
 experimentation."*
 
-Adapta deploys its entire stack (API server, training worker, Postgres, Redis, ChromaDB) with
-`make up` (= `docker compose up -d --build`, GPU auto-detected). No Kubernetes, no Helm, no image pull
+Adapta deploys its entire stack (API server, worker, Postgres, Redis, ChromaDB) with
+`make up` (= `docker compose up -d --build`; no GPU needed). No Kubernetes, no Helm, no image pull
 secrets. This is a real and quantifiable advantage for a team that is not a platform org.
 
 ---

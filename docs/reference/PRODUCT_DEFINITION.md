@@ -4,8 +4,8 @@
 
 **Status:** Locked (north-star)
 **Decision date:** 2026-06-08
-**Implementation status:** Phases 0–5 complete as of 2026-06-08
-**One-liner:** A platform technical teams deploy **on their own servers** to customize and serve private language models two ways — **Knowledge (RAG)** or **Fine-tuning (LoRA)** — each exposed as an OpenAI-compatible API.
+**Implementation status:** Phases 0–5 complete as of 2026-06-08. **In-product training was removed on 2026-10-10 (E4.1)**; adapters are brought, not trained (see Service B).
+**One-liner:** A platform technical teams deploy **on their own servers** to customize and serve private language models two ways — **Knowledge (RAG)** or **Adapters (LoRA, imported)** — each exposed as an OpenAI-compatible API.
 
 > This document supersedes the sprawling "AI platform" framing. The engineering history (June 2026 audit, error architecture) is in the repository [CHANGELOG.md](https://github.com/yielab/adapta/blob/main/CHANGELOG.md); the spec process is [SDD_WORKFLOW.md](SDD_WORKFLOW.md); the roadmap/open work is [TODO.md](../roadmap.md).
 
@@ -22,12 +22,12 @@ A **single-tenant, self-hosted** application. A company runs it on their own inf
    │  (adapta/api/app.py)                           │
    │         │                                     │
    │ ┌───────┴────────────┐                        │
-   │ RAG service          Fine-tune service         │
-   │ (upload→index)       (dataset→LoRA job)        │
+   │ RAG service          Adapter service           │
+   │ (upload→index)       (eval set + adapter)      │
    │       │                     │                 │
    │   ChromaDB             Redis queue             │
    │       │                     │                 │
-   │       │              Training worker (GPU)     │
+   │       │              Worker (app image, CPU)   │
    │       └──────────┬──────────┘                 │
    │             Inference server                   │
    │       (base model + adapter, OpenAI API)       │
@@ -46,22 +46,22 @@ A **single-tenant, self-hosted** application. A company runs it on their own inf
 - **Cost:** seconds to index, **CPU-only**, cheap. Works on any server.
 - **Updates:** add/remove a file, re-index. Instant.
 
-### Service B — Fine-tuning (LoRA)
+### Service B — Adapters (LoRA, bring your own)
 
 "Change **how the model behaves** — its style, format, or skill."
 
-- **Input:** an **instruction dataset** (JSONL of prompt/response pairs), or documents that the platform **synthesizes** into pairs (`POST /v1/projects/{id}/datasets/synthesize`).
-- **Mechanism:** validate → enqueue training job → **GPU worker** trains a LoRA adapter (QLoRA 4-bit) → evaluate against threshold gate → register the adapter artifact.
-- **Serving:** base model + adapter, hot-swappable, OpenAI-compatible.
-- **Cost:** minutes–hours, **requires a GPU**, heavier.
-- **Updates:** re-train the adapter.
-- **Eval gate:** an adapter must clear the held-out eval gate to back an endpoint — either an absolute score ≥ 0.6, **or** a clear improvement over the base model on the same held-out split (a small base can't reach 0.6 perplexity even on an ideal task, so "beats base by a margin" is the meaningful signal). An adapter that does neither cannot serve. Train, eval and serve share one prompt renderer (`adapta/core/chat_templates.py`, called via `render_training_example` for training/eval and `InferenceEngine._format_chat_prompt` for serving), so the gate always scores an adapter on the exact conditioning the endpoint will send.
+- **Input:** a LoRA adapter trained elsewhere (GGUF or PEFT) plus an **eval set** (JSONL of prompt/response pairs, `specs/schemas/eval_dataset.schema.json`), which can be synthesized from indexed documents (`POST /v1/projects/{id}/datasets/synthesize`).
+- **Mechanism:** import the adapter → gate it on CPU against the base on the project's eval set → register it. *The import flow and CPU gate are roadmap blocks E4.2–E4.4 and are not built yet; today a finetune project holds documents and an eval set, and `POST /v1/projects/{id}/endpoint` answers "Import an adapter first".*
+- **Serving:** base model + adapter, OpenAI-compatible.
+- **Cost:** CPU only; no service in the stack needs a GPU.
+- **Updates:** import a new adapter.
+- **Eval gate (design contract):** an adapter must clear the held-out eval gate to back an endpoint — either an absolute score ≥ 0.6, **or** a clear improvement over the base model on the same held-out split (a small base can't reach 0.6 perplexity even on an ideal task, so "beats base by a margin" is the meaningful signal). An adapter that does neither cannot serve. Gate and serving share one prompt renderer (`adapta/core/chat_templates.py`), so the gate always scores an adapter on the exact conditioning the endpoint will send.
 
 ### Combining A + B — knowledge and behavior on one endpoint
 
-Serving **composes the project's artifacts** rather than switching on its type. A fine-tune project may also index documents (the same upload/index pipeline as Service A); its served endpoint then injects retrieved context **and** applies the adapter in the same call — facts from the documents (with citations), tone/format from the fine-tune. The same indexed documents are what dataset **synthesis** reads. This is the recommended production pattern: RAG carries the facts (live-updatable, cited), the LoRA carries the voice and structure (trained, gated).
+Serving **composes the project's artifacts** rather than switching on its type. A finetune project may also index documents (the same upload/index pipeline as Service A); its served endpoint then injects retrieved context **and** applies the adapter in the same call — facts from the documents (with citations), tone/format from the adapter. The same indexed documents are what dataset **synthesis** reads. This is the recommended production pattern: RAG carries the facts (live-updatable, cited), the LoRA carries the voice and structure (imported, gated).
 
-> **Product rule:** the UI never calls RAG "training." It asks *"How do you want to specialize your model?"* → **Give it knowledge** (RAG) vs **Change how it behaves** (fine-tuning) — and a fine-tune project can take documents too, for both at once.
+> **Product rule:** the UI never calls RAG "training." It asks *"How do you want to specialize your model?"* → **Give it knowledge** (RAG) vs **Change how it behaves** (adapters) — and a finetune project can take documents too, for both at once.
 
 ## 3. Scope
 
@@ -71,17 +71,15 @@ Serving **composes the project's artifacts** rather than switching on its type. 
 - Multi-user within one org: users, teams, roles (admin/member), real JWT auth.
 - Projects (type = `rag` | `finetune`), each → one served endpoint + scoped API keys (`adp_*`).
 - RAG: document upload, parsing, chunking, real sentence-transformers embeddings, per-project ChromaDB collections, cited answers.
-- LoRA: JSONL dataset upload + validation, async training jobs with progress, QLoRA via worker, adapter registry + eval gate, serving.
+- LoRA: JSONL eval-set upload + validation + review/curation, and serving of a project's adapter path through llama-cpp. (Adapter import and the CPU eval gate: E4.2–E4.4, not built.)
 - Dataset **synthesis** (documents → instruction pairs) — `POST /v1/projects/{id}/datasets/synthesize`.
 - OpenAI-compatible serving for both modes (`/v1/chat/completions`); per-endpoint scoped keys.
 - Usage metering: `prompt_tokens` / `completion_tokens` / `total_tokens` in every response.
 - `make check-leaks` CI gate; `make ci` (leaks + lint + test + validate-spec).
-- **Image-understanding fine-tunes (§V):** VLM QLoRA (vision tower frozen) on zip bundle datasets; same eval gate + PEFT→GGUF conversion + llama-cpp serving with `mmproj`; endpoints accept OpenAI image content-parts (inline data URLs, ≤ 4/request, non-streaming).
-- **Operator console:** thin browser UI bundled in `app`, same-origin at `/console/`; full project lifecycle (files, datasets, training, eval gate, keys, playground, usage, settings).
-- **vLLM serving backend (D3, optional):** `ADAPTA_SERVING_BACKEND=vllm` routes text-LoRA requests to a vLLM sidecar that packs multiple adapters into one GPU process; llama-cpp remains the default.
-- **DPO preference-tuning (D4):** `dpo` training method alongside `sft`; `prompt/chosen/rejected` dataset rows validated at upload; same eval gate and serving pipeline.
+- **Vision serving:** VLMs serve as base GGUF + `mmproj` through llama-cpp; endpoints accept OpenAI image content-parts (inline data URLs, ≤ 4/request, non-streaming). (Vision fine-tuning was removed with in-product training.)
+- **Operator console:** thin browser UI bundled in `app`, same-origin at `/console/`; project lifecycle (files, datasets, keys, playground, usage, settings).
 - **Hybrid RAG (D5):** BM25 + vector retrieval fused via Reciprocal Rank Fusion, optional cross-encoder reranker (sentence-transformers CrossEncoder, lazy-loaded); configurable via `ADAPTA_RAG_*` env vars.
-- **Dataset review UI (D6):** operators preview, drop, and edit dataset rows before training; curated datasets carry `source_dataset_id` lineage; new `GET /datasets/{id}/rows` + `POST /datasets/{id}/curate` endpoints.
+- **Dataset review UI (D6):** operators preview, drop, and edit eval-set rows; curated datasets carry `source_dataset_id` lineage; new `GET /datasets/{id}/rows` + `POST /datasets/{id}/curate` endpoints.
 - **Production hardening overlay (§7.4):** `docker-compose.prod.yml` — uid 10001, `cap_drop: ALL`, read-only rootfs, `tmpfs:/tmp`, named `app-data` volume replacing the dev bind-mount.
 
 ### Out of scope (deleted)
@@ -96,31 +94,20 @@ Serving **composes the project's artifacts** rather than switching on its type. 
 
 ### In scope — operator console (shipped with Phases 0–5)
 
-A bundled, **operator-facing** web console ships with the appliance. It is **not a second product surface**: it is a thin client over the **existing** API — every screen maps 1:1 to an endpoint already in `specs/openapi.yaml`, served same-origin from the `app` container (no new server capability, no new external protocol, no Node toolchain). The **OpenAI-compatible API remains the only protocol a customer's *applications* call**; the console is how a *human operator* drives setup (projects, files/datasets, training, eval gate, keys, a test playground). It honors the framing rule below: it never calls RAG "training." Build spec: [TODO.md §5](../roadmap.md).
+A bundled, **operator-facing** web console ships with the appliance. It is **not a second product surface**: it is a thin client over the **existing** API — every screen maps 1:1 to an endpoint already in `specs/openapi.yaml`, served same-origin from the `app` container (no new server capability, no new external protocol, no Node toolchain). The **OpenAI-compatible API remains the only protocol a customer's *applications* call**; the console is how a *human operator* drives setup (projects, files/datasets, keys, a test playground). It honors the framing rule below: it never calls RAG "training." Build spec: [TODO.md §5](../roadmap.md).
 
-### In scope — image-understanding fine-tunes (approved 2026-06-11, shipped 2026-06-11)
+### In scope — image understanding (serving only)
 
-Service B extends to **vision-language models**: image + text in → text out, LoRA-tuned on the customer's image/instruction pairs and served through the **same** OpenAI-compatible endpoint (OpenAI's standard image content-parts). The use case is **private document AI and visual inspection** — invoices, scanned forms, handwritten intake sheets, QC photos → answers/extractions in the customer's own schema and taxonomy: exactly the images privacy-bound organizations refuse to send to cloud APIs, and a capability RAG cannot substitute (an image is otherwise not understood at all).
-
-Bounds, fixed at approval:
-
-- **Image *understanding* only.** Image *generation* (Stable-Diffusion-style) is permanently out of scope.
-- **Not a medical device.** Positioning is document/report drafting assistance — never diagnosis.
-- **One serving runtime.** VLMs serve as base GGUF + vision projector (mmproj) through the existing llama-cpp engine; the fine-tune trains the language half only (vision tower frozen), so the existing PEFT→GGUF conversion and eval-gate semantics (response-only loss, absolute-or-improvement) carry over unchanged. Both halves of this bet were proven by the V0 kill-or-commit spikes (2026-06-10/11) before scope was unlocked.
-
-Shipped end to end (§V0–V6): zip dataset bundles → VLM QLoRA on the worker
-(vision tower frozen) → held-out eval gate → GGUF conversion → serving with
-OpenAI image content-parts → console flows + user guide. Build record:
-[TODO.md §V](../roadmap.md).
+Vision-language base models serve as base GGUF + vision projector (mmproj) through the existing llama-cpp engine, behind the **same** OpenAI-compatible endpoint (OpenAI's standard image content-parts). Bounds, fixed at approval (2026-06-11): **image *understanding* only** — image *generation* (Stable-Diffusion-style) is permanently out of scope — and **not a medical device** (document/report drafting assistance, never diagnosis). Vision LoRA *training* shipped on 2026-06-11 and was removed with all in-product training on 2026-10-10; build record: [CHANGELOG.md](https://github.com/yielab/adapta/blob/main/CHANGELOG.md).
 
 ## 4. Architecture (self-hosted, on-prem)
 
 | Container | Role |
 |---|---|
 | `app` (FastAPI + Uvicorn) | Control plane + RAG data plane + inference serving |
-| `worker` (training) | BLPOP Redis consumer; runs QLoRA on GPU; writes adapters |
-| `postgres` | Metadata: users, teams, projects, files, datasets, jobs, endpoints, keys |
-| `redis` | Training job queue (BLPOP pattern) |
+| `worker` | Same image as `app`; BLPOP Redis consumer dispatching on job `kind` (handler table empty today) |
+| `postgres` | Metadata: users, teams, projects, files, chunks, datasets, endpoints, keys |
+| `redis` | Job queue (BLPOP pattern) |
 | `chroma` | Per-project vector collections (RAG) |
 | volumes | Uploaded files, datasets, adapter artifacts |
 
@@ -131,8 +118,7 @@ Org ─< Team ─< User
 Team ─< Project (type: rag|finetune, base_model, status)
 Project ─< ProjectFile (upload, parse status)       # both modes
 Project ─1 Collection (chroma_collection_name)      # rag
-Project ─< Dataset (JSONL, num_samples, status)     # finetune
-Project ─< TrainingJob (status, progress, eval_score, eval_passed)
+Project ─< Dataset (JSONL, num_samples, status)     # finetune (eval set)
 Project ─1 Endpoint (slug, adapter_path, status)
 Endpoint ─< ApiKey (key_prefix, key_hash, is_active)
 ```
@@ -141,18 +127,13 @@ Endpoint ─< ApiKey (key_prefix, key_hash, is_active)
 
 **RAG:** `POST /v1/projects/{id}/files` → background parse+chunk+embed → ChromaDB collection → `POST /v1/projects/{id}/endpoint` → `POST /v1/chat/completions (model=slug, key=adp_*)` → hybrid retrieval of top-k (vector + BM25 → RRF → rerank) → generate → cited answer
 
-**LoRA:** `POST /v1/projects/{id}/datasets` (JSONL upload) or `POST /v1/projects/{id}/datasets/synthesize` → `POST /v1/projects/{id}/jobs` → worker trains QLoRA → eval gate → `POST /v1/projects/{id}/endpoint` → `POST /v1/chat/completions`
+**LoRA:** `POST /v1/projects/{id}/datasets` (JSONL upload) or `POST /v1/projects/{id}/datasets/synthesize` → adapter import + CPU eval gate (E4.2–E4.4, not built) → `POST /v1/projects/{id}/endpoint` → `POST /v1/chat/completions`
 
 ## 5. Infrastructure
 
-GPU strategy (customer-provided hardware):
+No service needs a GPU: everything (RAG, adapter gating, serving) runs on CPU, so the stack ships and runs anywhere. `adapta/core/gpu.py` only reports hardware (`GET /gpu`); llama-cpp GPU offload (`ADAPTA_N_GPU_LAYERS`) is an operator option on a custom build.
 
-- Detect via `adapta/core/gpu.py`.
-- **RAG: CPU is fine** — ships and runs anywhere.
-- **LoRA: require a GPU**, fail fast with a clear message if absent. QLoRA 4-bit to fit a 3B base in ~8–12 GB VRAM.
-- Training runs in the **separate worker**, never in the request path.
-
-## 6. What changed vs. the pre-rebuild state
+## 6. What changed vs. the pre-rebuild state (historical, as of 2026-06; training since removed)
 
 | Area | Before (June 2026 audit) | After (implemented) |
 |---|---|---|
@@ -167,7 +148,7 @@ GPU strategy (customer-provided hardware):
 | Images | moondream2 + vision routes | Generation routes and moondream2 deleted; image *understanding* LoRA (§V) re-admitted 2026-06-11 — see §3 |
 | Build config | `setup.py` + `requirements*.txt` + `pyproject.toml` (triple, divergent) | Single-source `pyproject.toml` |
 
-## 7. Phased build plan (completed)
+## 7. Phased build plan (completed; Phases 2–3 training pieces were removed 2026-10-10)
 
 All six phases shipped as of 2026-06-08. Each leaves `main` green.
 
