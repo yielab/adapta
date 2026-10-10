@@ -44,7 +44,7 @@ SQLAlchemy 2 async + Alembic · Redis BLPOP job queue · Svelte 5 console · Doc
 
 | Contract | SSOT | Apply | Gate |
 |---|---|---|---|
-| API | `specs/openapi.yaml` | `make generate` → routers consume the generated DTOs (guard: `tests/test_generated_models_wired.py`) | `make test-contracts` (schemathesis, live server) — **red since 2026-09-17**, see TODO E1.11 |
+| API | `specs/openapi.yaml` | `make generate` → routers consume the generated DTOs (guard: `tests/test_generated_models_wired.py`) | `make test-contracts` (schemathesis, live server, authenticated) — green 2026-10-09: 35 operations, ~2,060 cases, 0 failures |
 | DB schema | `migrations/versions/*` | `make migrate` | `make migrate-test` (up → down → up) |
 | Model / training | `specs/schemas/training_dataset.schema.json` + pinned `training_config` | training run → registered adapter | eval gate (`tests/test_eval_gate.py`, GPU e2e) |
 
@@ -93,7 +93,7 @@ go. Never hand-write generated docs (API reference from the spec, code reference
 ## Where things stand
 
 Phases 0–5, console, image fine-tunes, brand and positioning shipped (history in `CHANGELOG.md`). Open work is
-the 2026-09-03 audit, roadmap §E: wave 0 restores the gates (dependency pins E1.10, contract gate E1.11).
+the 2026-09-03 audit, roadmap §E: wave 0 (dependency pins E1.10, contract gate E1.11) closed 2026-10-09; the §E board picks the next wave.
 **Decided 2026-10-09:** in-product training goes — §E4 removes it (E4.1) and replaces it with *bring your own
 adapter*: import a GGUF/PEFT LoRA, gate it on CPU against the base, serve it with RAG. Do not extend
 `adapta/training/`, the CUDA worker or the GPU gates. Alongside: real hybrid retrieval on Postgres, Docling + OCR

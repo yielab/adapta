@@ -68,8 +68,59 @@ bind mount, so uvicorn reloaded on every worker edit — reload now watches `/ap
 ## 2026-10-08 — §E wave 0: the gates every other block is verified by
 
 Wave 0 = E1.14, E1.10, E1.11 (`make lint`, dependency bounds, `make test-contracts`), the first multi-agent wave:
-lead + one worktree worker per block, live/rebuild/GPU gates serialized on the main checkout. E1.10 closed 2026-10-09;
-E1.11 joins this section when its live gate closes.
+lead + one worktree worker per block, live/rebuild/GPU gates serialized on the main checkout. E1.10 and E1.11 closed 2026-10-09.
+
+### E1.11 `[TEST]` Restore `make test-contracts` to green (P0)
+- [x] **Context.** Schemathesis 4.27.3 reports **9–11 failures** on every run: 9 “Invalid Allow
+  header” on `OPTIONS` (`/projects`, `/projects/{id}`, `/projects/{id}/files`, `…/datasets`,
+  `…/datasets/synthesize`, `…/endpoint`, `…/jobs`, `…/keys`, `/settings`) and 1–2 “API rejected
+  schema-compliant request” on `POST /auth/register` and `POST /auth/login` from fuzzed
+  unicode/oversized emails (the auth pair is randomised per run). Verified 2026-09-17 across four
+  separate runs during §E1: none touch `/v1/chat/completions`, `Citation` or `BaseModelInfo`, so
+  §E did not cause them — but Pillar 1 is no longer enforced, which several docs still assert.
+- **Depends.** E1.10. **Unblocks.** every block whose gate runs `make test-contracts` (E3.4, E3.5,
+  E4.1, E4.2, E4.5, E4.8, E5.2, E5.3).
+- **Agent.** sonnet · gate class **live** · serialize with: any in-flight `specs/openapi.yaml` edit
+  — land this first · **Handoff.** must name which side was fixed per failure class and the final
+  operation count.
+- **Scope.** Make the gate honest again: either the responses are wrong (fix them) or the spec is
+  wrong (fix it). Decide per failure class, do not silence checks wholesale.
+- **Steps.** (1) `OPTIONS`: decide whether the CORS middleware should emit a valid `Allow` header or
+  whether those paths should declare `options` in the spec; fix the side that is actually wrong.
+  (2) Auth: the fuzzed emails are schema-compliant but rejected — tighten the spec's `email` format
+  and length so the contract matches the validator, rather than loosening the validator.
+  (3) Re-run until 0 failures; restore the “all operations, zero 5xx” claim with its real count.
+- **Files.** `adapta/api/app.py` (CORS/middleware), `specs/openapi.yaml` (`grep -n 'options:'`, the
+  auth request schemas), `Makefile:128-145`, `CLAUDE.md` Workflow table (Pillar-1 line), `TODO.md` Status snapshot.
+- **Status 2026-10-09.** Fixes landed on `worktree-agent-aa63f02568c89f434`, offline gates green; only
+  `make test-contracts` (live, twice) remains. `OPTIONS`: code was wrong (the 405 `Allow` listed one
+  route's methods) → `app.py` now reports the union from the OpenAPI path table. Auth: spec was wrong
+  (`format: email` is looser than email-validator) → dropped from the three request schemas,
+  `maxLength: 254`, validity is a handler 400 (login: opaque, 401). Gate: the Makefile token was
+  empty (32 ops hit only 401) → `scripts/contract_token.py` mints one for a throwaway org.
+- **Contract impact.** API.
+- **Gate.** `make validate-spec` → `make generate` → `make check-models` → `make test-contracts`
+  (must be **0 failures**, not “only the known ones”).
+- **Acceptance.** `make test-contracts` green twice in a row (the auth failure is randomised, so one
+  green run is not proof); the Pillar-1 line in CLAUDE.md and the Status snapshot carries the new
+  operation count and date.
+- **Close.** CLAUDE.md Workflow table (Pillar-1 line); Status snapshot.
+- **Done.** 2026-10-09. Two green runs in a row on `develop` (schemathesis 4.30.0): 35/35 operations, 2063 and 2055
+  cases, **0 failures**. `OPTIONS` (9): the code was wrong — FastAPI registers one route per method, so the 405
+  `Allow` listed only the first route's methods; the 405 handler in `app.py` now reports the union from the OpenAPI
+  path table (`_allowed_methods`, most-literal template wins). Auth (2): the spec was wrong — `format: email` is looser
+  than email-validator; dropped from `RegisterRequest`/`LoginRequest`/`InviteRequest`, `maxLength: 254`; register/invite
+  answer 400 `invalid_request` (`_valid_email` in `auth.py`), login treats the email as opaque (401). Gate honesty: the
+  Makefile token was empty, so 32 operations only ever saw 401 — `scripts/contract_token.py` now mints one for a
+  throwaway org (only 1 operation is still 401-only). Out of Files: `auth.py` (the handler rule the spec fix needs),
+  `scripts/contract_token.py`, `tests/test_contract_edges.py`.
+- **Handoff.** Per class: OPTIONS → code side (`adapta/api/app.py` `_allowed_methods` + 405 handler); auth email →
+  spec side (`specs/openapi.yaml` + regenerated models, validity enforced in handlers). Final count: **35 operations**.
+  Back-to-back runs: the second token mint can hit the auth rate limit (429) for ~60 s — wait, or set
+  `ADAPTA_BEARER_TOKEN`. **Unblocks** E3.4, E3.5, E4.1, E4.2, E4.5, E4.8, E4.9, E5.2, E5.3.
+- **Follow-up.** 21 operations "repeatedly returned 404" — the fuzzer never has a real project id, so per-project
+  logic is still only exercised on its 404 path (a schemathesis stateful/links config would fix it). Docs/console that
+  still describe `format: email` or a 256-char email limit were not checked.
 
 ### E1.10 `[INFRA]` Pin the heavy dependencies — an unbounded floor lets any rebuild move the product (P0)
 - [x] **Context.** `pyproject.toml` declares `torch>=2.2.0` (:58) and `schemathesis>=3.28.0` (:83)

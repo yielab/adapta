@@ -64,7 +64,7 @@ procedure. Rules that keep parallel work from colliding:
 |---|---|
 | Product build (phases 0–5), operator console, image fine-tunes, brand, positioning | ✅ complete — history in [CHANGELOG.md](CHANGELOG.md) |
 | Fine-tuning direction | **Decided 2026-10-09: bring your own adapter (§E4).** Adapta stops training; it imports a GGUF or PEFT LoRA, gates it on CPU against the base on the project's eval set, and serves it with RAG. Until E4.1 lands the training code still exists; after it no service needs a GPU. |
-| SDD gates | Pillar 2 ✅ `make migrate-test` · Pillar 3: the GPU perplexity gate is replaced by the CPU task-metric gate on imported adapters (E4.3/E4.4) · **Pillar 1 🟥 red** since the 2026-09-17 rebuild (schemathesis 4.x, 9–11 failures — E1.11) |
+| SDD gates | Pillar 2 ✅ `make migrate-test` · Pillar 3: the GPU perplexity gate is replaced by the CPU task-metric gate on imported adapters (E4.3/E4.4) · Pillar 1 ✅ `make test-contracts` green twice 2026-10-09 (E1.11): 35 operations, ~2,060 cases, authenticated |
 | CI fast gate (`make ci`) | ✅ green 2026-10-09 in the pinned app image (E1.10): ruff + mypy clean, 269 unit tests pass |
 | **Audit 2026-09-03 (§E)** | 🟥 **open** — 11/37 done (E1.1–E1.9 shipped 2026-09-17, E1.14 on 2026-10-08, E1.10 on 2026-10-09). Wave 0: E1.11 left. Then E4.1 removes training and the GPU from the stack, alongside E2 (Ollama + launch kit) and E3 (Postgres chunks → real hybrid FTS, Docling + RapidOCR, citations with page/OCR provenance, system prompt + threshold + filters, multilingual, queued indexing, golden set); E4 (adapter import, CPU eval gate, adapter job, promotion/rollback, console flow, import guide, synthesis for eval sets, JSON mode); E5 (contextual retrieval, RAG gate, history-aware retrieval, visual extraction with the vision base). Scheduling: the §E board. |
 
@@ -112,7 +112,7 @@ classes are defined in [`.claude/context/gates.md`](.claude/context/gates.md) ("
 |---|---|---|---|---|---|---|
 | E1.14 | 0 | haiku | offline | none | E3.2/E3.5 (`chat.py`) | done 2026-10-08 |
 | E1.10 | 0 | sonnet | rebuild (app image only) | none | E3.3b, E4.1 | done 2026-10-09 |
-| E1.11 | 0 | sonnet | live | E1.10 | any in-flight `specs/openapi.yaml` edit | ready-for-live (worktree-agent-aa63f02568c89f434) |
+| E1.11 | 0 | sonnet | live | E1.10 | any in-flight `specs/openapi.yaml` edit | done 2026-10-09 |
 | E2.1 | 1 | sonnet | live | none | E4.1, E4.9 (`core/backends/`) | open |
 | E3.1 | 1 | sonnet | live | none | E3.7, E3.2 | done 2026-10-09 |
 | E3.3a | 1 | sonnet + human decision | offline | none | — | open |
@@ -141,45 +141,8 @@ classes are defined in [`.claude/context/gates.md`](.claude/context/gates.md) ("
 
 ### E1. P0 — corrections that change the publishable evidence (weeks 1–2)
 
-E1.1–E1.9 shipped 2026-09-17 → [CHANGELOG.md](CHANGELOG.md). E1.14 closed 2026-10-08, E1.10 on 2026-10-09. Open: E1.11 (wave 0 — every other
-block's contract gate depends on it).
+E1.1–E1.9 shipped 2026-09-17 → [CHANGELOG.md](CHANGELOG.md). E1.14 closed 2026-10-08, E1.10 and E1.11 on 2026-10-09 — wave 0 is done.
 
-
-### E1.11 `[TEST]` Restore `make test-contracts` to green (P0)
-- [ ] **Context.** Schemathesis 4.27.3 reports **9–11 failures** on every run: 9 “Invalid Allow
-  header” on `OPTIONS` (`/projects`, `/projects/{id}`, `/projects/{id}/files`, `…/datasets`,
-  `…/datasets/synthesize`, `…/endpoint`, `…/jobs`, `…/keys`, `/settings`) and 1–2 “API rejected
-  schema-compliant request” on `POST /auth/register` and `POST /auth/login` from fuzzed
-  unicode/oversized emails (the auth pair is randomised per run). Verified 2026-09-17 across four
-  separate runs during §E1: none touch `/v1/chat/completions`, `Citation` or `BaseModelInfo`, so
-  §E did not cause them — but Pillar 1 is no longer enforced, which several docs still assert.
-- **Depends.** E1.10. **Unblocks.** every block whose gate runs `make test-contracts` (E3.4, E3.5,
-  E4.1, E4.2, E4.5, E4.8, E5.2, E5.3).
-- **Agent.** sonnet · gate class **live** · serialize with: any in-flight `specs/openapi.yaml` edit
-  — land this first · **Handoff.** must name which side was fixed per failure class and the final
-  operation count.
-- **Scope.** Make the gate honest again: either the responses are wrong (fix them) or the spec is
-  wrong (fix it). Decide per failure class, do not silence checks wholesale.
-- **Steps.** (1) `OPTIONS`: decide whether the CORS middleware should emit a valid `Allow` header or
-  whether those paths should declare `options` in the spec; fix the side that is actually wrong.
-  (2) Auth: the fuzzed emails are schema-compliant but rejected — tighten the spec's `email` format
-  and length so the contract matches the validator, rather than loosening the validator.
-  (3) Re-run until 0 failures; restore the “all operations, zero 5xx” claim with its real count.
-- **Files.** `adapta/api/app.py` (CORS/middleware), `specs/openapi.yaml` (`grep -n 'options:'`, the
-  auth request schemas), `Makefile:128-145`, `CLAUDE.md` Workflow table (Pillar-1 line), `TODO.md` Status snapshot.
-- **Status 2026-10-09.** Fixes landed on `worktree-agent-aa63f02568c89f434`, offline gates green; only
-  `make test-contracts` (live, twice) remains. `OPTIONS`: code was wrong (the 405 `Allow` listed one
-  route's methods) → `app.py` now reports the union from the OpenAPI path table. Auth: spec was wrong
-  (`format: email` is looser than email-validator) → dropped from the three request schemas,
-  `maxLength: 254`, validity is a handler 400 (login: opaque, 401). Gate: the Makefile token was
-  empty (32 ops hit only 401) → `scripts/contract_token.py` mints one for a throwaway org.
-- **Contract impact.** API.
-- **Gate.** `make validate-spec` → `make generate` → `make check-models` → `make test-contracts`
-  (must be **0 failures**, not “only the known ones”).
-- **Acceptance.** `make test-contracts` green twice in a row (the auth failure is randomised, so one
-  green run is not proof); the Pillar-1 line in CLAUDE.md and the Status snapshot carries the new
-  operation count and date.
-- **Close.** CLAUDE.md Workflow table (Pillar-1 line); Status snapshot.
 
 ### E2. Distribution + launch kit (weeks 2–3)
 
