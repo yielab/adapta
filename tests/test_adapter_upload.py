@@ -287,6 +287,9 @@ class _FakeDB:
     def add(self, obj):
         self.added.append(obj)
 
+    async def flush(self):
+        self.flushed = len(self.added)
+
     async def commit(self):
         raise _Stop
 
@@ -327,6 +330,7 @@ async def test_finetune_endpoint_binds_the_passed_adapter(monkeypatch):
         await _create(db, monkeypatch)
     assert db.added[0].adapter_id == "ad-9"
     assert db.added[1].adapter_id == "ad-9" and db.added[1].endpoint_id == db.added[0].id
+    assert db.flushed == 1  # the endpoint row is flushed before the event that FKs it
 
 
 # ── promotion, rollback, eviction (E4.5) ─────────────────────────────────────

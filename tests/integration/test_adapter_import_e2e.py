@@ -81,12 +81,14 @@ async def _upload_eval_set(client, h, pid: str, fixture: str, task: str) -> str:
     pytest.fail("eval dataset validation did not finish")
 
 
-async def _upload_adapter(client, h, pid: str, fixture: str, dataset_id: str) -> str:
+async def _upload_adapter(
+    client, h, pid: str, fixture: str, dataset_id: str, name: str | None = None
+) -> str:
     r = await client.post(
         f"/v1/projects/{pid}/adapters",
         headers=h,
         files={"file": (f"{fixture}.zip", _peft_zip(fixture), "application/zip")},
-        data={"eval_dataset_id": dataset_id, "name": fixture},
+        data={"eval_dataset_id": dataset_id, "name": name or fixture},
     )
     assert r.status_code == 202, r.text
     assert r.json()["status"] == "uploaded"
@@ -180,3 +182,41 @@ async def test_garbage_control_fails_the_gate_and_is_refused(client, admin):
 
     ep = await client.post(f"/v1/projects/{pid}/endpoint", headers=h)
     assert ep.status_code == 400, ep.text
+
+
+async def test_promote_and_rollback_against_the_real_db(client, admin):
+    """E4.5: the endpoint binds the latest passed adapter (opening the audit trail), then
+    promote / rollback re-bind it and every change is logged with its actor."""
+    h, team_id = admin["headers"], admin["team_id"]
+    pid = await _project(client, h, team_id, "adapter e2e promote")
+    did = await _upload_eval_set(client, h, pid, "classify-pass", "classify")
+    first = await _upload_adapter(client, h, pid, "classify-pass", did, name="first")
+    assert (await _wait_terminal(client, h, pid, first))["status"] == "passed"
+    second = await _upload_adapter(client, h, pid, "classify-pass", did, name="second")
+    assert (await _wait_terminal(client, h, pid, second))["status"] == "passed"
+
+    ep = await client.post(f"/v1/projects/{pid}/endpoint", headers=h)
+    assert ep.status_code == 201, ep.text
+    assert ep.json()["adapter"]["id"] == second  # latest passed
+    hist = (await client.get(f"/v1/projects/{pid}/endpoint/history", headers=h)).json()
+    assert [(e["action"], e["adapter_id"]) for e in hist] == [("promote", second)]
+    assert hist[0]["actor_email"] and hist[0]["eval_metrics"]["passed"]
+
+    promote = f"/v1/projects/{pid}/endpoint/promote"
+    same = await client.post(promote, headers=h, json={"adapter_id": second})
+    assert same.status_code == 400, same.text
+
+    r = await client.post(promote, headers=h, json={"adapter_id": first})
+    assert r.status_code == 200, r.text
+    assert r.json()["adapter"]["id"] == first
+    r = await client.post(promote, headers=h, json={"adapter_id": second})
+    assert r.status_code == 200 and r.json()["adapter"]["id"] == second
+
+    hist = (await client.get(f"/v1/projects/{pid}/endpoint/history", headers=h)).json()
+    assert [(e["action"], e["adapter_id"]) for e in hist] == [
+        ("rollback", second),
+        ("promote", first),
+        ("promote", second),
+    ]
+    got = (await client.get(f"/v1/projects/{pid}/endpoint", headers=h)).json()
+    assert got["adapter"]["id"] == second

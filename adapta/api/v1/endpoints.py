@@ -154,17 +154,19 @@ async def create_endpoint(
         adapter_id=adapter_id,
     )
     db.add(endpoint)
-    if adapter_id is not None:  # the first binding opens the audit trail
-        db.add(
-            AdapterEvent(
-                endpoint_id=endpoint.id,
-                adapter_id=adapter_id,
-                action=AdapterAction.promote,
-                actor_user_id=current_user.id,
-            )
-        )
     project.status = ProjectStatus.ready
     try:
+        if adapter_id is not None:
+            # The event FKs the endpoint row: flush it first, then open the audit trail.
+            await db.flush()
+            db.add(
+                AdapterEvent(
+                    endpoint_id=endpoint.id,
+                    adapter_id=adapter_id,
+                    action=AdapterAction.promote,
+                    actor_user_id=current_user.id,
+                )
+            )
         await db.commit()
     except IntegrityError as exc:
         await db.rollback()
