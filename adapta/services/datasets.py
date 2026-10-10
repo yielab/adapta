@@ -11,6 +11,10 @@ import json
 from pathlib import Path
 from typing import Optional
 
+from adapta.config import settings
+from adapta.domain.errors import InvalidRequest
+from adapta.services.eval_gate import TASKS, parse_json_object
+
 DATASET_SCHEMA_PATH = Path("specs/schemas/eval_dataset.schema.json")
 
 # How many row problems to list before truncating the report. A large file with a
@@ -25,7 +29,27 @@ def _load_schema() -> Optional[dict]:
     return None
 
 
-def _validate_row(i: int, obj: object, schema: Optional[dict]) -> list[str]:
+def check_task(task: str) -> str:
+    """Return ``task`` if it is a known eval task, else raise a typed 400."""
+    if task not in TASKS:
+        raise InvalidRequest(message=f"task must be one of: {', '.join(TASKS)}.")
+    return task
+
+
+def check_eval_set_size(path: Path) -> int:
+    """Count the non-blank rows of an uploaded eval set; raise a typed 400 outside
+    ``eval_min_rows``..``eval_max_rows``. Returns the count."""
+    with path.open(encoding="utf-8") as f:
+        n = sum(1 for line in f if line.strip())
+    lo, hi = settings.eval_min_rows, settings.eval_max_rows
+    if not lo <= n <= hi:
+        raise InvalidRequest(
+            message=f"An eval set needs {lo}-{hi} rows; this file has {n}.",
+        )
+    return n
+
+
+def _validate_row(i: int, obj: object, schema: Optional[dict], task: Optional[str] = None) -> list[str]:
     """Validate one parsed row; return every problem found on it (not just the first)."""
     if not isinstance(obj, dict):
         return [f"Line {i}: row must be a JSON object"]
@@ -43,6 +67,12 @@ def _validate_row(i: int, obj: object, schema: Optional[dict]) -> list[str]:
             jsonschema.validate(obj, schema)
         except jsonschema.ValidationError as e:
             errors.append(f"Line {i}: schema violation — {e.message}")
+    if (
+        task == "extract"
+        and isinstance(obj.get("response"), str)
+        and parse_json_object(obj["response"]) is None
+    ):
+        errors.append(f"Line {i}: for task 'extract' the 'response' must be a JSON object")
     return errors
 
 
@@ -56,14 +86,16 @@ def _format_error_report(errors: list[str]) -> str:
     return f"{header}\n{body}\nFix these and re-upload."
 
 
-def validate_dataset(path: Path) -> tuple[bool, Optional[str], int]:
+def validate_dataset(path: Path, task: Optional[str] = None) -> tuple[bool, Optional[str], int]:
     """Validate a JSONL file of SFT rows.
 
     Returns (is_valid, error_message, num_samples).
 
     Validation does **not** stop at the first bad row: it scans the file and reports
     up to :data:`MAX_REPORTED_ERRORS` problems at once, so an operator sees every
-    issue in one pass instead of discovering them one re-upload at a time.
+    issue in one pass instead of discovering them one re-upload at a time. With
+    ``task="extract"`` every ``response`` must also be a JSON object (the reference
+    the extraction metric compares keys against).
     """
     try:
         schema = _load_schema()
@@ -82,7 +114,7 @@ def validate_dataset(path: Path) -> tuple[bool, Optional[str], int]:
                         break
                     continue
 
-                row_errors = _validate_row(i, obj, schema)
+                row_errors = _validate_row(i, obj, schema, task)
                 if row_errors:
                     errors.extend(row_errors)
                     if len(errors) >= MAX_REPORTED_ERRORS:

@@ -175,6 +175,7 @@ class DatasetResponse(BaseModel):
     num_samples: Annotated[int | None, Field(...)]
     validation_error: Annotated[str | None, Field(...)]
     created_at: str
+    task: Annotated[str | None, Field(...)]
     source_dataset_id: Annotated[str | None, Field(...)]
 
 

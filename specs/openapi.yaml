@@ -343,9 +343,12 @@ paths:
     post:
       operationId: uploadDataset
       tags: [datasets]
-      summary: Upload an SFT dataset (finetune projects) — .jsonl
+      summary: Upload an eval set (finetune projects) — .jsonl
       description: |
-        Plain `.jsonl`, one SFT row per line (`prompt`/`response` or `messages`).
+        Plain `.jsonl`, one SFT row per line (`prompt`/`response`, optional `system`),
+        20-200 rows (400 otherwise). `task` picks the metric the eval gate scores the
+        set with: `classify` (label accuracy), `extract` (JSON parse rate x per-key exact
+        match; every `response` must be a JSON object) or `freeform` (token F1).
         Validation runs in the background; poll the dataset until `valid`/`invalid`.
       security: [{BearerAuth: []}]
       parameters: [{$ref: '#/components/parameters/ProjectId'}]
@@ -357,7 +360,8 @@ paths:
               type: object
               properties:
                 file: {type: string, format: binary}
-              required: [file]
+                task: {type: string, enum: [classify, extract, freeform]}
+              required: [file, task]
       responses:
         '400': {$ref: '#/components/responses/Error'}
         '401': {$ref: '#/components/responses/Error'}
@@ -920,7 +924,7 @@ components:
     # Datasets
     DatasetResponse:
       type: object
-      required: [id, name, status, num_samples, validation_error, created_at, source_dataset_id]
+      required: [id, name, status, num_samples, validation_error, created_at, source_dataset_id, task]
       properties:
         id: {type: string}
         name: {type: string}
@@ -928,6 +932,8 @@ components:
         num_samples: {type: integer, nullable: true}
         validation_error: {type: string, nullable: true}
         created_at: {type: string}
+        # classify | extract | freeform; null for datasets that predate it or were synthesized.
+        task: {type: string, nullable: true}
         # D6: set when this dataset was produced by POST .../curate from another dataset.
         source_dataset_id: {type: string, nullable: true}
 

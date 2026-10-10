@@ -122,7 +122,7 @@ classes are defined in [`.claude/context/gates.md`](.claude/context/gates.md) ("
 | E3.3b | 2 | sonnet | rebuild + live | E3.3a (commit), E3.1 | E4.1, E4.2, E4.4 (`pyproject.toml`, `Dockerfile`), E3.7, E3.4 | in progress (worker-e3.3b) |
 | E3.7 | 2 | sonnet | live | E3.1, E4.1 | E3.1/E3.3b, E4.4 (`worker/main.py`) | open |
 | E4.2 | 2 | sonnet | rebuild + live | E4.1 | E4.3 (spec, migrations), E4.5, E2.2 | open |
-| E4.3 | 2 | sonnet | live | E4.1 | E4.2 (spec, migrations) | in progress (worker-e4.3) |
+| E4.3 | 2 | sonnet | live | E4.1 | E4.2 (spec, migrations) | ready-for-live (e4.3) |
 | E4.8 | 2 | sonnet | live | E3.8, E4.1 | E4.6, E5.1 | open |
 | E4.9 | 2 | sonnet | live | E1.11 | E2.1, E3.5/E5.3, E4.6 | open |
 | E3.4 | 3 | sonnet | live | E3.1, E3.3b, E1.11 | E3.5 (spec, `Playground.svelte`), E3.3b | open |
@@ -456,6 +456,21 @@ E1.1–E1.9 shipped 2026-09-17 → [CHANGELOG.md](CHANGELOG.md). E1.14 closed 20
   → `ADAPTA_RUN_EVAL_CPU=1 tests/test_eval_gate_cpu.py`.
 - **Acceptance.** On CPU the fixture adapter passes with its accuracy and the base's both recorded; the
   control fails; an eval set of 10 rows or with no `task` is rejected with a typed error.
+- **Done (branch e4.3, offline gates green; live rung pending).** `services/eval_gate.py` scores base and adapter through
+  `LlamaCppBackend` (catalog chat template, `model_manager` load, greedy, `eval_max_new_tokens`) with the three
+  metrics, `passes()` decides, `build_metrics()` yields `eval_metrics`. `Dataset.task` (migration `0013`, spec
+  upload `task` form field + `DatasetResponse.task`); upload rejects a missing/unknown `task` and a set outside
+  20-200 rows (typed 400); `extract` sets must have JSON-object responses. Fixture `dataset_eval.jsonl` converted to
+  SFT rows. Nothing in `core/model_manager.py` or `core/inference.py` touched. Fixture accuracies and CPU s/row: TBD by lead.
+- **Handoff.** `await eval_gate.score(base_model: str, gguf_lora_path: str | None, rows: Sequence[dict], task: str) -> TaskScore`
+  (`score`, `n_rows`, `seconds`, `predictions`, `row_scores`, `extras`); `passes(adapter: float, base: float) -> Decision`;
+  `await evaluate(base_model, gguf_lora_path, rows, task) -> dict` is the `eval_metrics` document: `{task, n_rows,
+  adapter_score, base_score, delta, rule ("improvement"|"absolute_floor"|"failed"), passed, min_improvement,
+  absolute_floor, adapter_extras, base_extras, adapter_seconds_per_row, base_seconds_per_row, samples: [5 x {prompt,
+  reference, base, adapter}]}`. Settings: `eval_min_improvement` 0.05, `eval_absolute_floor` 0.8, `eval_min_rows` 20,
+  `eval_max_rows` 200, `eval_max_new_tokens` 128 (`eval_score_threshold` / `eval_min_floor` removed). Migration `0013`
+  (`datasets.task`, nullable). Rows come from `datasets.storage_path` (SFT rows); synthesized datasets have `task` NULL.
+  CPU s/row: TBD by lead.
 - **Close.** PRODUCT_DEFINITION eval-gate paragraph; learning-the-system gate section; CLAUDE.md gate
   one-liner and Workflow pillar 3 (adapter + eval set → gate); SDD_WORKFLOW pillar 3; Status snapshot.
 

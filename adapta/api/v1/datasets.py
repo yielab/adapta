@@ -7,7 +7,7 @@ import tempfile
 from pathlib import Path
 from typing import List
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Query, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, Query, UploadFile
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -22,7 +22,7 @@ from adapta.models.generated import (
     DatasetRowsResponse,
 )
 from adapta.services.auth import get_current_user, require_team_member, require_team_writer
-from adapta.services.datasets import validate_dataset
+from adapta.services.datasets import check_eval_set_size, check_task, validate_dataset
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +38,7 @@ def _ds_resp(d: Dataset) -> DatasetResponse:
         validation_error=d.validation_error,
         created_at=d.created_at.isoformat(),
         source_dataset_id=d.source_dataset_id,
+        task=d.task,
     )
 
 
@@ -82,7 +83,7 @@ async def _validate_in_background(dataset_id: str, path: Path) -> None:
                 )
                 return
 
-            is_valid, error, num_samples = validate_dataset(path)
+            is_valid, error, num_samples = validate_dataset(path, dataset.task)
             dataset.status = DatasetStatus.valid if is_valid else DatasetStatus.invalid
             dataset.validation_error = error
             dataset.num_samples = num_samples
@@ -114,11 +115,13 @@ async def upload_dataset(
     project_id: str,
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
+    task: str = Form(...),
     current_user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     project = await _get_finetune_project(db, project_id)
     await require_team_writer(db, current_user.id, project.team_id)
+    check_task(task)
 
     filename = file.filename or "dataset.jsonl"
     if not filename.endswith(".jsonl"):
@@ -135,6 +138,7 @@ async def upload_dataset(
         name=filename,
         storage_path="",
         status=DatasetStatus.validating,
+        task=task,
     )
     db.add(dataset)
     await db.flush()
@@ -144,6 +148,13 @@ async def upload_dataset(
     # over-cap raises PayloadTooLarge (413) and the uncommitted row rolls back.
     dest = ds_dir / f"{dataset.id}_{filename}"
     await save_capped_upload(file, dest)
+    try:
+        await asyncio.to_thread(check_eval_set_size, dest)
+    except Exception:
+        # Wrong row count (typed 400) or unreadable file: drop the stored file; the
+        # uncommitted row rolls back with the request.
+        dest.unlink(missing_ok=True)
+        raise
 
     dataset.storage_path = str(dest)
     # Commit before scheduling — the background task opens its own DB session;
@@ -280,6 +291,7 @@ async def curate_dataset(
         status=DatasetStatus.valid,
         num_samples=num_samples,
         source_dataset_id=source.id,
+        task=source.task,
     )
     db.add(curated)
     await db.flush()  # assigns curated.id

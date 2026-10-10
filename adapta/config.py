@@ -116,15 +116,17 @@ class Settings(BaseSettings):
     auth_rate_limit_max: int = 20  # allowed attempts per window per key
     auth_rate_limit_window_seconds: int = 60
 
-    # Eval gate. An adapter is promotable if EITHER it clears the absolute
-    # score floor (a strong fine-tune), OR it clears a low sanity floor AND meaningfully
-    # beats the base model on the same held-out split (it demonstrably helped). The
-    # improvement path matters because the absolute score is exp(-held_out_perplexity):
-    # a small base model can't reach 0.6 even on an ideal task, yet a fine-tune that
-    # reliably doubles the base score has clearly learned something.
-    eval_score_threshold: float = 0.6  # absolute "strong adapter" pass
-    eval_min_improvement: float = 0.05  # min score gain over base for the improvement path
-    eval_min_floor: float = 0.05  # sanity floor for the improvement path (not garbage)
+    # Eval gate (E4.3). An adapter is scored on a held-out eval set through the serving path
+    # (greedy generation, task metric) and compared with the base model on the SAME rows. It
+    # passes if EITHER it beats the base by `eval_min_improvement` (it demonstrably helped) OR
+    # it clears `eval_absolute_floor` and is at least as good as the base (already strong).
+    eval_min_improvement: float = 0.05
+    eval_absolute_floor: float = 0.8
+    # An eval set must have this many rows: fewer is noise, more is wasted CPU time.
+    eval_min_rows: int = 20
+    eval_max_rows: int = 200
+    # Generation cap per eval row (classification labels and JSON extractions are short).
+    eval_max_new_tokens: int = 128
 
     # Hard cap on a single dataset UPLOAD, enforced while streaming to disk so a
     # hostile/oversized upload can't fill the disk before validation even runs.
