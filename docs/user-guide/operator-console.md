@@ -90,9 +90,14 @@ does today:
       `{"prompt": "...", "response": "..."}`, optional `system`. The file is
       validated against the eval-dataset schema; rows that don't match are
       reported.
-    - **Synthesize** — generate a dataset automatically from the documents you
-      indexed in step 1. The platform turns your document chunks into Q/A pairs.
-      This runs in the background; poll until it's ready.
+    - **Synthesize** — generate an eval set from the documents you indexed in
+      step 1, with the project's own base model (or an optional OpenAI-compatible
+      teacher URL). Two modes: **RAG eval** (questions with the expected source
+      file — the same shape as the golden set, for measuring retrieval) and
+      **Behavior** (rows shaped by the task you pick — `classify` or `extract`
+      recommended — usable directly as an adapter eval set). Near-duplicates are
+      dropped. It runs in the background (≈ 20–30 s for a dozen short documents
+      on CPU); download the result as JSONL from the dataset row.
 
     **Reviewing and curating a dataset** — once a dataset is `valid`, a
     **Review** button appears next to it. It opens a paginated row viewer where
