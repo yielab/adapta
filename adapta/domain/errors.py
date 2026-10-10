@@ -98,6 +98,24 @@ class Conflict(DomainError):
 
 
 @dataclass
+class DuplicateDocument(Conflict):
+    """Every chunk of an uploaded document already exists in the project (HTTP 409)."""
+
+    code: str = field(default="duplicate_document", init=False)
+
+
+@dataclass
+class VectorStoreFailed(DomainError):
+    """The vector store (Chroma) rejected or failed an operation (HTTP 502).
+
+    The Postgres side is left untouched when this is raised, so the caller can retry.
+    """
+
+    code: str = field(default="vector_store_failed", init=False)
+    status: int = field(default=502, init=False)
+
+
+@dataclass
 class ModelNotFound(NotFound):
     """A referenced base model is not in the catalog or its GGUF is absent (HTTP 404).
 

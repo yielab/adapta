@@ -65,6 +65,23 @@ async def _seed_team_with_rag_project(
             f"col_{project_id}",
             "all-MiniLM-L6-v2",
         )
+        # Chunk counts are read from the chunks table (E3.1), not collections.num_chunks.
+        file_id = str(uuid.uuid4())
+        await conn.execute(
+            "INSERT INTO project_files (id, project_id, filename, content_type, size_bytes, "
+            "storage_path, status, num_chunks) VALUES ($1, $2, 'seed.txt', 'text/plain', 1, '', "
+            "'indexed', 1)",
+            file_id,
+            project_id,
+        )
+        await conn.execute(
+            "INSERT INTO chunks (id, file_id, project_id, chunk_index, text, content_hash) "
+            "VALUES ($1, $2, $3, 0, 'seed', $4)",
+            f"{file_id}_0",
+            file_id,
+            project_id,
+            "0" * 64,
+        )
         return project_id
     finally:
         await conn.close()

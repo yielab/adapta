@@ -16,12 +16,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from adapta.config import settings
-from adapta.db.models import ApiKey, Collection, Endpoint, EndpointStatus, Project
+from adapta.db.models import ApiKey, Endpoint, EndpointStatus, Project
 from adapta.db.session import get_db
 from adapta.domain.errors import Forbidden, InvalidRequest, NotFound, Unauthorized
 from adapta.models.generated import ChatCompletionRequest
 from adapta.services.auth import verify_api_key
 from adapta.services.chat import chat, chat_stream, has_image_parts
+from adapta.services.rag import count_project_chunks
 from adapta.services.usage import record_usage
 
 router = APIRouter(tags=["chat"])
@@ -127,9 +128,7 @@ async def chat_completions(
     # retrieval runs whenever the project has indexed chunks, and the adapter
     # is applied whenever present. A fine-tune project with indexed documents
     # gets both — facts from its documents (with citations), behavior from its adapter.
-    col_result = await db.execute(select(Collection).where(Collection.project_id == project.id))
-    collection = col_result.scalar_one_or_none()
-    has_knowledge = collection is not None and (collection.num_chunks or 0) > 0
+    has_knowledge = await count_project_chunks(db, str(project.id)) > 0
     project_id_for_rag = str(project.id) if has_knowledge else None
 
     adapter_path = endpoint.adapter_path

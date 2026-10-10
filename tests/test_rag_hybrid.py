@@ -425,3 +425,108 @@ async def test_chat_stream_final_frame_carries_citations(monkeypatch):
     assert finish["citations"] == [
         {"index": 1, "source": "src1", "score": 0.9, "score_kind": "vector"}
     ]
+
+
+# ---------------------------------------------------------------------------
+# E3.1 — chunks persisted in Postgres (pure unit tests; no DB, no Chroma)
+# ---------------------------------------------------------------------------
+
+
+def _chunks(*texts):
+    from adapta.services.documents import Chunk
+
+    return [Chunk(text=t, source="doc.txt", index=i) for i, t in enumerate(texts)]
+
+
+def test_content_hash_is_sha256_hex():
+    import hashlib
+
+    from adapta.services.rag import content_hash
+
+    h = content_hash("hello")
+    assert h == hashlib.sha256(b"hello").hexdigest()
+    assert len(h) == 64
+
+
+def test_build_chunk_rows_ids_match_chroma_ids():
+    from adapta.services.rag import build_chunk_rows, content_hash
+
+    rows = build_chunk_rows("proj1", "file1", _chunks("a", "b", "c"))
+    assert [r.id for r in rows] == ["file1_0", "file1_1", "file1_2"]
+    assert [r.chunk_index for r in rows] == [0, 1, 2]
+    assert all(r.file_id == "file1" and r.project_id == "proj1" for r in rows)
+    assert rows[1].text == "b" and rows[1].content_hash == content_hash("b")
+
+
+class _FakeSession:
+    def __init__(self, scalar_result=None):
+        self.added: list = []
+        self.flushed = False
+        self._scalar = scalar_result
+
+    def add_all(self, rows):
+        self.added.extend(rows)
+
+    async def flush(self):
+        self.flushed = True
+
+    async def scalar(self, _stmt):
+        return self._scalar
+
+
+async def test_persist_chunks_adds_and_flushes_rows():
+    from adapta.services.rag import persist_chunks
+
+    db = _FakeSession()
+    n = await persist_chunks(db, "proj1", "file1", _chunks("a", "b"))
+    assert n == 2 and len(db.added) == 2 and db.flushed
+
+
+async def test_all_chunks_known_requires_every_distinct_hash():
+    from adapta.services.rag import all_chunks_known
+
+    chunks = _chunks("a", "b", "a")  # two distinct hashes
+    assert await all_chunks_known(_FakeSession(scalar_result=2), "p", chunks) is True
+    assert await all_chunks_known(_FakeSession(scalar_result=1), "p", chunks) is False
+    assert await all_chunks_known(_FakeSession(scalar_result=0), "p", chunks) is False
+    assert await all_chunks_known(_FakeSession(scalar_result=0), "p", []) is False
+
+
+async def test_count_project_chunks_reads_scalar():
+    from adapta.services.rag import count_project_chunks
+
+    assert await count_project_chunks(_FakeSession(scalar_result=7), "p") == 7
+    assert await count_project_chunks(_FakeSession(scalar_result=None), "p") == 0
+
+
+def test_delete_file_chunks_raises_typed_error_on_chroma_failure(monkeypatch):
+    import pytest
+
+    from adapta.domain.errors import VectorStoreFailed
+    from adapta.services import rag as rag_mod
+
+    class BoomClient:
+        def get_collection(self, name):
+            raise RuntimeError("chroma down")
+
+    monkeypatch.setattr(rag_mod, "_get_chroma_client", lambda: BoomClient())
+    with pytest.raises(VectorStoreFailed) as ei:
+        RAGService().delete_file_chunks("proj1", "file1")
+    assert "chroma down" not in ei.value.message
+    assert ei.value.status == 502
+
+
+def test_duplicate_document_is_409():
+    from adapta.domain.errors import DuplicateDocument
+
+    e = DuplicateDocument(message="dup")
+    assert e.status == 409 and e.code == "duplicate_document"
+
+
+def test_chunk_model_matches_migration_shape():
+    from adapta.db.models import ProjectChunk
+
+    t = ProjectChunk.__table__
+    assert t.name == "chunks"
+    assert t.c.tsv.computed is not None
+    assert {c.name for c in t.c} >= {"page", "section", "ocr", "ocr_confidence", "needs_review"}

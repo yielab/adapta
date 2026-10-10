@@ -9,11 +9,12 @@ from fastapi import APIRouter, BackgroundTasks, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
-from adapta.db.models import Collection, Dataset, DatasetStatus, Project, ProjectType
+from adapta.db.models import Dataset, DatasetStatus, Project, ProjectType
 from adapta.db.session import get_db
 from adapta.domain.errors import InvalidRequest, ProjectNotFound
 from adapta.models.generated import SynthesizeRequest, SynthesizeResponse
 from adapta.services.auth import get_current_user, require_team_writer
+from adapta.services.rag import count_project_chunks
 
 router = APIRouter()
 
@@ -90,9 +91,7 @@ async def synthesize_dataset(
     if project.type != ProjectType.finetune:
         raise InvalidRequest(message="Dataset synthesis is only available for finetune projects")
 
-    coll_result = await db.execute(select(Collection).where(Collection.project_id == project_id))
-    collection = coll_result.scalar_one_or_none()
-    if not collection or collection.num_chunks == 0:
+    if await count_project_chunks(db, project_id) == 0:
         raise InvalidRequest(message="No indexed documents found. Upload and index files first.")
 
     dataset_id = str(uuid.uuid4())

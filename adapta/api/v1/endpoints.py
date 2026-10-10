@@ -9,7 +9,6 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from adapta.db.models import (
-    Collection,
     Endpoint,
     EndpointStatus,
     JobStatus,
@@ -36,6 +35,7 @@ from adapta.models.generated import (
     ProjectType as ApiProjectType,
 )
 from adapta.services.auth import get_current_user, require_team_member, require_team_writer
+from adapta.services.rag import count_project_chunks
 
 router = APIRouter(prefix="/projects/{project_id}/endpoint", tags=["endpoints"])
 
@@ -101,10 +101,9 @@ async def _build_response(
                 gate=Gate(gate),
             )
 
-    col_result = await db.execute(select(Collection).where(Collection.project_id == project.id))
-    collection = col_result.scalar_one_or_none()
-    if collection and collection.num_chunks > 0:
-        retrieval = RetrievalSummary(indexed_chunks=collection.num_chunks)
+    indexed_chunks = await count_project_chunks(db, project.id)
+    if indexed_chunks > 0:
+        retrieval = RetrievalSummary(indexed_chunks=indexed_chunks)
 
     project_type = project.type.value if hasattr(project.type, "value") else str(project.type)
     return EndpointResponse(
@@ -145,9 +144,7 @@ async def create_endpoint(
     adapter_path = None
 
     if project.type == ProjectType.rag:
-        col_result = await db.execute(select(Collection).where(Collection.project_id == project_id))
-        collection = col_result.scalar_one_or_none()
-        if not collection or collection.num_chunks == 0:
+        if await count_project_chunks(db, project_id) == 0:
             raise InvalidRequest(
                 message="No indexed documents found. Upload and index files first."
             )

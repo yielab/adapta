@@ -114,7 +114,7 @@ classes are defined in [`.claude/context/gates.md`](.claude/context/gates.md) ("
 | E1.10 | 0 | sonnet | rebuild (app image only) | none | E3.3b, E4.1 | done 2026-10-09 |
 | E1.11 | 0 | sonnet | live | E1.10 | any in-flight `specs/openapi.yaml` edit | in progress (worker-e1.11) |
 | E2.1 | 1 | sonnet | live | none | E4.1, E4.9 (`core/backends/`) | open |
-| E3.1 | 1 | sonnet | live | none | E3.7, E3.2 | in progress (worker-e3.1) |
+| E3.1 | 1 | sonnet | live | none | E3.7, E3.2 | ready-for-live (worktree-agent-a4c27542d3f7d241e) |
 | E3.3a | 1 | sonnet + human decision | offline | none | — | open |
 | E3.8 | 1 | sonnet | live | none — must land before E3.2 | — | ready-for-live (worktree-agent-a2f02700022be07f8) |
 | E4.1 | 1 | sonnet | rebuild + live (exclusive) | E1.11 | E2.1, E3.3b, E3.7 | open |
@@ -282,7 +282,8 @@ block's contract gate depends on it).
   round-trip; N rows on index; cascade on delete; duplicate upload 409.
 - **Files.** `migrations/versions/0010_chunks.py` (new), `adapta/db/models.py:300-320`,
   `adapta/services/rag.py:150-195`, `adapta/api/v1/files.py:80-135, 194-227`,
-  `adapta/domain/errors.py`, `tests/test_rag_hybrid.py`, `tests/integration/test_rag_e2e.py`.
+  `adapta/domain/errors.py`, `tests/test_rag_hybrid.py`, `tests/integration/test_rag_e2e.py`; also touched (count
+  readers + seeds): `adapta/api/v1/{chat,synthesis,endpoints}.py`, `tests/integration/test_{key_scoping,endpoint_slug}.py`.
 - **Contract impact.** DB (migration 0010).
 - **Gate.** `make migrate` → `make migrate-test` → `make check-leaks` → `make test` →
   `tests/integration/test_rag_e2e.py`.

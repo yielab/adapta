@@ -78,6 +78,34 @@ async def test_rag_upload_index_serve_cited(client, admin):
     assert rec["status"] == "indexed", f"indexing did not complete: {rec}"
     assert rec["num_chunks"] >= 1
 
+    # 3b. E3.1: the chunks table is the source of truth — one row per chunk, and the
+    #     file's num_chunks agrees with it.
+    from sqlalchemy import func, select
+
+    from adapta.db.models import ProjectChunk
+    from adapta.db.session import AsyncSessionLocal
+
+    async def _chunk_rows() -> int:
+        async with AsyncSessionLocal() as s:
+            return (
+                await s.scalar(
+                    select(func.count())
+                    .select_from(ProjectChunk)
+                    .where(ProjectChunk.project_id == pid)
+                )
+            ) or 0
+
+    assert await _chunk_rows() == rec["num_chunks"]
+
+    # 3c. Re-uploading the same document is a duplicate: 409, no new chunk rows.
+    dup = await client.post(
+        f"/v1/projects/{pid}/files",
+        headers=h,
+        files={"file": ("nimbus-again.txt", io.BytesIO(_DOC.encode()), "text/plain")},
+    )
+    assert dup.status_code == 409, dup.text
+    assert await _chunk_rows() == rec["num_chunks"]
+
     # 4. Create the serving endpoint (RAG has no eval gate).
     ep = await client.post(f"/v1/projects/{pid}/endpoint", headers=h)
     assert ep.status_code == 201, ep.text
@@ -122,6 +150,7 @@ async def test_rag_upload_index_serve_cited(client, admin):
     listed = await client.get(f"/v1/projects/{pid}/files", headers=h)
     assert listed.status_code == 200, listed.text
     assert listed.json() == [], "file list should be empty after deleting the only file"
+    assert await _chunk_rows() == 0, "chunk rows must go with the file (ON DELETE CASCADE)"
 
     chat_after_delete = await client.post(
         "/v1/chat/completions",

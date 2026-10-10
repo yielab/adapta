@@ -11,15 +11,20 @@ Retrieval pipeline (D5):
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import math
 import re
 from dataclasses import dataclass
-from typing import List, Literal, Optional
+from typing import TYPE_CHECKING, List, Literal, Optional
 
 from adapta.config import settings
-from adapta.domain.errors import EmbeddingModelMismatch
+from adapta.db.models import ProjectChunk
+from adapta.domain.errors import EmbeddingModelMismatch, VectorStoreFailed
 from adapta.services.embeddings import get_embedding_service, get_reranker_service
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +39,66 @@ class RetrievedChunk:
     # a cross-encoder sigmoid or 1 − cosine distance. Callers (citations) need to
     # know which, so both construction sites below fill this explicitly.
     score_kind: Literal["reranker", "vector"]
+
+
+def content_hash(text: str) -> str:
+    """sha256 hex digest of a chunk's text — the dedup key (64 chars)."""
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def build_chunk_rows(project_id: str, file_id: str, chunks: list) -> List[ProjectChunk]:
+    """ORM rows for a file's chunks; ids match the Chroma ids (``{file_id}_{index}``)."""
+    return [
+        ProjectChunk(
+            id=f"{file_id}_{c.index}",
+            file_id=file_id,
+            project_id=project_id,
+            chunk_index=c.index,
+            text=c.text,
+            content_hash=content_hash(c.text),
+        )
+        for c in chunks
+    ]
+
+
+async def persist_chunks(
+    db: "AsyncSession", project_id: str, file_id: str, chunks: list
+) -> int:
+    """Insert a file's chunk rows in ``db`` (flushed, not committed); returns the count.
+
+    Call this *before* the Chroma upsert: if the upsert fails the caller's rollback
+    discards the rows, so Postgres never records chunks that have no vectors.
+    """
+    rows = build_chunk_rows(project_id, file_id, chunks)
+    db.add_all(rows)
+    await db.flush()
+    return len(rows)
+
+
+async def all_chunks_known(db: "AsyncSession", project_id: str, chunks: list) -> bool:
+    """True when every chunk's hash already exists in the project (duplicate document)."""
+    from sqlalchemy import func, select
+
+    hashes = {content_hash(c.text) for c in chunks}
+    if not hashes:
+        return False
+    found = await db.scalar(
+        select(func.count(func.distinct(ProjectChunk.content_hash))).where(
+            ProjectChunk.project_id == project_id, ProjectChunk.content_hash.in_(hashes)
+        )
+    )
+    return (found or 0) == len(hashes)
+
+
+async def count_project_chunks(db: "AsyncSession", project_id: str) -> int:
+    """Chunk count for a project, read from Postgres (the source of truth)."""
+    from sqlalchemy import func, select
+
+    return (
+        await db.scalar(select(func.count()).select_from(ProjectChunk).where(
+            ProjectChunk.project_id == project_id
+        ))
+    ) or 0
 
 
 def _get_chroma_client():
@@ -166,6 +231,8 @@ class RAGService:
     ) -> int:
         """Embed and upsert chunks into the project collection; returns count.
 
+        Vectors only — the Postgres rows are written by ``persist_chunks`` before this.
+
         Uses ``upsert`` so re-indexing a file is idempotent — existing chunks
         for the same ``file_id`` are overwritten rather than duplicated.
         """
@@ -192,7 +259,9 @@ class RAGService:
         return len(chunks)
 
     def delete_file_chunks(self, project_id: str, file_id: str) -> None:
-        """Remove all chunks for a file from the Chroma collection.
+        """Remove all vectors for a file from the Chroma collection.
+
+        Raises ``VectorStoreFailed`` on any Chroma error (the Postgres rows go by CASCADE).
 
         Two-step (``get`` then ``delete``) because Chroma's ``delete`` requires
         explicit IDs rather than accepting a ``where`` filter directly.
@@ -205,7 +274,10 @@ class RAGService:
             if results["ids"]:
                 collection.delete(ids=results["ids"])
         except Exception as exc:
-            logger.warning("Failed to delete file chunks: %s", exc)
+            raise VectorStoreFailed(
+                message="Could not remove the file's vectors from the index; nothing was deleted.",
+                internal_detail=f"chroma delete failed for file {file_id}: {exc!r}",
+            ) from exc
 
     def retrieve(
         self,

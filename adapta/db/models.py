@@ -19,6 +19,7 @@ from typing import Optional
 
 from sqlalchemy import (
     Boolean,
+    Computed,
     Date,
     DateTime,
     Enum,
@@ -31,6 +32,7 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
+from sqlalchemy.dialects.postgresql import TSVECTOR
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -291,6 +293,50 @@ class ProjectFile(Base):
     )
 
     project: Mapped[Project] = relationship("Project", back_populates="files")
+
+
+# ---------------------------------------------------------------------------
+# RAG: Chunk
+# ---------------------------------------------------------------------------
+
+
+class ProjectChunk(Base):
+    """One indexed chunk of a file — the Postgres source of truth for page, text,
+    hash and chunk counts (Chroma holds only the vectors).
+
+    ``id`` is ``"{file_id}_{chunk_index}"``, identical to the Chroma id. Rows go with
+    their file via ``ON DELETE CASCADE``. ``tsv`` is a GENERATED column (never written)
+    that feeds the full-text leg (E3.2).
+    """
+
+    __tablename__ = "chunks"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    file_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("project_files.id", ondelete="CASCADE"), nullable=False
+    )
+    project_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
+    )
+    chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    page: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    section: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    ocr: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    ocr_confidence: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    needs_review: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    tsv: Mapped[Optional[str]] = mapped_column(
+        TSVECTOR, Computed("to_tsvector('simple', text)", persisted=True), nullable=True
+    )
+
+    __table_args__ = (
+        UniqueConstraint("file_id", "chunk_index", name="uq_chunks_file_index"),
+        Index("ix_chunks_project_id", "project_id"),
+        Index("ix_chunks_tsv", "tsv", postgresql_using="gin"),
+    )
 
 
 # ---------------------------------------------------------------------------

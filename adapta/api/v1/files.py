@@ -8,7 +8,7 @@ documents, behavior from the fine-tune)."""
 import asyncio
 import logging
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, UploadFile
 from sqlalchemy import select
@@ -18,12 +18,17 @@ from adapta.api._upload import save_capped_upload
 from adapta.config import settings
 from adapta.db.models import Collection, FileStatus, Project, ProjectFile
 from adapta.db.session import get_db
-from adapta.domain.errors import EmbeddingModelMismatch, InvalidRequest, NotFound
+from adapta.domain.errors import DuplicateDocument, EmbeddingModelMismatch, InvalidRequest, NotFound
 from adapta.models.generated import FileResponse
 from adapta.services.app_settings import resolve_setting
 from adapta.services.auth import get_current_user, require_team_member, require_team_writer
 from adapta.services.documents import parse_and_chunk
-from adapta.services.rag import collection_name_for, get_rag_service
+from adapta.services.rag import (
+    all_chunks_known,
+    collection_name_for,
+    get_rag_service,
+    persist_chunks,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +66,7 @@ async def _index_file(
     filename: str,
     project_id: str,
     team_id: str,
+    chunks: Optional[list] = None,
 ) -> None:
     """Background task: parse → chunk → embed → store in Chroma, update DB status.
 
@@ -114,27 +120,34 @@ async def _index_file(
                     )
                 )
 
-            # Resolve the org's chunking overrides (E1.6) before the thread —
-            # `resolve_setting` is async (DB-backed, TTL-cached) and must not be
-            # called from inside the worker thread below.
-            chunk_size = await resolve_setting(db, team_id, "chunk_size")
-            chunk_overlap = await resolve_setting(db, team_id, "chunk_overlap")
-
-            # Parsing, embedding and the Chroma write are CPU/IO-blocking and
-            # synchronous — run them in a thread so a large document (or the
-            # first-time embedding-model load) doesn't freeze the event loop and
-            # starve concurrent API requests.
-            def _do_index() -> int:
-                chunks = parse_and_chunk(
+            # `chunks` is pre-parsed by the upload handler (for the duplicate check);
+            # parse here only when that attempt failed so the error lands on the row.
+            parsed: list = chunks if chunks is not None else []
+            if chunks is None:
+                # Resolve the org's chunking overrides (E1.6) before the thread —
+                # `resolve_setting` is async (DB-backed, TTL-cached).
+                chunk_size = await resolve_setting(db, team_id, "chunk_size")
+                chunk_overlap = await resolve_setting(db, team_id, "chunk_overlap")
+                parsed = await asyncio.to_thread(
+                    parse_and_chunk,
                     file_path,
                     content_type,
                     filename,
                     chunk_size=chunk_size,
                     chunk_overlap=chunk_overlap,
                 )
+
+            # Postgres rows first, in this session: if the Chroma upsert below fails the
+            # exception skips the commit and the rows roll back with the session.
+            await persist_chunks(db, project_id, file_id, parsed)
+
+            # Embedding and the Chroma write are CPU/IO-blocking and synchronous — run
+            # them in a thread so a large document (or the first-time embedding-model
+            # load) doesn't freeze the event loop.
+            def _do_index() -> int:
                 rag = get_rag_service()
                 rag.ensure_collection(project_id)
-                return rag.index_chunks(project_id, file_id, chunks)
+                return rag.index_chunks(project_id, file_id, parsed)
 
             count = await asyncio.to_thread(_do_index)
 
@@ -208,12 +221,42 @@ async def upload_file(
 
     pfile.size_bytes = written
     pfile.storage_path = str(dest_path)
+
+    # Parse now (not in the background task) so an upload whose every chunk already
+    # exists in the project is rejected synchronously with 409. A parse failure is
+    # not raised here: the background task re-parses and records it on the file row.
+    chunks = None
+    try:
+        chunk_size = await resolve_setting(db, project.team_id, "chunk_size")
+        chunk_overlap = await resolve_setting(db, project.team_id, "chunk_overlap")
+        chunks = await asyncio.to_thread(
+            parse_and_chunk,
+            dest_path,
+            content_type,
+            filename,
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap,
+        )
+    except Exception:
+        logger.info("Upload pre-parse failed for %s; deferring to the indexing task", filename)
+    if chunks and await all_chunks_known(db, project_id, chunks):
+        dest_path.unlink(missing_ok=True)
+        await db.delete(pfile)
+        await db.commit()
+        raise DuplicateDocument(message="This document is already indexed in this project.")
     # Commit before scheduling — the background task opens its own DB session;
     # committing here ensures the row is visible to that session immediately.
     file_id = pfile.id
     await db.commit()
     background_tasks.add_task(
-        _index_file, file_id, dest_path, content_type, filename, project_id, project.team_id
+        _index_file,
+        file_id,
+        dest_path,
+        content_type,
+        filename,
+        project_id,
+        project.team_id,
+        chunks,
     )
 
     return {"id": file_id, "filename": filename, "status": "pending"}
@@ -247,9 +290,13 @@ async def delete_file(
     if not pfile:
         raise NotFound(message="File not found")
 
-    # Remove from Chroma
-    rag = get_rag_service()
-    rag.delete_file_chunks(project_id, file_id)
+    # Remove the vectors first: a Chroma failure raises VectorStoreFailed before any
+    # Postgres change. The chunk rows themselves go by ON DELETE CASCADE with the file.
+    # No collection row means nothing was ever indexed, so there is nothing in Chroma.
+    col_result = await db.execute(select(Collection).where(Collection.project_id == project_id))
+    collection = col_result.scalar_one_or_none()
+    if collection:
+        get_rag_service().delete_file_chunks(project_id, file_id)
 
     # Remove from disk
     try:
@@ -262,8 +309,6 @@ async def delete_file(
     # empty collection. Floored at 0 — num_chunks was captured on this file
     # at index time (pfile.num_chunks), so it can't itself go negative, but
     # floor defensively against any drift.
-    col_result = await db.execute(select(Collection).where(Collection.project_id == project_id))
-    collection = col_result.scalar_one_or_none()
     if collection:
         collection.num_documents = max(0, collection.num_documents - 1)
         collection.num_chunks = max(0, collection.num_chunks - (pfile.num_chunks or 0))
