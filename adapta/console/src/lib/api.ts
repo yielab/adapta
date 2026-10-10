@@ -107,6 +107,8 @@ export const api = {
   createProject: (p: { name: string; type: ProjectType; base_model: string; description?: string; team_id: string }) =>
     request<Project>(`${V1}/projects`, { method: "POST", body: p }),
   getProject: (id: string) => request<Project>(`${V1}/projects/${id}`),
+  updateProject: (id: string, body: { system_prompt: string | null }) =>
+    request<Project>(`${V1}/projects/${id}`, { method: "PATCH", body }),
   deleteProject: (id: string) => request<void>(`${V1}/projects/${id}`, { method: "DELETE" }),
 
   // Files (RAG)
@@ -169,7 +171,7 @@ export const api = {
     request<void>(`${V1}/settings/${encodeURIComponent(key)}?team_id=${encodeURIComponent(teamId)}`, { method: "DELETE" }),
 
   // Chat (uses a scoped adp_ key, NOT the JWT — auth:false + manual header)
-  chat: (slug: string, brnKey: string, messages: WireChatMessage[], jsonMode = false) =>
+  chat: (slug: string, brnKey: string, messages: WireChatMessage[], jsonMode = false, fileIds: string[] = []) =>
     fetch(`${V1}/chat/completions`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${brnKey}` },
@@ -178,6 +180,8 @@ export const api = {
         messages,
         stream: false,
         ...(jsonMode ? { response_format: { type: "json_object" } } : {}),
+        // `adapta` request namespace (E3.5): restrict retrieval to the chosen files.
+        ...(fileIds.length > 0 ? { adapta: { filters: { file_ids: fileIds } } } : {}),
       }),
     }).then(async (res) => {
       const data = await res.json();

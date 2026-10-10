@@ -643,3 +643,103 @@ def test_needs_reembed_skip_rule():
     assert mod.needs_reembed(**{**base, "row_dim": None}) is True
     assert mod.needs_reembed(**{**base, "n_vectors": 7}) is True  # interrupted rebuild
     assert mod.needs_reembed(**{**base, "n_vectors": None}) is True  # collection missing
+
+
+# ---------------------------------------------------------------------------
+# E3.5 — relevance threshold + request-level filters
+# ---------------------------------------------------------------------------
+
+
+def _chunk(score, kind="vector", lexical=False):
+    return RetrievedChunk(
+        text="t", source="s", score=score, chunk_index=0, score_kind=kind, lexical_only=lexical
+    )
+
+
+def test_min_score_drops_low_vector_and_reranker_scores_but_keeps_keyword_hits():
+    from adapta.services.rag import apply_min_score
+
+    chunks = [
+        _chunk(0.5),
+        _chunk(0.1),
+        _chunk(0.9, "reranker"),
+        _chunk(0.05, "reranker"),
+        _chunk(0.0, lexical=True),
+    ]
+    kept = apply_min_score(chunks, 0.2)
+    assert [(c.score, c.score_kind) for c in kept] == [
+        (0.5, "vector"),
+        (0.9, "reranker"),
+        (0.0, "vector"),
+    ]
+    assert apply_min_score(chunks, 0) == chunks  # 0 disables
+
+
+def test_retrieve_marks_fts_only_hits_lexical(monkeypatch):
+    _std_chroma(monkeypatch, n=4)
+    _fts(monkeypatch, [_FtsHit("zz_0", "ERR-1", "ops.md", 7)])
+    chunks = RAGService().retrieve("p", "ERR-1", top_k=5)
+    by = {c.chunk_id: c for c in chunks}
+    assert by["zz_0"].lexical_only is True
+    assert all(not c.lexical_only for cid, c in by.items() if cid != "zz_0")
+
+
+def test_filters_reach_both_legs(monkeypatch):
+    from adapta.services.rag import RetrievalFilters
+
+    seen = {}
+
+    class Coll:
+        metadata = {}
+
+        def query(self, **kw):
+            seen["where"] = kw.get("where")
+            seen["n"] = kw["n_results"]
+            return {
+                "ids": [["f1_0", "f1_1"]],
+                "documents": [["a", "b"]],
+                "metadatas": [
+                    [{"source": "x", "chunk_index": 0}, {"source": "x", "chunk_index": 1}]
+                ],
+                "distances": [[0.1, 0.2]],
+            }
+
+    class Client:
+        def get_collection(self, name):
+            return Coll()
+
+    monkeypatch.setattr("adapta.services.rag._get_chroma_client", lambda: Client())
+    monkeypatch.setattr("adapta.services.rag.get_embedding_service", lambda: _FakeEmbedder())
+    monkeypatch.setattr("adapta.services.rag.get_reranker_service", lambda: None)
+    monkeypatch.setattr(
+        rag_mod, "_fts_search", lambda *a, **k: seen.update(fts_filters=k.get("filters")) or []
+    )
+    monkeypatch.setattr(
+        rag_mod, "_filter_vector_ids", lambda ids, f: seen.update(sql=f) or {"f1_1"}
+    )
+
+    f = RetrievalFilters(file_ids=["f1"], page_min=2)
+    chunks = RAGService().retrieve("p", "q", top_k=2, filters=f)
+
+    assert seen["where"] == {"file_id": {"$in": ["f1"]}}
+    assert seen["fts_filters"] is f and seen["sql"] is f
+    assert seen["n"] == 2 * 4 * 4  # over-fetched for the SQL post-filter
+    assert [c.chunk_id for c in chunks] == ["f1_1"]  # f1_0 failed the page filter
+
+
+def test_no_filters_leaves_retrieval_untouched(monkeypatch):
+    _std_chroma(monkeypatch)
+    seen = {}
+    monkeypatch.setattr(rag_mod, "_fts_search", lambda *a, **k: seen.update(k=k) or [])
+    RAGService().retrieve("p", "q", top_k=3)
+    assert seen["k"] == {}
+
+
+def test_filter_sql_clauses():
+    from adapta.services.rag import RetrievalFilters
+
+    sql, params = RetrievalFilters(file_ids=["a"], page_max=9, needs_review=False).sql_clauses()
+    assert "c.file_id = ANY(:f_file_ids)" in sql and "c.page <= :f_page_max" in sql
+    assert "c.needs_review = :f_needs_review" in sql
+    assert params == {"f_file_ids": ["a"], "f_page_max": 9, "f_needs_review": False}
+    assert RetrievalFilters().sql_clauses() == ("", {})

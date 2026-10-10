@@ -10,6 +10,7 @@
   import { getRememberedKey } from "../lib/keyvault";
   import type {
     Project,
+    ProjectFile,
     Endpoint,
     ChatCompletion,
     ChatContentPart,
@@ -72,6 +73,8 @@
   let draft = $state("");
   let messages = $state<ChatMsg[]>([]);
   let sending = $state(false);
+  let files = $state<ProjectFile[]>([]);
+  let fileFilter = $state<string[]>([]); // file ids to restrict retrieval to (E3.5); empty = all
   let jsonMode = $state(false); // response_format: json_object (grammar-constrained)
 
   const slug = $derived(endpoint?.slug ?? "");
@@ -89,12 +92,23 @@
     endpoint = null;
     messages = [];
     draft = "";
+    fileFilter = [];
+    files = [];
+    void loadFiles();
     // Prefill a key remembered from this tab's Endpoint flow, if any.
     const remembered = getRememberedKey(project.id);
     apiKey = remembered ?? "";
     prefilled = !!remembered;
     void loadEndpoint();
   });
+
+  async function loadFiles() {
+    try {
+      files = (await api.listFiles(project.id)).filter((f) => f.status === "indexed");
+    } catch {
+      files = []; // the filter is optional; the chat works without it
+    }
+  }
 
   async function loadEndpoint() {
     loadingEndpoint = true;
@@ -141,7 +155,7 @@
     });
 
     try {
-      const resp: ChatCompletion = await api.chat(slug, key, wire, jsonMode);
+      const resp: ChatCompletion = await api.chat(slug, key, wire, jsonMode, fileFilter);
       const reply = resp.choices?.[0]?.message?.content ?? "";
       messages = [
         ...messages,
@@ -355,6 +369,17 @@
       <input type="checkbox" bind:checked={jsonMode} disabled={sending} />
       JSON mode — force valid JSON. For extraction, try this on the base model before importing an adapter.
     </label>
+    {#if files.length > 0 && !isVision}
+      <div class="field" style="margin: 8px 0 0;">
+        <label for="pg-files">Only search these files (optional)</label>
+        <select id="pg-files" multiple size={Math.min(files.length, 4)} bind:value={fileFilter} disabled={sending}>
+          {#each files as f (f.id)}
+            <option value={f.id}>{f.filename}</option>
+          {/each}
+        </select>
+        <small class="muted">None selected searches all files. Ctrl/Cmd-click to pick several.</small>
+      </div>
+    {/if}
     <div class="row between">
       <small class="muted">
         {#if isVision}

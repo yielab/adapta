@@ -10,7 +10,7 @@ from adapta.domain.errors import InvalidRequest
     "path, allow",
     [
         ("/v1/projects", "GET, POST"),
-        ("/v1/projects/p1", "DELETE, GET"),
+        ("/v1/projects/p1", "DELETE, GET, PATCH"),
         ("/v1/projects/p1/datasets/synthesize", "POST"),  # literal beats /datasets/{id}
         ("/v1/settings", "GET, PUT"),
     ],

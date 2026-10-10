@@ -239,6 +239,8 @@ class Project(Base):
     )
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # (E3.5) Operator prompt, rendered first in the system message at serving time.
+    system_prompt: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     type: Mapped[ProjectType] = mapped_column(
         Enum(ProjectType, native_enum=False, length=16), nullable=False
     )

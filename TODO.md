@@ -126,7 +126,7 @@ classes are defined in [`.claude/context/gates.md`](.claude/context/gates.md) ("
 | E4.8 | 2 | sonnet | live | E3.8, E4.1 | E4.6, E5.1 | open |
 | E4.9 | 2 | sonnet | live | E1.11 | E2.1, E3.5/E5.3, E4.6 | done 2026-10-10 |
 | E3.4 | 3 | sonnet | live | E3.1, E3.3b, E1.11 | E3.5 (spec, `Playground.svelte`), E3.3b | done 2026-10-10 |
-| E3.5 | 3 | sonnet | live | E3.2, E1.11 | E3.4 (spec, `Playground.svelte`), E4.9 and E5.3 | in progress (worker-e3.5) |
+| E3.5 | 3 | sonnet | live | E3.2, E1.11 | E3.4 (spec, `Playground.svelte`), E4.9 and E5.3 | ready-for-live (e3.5) |
 | E3.6 | 3 | sonnet + human decision | live | E3.1, E3.2, E3.8 | E3.2 | done 2026-10-10 |
 | E4.4 | 3 | sonnet | rebuild + live | E4.2, E4.3 | E3.7, E3.3b | done 2026-10-10 |
 | E5.1 | 3 | sonnet | live | E3.1, E3.7, E3.8 | E5.2, E4.8 | open |
@@ -209,7 +209,7 @@ E1.1–E1.9 shipped 2026-09-17 → [CHANGELOG.md](CHANGELOG.md). E1.14 closed 20
   and E5.3 (`chat.py`) · **Handoff.** must name the `adapta.*` request namespace shape, the
   `_build_system` order, the migration revision.
 - **Scope.** Three small, related knobs. Out: ACL (open a block when a user asks), multi-query.
-- **Steps.** (1) Migration `0011_project_system_prompt`: `projects.system_prompt TEXT NULL`. Spec:
+- **Steps.** (1) Migration `0016_project_system_prompt`: `projects.system_prompt TEXT NULL`. Spec:
   `ProjectCreateRequest`/`ProjectResponse` += `system_prompt`; add `PATCH /v1/projects/{id}` if no
   update route exists (check the spec first). (2) `_build_system` order: project prompt → RAG block →
   abstention line ("If the answer is not in the context, say you can't find it in the documents") →
@@ -221,7 +221,7 @@ E1.1–E1.9 shipped 2026-09-17 → [CHANGELOG.md](CHANGELOG.md). E1.14 closed 20
   leg; `top_k` bounded. (5) Console: project Settings tab gets the system-prompt textarea; Playground a
   file-filter multiselect. (6) Tests: `_build_system` ordering; threshold drops; filters reach both
   legs (mocked).
-- **Files.** `migrations/versions/0011_project_system_prompt.py`, `adapta/db/models.py:209-262`,
+- **Files.** `migrations/versions/0016_project_system_prompt.py`, `adapta/db/models.py:209-262`,
   `specs/openapi.yaml` (projects + chat request), `adapta/services/chat.py:187-198, 240-300`,
   `adapta/services/rag.py:196-277`, `adapta/api/v1/chat.py:120-160`, `adapta/api/v1/projects.py`,
   `adapta/console/src/views/Project.svelte`, `adapta/console/src/views/Playground.svelte`,
@@ -234,6 +234,18 @@ E1.1–E1.9 shipped 2026-09-17 → [CHANGELOG.md](CHANGELOG.md). E1.14 closed 20
   block in the rendered prompt (unit test).
 - **Close.** consuming-the-api (`adapta` extension), operator-console settings + playground,
   PRODUCT_DEFINITION Service A; Status snapshot.
+- **Done.** (offline, branch `e3.5`) Migration `0016` adds `projects.system_prompt`; spec: `PATCH /projects/{id}`
+  (`ProjectUpdate`), `system_prompt` on create/response, `adapta: {top_k, filters}` on the chat request, `citations: []`
+  when nothing clears the threshold. `_build_system` = project prompt, RAG block, abstention line, client `system`
+  (merged by `split_client_system`). `rag_min_score` (0.2) is applied in `chat._retrieve`, not in `retrieve()`, on
+  `RetrievedChunk.score` (vector cosine; reranker sigmoid when on; keyword-only hits exempt). Console: Settings tab, file
+  multiselect. Gates: validate-spec, generate, check-models, lint, check-leaks, test (315 passed). NOT run: migrate,
+  migrate-test, test-contracts, console-build, `make golden`, live abstention check.
+- **Handoff.** Request namespace: `adapta: {top_k?: 1..20, filters?: {file_ids?: [<=50], page_min?, page_max?, needs_review?}}`.
+  `_build_system(base, rag, chunks, *, abstain, client_system)` order: project prompt, RAG block (or a no-match line),
+  `ABSTENTION_LINE`, client system. Migration revision `0016` (down `0015`). `file_ids` is a Chroma `where` plus SQL on
+  the FTS leg; page/review filters are SQL-only (Chroma has no such metadata): FTS leg in SQL, vector leg post-filtered
+  over a 4x over-fetch. Also touched `tests/test_contract_edges.py` (405 `Allow` now includes PATCH) and `config.py`.
 
 ### E4. Bring your own adapter — Adapta verifies and serves adapters; it does not train them (weeks 3–9)
 

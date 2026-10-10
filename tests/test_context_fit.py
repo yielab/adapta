@@ -71,3 +71,43 @@ def test_rejects_when_prompt_cannot_fit_even_without_chunks():
             max_tokens=20,
         )
     assert "too long" in exc.value.message
+
+
+# ---------------------------------------------------------------------------
+# E3.5 — system-prompt assembly order, abstention, client system merge
+# ---------------------------------------------------------------------------
+
+
+def test_build_system_order_project_rag_abstention_client():
+    from adapta.services.chat import ABSTENTION_LINE
+
+    s = _build_system("PROJECT", FakeRag(), ["a"], abstain=True, client_system="CLIENT")
+    assert s.index("PROJECT") < s.index("[1] a") < s.index(ABSTENTION_LINE) < s.index("CLIENT")
+
+
+def test_build_system_zero_chunks_keeps_abstention_line():
+    from adapta.services.chat import ABSTENTION_LINE
+
+    s = _build_system("PROJECT", FakeRag(), [], abstain=True, client_system="CLIENT")
+    assert "Use the following context" not in s
+    assert s.index("PROJECT") < s.index(ABSTENTION_LINE) < s.index("CLIENT")
+    assert "I can't find that in the documents." in s
+
+
+def test_build_system_without_knowledge_has_no_abstention():
+    assert _build_system("P", None, [], client_system="C") == "P\n\nC"
+    assert _build_system(None, None, []) is None
+
+
+def test_split_client_system_merges_system_turns_into_one_paragraph():
+    from adapta.services.chat import split_client_system
+
+    msgs = [
+        {"role": "system", "content": "Be terse."},
+        {"role": "user", "content": "hi"},
+        {"role": "system", "content": [{"type": "text", "text": "Use Spanish."}]},
+    ]
+    turns, system = split_client_system(msgs)
+    assert [m["role"] for m in turns] == ["user"]
+    assert system == "Be terse.\n\nUse Spanish."
+    assert split_client_system([{"role": "user", "content": "x"}])[1] is None

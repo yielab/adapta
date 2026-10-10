@@ -98,6 +98,12 @@ class Settings(BaseSettings):
     chroma_host: str = "chroma"
     chroma_port: int = 8000
     rag_top_k: int = 5
+    # (E3.5) Chat-time relevance floor; 0 disables. Applies to RetrievedChunk.score: the
+    # cross-encoder sigmoid when the reranker is on, else the vector cosine similarity
+    # (1 - distance). Keyword-only hits have no cosine and are exempt. RRF scores are rank
+    # arithmetic (max ~0.033), never compared against this. Not applied inside retrieve(),
+    # so the golden set measures the same candidates as before.
+    rag_min_score: float = 0.2
     # Hybrid retrieval (D5): fetch top_k * N vector candidates from Chroma for the
     # dense leg of the RRF fusion. 4× keeps latency low on CPU.
     rag_hybrid_fetch_multiplier: int = 4

@@ -24,7 +24,7 @@ from adapta.domain.errors import (
     ModelNotFound,
     Timeout,
 )
-from adapta.services.rag import get_rag_service
+from adapta.services.rag import RetrievalFilters, apply_min_score, get_rag_service
 
 
 async def _resolve_rag_top_k(project_id: Optional[str], top_k_rag: Optional[int]) -> int:
@@ -52,17 +52,40 @@ async def _resolve_rag_top_k(project_id: Optional[str], top_k_rag: Optional[int]
         return int(await resolve_setting(db, team_id, "rag_top_k"))
 
 
-async def _retrieve(rag_service, project_id: str, query: str, top_k: int) -> list:
+async def _retrieve(
+    rag_service,
+    project_id: str,
+    query: str,
+    top_k: int,
+    filters: Optional[RetrievalFilters] = None,
+) -> list:
     """RAG retrieval off the event loop with a timeout (A4.12). A hung Chroma must
     degrade to a typed 504, not block every chat request — and the blocking client
-    call must not run on the event loop thread."""
+    call must not run on the event loop thread.
+
+    Chunks under ``rag_min_score`` are dropped here (E3.5), not inside ``retrieve()``."""
+    kwargs = {"filters": filters} if filters is not None else {}
     try:
-        return await asyncio.wait_for(
-            asyncio.to_thread(rag_service.retrieve, project_id, query, top_k=top_k),
+        chunks = await asyncio.wait_for(
+            asyncio.to_thread(rag_service.retrieve, project_id, query, top_k=top_k, **kwargs),
             timeout=settings.rag_timeout_seconds,
         )
     except asyncio.TimeoutError as exc:
         raise Timeout(message="Document retrieval timed out", internal_detail=str(exc)) from exc
+    return apply_min_score(chunks, settings.rag_min_score)
+
+
+def split_client_system(messages: List[dict]) -> tuple[List[dict], Optional[str]]:
+    """Pull `system` turns out of the conversation (E3.5).
+
+    Returns (remaining turns, their text joined as one paragraph). They are merged into
+    the single system message after the project prompt and RAG block, instead of landing
+    as a later turn the model weighs less than the retrieved context.
+    """
+    turns = [m for m in messages if m.get("role") != "system"]
+    texts = [flatten_text(m.get("content", "")).strip() for m in messages if m.get("role") == "system"]
+    joined = "\n\n".join(t for t in texts if t)
+    return turns, (joined or None)
 
 
 logger = logging.getLogger(__name__)
@@ -209,18 +232,43 @@ async def _load_model(model_name: str, adapter_path: Optional[str] = None):
         ) from exc
 
 
-def _build_system(base_system: Optional[str], rag_service, rag_chunks: list) -> Optional[str]:
-    """Assemble the system prompt, injecting the RAG context block when present.
-    Centralizes the wording shared by the streaming and non-streaming paths."""
-    base = base_system or ""
-    if not rag_chunks or rag_service is None:
-        return base or None
-    context_block = rag_service.build_context_block(rag_chunks)
-    combined = (
-        f"{base}\n\nUse the following context to answer. "
-        f"Cite sources by their [N] number.\n\n{context_block}"
-    ).strip()
-    return combined or None
+ABSTENTION_LINE = (
+    'If the answer is not in the context, say "I can\'t find that in the documents." '
+    "and do not guess."
+)
+_NO_CONTEXT_LINE = "No passage in the project's documents matched this question."
+
+
+def _build_system(
+    base_system: Optional[str],
+    rag_service,
+    rag_chunks: list,
+    *,
+    abstain: bool = False,
+    client_system: Optional[str] = None,
+) -> Optional[str]:
+    """Assemble the system prompt. Order (E3.5): project prompt -> RAG block -> abstention
+    line -> the client's own `system` text as a trailing paragraph.
+
+    ``abstain`` is True when the project has indexed documents: the abstention line is
+    then present even when no chunk survived retrieval. Shared by the streaming and
+    non-streaming paths."""
+    parts: list[str] = []
+    if base_system:
+        parts.append(base_system)
+    if rag_chunks and rag_service is not None:
+        context_block = rag_service.build_context_block(rag_chunks)
+        parts.append(
+            f"Use the following context to answer. Cite sources by their [N] number.\n\n"
+            f"{context_block}"
+        )
+    elif abstain:
+        parts.append(_NO_CONTEXT_LINE)
+    if abstain:
+        parts.append(ABSTENTION_LINE)
+    if client_system:
+        parts.append(client_system)
+    return "\n\n".join(parts).strip() or None
 
 
 def _fit_context(
@@ -231,6 +279,8 @@ def _fit_context(
     rag_service,
     rag_chunks: list,
     max_tokens: int,
+    abstain: bool = False,
+    client_system: Optional[str] = None,
 ):
     """Fit the prompt into the model's context window (A4.3).
 
@@ -246,7 +296,9 @@ def _fit_context(
     """
     chunks = list(rag_chunks)
     while True:
-        system_prompt = _build_system(base_system, rag_service, chunks)
+        system_prompt = _build_system(
+            base_system, rag_service, chunks, abstain=abstain, client_system=client_system
+        )
         n_prompt = count_fn(system_prompt)
         if n_prompt + min(_MIN_GEN_RESERVE, max_tokens) <= n_ctx:
             return system_prompt, chunks, max(1, min(max_tokens, n_ctx - n_prompt))
@@ -274,6 +326,7 @@ async def chat(
     # RAG
     project_id: Optional[str] = None,
     top_k_rag: Optional[int] = None,
+    rag_filters: Optional[RetrievalFilters] = None,
     # Fine-tune serving (A3.1): GGUF LoRA applied on top of the base model
     adapter_path: Optional[str] = None,
     # JSON mode: OpenAI-shape response_format dict (None = unconstrained)
@@ -314,13 +367,16 @@ async def chat(
             response_format=response_format,
         )
 
+    messages, client_system = split_client_system(messages)
     rag_chunks: list = []
     rag_service = None
     if project_id:
         rag_service = get_rag_service()
         query = flatten_text(messages[-1].get("content", "")) if messages else ""
         effective_top_k = await _resolve_rag_top_k(project_id, top_k_rag)
-        rag_chunks = await _retrieve(rag_service, project_id, query, effective_top_k)
+        rag_chunks = await _retrieve(
+            rag_service, project_id, query, effective_top_k, rag_filters
+        )
 
     # Content may be a parts array (all-text on the text path); flatten to the
     # plain string the manual prompt formatter expects.
@@ -339,6 +395,8 @@ async def chat(
             count_fn=lambda sp: handle.count_prompt_tokens(inference_messages, sp),
             n_ctx=handle.context_size(),
             base_system=system_prompt,
+            abstain=project_id is not None,
+            client_system=client_system,
             rag_service=rag_service,
             rag_chunks=rag_chunks,
             max_tokens=max_tokens,
@@ -386,7 +444,7 @@ async def chat(
         },
     }
 
-    if rag_chunks:
+    if project_id:  # [] when nothing cleared the threshold: the model was told to abstain
         rag_service = get_rag_service()
         result["citations"] = rag_service.format_citations(rag_chunks)
 
@@ -480,6 +538,7 @@ async def chat_stream(
     max_tokens: Optional[int] = None,
     project_id: Optional[str] = None,
     top_k_rag: Optional[int] = None,
+    rag_filters: Optional[RetrievalFilters] = None,
     endpoint_id: Optional[str] = None,
     adapter_path: Optional[str] = None,
     response_format: Optional[dict] = None,
@@ -501,13 +560,16 @@ async def chat_stream(
             message="Streaming with image content is not supported; send stream=false."
         )
 
+    messages, client_system = split_client_system(messages)
     rag_chunks: list = []
     rag_service = None
     if project_id:
         rag_service = get_rag_service()
         query = flatten_text(messages[-1].get("content", "")) if messages else ""
         effective_top_k = await _resolve_rag_top_k(project_id, top_k_rag)
-        rag_chunks = await _retrieve(rag_service, project_id, query, effective_top_k)
+        rag_chunks = await _retrieve(
+            rag_service, project_id, query, effective_top_k, rag_filters
+        )
 
     inference_messages = [
         Message(role=m["role"], content=flatten_text(m["content"])) for m in messages
@@ -522,6 +584,8 @@ async def chat_stream(
         count_fn=lambda sp: handle.count_prompt_tokens(inference_messages, sp),
         n_ctx=handle.context_size(),
         base_system=system_prompt,
+        abstain=project_id is not None,
+        client_system=client_system,
         rag_service=rag_service,
         rag_chunks=rag_chunks,
         max_tokens=max_tokens,
@@ -575,7 +639,7 @@ async def chat_stream(
         # shape as chat()'s non-streaming response, carried on the final
         # frame (E1.7) since the model prompt (with [N] markers) is what
         # the SSE tokens are being streamed for.
-        if rag_chunks:
+        if project_id:
             if rag_service is None:
                 raise InvalidRequest(message="RAG service not configured")
             finish["citations"] = rag_service.format_citations(rag_chunks)

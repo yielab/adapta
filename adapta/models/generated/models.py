@@ -125,6 +125,14 @@ class ProjectCreate(BaseModel):
     base_model: str
     description: str | None = None
     team_id: str
+    system_prompt: Annotated[str | None, Field(max_length=8000)] = None
+    """
+    Operator prompt, rendered first in the system message (E3.5).
+    """
+
+
+class ProjectUpdate(BaseModel):
+    system_prompt: Annotated[str | None, Field(max_length=8000)] = None
 
 
 class FileSummary(BaseModel):
@@ -347,6 +355,16 @@ class BaseModelInfo(BaseModel):
     """
 
 
+class RetrievalFilters(BaseModel):
+    file_ids: Annotated[list[str] | None, Field(max_length=50, min_length=1)] = None
+    page_min: Annotated[int | None, Field(ge=1)] = None
+    page_max: Annotated[int | None, Field(ge=1)] = None
+    needs_review: bool | None = None
+    """
+    true = only OCR chunks flagged for review; false = exclude them.
+    """
+
+
 class ResponseFormatText(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -455,7 +473,7 @@ class ChatCompletionResponse(BaseModel):
     usage: ChatUsage | None = None
     citations: list[Citation] | None = None
     """
-    Document citations — present when the project has indexed documents
+    Document citations — present (possibly empty) when the project has indexed documents; empty means nothing cleared the relevance threshold and the model was told to abstain
     """
 
 
@@ -486,9 +504,18 @@ class ProjectResponse(BaseModel):
     status: str
     base_model: str
     description: Annotated[str | None, Field(...)]
+    system_prompt: Annotated[str | None, Field(...)]
     team_id: str
     created_at: str
     summary: Annotated[ProjectSummary | None, Field(...)]
+
+
+class AdaptaOptions(BaseModel):
+    top_k: Annotated[int | None, Field(ge=1, le=20)] = None
+    """
+    Chunks to retrieve (overrides the org/env default).
+    """
+    filters: RetrievalFilters | None = None
 
 
 class ImageContentPart(BaseModel):
@@ -527,5 +554,10 @@ class ChatCompletionRequest(BaseModel):
     ) = None
     """
     Constrain the output (OpenAI shape). ``json_object`` forces syntactically valid JSON; ``json_schema`` forces JSON matching the given schema (grammar-constrained decoding in llama.cpp). Try it on the base model before importing an extraction adapter. Omitted or ``text`` leaves decoding unconstrained.
+
+    """
+    adapta: AdaptaOptions | None = None
+    """
+    Adapta extension (namespaced so OpenAI clients ignore it). Per-request retrieval options; absent means the project's defaults.
 
     """

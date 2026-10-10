@@ -53,6 +53,7 @@ export interface Project {
   status: string;
   base_model: string;
   description: string | null;
+  system_prompt: string | null;
   team_id: string;
   created_at: string;
   summary: ProjectSummary | null;

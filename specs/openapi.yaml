@@ -267,6 +267,24 @@ paths:
         '200': {description: Project, content: {application/json: {schema: {$ref: '#/components/schemas/ProjectResponse'}}}}
         '404': {$ref: '#/components/responses/Error'}
 
+    patch:
+      operationId: updateProject
+      tags: [projects]
+      summary: Update a project's system prompt (writer)
+      security: [{BearerAuth: []}]
+      parameters: [{$ref: '#/components/parameters/ProjectId'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ProjectUpdate'}
+      responses:
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '422': {$ref: '#/components/responses/Error'}
+        '200': {description: Updated project, content: {application/json: {schema: {$ref: '#/components/schemas/ProjectResponse'}}}}
+
     delete:
       operationId: deleteProject
       tags: [projects]
@@ -750,6 +768,17 @@ paths:
         `usage` and `finish_reason: "stop"` — also carries `citations` when the
         project has indexed documents, in the same shape as the non-streaming
         response.
+
+        **Project prompt and abstention (E3.5):** the system message is assembled as the
+        project's `system_prompt`, then the retrieved context, then an instruction to say
+        "I can't find that in the documents." when the context lacks the answer, then any
+        `system` message the client sent (merged as a paragraph). Retrieved chunks scoring
+        below `ADAPTA_RAG_MIN_SCORE` are dropped (vector cosine, or the reranker's sigmoid
+        when a reranker is enabled; keyword-only hits are kept); if none remain,
+        `citations` is `[]` and the abstention instruction is still sent.
+
+        **`adapta` extension:** optional `{top_k, filters: {file_ids, page_min, page_max,
+        needs_review}}` narrows retrieval for this request; OpenAI clients ignore it.
       security: [{ApiKeyAuth: []}]
       requestBody:
         required: true
@@ -941,10 +970,17 @@ components:
         base_model: {type: string}
         description: {type: string, nullable: true}
         team_id: {type: string}
+        system_prompt: {type: string, nullable: true, maxLength: 8000, description: "Operator prompt, rendered first in the system message (E3.5)."}
+
+    ProjectUpdate:
+      type: object
+      description: "Only the fields present are changed; ``system_prompt: null`` (or empty) clears it."
+      properties:
+        system_prompt: {type: string, nullable: true, maxLength: 8000}
 
     ProjectResponse:
       type: object
-      required: [id, name, type, status, base_model, description, team_id, created_at, summary]
+      required: [id, name, type, status, base_model, description, system_prompt, team_id, created_at, summary]
       properties:
         id: {type: string}
         name: {type: string}
@@ -952,6 +988,7 @@ components:
         status: {type: string}
         base_model: {type: string}
         description: {type: string, nullable: true}
+        system_prompt: {type: string, nullable: true}
         team_id: {type: string}
         created_at: {type: string}
         # Dashboard read-model (§C2.1) — null on create, populated on list/get.
@@ -1249,6 +1286,47 @@ components:
             - $ref: '#/components/schemas/ResponseFormatText'
             - $ref: '#/components/schemas/ResponseFormatJsonObject'
             - $ref: '#/components/schemas/ResponseFormatJsonSchema'
+        adapta:
+          description: >
+            Adapta extension (namespaced so OpenAI clients ignore it). Per-request retrieval
+            options; absent means the project's defaults.
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/AdaptaOptions'
+
+    AdaptaOptions:
+      type: object
+      properties:
+        top_k:
+          type: integer
+          minimum: 1
+          maximum: 20
+          nullable: true
+          description: Chunks to retrieve (overrides the org/env default).
+        filters:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/RetrievalFilters'
+
+    RetrievalFilters:
+      type: object
+      description: >
+        Restrict retrieval. ``file_ids`` is a Chroma metadata filter on the vector leg and a SQL
+        filter on the full-text leg; the page and review filters are SQL filters on ``chunks``
+        (applied to the vector candidates after the query).
+      properties:
+        file_ids:
+          type: array
+          items: {type: string}
+          minItems: 1
+          maxItems: 50
+          nullable: true
+        page_min: {type: integer, minimum: 1, nullable: true}
+        page_max: {type: integer, minimum: 1, nullable: true}
+        needs_review:
+          type: boolean
+          nullable: true
+          description: "true = only OCR chunks flagged for review; false = exclude them."
 
     ResponseFormatText:
       type: object
@@ -1381,7 +1459,7 @@ components:
         citations:
           type: array
           nullable: true
-          description: "Document citations — present when the project has indexed documents"
+          description: "Document citations — present (possibly empty) when the project has indexed documents; empty means nothing cleared the relevance threshold and the model was told to abstain"
           items: {$ref: '#/components/schemas/Citation'}
 
     # Error

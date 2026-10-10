@@ -22,7 +22,7 @@ from adapta.domain.errors import Forbidden, InvalidRequest, NotFound, Unauthoriz
 from adapta.models.generated import ChatCompletionRequest
 from adapta.services.auth import verify_api_key
 from adapta.services.chat import chat, chat_stream, has_image_parts
-from adapta.services.rag import count_project_chunks
+from adapta.services.rag import RetrievalFilters, count_project_chunks
 from adapta.services.usage import record_usage
 
 router = APIRouter(tags=["chat"])
@@ -151,6 +151,22 @@ async def chat_completions(
                 internal_detail=f"adapter {endpoint.adapter.id} has gguf_path NULL",
             )
 
+    # `adapta` request namespace (E3.5): per-request retrieval options.
+    top_k_rag: Optional[int] = None
+    rag_filters: Optional[RetrievalFilters] = None
+    if request_body.adapta is not None:
+        top_k_rag = request_body.adapta.top_k
+        f = request_body.adapta.filters
+        if f is not None and any(
+            v is not None for v in (f.file_ids, f.page_min, f.page_max, f.needs_review)
+        ):
+            rag_filters = RetrievalFilters(
+                file_ids=list(f.file_ids) if f.file_ids else None,
+                page_min=f.page_min,
+                page_max=f.page_max,
+                needs_review=f.needs_review,
+            )
+
     if request_body.stream:
         return StreamingResponse(
             chat_stream(
@@ -158,7 +174,10 @@ async def chat_completions(
                 messages=messages,
                 temperature=request_body.temperature,
                 max_tokens=request_body.max_tokens,
+                system_prompt=project.system_prompt,
                 project_id=project_id_for_rag,
+                top_k_rag=top_k_rag,
+                rag_filters=rag_filters,
                 endpoint_id=endpoint.id,
                 adapter_path=adapter_path,
                 response_format=response_format,
@@ -172,7 +191,10 @@ async def chat_completions(
             temperature=request_body.temperature,
             max_tokens=request_body.max_tokens,
             top_p=request_body.top_p,
+            system_prompt=project.system_prompt,
             project_id=project_id_for_rag,
+            top_k_rag=top_k_rag,
+            rag_filters=rag_filters,
             adapter_path=adapter_path,
             response_format=response_format,
         )

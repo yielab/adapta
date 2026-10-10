@@ -13,6 +13,7 @@ from adapta.domain.errors import InvalidRequest, NotFound
 from adapta.models.generated import (
     ProjectCreate,
     ProjectResponse,
+    ProjectUpdate,
 )
 from adapta.models.generated import (
     ProjectSummary as ApiProjectSummary,
@@ -38,6 +39,7 @@ def _proj_resp(p: Project, summary: Optional[Dict[str, Any]] = None) -> ProjectR
         status=p.status.value,
         base_model=p.base_model,
         description=p.description,
+        system_prompt=p.system_prompt,
         team_id=p.team_id,
         created_at=p.created_at.isoformat(),
         summary=ApiProjectSummary.model_validate(summary) if summary is not None else None,
@@ -82,6 +84,7 @@ async def create_project(
         type=ProjectType(body.type.value),
         base_model=body.base_model,
         description=body.description,
+        system_prompt=body.system_prompt or None,
         status=ProjectStatus.created,
     )
     db.add(project)
@@ -117,6 +120,24 @@ async def get_project(
 ):
     project = await _get_project(db, project_id)
     await require_team_member(db, current_user.id, project.team_id)
+    from adapta.services.project_summary import compute_summary
+
+    summary = await compute_summary(db, project_id)
+    return _proj_resp(project, _summary_to_dict(summary))
+
+
+@router.patch("/{project_id}", response_model=ProjectResponse)
+async def update_project(
+    project_id: str,
+    body: ProjectUpdate,
+    current_user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    project = await _get_project(db, project_id)
+    await require_team_writer(db, current_user.id, project.team_id)
+    if "system_prompt" in body.model_fields_set:
+        project.system_prompt = (body.system_prompt or "").strip() or None
+    await db.commit()  # durable before response (read-your-write)
     from adapta.services.project_summary import compute_summary
 
     summary = await compute_summary(db, project_id)

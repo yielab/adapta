@@ -50,6 +50,56 @@ class RetrievedChunk:
     page: Optional[int] = None
     ocr: bool = False
     ocr_confidence: Optional[float] = None
+    # (E3.5) Keyword-only hit: the vector leg never returned it, so `score` is a 0.0
+    # placeholder, not a cosine, and must not be compared to a relevance threshold.
+    lexical_only: bool = False
+
+
+@dataclass(frozen=True)
+class RetrievalFilters:
+    """(E3.5) Request-level restriction of retrieval. All fields optional (AND-ed)."""
+
+    file_ids: Optional[List[str]] = None
+    page_min: Optional[int] = None
+    page_max: Optional[int] = None
+    needs_review: Optional[bool] = None
+
+    @property
+    def sql_only(self) -> bool:
+        """Filters Chroma metadata cannot express (it carries no page / review flag)."""
+        return (
+            self.page_min is not None or self.page_max is not None or self.needs_review is not None
+        )
+
+    def sql_clauses(self) -> tuple[str, dict]:
+        """``AND ...`` fragment over alias ``c`` (chunks) plus its bind params."""
+        parts: list[str] = []
+        params: dict = {}
+        if self.file_ids:
+            parts.append("c.file_id = ANY(:f_file_ids)")
+            params["f_file_ids"] = list(self.file_ids)
+        if self.page_min is not None:
+            parts.append("c.page >= :f_page_min")
+            params["f_page_min"] = self.page_min
+        if self.page_max is not None:
+            parts.append("c.page <= :f_page_max")
+            params["f_page_max"] = self.page_max
+        if self.needs_review is not None:
+            parts.append("c.needs_review = :f_needs_review")
+            params["f_needs_review"] = self.needs_review
+        return "".join(f" AND {p}" for p in parts), params
+
+
+def apply_min_score(chunks: List["RetrievedChunk"], min_score: float) -> List["RetrievedChunk"]:
+    """Drop chunks whose relevance score is under ``min_score`` (0 disables).
+
+    ``score`` is the reranker sigmoid or the vector cosine, depending on ``score_kind`` —
+    both in [0, 1] and both thresholded as-is. Keyword-only hits are kept: FTS already
+    discards statistical stopwords, so a hit is exact-term evidence the cosine cannot judge.
+    """
+    if min_score <= 0:
+        return chunks
+    return [c for c in chunks if c.lexical_only or c.score >= min_score]
 
 
 def content_hash(text: str) -> str:
@@ -181,7 +231,7 @@ w AS (
 )
 SELECT c.id, c.text, c.chunk_index, f.filename
 FROM w
-JOIN chunks c ON c.project_id = :p AND c.tsv @@ w.tq
+JOIN chunks c ON c.project_id = :p AND c.tsv @@ w.tq{filters}
 JOIN project_files f ON f.id = c.file_id
 GROUP BY c.id, c.text, c.chunk_index, f.filename
 ORDER BY sum(w.idf) DESC, c.id
@@ -216,7 +266,9 @@ def _fts_runtime() -> asyncio.AbstractEventLoop:
         return _fts_loop
 
 
-def _fts_search(project_id: str, query: str, limit: int) -> List[_FtsHit]:
+def _fts_search(
+    project_id: str, query: str, limit: int, filters: Optional["RetrievalFilters"] = None
+) -> List[_FtsHit]:
     """Sparse leg: ranked Postgres full-text hits over the project's whole corpus."""
     from sqlalchemy import text as sql_text
 
@@ -230,13 +282,18 @@ def _fts_search(project_id: str, query: str, limit: int) -> List[_FtsHit]:
         )
 
     loop = _fts_runtime()
+    # Filters go on the final join only: idf statistics stay project-wide so a filtered
+    # query ranks exactly as it would unfiltered, restricted to the allowed chunks.
+    filter_sql, filter_params = filters.sql_clauses() if filters else ("", {})
+    statement = _FTS_SQL.replace("{filters}", filter_sql)
 
     async def _run() -> List[_FtsHit]:
         assert _fts_engine is not None
         async with _fts_engine.connect() as conn:
             rows = await conn.execute(
-                sql_text(_FTS_SQL),
+                sql_text(statement),
                 {
+                    **filter_params,
                     "p": project_id,
                     "cfg": settings.rag_fts_config,
                     "q": query,
@@ -245,6 +302,34 @@ def _fts_search(project_id: str, query: str, limit: int) -> List[_FtsHit]:
                 },
             )
             return [_FtsHit(r.id, r.text, r.filename, r.chunk_index) for r in rows]
+
+    fut = asyncio.run_coroutine_threadsafe(_run(), loop)
+    try:
+        return fut.result(timeout=settings.rag_timeout_seconds)
+    except BaseException:
+        fut.cancel()
+        raise
+
+
+def _filter_vector_ids(ids: List[str], filters: "RetrievalFilters") -> set:
+    """Subset of the vector candidates passing the page / review filters (one query).
+
+    Chroma metadata has no page or review flag, so those filters run in Postgres over the
+    candidate ids. A Postgres failure here must not silently drop the filter: it raises.
+    """
+    from sqlalchemy import text as sql_text
+
+    if not ids:
+        return set()
+    clause, params = filters.sql_clauses()
+    statement = sql_text(f"SELECT c.id FROM chunks c WHERE c.id = ANY(:ids){clause}")
+    loop = _fts_runtime()
+
+    async def _run() -> set:
+        assert _fts_engine is not None
+        async with _fts_engine.connect() as conn:
+            rows = await conn.execute(statement, {"ids": ids, **params})
+            return {r.id for r in rows}
 
     fut = asyncio.run_coroutine_threadsafe(_run(), loop)
     try:
@@ -418,6 +503,7 @@ class RAGService:
         project_id: str,
         query: str,
         top_k: Optional[int] = None,
+        filters: Optional[RetrievalFilters] = None,
     ) -> List[RetrievedChunk]:
         """Hybrid retrieval: Chroma vector leg + Postgres FTS leg fused via RRF, then rerank.
 
@@ -429,10 +515,16 @@ class RAGService:
           5. Return top_k, best-first (§A4.3 pop() invariant preserved); log one line.
 
         Citations reflect the final reranked scores (§A4.3 ordering).
+
+        ``filters`` (E3.5) restricts both legs: ``file_ids`` as a Chroma ``where`` and SQL
+        ``WHERE`` on the FTS leg; page / review filters in SQL on the FTS leg and over the
+        vector candidates (over-fetched 4x to leave survivors). ``None`` changes nothing.
         """
         t0 = time.perf_counter()
         top_k = top_k or settings.rag_top_k
         fetch_k = max(top_k * settings.rag_hybrid_fetch_multiplier, top_k + 1)
+        if filters is not None and filters.sql_only:
+            fetch_k *= 4
 
         name = collection_name_for(project_id)
         client = self._client()
@@ -462,21 +554,35 @@ class RAGService:
         emb_service = get_embedding_service()
         query_embedding = emb_service.embed_one(query)
 
+        query_kwargs: dict = {}
+        if filters is not None and filters.file_ids:
+            query_kwargs["where"] = {"file_id": {"$in": list(filters.file_ids)}}
         results = collection.query(
             query_embeddings=[query_embedding],
             n_results=fetch_k,
             include=["documents", "metadatas", "distances"],
+            **query_kwargs,
         )
 
         ids: list[str] = results["ids"][0]
         docs: list[str] = results["documents"][0]
         metas: list[dict] = results["metadatas"][0]
         dists: list[float] = results["distances"][0]
+        if filters is not None and filters.sql_only:
+            keep = _filter_vector_ids(ids, filters)
+            kept = [i for i, cid in enumerate(ids) if cid in keep]
+            ids = [ids[i] for i in kept]
+            docs = [docs[i] for i in kept]
+            metas = [metas[i] for i in kept]
+            dists = [dists[i] for i in kept]
 
         # Sparse leg over the whole corpus. A Postgres failure degrades to vector-only
         # rather than failing the request (the dense leg is still a valid answer).
         try:
-            fts_hits = _fts_search(project_id, query, top_k * settings.rag_sparse_fetch_multiplier)
+            fts_kwargs = {"filters": filters} if filters is not None else {}
+            fts_hits = _fts_search(
+                project_id, query, top_k * settings.rag_sparse_fetch_multiplier, **fts_kwargs
+            )
         except (SQLAlchemyError, OSError, asyncio.TimeoutError) as exc:
             logger.warning("rag fts leg failed, vector-only: %r", exc)
             fts_hits = []
@@ -502,6 +608,7 @@ class RAGService:
                 RetrievedChunk(
                     text=h.text, source=h.source, score=0.0,
                     chunk_index=h.chunk_index, score_kind="vector", chunk_id=h.id,
+                    lexical_only=True,
                 ),
             )
         fused_ids = _rrf_fuse(ids, [h.id for h in fts_hits])
