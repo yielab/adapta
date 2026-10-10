@@ -56,7 +56,7 @@ endpoint exists).
 
 In the **Setup** tab:
 
-1. **Upload documents** — drag-and-drop PDF, DOCX, TXT, MD, or HTML files. Each
+1. **Upload documents** — drag-and-drop PDF, DOCX, TXT, MD, HTML, or image (PNG, JPG, TIFF) files. Each
    file is parsed, split into chunks, embedded, and stored in this project's
    private vector collection in the background.
 2. **Watch the status** — each file moves `pending → processing → indexed` (or
@@ -79,7 +79,7 @@ adapter has passed the eval gate (import: `POST /v1/projects/{id}/adapters`; the
 gate job that marks it `passed` is roadmap E4.4). What the **Setup** tab
 does today:
 
-1. **Documents (optional)** — upload PDF/DOCX/TXT/MD/HTML, same as the RAG
+1. **Documents (optional)** — upload PDF/DOCX/TXT/MD/HTML/images, same as the RAG
    flow. They are the source the **Synthesize** button reads, and once an
    adapter is served the model can answer from them with citations. See
    [Knowledge + behavior together](knowledge-and-behavior.md).

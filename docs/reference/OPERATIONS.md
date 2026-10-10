@@ -272,12 +272,12 @@ full list of missing/corrupt/oversized images or malformed rows in one upload an
 fixes them together, rather than discovering them one re-upload at a time. The
 console renders the multi-line report verbatim under the dataset row.
 
-#### Ingestion sizing (E3.3a spike — measured; Docling adopted 2026-10-10, ships with E3.3b)
+#### Ingestion sizing (E3.3a spike — measured; Docling shipped in E3.3b, 2026-10-10)
 
 Measured 2026-10-09 with `docling[rapidocr]` 2.137 / RapidOCR 3.10 (`latin_PP-OCRv5_rec_mobile`, onnxruntime) in a scratch container from `adapta-app`, 16-core CPU, no GPU:
 
-- **Image size:** +≈ 950 MB (2.22 → 3.16 GB): ≈ 415 MB packages (opencv, torchvision, docling, …), ≈ 510 MB Docling layout/table models (HF cache), ≈ 43 MB RapidOCR models.
-- **Speed (warm, s/page):** native text 0.56 (20 pp) · scanned 3.2 (5 pp) · mixed 1.5 (3 native + 3 scanned); cold start adds ≈ 12–60 s of model load.
+- **Image size:** shipped image 3.27 GB (+1.05 GB over 2.22 GB). Spike breakdown: ≈ 415 MB packages (opencv, torchvision, docling, …), ≈ 510 MB Docling layout/table models (HF cache), ≈ 43 MB RapidOCR models. All models are baked into the image, so ingestion works air-gapped.
+- **Speed (warm, s/page):** native text 0.56 (20 pp) · scanned 3.2 (5 pp) · mixed 1.5 (3 native + 3 scanned); cold start adds ≈ 12–60 s of model load. Live E3.3b: scanned ≈ 1.3 s/page, image ≈ 1.2 s/image.
 - **Peak RAM:** ≈ 2.5 GB RSS per converting process — budget it per ingest worker, not per request.
 - **Verified:** page number on every element (`prov.page_no`), DOCX table → markdown table, per-line OCR confidence (`TextCell.confidence`, needs `generate_parsed_pages=True`; per-page `ocr_score` is always present).
 - **Gotchas:** PyPI's `torchvision` does not match the CPU-only `torch` (`operator torchvision::nms does not exist`) — pin the `+cpu` wheel; Docling and RapidOCR download their models at first use, so bake them into the image for air-gapped installs.

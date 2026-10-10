@@ -259,8 +259,8 @@ report a vulnerability via [SECURITY.md](SECURITY.md).
 
 Phases 0–5 shipped (history in [CHANGELOG.md](CHANGELOG.md)). In-product training was removed on
 2026-10-10 (E4.1): no CUDA worker, vLLM or GPU gates remain. The open work is the 2026-09-03 audit,
-roadmap §E, in [TODO.md](TODO.md): *bring your own adapter* (import, CPU eval gate, serve with RAG) and
-Docling + OCR ingestion. Hybrid retrieval over Postgres full-text shipped 2026-10-10 (E3.2).
+roadmap §E, in [TODO.md](TODO.md): *bring your own adapter* (import, CPU eval gate, serve with RAG).
+Hybrid retrieval over Postgres full-text shipped 2026-10-10 (E3.2); Docling + OCR ingestion shipped 2026-10-10 (E3.3b).
 
 <details>
 <summary><b>Capability matrix</b></summary>
@@ -269,7 +269,7 @@ Docling + OCR ingestion. Hybrid retrieval over Postgres full-text shipped 2026-1
 | --- | --- |
 | Operator console (RAG lifecycle, datasets, endpoint+keys, playground, usage) | ✅ Done |
 | OpenAI-compatible serving (base + GGUF LoRA adapter, key-scoped) | ✅ Done |
-| RAG retrieval with citations (sentence-transformers; PDF/DOCX/MD/TXT/HTML; per-project ChromaDB) | ✅ Done |
+| RAG retrieval with citations (sentence-transformers; PDF/DOCX/MD/TXT/HTML/images, scanned PDFs and images included via Docling + OCR; per-project ChromaDB) | ✅ Done |
 | Adapter import + CPU eval gate (unverified adapter never serves) | 🚧 Roadmap E4.2–E4.4 |
 | Dataset synthesis (indexed docs → LLM Q/A pairs → JSONL) | ✅ Done |
 | Combined serving (retrieval + adapter in one call) | ✅ Done (adapter path; import pending) |

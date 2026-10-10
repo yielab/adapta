@@ -17,6 +17,10 @@ supplies the facts, the adapter makes the answer come out in *your* voice and
     [roadmap](../roadmap.md). Until then only the knowledge half is usable end
     to end.
 
+**Knowledge inputs:** PDF, DOCX, Markdown, TXT, HTML and images (PNG, JPG, TIFF). Scanned
+pages are OCR'd (Docling + RapidOCR) only where there is no text layer; low-confidence OCR
+flags the file for review.
+
 ## When to use which — real-life cases
 
 | Your situation | Use | Why |

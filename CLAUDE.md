@@ -5,7 +5,7 @@
 **Adapta is a self-hosted model-customization platform.** Teams deploy it on their own servers (data never
 leaves their infrastructure) to specialize and serve private language models behind one OpenAI-compatible API:
 
-- **Knowledge (RAG):** upload documents → chunk → embed (sentence-transformers) → per-project ChromaDB →
+- **Knowledge (RAG):** upload documents → Docling parsing + OCR → chunk → embed (sentence-transformers) → per-project ChromaDB →
   hybrid retrieval (vector + Postgres full-text, RRF, optional cross-encoder rerank) → cited answers. CPU-only.
 - **Bring your own adapter (LoRA):** import a GGUF/PEFT adapter (import flow: E4.2–E4.4, not built yet), gate it
   on CPU against the base on the project's eval set, then serve it. In-product training was removed 2026-10-10;
@@ -96,5 +96,4 @@ Phases 0–5, console, brand and positioning shipped (history in `CHANGELOG.md`)
 the 2026-09-03 audit, roadmap §E: wave 0 (dependency pins E1.10, contract gate E1.11) closed 2026-10-09; the §E board picks the next wave.
 **In-product training was removed 2026-10-10 (E4.1):** no `adapta/training/`, CUDA worker, vLLM or GPU gates; the worker is
 the app image with an empty `HANDLERS` table. Direction: *bring your own adapter* (§E4.2–E4.4) — import a GGUF/PEFT LoRA,
-gate it on CPU against the base, serve it with RAG. Alongside: Docling + OCR
-ingestion. Pick a block by its id; read the block and its Files line only.
+gate it on CPU against the base, serve it with RAG. Pick a block by its id; read the block and its Files line only.
