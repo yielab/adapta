@@ -61,6 +61,32 @@ def test_rrf_consensus_top_item_stays_first():
     assert result[0] == 0
 
 
+def test_rrf_tie_break_is_independent_of_input_order():
+    """F1.4: a vec-only and an fts-only chunk at the same rank tie in RRF; the winner is the
+    content key (filename, chunk_index), not list position or the random per-upload id."""
+    key = {"zz-1": ("a.md", 0), "aa-9": ("b.md", 0)}  # id order opposes content order
+    out1 = _rrf_fuse(["zz-1"], ["aa-9"], tie_key=key)
+    out2 = _rrf_fuse(["aa-9"], ["zz-1"], tie_key=key)
+    assert out1 == out2 == ["zz-1", "aa-9"]
+
+
+def test_rrf_tie_break_same_across_id_relabelling():
+    """Two identically built projects differ only in chunk ids; fused content order is equal."""
+    content = {"A": ("a.md", 0), "B": ("b.md", 0), "C": ("c.md", 1)}
+    for ids in ({"A": "u1_0", "B": "u2_0", "C": "u3_1"}, {"A": "u9_0", "B": "u0_0", "C": "u5_1"}):
+        key = {ids[n]: content[n] for n in content}
+        fused = _rrf_fuse([ids["B"], ids["C"]], [ids["A"]], tie_key=key)
+        assert [n for i in fused for n, v in ids.items() if v == i] == ["A", "B", "C"]
+
+
+def test_rrf_tie_break_ignores_float_summation_order():
+    a, b = "a", "b"
+    key = {a: ("a", 0), b: ("b", 0)}
+    out1 = _rrf_fuse([a, b], [b, a], [a, b], [b, a], tie_key=key)
+    out2 = _rrf_fuse([b, a], [a, b], [b, a], [a, b], tie_key=key)
+    assert out1 == out2 == [a, b]
+
+
 # ---------------------------------------------------------------------------
 # RAGService.retrieve — hybrid reordering (no model, no Chroma)
 # ---------------------------------------------------------------------------
@@ -568,7 +594,7 @@ def test_fts_sql_is_or_semantics_with_statistical_stopwords_and_idf_ranking():
     assert "websearch_to_tsquery" not in sql
     assert "tsvector_to_array(to_tsvector(" in sql and "quote_literal(l)" in sql
     assert "df.df <= GREATEST(:max_df * n.n, 3)" in sql
-    assert "ORDER BY sum(w.idf) DESC" in sql
+    assert "ORDER BY round(CAST(sum(w.idf) AS numeric), 9) DESC, f.filename, c.chunk_index, c.content_hash, c.id" in sql
     # No surviving lexeme joins to nothing: empty result, not an error.
     assert "FROM w" in sql
 

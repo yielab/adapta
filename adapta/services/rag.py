@@ -20,7 +20,7 @@ import threading
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, List, Literal, Optional, Sequence
+from typing import TYPE_CHECKING, List, Literal, Mapping, Optional, Sequence
 
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -294,7 +294,9 @@ class _FtsHit:
 #   * df = how many of the project's chunks contain the lexeme (GIN-backed count);
 #   * lexemes present in more than :max_df of the chunks are dropped (statistical
 #     stopwords), but never when df <= 3, so tiny corpora keep their terms;
-#   * chunks are ranked by the summed BM25-style idf of the lexemes they contain.
+#   * chunks are ranked by the summed BM25-style idf of the lexemes they contain (rounded
+#     so float summation order cannot split a tie), ties broken by (filename, chunk_index,
+#     content_hash) -- never by chunks.id, which embeds a per-upload random file uuid (F1.4).
 # No surviving lexeme -> no rows (not an error).
 _FTS_SQL = """
 WITH lex AS (
@@ -317,7 +319,7 @@ FROM w
 JOIN chunks c ON c.project_id = :p AND c.tsv @@ w.tq{filters}
 JOIN project_files f ON f.id = c.file_id
 GROUP BY c.id, c.text, c.chunk_index, f.filename
-ORDER BY sum(w.idf) DESC, c.id
+ORDER BY round(CAST(sum(w.idf) AS numeric), 9) DESC, f.filename, c.chunk_index, c.content_hash, c.id
 LIMIT :n
 """
 
@@ -484,17 +486,27 @@ def _hydrate_provenance(chunks: List[RetrievedChunk]) -> List[RetrievedChunk]:
     ]
 
 
-def _rrf_fuse(*rank_lists: list, k: int = 60) -> list:
+def _chunk_tie_key(meta: dict, chunk_id: str) -> tuple:
+    """Content-derived tie-break: (filename, chunk_index). Chunk ids embed a random per-upload
+    file uuid, so they differ between identically built projects and must not decide ties."""
+    return (str(meta.get("source", "")), int(meta.get("chunk_index", 0) or 0))
+
+
+def _rrf_fuse(*rank_lists: list, k: int = 60, tie_key: Optional[Mapping] = None) -> list:
     """Reciprocal Rank Fusion over multiple ranked id lists.
 
     Each list contains chunk ids ordered best-first.  Returns the union ordered by
-    descending RRF score (ties keep first-seen order).
+    descending RRF score.  Ties (scores rounded to 12 places, so float summation order
+    cannot split them) are broken by ``tie_key[id]`` when given -- a content-derived key
+    that is identical across identically built projects (F1.4) -- then by id.  Without a
+    ``tie_key`` ties fall back to the id alone, never to list/dict order.
     """
     rrf: dict = {}
     for ranks in rank_lists:
         for rank, idx in enumerate(ranks):
             rrf[idx] = rrf.get(idx, 0.0) + 1.0 / (k + rank + 1)
-    return sorted(rrf, key=lambda i: rrf[i], reverse=True)
+    key = tie_key or {}
+    return sorted(rrf, key=lambda i: (-round(rrf[i], 12), key.get(i, ()), i))
 
 
 class RAGService:
@@ -678,10 +690,18 @@ class RAGService:
                 include=["documents", "metadatas", "distances"],
                 **query_kwargs,
             )
-            ids: list[str] = results["ids"][0]
-            docs: list[str] = results["documents"][0]
-            metas: list[dict] = results["metadatas"][0]
-            dists: list[float] = results["distances"][0]
+            # Chroma leaves exact-distance ties in arbitrary order: pin them by content (F1.4).
+            order = sorted(
+                range(len(results["ids"][0])),
+                key=lambda j: (
+                    results["distances"][0][j],
+                    _chunk_tie_key(results["metadatas"][0][j], results["ids"][0][j]),
+                ),
+            )
+            ids: list[str] = [results["ids"][0][j] for j in order]
+            docs: list[str] = [results["documents"][0][j] for j in order]
+            metas: list[dict] = [results["metadatas"][0][j] for j in order]
+            dists: list[float] = [results["distances"][0][j] for j in order]
             if filters is not None and filters.sql_only:
                 keep = _filter_vector_ids(ids, filters)
                 kept = [i for i, cid in enumerate(ids) if cid in keep]
@@ -730,7 +750,12 @@ class RAGService:
         if not by_id:
             return []
 
-        fused_ids = _rrf_fuse(*vec_lists, *fts_lists)
+        fused_ids = _rrf_fuse(
+            *vec_lists,
+            *fts_lists,
+            tie_key={cid: _chunk_tie_key({"source": c.source, "chunk_index": c.chunk_index}, cid)
+                     for cid, c in by_id.items()},
+        )
         candidates: List[RetrievedChunk] = [by_id[cid] for cid in fused_ids]
 
         reranker = get_reranker_service()
