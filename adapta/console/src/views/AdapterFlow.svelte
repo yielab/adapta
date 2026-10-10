@@ -193,7 +193,7 @@
   const TASK_HINTS: Record<string, string> = {
     classify: "classify: the response is a label; scored by exact label match",
     extract: "extract: the response is a JSON object; scored by JSON parse rate and per-key match",
-    freeform: "freeform: free text; scored by word overlap (F1) — weak, a poor adapter can pass it; prefer classify or extract",
+    freeform: "freeform: free text; cannot gate an adapter (an adapter evaluated on it ends failed); use classify or extract",
   };
 
   async function onFilePicked(ev: Event) {
@@ -560,7 +560,7 @@
         <select bind:value={evalTask} title={TASK_HINTS[evalTask]} disabled={uploading} aria-label="Task">
           <option value="classify">classify</option>
           <option value="extract">extract</option>
-          <option value="freeform">freeform</option>
+          <option value="freeform">freeform (cannot gate)</option>
         </select>
         <input
           bind:this={fileInput}
@@ -591,7 +591,7 @@
     <ul class="approach-list">
       <li><strong>classify</strong> — the response is a label; scored by exact match. Recommended.</li>
       <li><strong>extract</strong> — the response is a JSON object; scored by parse rate and per-key match. Recommended.</li>
-      <li><strong>freeform</strong> — scored by word overlap (token F1), which is weak: a poor adapter can still pass it. Prefer classify or extract whenever the task allows.</li>
+      <li><strong>freeform</strong> — cannot gate an adapter: an adapter evaluated on a freeform set ends failed. Use classify or extract.</li>
     </ul>
     <p class="muted" style="margin: 0 0 14px; font-size: 13px;">
       No labelled rows? Index documents above and use <strong>Synthesize</strong> for a first set, then review it.
@@ -631,7 +631,7 @@
               <select id="synth-task" bind:value={synthTask} disabled={synthesizing}>
                 <option value="extract">extract (JSON fields)</option>
                 <option value="classify">classify (yes/no)</option>
-                <option value="freeform">freeform</option>
+                <option value="freeform">freeform (cannot gate)</option>
               </select>
             </div>
             <div class="field" style="margin: 0; flex: 1; min-width: 220px;">

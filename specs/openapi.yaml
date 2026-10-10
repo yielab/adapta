@@ -420,7 +420,9 @@ paths:
         Plain `.jsonl`, one SFT row per line (`prompt`/`response`, optional `system`),
         20-200 rows (400 otherwise). `task` picks the metric the eval gate scores the
         set with: `classify` (label accuracy), `extract` (JSON parse rate x per-key exact
-        match; every `response` must be a JSON object) or `freeform` (token F1).
+        match; every `response` must be a JSON object) or `freeform` (accepted, but it cannot gate: an
+        adapter whose eval set is freeform ends `failed`, "freeform eval sets cannot gate; use
+        classify or extract").
         Validation runs in the background; poll the dataset until `valid`/`invalid`.
       security: [{BearerAuth: []}]
       parameters: [{$ref: '#/components/parameters/ProjectId'}]
@@ -911,7 +913,8 @@ paths:
         endpoint instead. `mode: rag_eval` (default) writes retrieval questions in the
         golden-set format (`q`, `expected_file`, `lang`, `expected_page`, plus `answer`
         and `source_chunk_id`); `mode: behavior` writes `{prompt, response}` rows
-        shaped by `task` (classify | extract | freeform), usable as an adapter eval set. Poll the returned dataset_id via
+        shaped by `task` (classify | extract | freeform). classify and extract sets can gate an adapter; an adapter
+        gated on a freeform set ends `failed` ("cannot gate; use classify or extract"). Poll the returned dataset_id via
         GET /v1/projects/{project_id}/datasets/{dataset_id} for status.
         Only available for `finetune` projects that already have indexed files.
       security: [{BearerAuth: []}]

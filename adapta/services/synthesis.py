@@ -8,8 +8,8 @@ Two modes (E4.8):
   so the ``make golden`` harness and E5.2 can consume them unchanged.
 * ``behavior`` — ``{prompt, response, system?}`` rows shaped by an eval ``task``
   (``classify`` yes/no verification, ``extract`` JSON field objects, ``freeform``), usable as an
-  adapter eval set (E4.3) or downloaded as JSONL. Classify/extract are preferred because
-  token-F1 ``freeform`` sets are weak (E4.4). Extract field values are kept only when quoted
+  adapter eval set (E4.3) or downloaded as JSONL. Only classify/extract sets can gate an
+  adapter; a ``freeform`` set ends the adapter ``failed`` (F1.3). Extract field values are kept only when quoted
   verbatim from the chunk.
 
 The generator is the project's local base model via ``services.chat`` by default; an optional
