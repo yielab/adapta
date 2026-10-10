@@ -18,7 +18,7 @@
 
 .PHONY: help up status down generate validate-spec test-contracts migrate migration migrate-test \
         test coverage lint fmt check-leaks check-chroma docs-install docs-build docs-serve ci ci-full \
-        console-build screenshots gif golden
+        console-build screenshots gif golden golden-followups
 
 help:
 	@echo "Available targets:"
@@ -44,6 +44,7 @@ help:
 	@echo "  lint            Run ruff + mypy"
 	@echo "  fmt             Run black formatter"
 	@echo "  golden          Retrieval-quality golden set: recall@5 / MRR / p50 (live stack)"
+	@echo "  golden-followups  Multi-turn follow-up recall@5, condensation on vs off (live stack)"
 	@echo "  -- documentation (MkDocs, run on the HOST) --"
 	@echo "  docs-serve      Live-reload docs preview at http://localhost:8000"
 	@echo "  docs-build      Build the docs site (--strict; fails on broken links)"
@@ -156,6 +157,9 @@ test:
 
 # Retrieval-quality golden set (§E3.8) — needs the live stack + embedding model.
 # Prints recall@5 / MRR / p50 and asserts recall@5 >= tests/fixtures/golden/floor.json.
+golden-followups:
+	ADAPTA_RUN_GOLDEN_FOLLOWUPS=1 ADAPTA_BASE_URL=http://localhost:8000 pytest -m "integration and slow" tests/golden/test_rag_followups.py -s
+
 golden:
 	ADAPTA_RUN_GOLDEN=1 ADAPTA_BASE_URL=http://localhost:8000 pytest -m "integration and slow" tests/integration/test_rag_golden.py -s
 
