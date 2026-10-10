@@ -14,8 +14,8 @@
 
   const POLL_MS = 2000;
 
-  // Minimum rows to keep when curating a dataset.
-  const MIN_SAMPLES = 10;
+  // Minimum rows to keep when curating a dataset (the server's eval-set floor).
+  const MIN_SAMPLES = 20;
   import { BRAND } from "../lib/brand";
   const DOCS_URL = BRAND.docs;
 
@@ -28,6 +28,9 @@
   let datasets = $state<Dataset[]>([]);
   let dsLoading = $state(false);
   let dsLoadErr = $state(false);
+
+  // ---- Adapters (declared early: derived/poll state below reads it) --------
+  let adapters = $state<Adapter[]>([]);
 
   // ---- Endpoint existence (so we don't offer to create a second one) ------
   let endpointExists = $state(false);
@@ -325,7 +328,6 @@
     return isNaN(d.getTime()) ? iso : d.toLocaleString();
   }
   // ---- Adapters (E4.6) ----------------------------------------------------
-  let adapters = $state<Adapter[]>([]);
   let adLoading = $state(false);
   let adLoadErr = $state(false);
   let adUploading = $state(false);
@@ -737,8 +739,9 @@
                     <!-- edit mode -->
                     {#each fields as fld}
                       <div class="field" style="margin: 0 0 6px;">
-                        <label style="font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em;">{fld}</label>
+                        <label for={`edit-${fld}`} style="font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em;">{fld}</label>
                         <textarea
+                          id={`edit-${fld}`}
                           rows="3"
                           style="width: 100%; box-sizing: border-box; resize: vertical;"
                           bind:value={editBuf[fld]}
