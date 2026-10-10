@@ -142,6 +142,56 @@ bind mount, so uvicorn reloaded on every worker edit — reload now watches `/ap
   `operator torchvision::nms does not exist`) and bake the Docling (HF Hub) and RapidOCR (modelscope.cn) models into
   the image at build time (air-gapped installs).
 
+### E3.2 `[BE]` Real hybrid retrieval: Postgres full-text leg over the whole corpus, fused with the vector leg (P1)
+- [x] **Context.** `_bm25_scores` runs over the ≤ 20 Chroma candidates (`rag.py:239`): IDF over 20
+  documents, and a keyword-only chunk the embedder missed can never be recalled; it is recomputed per
+  query with an O(|q|·N·L) loop (`rag.py:91`). This is the README's "hybrid" claim, and it does not hold.
+- **Depends.** E3.1, E3.8 (baseline recorded **before** this lands). **Unblocks.** E3.5, E3.6, E5.3.
+- **Agent.** sonnet · gate class **live (rag e2e, then `make golden`)** · serialize with: E3.7
+  (`rag.py`), E3.5 (`rag.py`, `chat.py`) · **Handoff.** must name `retrieve()` signature, new config
+  keys, the log-line format, recall@5 before/after.
+- **Scope.** Sparse leg = Postgres FTS over `chunks.tsv` (E3.1); RRF over two *independent* top-N
+  lists; delete `_bm25_scores`. Reranker unchanged. Out: multi-query (E5.3), thresholds (E3.5).
+- **Steps.** (1) `config.py`: `rag_fts_config` (`simple` | `english` | `spanish`; default `simple`
+  until E3.6), `rag_sparse_fetch_multiplier` (default 4). (2) `retrieve`: run the Chroma query and
+  `SELECT id, ts_rank_cd(tsv, websearch_to_tsquery(:cfg, :q)) AS r FROM chunks WHERE project_id=:p
+  AND tsv @@ websearch_to_tsquery(:cfg, :q) ORDER BY r DESC LIMIT :n` in the same thread (sync session)
+  so the 10 s guard in `chat.py:30-41` still wraps the whole path. (3) Union by chunk id,
+  `_rrf_fuse(vec_order, fts_order)`, hydrate text/metadata from Postgres with one
+  `WHERE id = ANY(:ids)`. (4) Rerank top `top_k*2` as today. (5) Delete `_bm25_scores` and
+  `_tokenize`; rewrite the BM25 tests as FTS tests. (6) One structured log line per retrieval: query
+  hash, ids, fused ranks, reranker scores, ms.
+- **Files.** `adapta/services/rag.py:56-110, 196-277`, `adapta/services/chat.py:30-41`,
+  `adapta/config.py:80-95`, `tests/test_rag_hybrid.py`, `docs/concepts/stack.md` (hybrid section),
+  `README.md` "Give it knowledge" bullet.
+- **Contract impact.** None.
+- **Gate.** `make test` → `tests/integration/test_rag_e2e.py` (add the exact-code case).
+- **Acceptance.** New test: a chunk outside the vector top-20 with an exact keyword match is returned;
+  `_bm25_scores` is gone; the retrieval log line exists; e2e green.
+- **Close.** README bullet, PRODUCT_DEFINITION Service A, knowledge-and-behavior retrieval box,
+  concepts/stack.md, COMPETITIVE_LANDSCAPE retrieval note (the claim becomes true — date it); Status
+  snapshot.
+- **Done.** 2026-10-10. The sparse leg of `RAGService.retrieve()` is a Postgres full-text query over `chunks.tsv` for the
+  whole project, fused by RRF with the Chroma top-N as two independent lists; `_bm25_scores`/`_tokenize` deleted,
+  reranker unchanged. Three live iterations: `websearch_to_tsquery` ANDed every word (0/45 questions got a hit — caught by
+  the harness's new "sparse leg ran" assertion); OR over lexemes fired 45/45 but `simple`-config stopwords cost recall
+  (0.822) and a connection per query doubled p50 (159 ms); final: OR over lexemes with **statistical stopwords**
+  (drop a lexeme in > `rag_sparse_max_df`=0.5 of the project's chunks unless it is in ≤ 3) and **IDF ranking**, one SQL
+  round-trip, on a pooled engine owned by a private event-loop thread. **Golden (two identical runs): recall@5 0.844
+  (= baseline) · MRR 0.810 (−0.005) · p50 ~102 ms (+19); sparse leg contributes on 43/45.** RAG e2e incl. the new
+  exact-code case (`ZX-90417-QQ` in a 120-section doc) green; `make test` 220 passed.
+- **Handoff.** `retrieve(project_id, query, top_k=None)` — unchanged signature, synchronous, **must run off the event loop**
+  (`asyncio.to_thread`; it raises `RuntimeError` on a running loop). Fallback to vector-only only on `SQLAlchemyError`,
+  `OSError`, `asyncio.TimeoutError`. Config: `ADAPTA_RAG_FTS_CONFIG` (default `simple`), `ADAPTA_RAG_SPARSE_FETCH_MULTIPLIER`
+  (4), `ADAPTA_RAG_SPARSE_MAX_DF` (0.5). Log line (INFO, `adapta.services.rag`): `rag.retrieve q=<sha12> project= vec= fts=
+  fused= ids=[<chunk_id>@<rank>] scores= ms=`. `RetrievedChunk` gained `chunk_id`; FTS-only hits carry `score=0.0` until
+  rerank. `chunks.tsv` is generated with `simple` — a language config only matches after E3.6 regenerates it.
+  **Unblocks** E3.5, E3.6, E5.3.
+- **Follow-up.** (1) Close surfaces PRODUCT_DEFINITION Service A, knowledge-and-behavior retrieval box,
+  COMPETITIVE_LANDSCAPE — deferred to land after the E4.1 doc close (same files). (2) `test_rag_e2e.py` failed 2 of 14
+  live runs (one right after a stack restart, one right after `make golden`); output was not captured and 10 consecutive
+  runs passed — run it with `-rf` until it is caught. (3) Drop the stored count columns (E3.1 follow-up) now that E3.2 landed.
+
 ---
 
 ## 2026-10-08 — §E wave 0: the gates every other block is verified by

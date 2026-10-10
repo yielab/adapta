@@ -118,7 +118,7 @@ classes are defined in [`.claude/context/gates.md`](.claude/context/gates.md) ("
 | E3.3a | 1 | sonnet + human decision | offline | none | — | done 2026-10-10 |
 | E3.8 | 1 | sonnet | live | none — must land before E3.2 | — | done 2026-10-09 |
 | E4.1 | 1 | sonnet | rebuild + live (exclusive) | E1.11 | E2.1, E3.3b, E3.7 | gate green 2026-10-10; Close docs in progress (worker-e4.1-docs) |
-| E3.2 | 2 | sonnet | live | E3.1, E3.8 (baseline recorded before this lands) | E3.7, E3.5 | ready-for-live (e3.2) |
+| E3.2 | 2 | sonnet | live | E3.1, E3.8 (baseline recorded before this lands) | E3.7, E3.5 | done 2026-10-10 |
 | E3.3b | 2 | sonnet | rebuild + live | E3.3a (commit), E3.1 | E4.1, E4.2, E4.4 (`pyproject.toml`, `Dockerfile`), E3.7, E3.4 | open |
 | E3.7 | 2 | sonnet | live | E3.1, E4.1 | E3.1/E3.3b, E4.4 (`worker/main.py`) | open |
 | E4.2 | 2 | sonnet | rebuild + live | E4.1 | E4.3 (spec, migrations), E4.5, E2.2 | open |
@@ -227,36 +227,6 @@ E1.1–E1.9 shipped 2026-09-17 → [CHANGELOG.md](CHANGELOG.md). E1.14 closed 20
 - **Close.** Self-contained; Status snapshot.
 
 ### E3. P1 — real hybrid RAG + scanned documents (weeks 3–7)
-
-### E3.2 `[BE]` Real hybrid retrieval: Postgres full-text leg over the whole corpus, fused with the vector leg (P1)
-- [ ] **Context.** `_bm25_scores` runs over the ≤ 20 Chroma candidates (`rag.py:239`): IDF over 20
-  documents, and a keyword-only chunk the embedder missed can never be recalled; it is recomputed per
-  query with an O(|q|·N·L) loop (`rag.py:91`). This is the README's "hybrid" claim, and it does not hold.
-- **Depends.** E3.1, E3.8 (baseline recorded **before** this lands). **Unblocks.** E3.5, E3.6, E5.3.
-- **Agent.** sonnet · gate class **live (rag e2e, then `make golden`)** · serialize with: E3.7
-  (`rag.py`), E3.5 (`rag.py`, `chat.py`) · **Handoff.** must name `retrieve()` signature, new config
-  keys, the log-line format, recall@5 before/after.
-- **Scope.** Sparse leg = Postgres FTS over `chunks.tsv` (E3.1); RRF over two *independent* top-N
-  lists; delete `_bm25_scores`. Reranker unchanged. Out: multi-query (E5.3), thresholds (E3.5).
-- **Steps.** (1) `config.py`: `rag_fts_config` (`simple` | `english` | `spanish`; default `simple`
-  until E3.6), `rag_sparse_fetch_multiplier` (default 4). (2) `retrieve`: run the Chroma query and
-  `SELECT id, ts_rank_cd(tsv, websearch_to_tsquery(:cfg, :q)) AS r FROM chunks WHERE project_id=:p
-  AND tsv @@ websearch_to_tsquery(:cfg, :q) ORDER BY r DESC LIMIT :n` in the same thread (sync session)
-  so the 10 s guard in `chat.py:30-41` still wraps the whole path. (3) Union by chunk id,
-  `_rrf_fuse(vec_order, fts_order)`, hydrate text/metadata from Postgres with one
-  `WHERE id = ANY(:ids)`. (4) Rerank top `top_k*2` as today. (5) Delete `_bm25_scores` and
-  `_tokenize`; rewrite the BM25 tests as FTS tests. (6) One structured log line per retrieval: query
-  hash, ids, fused ranks, reranker scores, ms.
-- **Files.** `adapta/services/rag.py:56-110, 196-277`, `adapta/services/chat.py:30-41`,
-  `adapta/config.py:80-95`, `tests/test_rag_hybrid.py`, `docs/concepts/stack.md` (hybrid section),
-  `README.md` "Give it knowledge" bullet.
-- **Contract impact.** None.
-- **Gate.** `make test` → `tests/integration/test_rag_e2e.py` (add the exact-code case).
-- **Acceptance.** New test: a chunk outside the vector top-20 with an exact keyword match is returned;
-  `_bm25_scores` is gone; the retrieval log line exists; e2e green.
-- **Close.** README bullet, PRODUCT_DEFINITION Service A, knowledge-and-behavior retrieval box,
-  concepts/stack.md, COMPETITIVE_LANDSCAPE retrieval note (the claim becomes true — date it); Status
-  snapshot.
 
 ### E3.3b `[BE]` One parser: Docling (+RapidOCR) for PDF/DOCX/HTML/images, page-aware chunking (P1)
 - [ ] **Context.** `documents.py` flattens newlines before chunking (`:98`) so pages are unrecoverable;
