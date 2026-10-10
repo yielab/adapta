@@ -187,8 +187,8 @@ bind mount, so uvicorn reloaded on every worker edit — reload now watches `/ap
   fused= ids=[<chunk_id>@<rank>] scores= ms=`. `RetrievedChunk` gained `chunk_id`; FTS-only hits carry `score=0.0` until
   rerank. `chunks.tsv` is generated with `simple` — a language config only matches after E3.6 regenerates it.
   **Unblocks** E3.5, E3.6, E5.3.
-- **Follow-up.** (1) Close surfaces PRODUCT_DEFINITION Service A, knowledge-and-behavior retrieval box,
-  COMPETITIVE_LANDSCAPE — deferred to land after the E4.1 doc close (same files). (2) `test_rag_e2e.py` failed 2 of 14
+- **Follow-up.** (1) ~~Close surfaces PRODUCT_DEFINITION, knowledge-and-behavior retrieval box, COMPETITIVE_LANDSCAPE~~
+  — landed in `9779d81` after the E4.1 doc close. (2) `test_rag_e2e.py` failed 2 of 14
   live runs (one right after a stack restart, one right after `make golden`); output was not captured and 10 consecutive
   runs passed — run it with `-rf` until it is caught. (3) Drop the stored count columns (E3.1 follow-up) now that E3.2 landed.
 

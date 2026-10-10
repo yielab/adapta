@@ -58,15 +58,15 @@ procedure. Rules that keep parallel work from colliding:
 
 ---
 
-## Status snapshot (updated 2026-10-09, after wave 0 + E3.1/E3.8)
+## Status snapshot (updated 2026-10-10, after wave 1)
 
 | Area | State |
 |---|---|
 | Product build (phases 0–5), operator console, image fine-tunes, brand, positioning | ✅ complete — history in [CHANGELOG.md](CHANGELOG.md) |
-| Fine-tuning direction | **Decided 2026-10-09: bring your own adapter (§E4).** Adapta stops training; it imports a GGUF or PEFT LoRA, gates it on CPU against the base on the project's eval set, and serves it with RAG. Until E4.1 lands the training code still exists; after it no service needs a GPU. |
+| Fine-tuning direction | **Decided 2026-10-09: bring your own adapter (§E4).** Training removed 2026-10-10 (E4.1); no service needs a GPU. Next: adapter import (E4.2), CPU eval gate (E4.3), adapter job (E4.4). |
 | SDD gates | Pillar 2 ✅ `make migrate-test` · Pillar 3: the GPU perplexity gate is replaced by the CPU task-metric gate on imported adapters (E4.3/E4.4) · Pillar 1 ✅ `make test-contracts` green twice 2026-10-09 (E1.11): 35 operations, ~2,060 cases, authenticated |
 | CI fast gate (`make ci`) | ✅ green 2026-10-09 in the pinned app image (E1.10): ruff + mypy clean, 269 unit tests pass |
-| **Audit 2026-09-03 (§E)** | 🟥 **open** — 14/37 done (E1.1–E1.9 shipped 2026-09-17, E1.14 on 2026-10-08; E1.10, E1.11, E3.1, E3.8 on 2026-10-09). Wave 0 done (gates green: `make ci`, `make test-contracts`, `make golden` baseline recall@5 0.844). In flight: E4.1, E3.2, E3.3a. E4.1 removes training and the GPU from the stack, alongside E2 (Ollama + launch kit) and E3 (Postgres chunks → real hybrid FTS, Docling + RapidOCR, citations with page/OCR provenance, system prompt + threshold + filters, multilingual, queued indexing, golden set); E4 (adapter import, CPU eval gate, adapter job, promotion/rollback, console flow, import guide, synthesis for eval sets, JSON mode); E5 (contextual retrieval, RAG gate, history-aware retrieval, visual extraction with the vision base). Scheduling: the §E board. |
+| **Audit 2026-09-03 (§E)** | 🟥 **open** — 18/37 done (E1.1–E1.9 shipped 2026-09-17, E1.14 on 2026-10-08; E1.10, E1.11, E3.1, E3.8 on 2026-10-09; E3.2, E3.3a, E4.1 on 2026-10-10). Training is gone (E4.1: CPU-only stack, one image); retrieval is real hybrid (E3.2, golden recall@5 0.844); Docling adopted (E3.3a). In flight: E3.3b, E4.3, E3.6. Next: E2 (Ollama + launch kit) and E3 (Postgres chunks → real hybrid FTS, Docling + RapidOCR, citations with page/OCR provenance, system prompt + threshold + filters, multilingual, queued indexing, golden set); E4 (adapter import, CPU eval gate, adapter job, promotion/rollback, console flow, import guide, synthesis for eval sets, JSON mode); E5 (contextual retrieval, RAG gate, history-aware retrieval, visual extraction with the vision base). Scheduling: the §E board. |
 
 ---
 
@@ -119,15 +119,15 @@ classes are defined in [`.claude/context/gates.md`](.claude/context/gates.md) ("
 | E3.8 | 1 | sonnet | live | none — must land before E3.2 | — | done 2026-10-09 |
 | E4.1 | 1 | sonnet | rebuild + live (exclusive) | E1.11 | E2.1, E3.3b, E3.7 | done 2026-10-10 |
 | E3.2 | 2 | sonnet | live | E3.1, E3.8 (baseline recorded before this lands) | E3.7, E3.5 | done 2026-10-10 |
-| E3.3b | 2 | sonnet | rebuild + live | E3.3a (commit), E3.1 | E4.1, E4.2, E4.4 (`pyproject.toml`, `Dockerfile`), E3.7, E3.4 | open |
+| E3.3b | 2 | sonnet | rebuild + live | E3.3a (commit), E3.1 | E4.1, E4.2, E4.4 (`pyproject.toml`, `Dockerfile`), E3.7, E3.4 | in progress (worker-e3.3b) |
 | E3.7 | 2 | sonnet | live | E3.1, E4.1 | E3.1/E3.3b, E4.4 (`worker/main.py`) | open |
 | E4.2 | 2 | sonnet | rebuild + live | E4.1 | E4.3 (spec, migrations), E4.5, E2.2 | open |
-| E4.3 | 2 | sonnet | live | E4.1 | E4.2 (spec, migrations) | open |
+| E4.3 | 2 | sonnet | live | E4.1 | E4.2 (spec, migrations) | in progress (worker-e4.3) |
 | E4.8 | 2 | sonnet | live | E3.8, E4.1 | E4.6, E5.1 | open |
 | E4.9 | 2 | sonnet | live | E1.11 | E2.1, E3.5/E5.3, E4.6 | open |
 | E3.4 | 3 | sonnet | live | E3.1, E3.3b, E1.11 | E3.5 (spec, `Playground.svelte`), E3.3b | open |
 | E3.5 | 3 | sonnet | live | E3.2, E1.11 | E3.4 (spec, `Playground.svelte`), E4.9 and E5.3 | open |
-| E3.6 | 3 | sonnet + human decision | live | E3.1, E3.2, E3.8 | E3.2 | open |
+| E3.6 | 3 | sonnet + human decision | live | E3.1, E3.2, E3.8 | E3.2 | in progress (worker-e3.6) |
 | E4.4 | 3 | sonnet | rebuild + live | E4.2, E4.3 | E3.7, E3.3b | open |
 | E5.1 | 3 | sonnet | live | E3.1, E3.7, E3.8 | E5.2, E4.8 | open |
 | E5.2 | 3 | sonnet | live | E3.8, E3.7, E4.8 | E5.1, E4.5 | open |
