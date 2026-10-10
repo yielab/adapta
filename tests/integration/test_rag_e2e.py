@@ -172,3 +172,43 @@ async def test_rag_upload_index_serve_cited(client, admin):
         "num_chunks should be floored at 0 after deleting the only file, so "
         "has_knowledge is false and chat runs without a retrieval pass"
     )
+
+
+@skip_no_model
+async def test_rag_exact_code_recalled_by_full_text_leg(client, admin):
+    """E3.2: an exact identifier buried in a large corpus is retrieved (top_k=1 keeps the
+    vector candidate pool at 4 chunks, so only the full-text leg can reliably find it)."""
+    from adapta.services.rag import get_rag_service
+
+    h, team_id = admin["headers"], admin["team_id"]
+    proj = await client.post(
+        "/v1/projects",
+        headers=h,
+        json={"name": "codes", "type": "rag", "base_model": _MODEL_NAME, "team_id": team_id},
+    )
+    assert proj.status_code == 201, proj.text
+    pid = proj.json()["id"]
+
+    filler = "\n\n".join(
+        f"Section {i}: the quarterly report for region {i} discusses logistics, staffing, "
+        f"warehouse capacity and supplier contracts in detail, batch {i * 7919}."
+        for i in range(120)
+    )
+    planted = "Incident note: the failing component carries serial ZX-90417-QQ and was replaced."
+    text = filler + "\n\n" + planted + "\n\n" + filler[:2000]
+    up = await client.post(
+        f"/v1/projects/{pid}/files",
+        headers=h,
+        files={"file": ("ops.txt", io.BytesIO(text.encode()), "text/plain")},
+    )
+    assert up.status_code == 202, up.text
+    fid = up.json()["id"]
+    got = await _poll(
+        lambda: client.get(f"/v1/projects/{pid}/files", headers=h),
+        lambda r: r.status_code == 200
+        and any(f["id"] == fid and f["status"] in ("indexed", "failed") for f in r.json()),
+    )
+    assert next(f for f in got.json() if f["id"] == fid)["status"] == "indexed"
+
+    chunks = await asyncio.to_thread(get_rag_service().retrieve, pid, "ZX-90417-QQ", top_k=1)
+    assert chunks and "ZX-90417-QQ" in chunks[0].text, [c.text[:80] for c in chunks]

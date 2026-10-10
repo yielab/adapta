@@ -15,7 +15,9 @@ from __future__ import annotations
 import asyncio
 import io
 import json
+import logging
 import os
+import re
 import statistics
 import time
 from pathlib import Path
@@ -88,7 +90,7 @@ async def _poll(make_request, ok, tries=180, delay=1.0):
 
 
 @skip_unless_optin
-async def test_golden_retrieval(client, admin):
+async def test_golden_retrieval(client, admin, caplog):
     h, team_id = admin["headers"], admin["team_id"]
     questions = _load_questions()
     docs = sorted((_GOLDEN / "docs").iterdir())
@@ -131,15 +133,30 @@ async def test_golden_retrieval(client, admin):
     assert all(s == "indexed" for s in statuses.values()), f"indexing incomplete: {statuses}"
 
     rag = get_rag_service()
-    rag.retrieve(pid, "warm-up", top_k=_K)  # load embedder/reranker outside the timed loop
+    caplog.set_level(logging.INFO, logger="adapta.services.rag")
+    # retrieve() is blocking (and its sparse leg refuses to run on the event loop).
+    await asyncio.to_thread(rag.retrieve, pid, "warm-up", top_k=_K)  # load models outside timing
 
     rows: list[dict] = []
     for q in questions:
+        caplog.clear()
         t0 = time.perf_counter()
-        chunks = rag.retrieve(pid, q["q"], top_k=_K)
+        chunks = await asyncio.to_thread(rag.retrieve, pid, q["q"], top_k=_K)
         ms = (time.perf_counter() - t0) * 1000
+        fts = [
+            int(m.group(1))
+            for r in caplog.records
+            if (m := re.search(r"rag\.retrieve .* fts=(\d+)", r.getMessage()))
+        ]
+        assert len(fts) == 1, f"expected one rag.retrieve log line, got {len(fts)}"
         rank = _first_rank([c.source for c in chunks], q["expected_file"])
-        rows.append({**q, "rank": rank, "ms": ms})
+        rows.append({**q, "rank": rank, "ms": ms, "fts": fts[0]})
+
+    with_fts = sum(1 for r in rows if r["fts"] > 0)
+    print(f"\nsparse leg contributed on {with_fts}/{len(rows)} questions")
+    assert with_fts >= len(rows) // 2, (
+        f"FTS leg returned hits for only {with_fts}/{len(rows)} questions; it is not running"
+    )
 
     _print_table(rows)
 

@@ -11,12 +11,15 @@ Retrieval pipeline (D5):
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import logging
 import math
 import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, List, Literal, Optional
+
+from sqlalchemy.exc import SQLAlchemyError
 
 from adapta.config import settings
 from adapta.db.models import ProjectChunk
@@ -162,9 +165,16 @@ def _get_fts_engine():
 
 def _fts_search(project_id: str, query: str, limit: int) -> List[_FtsHit]:
     """Sparse leg: ranked Postgres full-text hits over the project's whole corpus."""
-    import asyncio
-
     from sqlalchemy import text as sql_text
+
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        pass
+    else:
+        raise RuntimeError(
+            "RAGService.retrieve() is blocking; inside an event loop call it via asyncio.to_thread"
+        )
 
     async def _run() -> List[_FtsHit]:
         async with _get_fts_engine().connect() as conn:
@@ -353,7 +363,7 @@ class RAGService:
         # rather than failing the request (the dense leg is still a valid answer).
         try:
             fts_hits = _fts_search(project_id, query, top_k * settings.rag_sparse_fetch_multiplier)
-        except Exception as exc:
+        except (SQLAlchemyError, OSError, asyncio.TimeoutError) as exc:
             logger.warning("rag fts leg failed, vector-only: %r", exc)
             fts_hits = []
 

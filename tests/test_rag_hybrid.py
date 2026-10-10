@@ -12,6 +12,8 @@ import pytest
 from adapta.services import rag as rag_mod
 from adapta.services.rag import RAGService, RetrievedChunk, _FtsHit, _rrf_fuse
 
+_REAL_FTS_SEARCH = rag_mod._fts_search
+
 
 @pytest.fixture(autouse=True)
 def _no_postgres(monkeypatch):
@@ -128,7 +130,7 @@ def test_retrieve_survives_fts_failure(monkeypatch):
     _std_chroma(monkeypatch)
 
     def boom(*a, **k):
-        raise RuntimeError("postgres down")
+        raise OSError("postgres down")
 
     monkeypatch.setattr(rag_mod, "_fts_search", boom)
     chunks = RAGService().retrieve("p", "q", top_k=4)
@@ -491,3 +493,20 @@ def test_chunk_model_matches_migration_shape():
     assert t.name == "chunks"
     assert t.c.tsv.computed is not None
     assert {c.name for c in t.c} >= {"page", "section", "ocr", "ocr_confidence", "needs_review"}
+
+
+def test_programming_error_in_fts_leg_is_not_swallowed(monkeypatch):
+    _std_chroma(monkeypatch)
+
+    def boom(*a, **k):
+        raise RuntimeError("bug")
+
+    monkeypatch.setattr(rag_mod, "_fts_search", boom)
+    with pytest.raises(RuntimeError):
+        RAGService().retrieve("p", "q", top_k=2)
+
+
+async def test_fts_search_inside_running_loop_raises():
+    """Calling the blocking sparse leg on the event loop must fail loudly, not degrade."""
+    with pytest.raises(RuntimeError, match="to_thread"):
+        _REAL_FTS_SEARCH("p", "q", 4)
