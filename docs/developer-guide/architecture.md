@@ -83,7 +83,8 @@ Project ─< ProjectFile (upload, parse status)       # both modes
 ProjectFile ─< ProjectChunk (text, content_hash, page, tsv)  # rag; table `chunks`
 Project ─1 Collection (chroma_collection_name)      # rag
 Project ─< Dataset (JSONL, num_samples, status)     # finetune (eval set)
-Project ─1 Endpoint (slug, adapter_path, status)
+Project ─< Adapter (format gguf|peft, sha256, status, eval_metrics)
+Project ─1 Endpoint (slug, adapter_id → Adapter, status)
 Endpoint ─< ApiKey (key_prefix, key_hash, is_active)
 Endpoint ─< UsageEvent (day, prompt/completion/request counts)
 ```

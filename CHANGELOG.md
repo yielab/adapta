@@ -410,6 +410,68 @@ bind mount, so uvicorn reloaded on every worker edit — reload now watches `/ap
 - **Follow-up.** `json_schema` through the vision chat handler and the full space of invalid schemas → 422 are not
   covered by a test.
 
+### E4.2 `[BE]` Adapter contract: `adapters` table, upload route, endpoint bound to an adapter (P1)
+- [x] **Context.** After E4.1 a `finetune` project has no way to obtain a servable adapter, and
+  `Endpoint.adapter_path` (`db/models.py:428-430`) is a bare path with no provenance that
+  `api/v1/chat.py:135` serves as-is.
+- **Depends.** E4.1. **Unblocks.** E4.4.
+- **Re-anchored 2026-10-10 (E4.1 Handoff).** Next migration revision is `0012` (head `0011_drop_training`). Fixtures:
+  `tests/fixtures/adapters/classify-pass/` (PEFT safetensors + `adapter.gguf`) and `garbage-control/` (PEFT only).
+  `gguf` + `safetensors` are already main deps; `create_endpoint` on a finetune project raises "Import an adapter first".
+- **Agent.** sonnet · gate class **rebuild + live** (new pip dependency) · serialize with: E4.3 (spec,
+  migrations), E4.5 and E2.2 (`endpoints.py`) · **Handoff.** must name the table columns, routes, status
+  enum, error classes and migration revision.
+- **Scope.** Contract, upload, static validation, storage; an accepted adapter lands `uploaded`. Out:
+  conversion, load probe and scoring (E4.4), promotion (E4.5).
+- **Steps.** (1) Migration `adapters`: `adapters(id, project_id FK CASCADE, name, base_model, format
+  gguf|peft, peft_dir NULL, gguf_path NULL, sha256, size_bytes, eval_dataset_id FK datasets, status
+  uploaded|processing|passed|failed, failure_reason NULL, eval_metrics JSONB NULL, created_by FK users,
+  created_at)`; `endpoints.adapter_path` → `endpoints.adapter_id` (FK, nullable). (2) Spec:
+  `POST /v1/projects/{id}/adapters` (multipart: one `.gguf`, or a `.zip` holding exactly
+  `adapter_model.safetensors` + `adapter_config.json`; `eval_dataset_id` required; writer) → 202
+  `AdapterResponse`; `GET …/adapters`, `GET …/adapters/{aid}`, `DELETE …/adapters/{aid}` (409 while bound);
+  `EndpointResponse.adapter: AdapterResponse`. (3) `services/adapters.py` validation, each failure a typed
+  `DomainError` naming the expected value: extension + magic bytes; zip members exact (no dirs, no `..`,
+  nothing else); `settings.adapter_max_upload_mb` (512); PEFT `peft_type == "LORA"` and
+  `base_model_name_or_path` ∈ the catalog entry's `hf_repo_id` + new `adapter_base_aliases` (Unsloth repos);
+  GGUF `general.type == "adapter"`, `adapter.type == "lora"`, architecture = the base's (read with `gguf`,
+  added to `pyproject.toml`). Stored under `adapters_dir/{id}/`. (4) `create_endpoint` on `finetune`: latest
+  `passed` adapter, else `InvalidRequest`; chat resolves the GGUF through `adapter_id`. (5) Tests: every
+  rejection, zip traversal, endpoint refuses a non-passed adapter.
+- **Files.** `migrations/versions/` (new), `adapta/db/models.py` (`Endpoint`, new `Adapter`),
+  `specs/openapi.yaml` (endpoint section + new paths), `adapta/services/adapters.py` (new),
+  `adapta/api/v1/adapters.py` (new), `adapta/api/app.py` (router), `adapta/api/v1/endpoints.py:126-190`,
+  `adapta/api/v1/chat.py:130-160`, `adapta/core/model_catalog.py`, `adapta/domain/errors.py`,
+  `adapta/config.py`, `pyproject.toml`, `tests/test_adapter_upload.py` (new).
+- **Contract impact.** API + DB.
+- **Gate.** `make up` → `make migrate-test` → `make validate-spec` → `make generate` → `make check-models` →
+  `make test` → `make test-contracts`.
+- **Acceptance.** The E4.1 fixture zip returns 202 `uploaded` with its sha256; a `.bin`, a zip with an
+  extra member, a mismatched base and an oversized file each return a typed 4xx naming the problem; a
+  `finetune` endpoint cannot be created while no adapter is `passed`.
+- **Close.** CLAUDE.md API surface; consuming-the-api; Status snapshot.
+- **Done.** 2026-10-10. Adapter contract with **no new dependency** (stdlib `zipfile`/`hashlib`/`struct` + the existing
+  `gguf`), so the gate class dropped to live. Spec + DTOs, migration `0014_adapters`, `Adapter` model,
+  `services/adapters.py`, `api/v1/adapters.py`; static validation (extension, magic bytes, exactly two zip members, no
+  `..`, safetensors header, `peft_type == LORA` + base-model match incl. Unsloth aliases, GGUF `general.type`/
+  `adapter.type`/architecture, 512 MB expansion cap). `create_endpoint` on a finetune project binds the latest `passed`
+  adapter; chat loads `endpoint.adapter.gguf_path`; console reads `endpoint.adapter`. Live on `develop`: migrate
+  0013→0014 + `migrate-test` ✓ · `make ci` ✓ · `test-contracts` red once (empty `eval_dataset_id` allowed by the spec,
+  422 by FastAPI → spec `minLength: 1`), then **36/36 operations, 2005 and 2021 cases, 0 failures** (one schemathesis
+  case "errored" with no detail) · live acceptance: fixture zip → 202 `uploaded`, sha256 matches, `peft`; `.gguf` → 202;
+  `.bin`, extra zip member, wrong base → 400 naming the problem; endpoint → 400 "No adapter has passed…". 413 at 512 MB
+  is unit-tested only.
+- **Handoff.** Table `adapters(id, project_id FK CASCADE, name, base_model, format gguf|peft, peft_dir, gguf_path, sha256,
+  size_bytes BIGINT, eval_dataset_id FK SET NULL, status, failure_reason, eval_metrics JSONB, created_by FK SET NULL,
+  created_at)`; `endpoints.adapter_id` replaces `adapter_path` (dropped, no backfill). Migration `0014`. `AdapterStatus`
+  = `uploaded | processing | passed | failed` (upload writes `uploaded`; E4.4 owns the rest). Routes: `POST/GET
+  /v1/projects/{id}/adapters` (multipart `file`, `eval_dataset_id` (same project, `valid`), optional `name`; 202),
+  `GET/DELETE …/adapters/{aid}` (DELETE 409 while bound). Errors `InvalidAdapter` 400 `invalid_adapter`, `AdapterInUse`
+  409, `PayloadTooLarge` 413. Setting `adapter_max_upload_mb` 512. Storage: `adapters_dir/{id}/adapter.gguf` or
+  `…/{id}/peft/{adapter_model.safetensors,adapter_config.json}`. Catalog: `CatalogEntry.architecture`,
+  `adapter_base_aliases`. **E4.4 must set `gguf_path` for `peft` rows** (a bound adapter without it → chat 400).
+- **Follow-up.** Duplicate sha256 uploads are accepted (no dedupe). Swapping a bound adapter is E4.5.
+
 ---
 
 ## 2026-10-08 — §E wave 0: the gates every other block is verified by

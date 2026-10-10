@@ -75,7 +75,8 @@ POST /v1/auth/register · /login · /invite · /accept-invite      GET /v1/auth/
 GET/POST /v1/projects · GET/DELETE /v1/projects/{id}             GET /v1/teams/{team_id}/members
 POST/GET/DELETE /v1/projects/{id}/files                          upload + background index
 POST/GET /v1/projects/{id}/datasets · POST …/datasets/synthesize · GET …/datasets/{did}
-POST/GET /v1/projects/{id}/endpoint (finetune: "Import an adapter first") · POST/GET/DELETE …/keys · GET …/usage
+POST/GET /v1/projects/{id}/adapters · GET/DELETE …/adapters/{aid}  GGUF or PEFT-zip import (status uploaded→…→passed)
+POST/GET /v1/projects/{id}/endpoint (finetune: binds the latest passed adapter) · POST/GET/DELETE …/keys · GET …/usage
 GET/PATCH /v1/settings                                           DB-backed platform overrides
 POST /v1/chat/completions                                        OpenAI-compatible; adp_* key; image content-parts
 ```

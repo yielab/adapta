@@ -51,7 +51,7 @@ A **single-tenant, self-hosted** application. A company runs it on their own inf
 "Change **how the model behaves** — its style, format, or skill."
 
 - **Input:** a LoRA adapter trained elsewhere (GGUF or PEFT) plus an **eval set** (JSONL of prompt/response pairs, `specs/schemas/eval_dataset.schema.json`), which can be synthesized from indexed documents (`POST /v1/projects/{id}/datasets/synthesize`).
-- **Mechanism:** import the adapter → gate it on CPU against the base on the project's eval set → register it. *The import flow and CPU gate are roadmap blocks E4.2–E4.4 and are not built yet; today a finetune project holds documents and an eval set, and `POST /v1/projects/{id}/endpoint` answers "Import an adapter first".*
+- **Mechanism:** import the adapter → gate it on CPU against the base on the project's eval set → register it. *Import is built (E4.2: `POST /v1/projects/{id}/adapters` takes a GGUF LoRA or a zip of `adapter_model.safetensors` + `adapter_config.json`, validated statically for format and base model, stored with its sha256 as `uploaded`) and the CPU scorer is built (E4.3); the job that runs the gate on an upload and marks it `passed`/`failed` is E4.4. Until then `POST /v1/projects/{id}/endpoint` on a finetune project answers "No adapter has passed the eval gate yet".*
 - **Serving:** base model + adapter, OpenAI-compatible.
 - **Cost:** CPU only; no service in the stack needs a GPU.
 - **Updates:** import a new adapter.
@@ -119,7 +119,8 @@ Team ─< Project (type: rag|finetune, base_model, status)
 Project ─< ProjectFile (upload, parse status)       # both modes
 Project ─1 Collection (chroma_collection_name)      # rag
 Project ─< Dataset (JSONL, num_samples, status)     # finetune (eval set)
-Project ─1 Endpoint (slug, adapter_path, status)
+Project ─< Adapter (format gguf|peft, sha256, status, eval_metrics)
+Project ─1 Endpoint (slug, adapter_id → Adapter, status)
 Endpoint ─< ApiKey (key_prefix, key_hash, is_active)
 ```
 

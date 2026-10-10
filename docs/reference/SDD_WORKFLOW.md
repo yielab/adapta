@@ -76,7 +76,7 @@ The adapter lifecycle is the product's moat, so its inputs and outputs are gover
 ```
 
 - **SSOT (input):** `specs/schemas/eval_dataset.schema.json` — the instruction-pair format every eval set must validate against (validator: `adapta/services/datasets.py`).
-- **Merge/promotion gate:** an **evaluation** runs against the held-out set; the adapter is marked `servable` only if it clears the rule (`eval_min_improvement` 0.05, `eval_absolute_floor` 0.8); every eval set declares its `task` (classify / extract / freeform) and has 20–200 rows. An unverified or failing adapter **cannot** be bound to an endpoint (today `create_endpoint` on a finetune project answers "Import an adapter first").
+- **Merge/promotion gate:** an **evaluation** runs against the held-out set; the adapter is marked `servable` only if it clears the rule (`eval_min_improvement` 0.05, `eval_absolute_floor` 0.8); every eval set declares its `task` (classify / extract / freeform) and has 20–200 rows. An unverified or failing adapter **cannot** be bound to an endpoint (`create_endpoint` on a finetune project binds the latest `passed` adapter, or answers "No adapter has passed the eval gate yet").
 - Fixtures for the gate live in `tests/fixtures/adapters/` (`classify-pass`, `garbage-control`).
 - This is the SDD philosophy applied to ML: the *spec* is the eval-set schema; the *contract test* is the eval gate.
 

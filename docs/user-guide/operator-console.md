@@ -74,8 +74,9 @@ citations** — the source chunks it used are returned alongside the answer.
 ## 3b. Adapter (finetune) flow
 
 In-product training was removed on 2026-10-10: the console no longer trains
-anything, and a finetune project cannot create an endpoint until an adapter is
-imported (the API answers "Import an adapter first"). What the **Setup** tab
+anything, and a finetune project cannot create an endpoint until an imported
+adapter has passed the eval gate (import: `POST /v1/projects/{id}/adapters`; the
+gate job that marks it `passed` is roadmap E4.4). What the **Setup** tab
 does today:
 
 1. **Documents (optional)** — upload PDF/DOCX/TXT/MD/HTML, same as the RAG

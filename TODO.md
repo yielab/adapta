@@ -121,7 +121,7 @@ classes are defined in [`.claude/context/gates.md`](.claude/context/gates.md) ("
 | E3.2 | 2 | sonnet | live | E3.1, E3.8 (baseline recorded before this lands) | E3.7, E3.5 | done 2026-10-10 |
 | E3.3b | 2 | sonnet | rebuild + live | E3.3a (commit), E3.1 | E4.1, E4.2, E4.4 (`pyproject.toml`, `Dockerfile`), E3.7, E3.4 | in progress (worker-e3.3b) |
 | E3.7 | 2 | sonnet | live | E3.1, E4.1 | E3.1/E3.3b, E4.4 (`worker/main.py`) | open |
-| E4.2 | 2 | sonnet | live | E4.1 | E4.3 (spec, migrations), E4.5, E2.2 | ready-for-live (e4.2) |
+| E4.2 | 2 | sonnet | live | E4.1 | E4.3 (spec, migrations), E4.5, E2.2 | done 2026-10-10 |
 | E4.3 | 2 | sonnet | live | E4.1 | E4.2 (spec, migrations) | done 2026-10-10 |
 | E4.8 | 2 | sonnet | live | E3.8, E4.1 | E4.6, E5.1 | open |
 | E4.9 | 2 | sonnet | live | E1.11 | E2.1, E3.5/E5.3, E4.6 | done 2026-10-10 |
@@ -385,59 +385,6 @@ E1.1–E1.9 shipped 2026-09-17 → [CHANGELOG.md](CHANGELOG.md). E1.14 closed 20
 > (`adapter` E4.4, `index` E3.7, `extract` E5.4); no service reserves a GPU. Optional llama.cpp GPU offload
 > for serving (`ADAPTA_N_GPU_LAYERS`) is unaffected.
 
-### E4.2 `[BE]` Adapter contract: `adapters` table, upload route, endpoint bound to an adapter (P1)
-- [ ] **Context.** After E4.1 a `finetune` project has no way to obtain a servable adapter, and
-  `Endpoint.adapter_path` (`db/models.py:428-430`) is a bare path with no provenance that
-  `api/v1/chat.py:135` serves as-is.
-- **Depends.** E4.1. **Unblocks.** E4.4.
-- **Re-anchored 2026-10-10 (E4.1 Handoff).** Next migration revision is `0012` (head `0011_drop_training`). Fixtures:
-  `tests/fixtures/adapters/classify-pass/` (PEFT safetensors + `adapter.gguf`) and `garbage-control/` (PEFT only).
-  `gguf` + `safetensors` are already main deps; `create_endpoint` on a finetune project raises "Import an adapter first".
-- **Agent.** sonnet · gate class **rebuild + live** (new pip dependency) · serialize with: E4.3 (spec,
-  migrations), E4.5 and E2.2 (`endpoints.py`) · **Handoff.** must name the table columns, routes, status
-  enum, error classes and migration revision.
-- **Scope.** Contract, upload, static validation, storage; an accepted adapter lands `uploaded`. Out:
-  conversion, load probe and scoring (E4.4), promotion (E4.5).
-- **Steps.** (1) Migration `adapters`: `adapters(id, project_id FK CASCADE, name, base_model, format
-  gguf|peft, peft_dir NULL, gguf_path NULL, sha256, size_bytes, eval_dataset_id FK datasets, status
-  uploaded|processing|passed|failed, failure_reason NULL, eval_metrics JSONB NULL, created_by FK users,
-  created_at)`; `endpoints.adapter_path` → `endpoints.adapter_id` (FK, nullable). (2) Spec:
-  `POST /v1/projects/{id}/adapters` (multipart: one `.gguf`, or a `.zip` holding exactly
-  `adapter_model.safetensors` + `adapter_config.json`; `eval_dataset_id` required; writer) → 202
-  `AdapterResponse`; `GET …/adapters`, `GET …/adapters/{aid}`, `DELETE …/adapters/{aid}` (409 while bound);
-  `EndpointResponse.adapter: AdapterResponse`. (3) `services/adapters.py` validation, each failure a typed
-  `DomainError` naming the expected value: extension + magic bytes; zip members exact (no dirs, no `..`,
-  nothing else); `settings.adapter_max_upload_mb` (512); PEFT `peft_type == "LORA"` and
-  `base_model_name_or_path` ∈ the catalog entry's `hf_repo_id` + new `adapter_base_aliases` (Unsloth repos);
-  GGUF `general.type == "adapter"`, `adapter.type == "lora"`, architecture = the base's (read with `gguf`,
-  added to `pyproject.toml`). Stored under `adapters_dir/{id}/`. (4) `create_endpoint` on `finetune`: latest
-  `passed` adapter, else `InvalidRequest`; chat resolves the GGUF through `adapter_id`. (5) Tests: every
-  rejection, zip traversal, endpoint refuses a non-passed adapter.
-- **Files.** `migrations/versions/` (new), `adapta/db/models.py` (`Endpoint`, new `Adapter`),
-  `specs/openapi.yaml` (endpoint section + new paths), `adapta/services/adapters.py` (new),
-  `adapta/api/v1/adapters.py` (new), `adapta/api/app.py` (router), `adapta/api/v1/endpoints.py:126-190`,
-  `adapta/api/v1/chat.py:130-160`, `adapta/core/model_catalog.py`, `adapta/domain/errors.py`,
-  `adapta/config.py`, `pyproject.toml`, `tests/test_adapter_upload.py` (new).
-- **Contract impact.** API + DB.
-- **Gate.** `make up` → `make migrate-test` → `make validate-spec` → `make generate` → `make check-models` →
-  `make test` → `make test-contracts`.
-- **Acceptance.** The E4.1 fixture zip returns 202 `uploaded` with its sha256; a `.bin`, a zip with an
-  extra member, a mismatched base and an oversized file each return a typed 4xx naming the problem; a
-  `finetune` endpoint cannot be created while no adapter is `passed`.
-- **Close.** CLAUDE.md API surface; consuming-the-api; Status snapshot.
-- **Done (ready-for-live, branch `e4.2`, 2026-10-10).** Spec + generated DTOs, migration `0014`, `Adapter` model, `services/adapters.py`
-  (stdlib `zipfile`/`hashlib`/`struct` plus the existing `gguf` dep: **no new dependency**, so `pyproject.toml` is untouched and
-  the gate class drops to **live**), `api/v1/adapters.py`, endpoint binding and chat resolution through `adapter_id`; catalog gained
-  `architecture` + `adapter_base_aliases`. Offline: validate-spec, generate/check-models, lint, test (273 passed, 28 new in
-  `tests/test_adapter_upload.py`), check-leaks, lint-imports green. Pending live: `make migrate-test`, `make test-contracts`, fixture upload.
-  Console `types.ts`/`EndpointPanel.svelte` still read the removed `adapter_path` (not in this block's Files).
-- **Handoff (E4.2).** Table `adapters(id, project_id, name, base_model, format gguf|peft, peft_dir, gguf_path, sha256, size_bytes,
-  eval_dataset_id, status, failure_reason, eval_metrics JSONB, created_by, created_at)`; `endpoints.adapter_id` replaces `adapter_path`;
-  migration `0014` (down `0013`). Status enum `uploaded | processing | passed | failed` (`AdapterStatus`): upload writes `uploaded`;
-  E4.4 owns the rest and must fill `gguf_path` for `peft` rows (stored at `adapters_dir/{id}/peft/`; gguf at `adapters_dir/{id}/adapter.gguf`).
-  Routes `POST|GET /v1/projects/{id}/adapters`, `GET|DELETE …/adapters/{aid}`; `EndpointResponse.adapter`. Errors `InvalidAdapter`
-  (400 `invalid_adapter`), `AdapterInUse` (409 `adapter_in_use`), `PayloadTooLarge` (413). `settings.adapter_max_upload_mb`=512.
-
 ### E4.4 `[BE+INFRA]` Adapter job on the CPU worker: convert, probe, score, decide (P1)
 - [ ] **Context.** `core/adapter_conversion.py` wraps llama.cpp's official `convert_lora_to_gguf.py`, but the
   converter was vendored only into the deleted worker stage, and `--base-model-id` fetches the base config
@@ -448,6 +395,11 @@ E1.1–E1.9 shipped 2026-09-17 → [CHANGELOG.md](CHANGELOG.md). E1.14 closed 20
   on the dataset). Two acceptance items moved here from E4.3: the `garbage-control` fixture must **fail** once the
   converter is vendored, and the fixture needs a ≥ 20-row eval set on which the base scores clearly below the adapter
   (on the current 7 rows the 0.5B base already scores 1.000).
+- **Re-anchored 2026-10-10 (E4.2 Handoff).** Drive `Adapter.status` `uploaded → processing → passed | failed` (set
+  `failure_reason` on fail); a `peft` row's `peft_dir` is `adapters_dir/{id}/peft/`, and the job must write the converted
+  file and set `gguf_path` (chat refuses a bound adapter without it); a `gguf` row already has `gguf_path`. Enqueue
+  `{kind: "adapter", id}` from `POST /v1/projects/{id}/adapters` (`services/adapters.py`); rows from
+  `Adapter.eval_dataset_id` → `datasets.storage_path`; base from `Adapter.base_model` (catalog `architecture` available).
 - **Agent.** sonnet · gate class **rebuild + live** · serialize with: E3.7 (`worker/main.py`,
   `services/jobs.py`, `services/maintenance.py`), E3.3b (`Dockerfile`) · **Handoff.** must name the handler,
   where base configs live, seconds per stage for the fixture.
