@@ -124,7 +124,7 @@ classes are defined in [`.claude/context/gates.md`](.claude/context/gates.md) ("
 | E4.2 | 2 | sonnet | rebuild + live | E4.1 | E4.3 (spec, migrations), E4.5, E2.2 | in progress (worker-e4.2) |
 | E4.3 | 2 | sonnet | live | E4.1 | E4.2 (spec, migrations) | done 2026-10-10 |
 | E4.8 | 2 | sonnet | live | E3.8, E4.1 | E4.6, E5.1 | open |
-| E4.9 | 2 | sonnet | live | E1.11 | E2.1, E3.5/E5.3, E4.6 | in progress (worker-e4.9) |
+| E4.9 | 2 | sonnet | live | E1.11 | E2.1, E3.5/E5.3, E4.6 | ready-for-live (e4.9) |
 | E3.4 | 3 | sonnet | live | E3.1, E3.3b, E1.11 | E3.5 (spec, `Playground.svelte`), E3.3b | open |
 | E3.5 | 3 | sonnet | live | E3.2, E1.11 | E3.4 (spec, `Playground.svelte`), E4.9 and E5.3 | open |
 | E3.6 | 3 | sonnet + human decision | live | E3.1, E3.2, E3.8 | E3.2 | done 2026-10-10 |
@@ -562,7 +562,7 @@ E1.1–E1.9 shipped 2026-09-17 → [CHANGELOG.md](CHANGELOG.md). E1.14 closed 20
 - **Close.** knowledge-and-behavior, operator-console; Status snapshot.
 
 ### E4.9 `[BE]` JSON mode on the endpoint — try it before importing an extraction adapter (P2)
-- [ ] **Context.** Extraction is the most common adapter task, yet llama.cpp's grammar-constrained decoding
+- [x] **Context.** Extraction is the most common adapter task, yet llama.cpp's grammar-constrained decoding
   (`response_format` `json_object` / `json_schema`) is not exposed. The console should say "try JSON mode
   first".
 - **Depends.** E1.11. **Unblocks.** none.
@@ -584,6 +584,16 @@ E1.1–E1.9 shipped 2026-09-17 → [CHANGELOG.md](CHANGELOG.md). E1.14 closed 20
   `tests/test_inference_slow.py` (local GGUF).
 - **Acceptance.** `response_format: {type: json_object}` yields parseable JSON on the base model; the
   console points extraction users to it first.
+- **Done.** 2026-10-10 (branch `e4.9`; live gate pending). `ChatCompletionRequest.response_format` (`text` |
+  `json_object` | `json_schema`, OpenAI shape) in the spec; router -> `chat()`/`chat_stream()` -> `InferenceRequest`;
+  the llama-cpp backend compiles it to a `LlamaGrammar` (`grammar_for`) and the text path passes `grammar=` to
+  the existing `model(...)` call; the vision path forwards `response_format=` to `create_chat_completion`.
+  Playground "JSON mode" toggle + extraction copy in the fine-tune guide. Offline gates green; the slow tests
+  (`test_json_mode_yields_parseable_json`, `..._schema_mode_..._in_stream`) await the GGUF.
+- **Handoff.** kwargs forwarded: `grammar=` (text path, `inference.py` `generate`/`generate_stream` — one added
+  kwarg each, plus two `InferenceRequest` fields) and `response_format=` (`generate_chat`, vision). Honoured by
+  the llama-cpp backend only (the sole backend after E4.1); E2.1 (Ollama) must forward `request.response_format`
+  as its native `format`/`response_format` field instead of `grammar`. Invalid schemas -> typed 422.
 - **Close.** consuming-the-api; knowledge-and-behavior "when to use which" extraction row; Status snapshot.
 
 ### E5. Differentiation (weeks 10–13)

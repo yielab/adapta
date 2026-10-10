@@ -276,6 +276,8 @@ async def chat(
     top_k_rag: Optional[int] = None,
     # Fine-tune serving (A3.1): GGUF LoRA applied on top of the base model
     adapter_path: Optional[str] = None,
+    # JSON mode: OpenAI-shape response_format dict (None = unconstrained)
+    response_format: Optional[dict] = None,
 ) -> dict:
     """
     Non-streaming chat completion.
@@ -309,6 +311,7 @@ async def chat(
             max_tokens=max_tokens,
             top_p=top_p,
             adapter_path=adapter_path,
+            response_format=response_format,
         )
 
     rag_chunks: list = []
@@ -352,6 +355,7 @@ async def chat(
         stream=False,
         system_prompt=full_system,
         adapter_path=adapter_path,
+        response_format=response_format,
     )
     try:
         response: InferenceResponse = await backend.generate(handle, req)
@@ -398,6 +402,7 @@ async def _chat_vision(
     max_tokens: int,
     top_p: float,
     adapter_path: Optional[str],
+    response_format: Optional[dict] = None,
 ) -> dict:
     """Non-streaming vision completion (§V4): image content-parts through the
     multimodal chat handler, with the fine-tune adapter applied as usual."""
@@ -435,6 +440,7 @@ async def _chat_vision(
             top_p=top_p,
             max_tokens=max_tokens,
             lock=lock,
+            response_format=response_format,
         )
     except DomainError:
         raise
@@ -476,6 +482,7 @@ async def chat_stream(
     top_k_rag: Optional[int] = None,
     endpoint_id: Optional[str] = None,
     adapter_path: Optional[str] = None,
+    response_format: Optional[dict] = None,
 ) -> AsyncIterator[str]:
     """
     Streaming chat — yields SSE-formatted strings.
@@ -528,6 +535,7 @@ async def chat_stream(
         stream=True,
         system_prompt=full_system,
         adapter_path=adapter_path,
+        response_format=response_format,
     )
     chunk_id = f"chatcmpl-{uuid.uuid4().hex[:8]}"
     created = int(time.time())

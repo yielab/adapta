@@ -73,6 +73,7 @@
   let draft = $state("");
   let messages = $state<ChatMsg[]>([]);
   let sending = $state(false);
+  let jsonMode = $state(false); // response_format: json_object (grammar-constrained)
 
   const slug = $derived(endpoint?.slug ?? "");
   const keyLooksValid = $derived(apiKey.trim().startsWith("adp_"));
@@ -140,7 +141,7 @@
     });
 
     try {
-      const resp: ChatCompletion = await api.chat(slug, key, wire);
+      const resp: ChatCompletion = await api.chat(slug, key, wire, jsonMode);
       const reply = resp.choices?.[0]?.message?.content ?? "";
       messages = [
         ...messages,
@@ -344,6 +345,10 @@
         disabled={sending || !keyLooksValid}
       ></textarea>
     </div>
+    <label class="row" style="gap: 6px; margin: 8px 0 0; align-items: center; font-size: 13px;">
+      <input type="checkbox" bind:checked={jsonMode} disabled={sending} />
+      JSON mode — force valid JSON. For extraction, try this on the base model before importing an adapter.
+    </label>
     <div class="row between">
       <small class="muted">
         {#if isVision}

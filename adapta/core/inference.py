@@ -16,7 +16,7 @@ import logging
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from typing import AsyncIterator, List, Optional
+from typing import Any, AsyncIterator, List, Optional
 
 from llama_cpp import Llama
 
@@ -82,6 +82,10 @@ class InferenceRequest:
     system_prompt: Optional[str] = None
     adapter_path: Optional[str] = None
     chat_template: str = chat_templates.DEFAULT_TEMPLATE
+    # OpenAI-shape ``response_format`` dict (None = unconstrained) and the
+    # llama-cpp grammar the serving backend compiles from it (JSON mode).
+    response_format: Optional[dict] = None
+    grammar: Optional[Any] = None
 
 
 @dataclass
@@ -153,6 +157,7 @@ class InferenceEngine:
                 top_p=request.top_p,
                 top_k=request.top_k,
                 stop=stop_tokens,
+                grammar=request.grammar,
                 echo=False,
             )
 
@@ -190,6 +195,7 @@ class InferenceEngine:
         top_p: float,
         max_tokens: int,
         lock: Optional[asyncio.Lock] = None,
+        response_format: Optional[dict] = None,
     ) -> InferenceResponse:
         """Generate via the model's chat handler (``create_chat_completion``).
 
@@ -206,6 +212,7 @@ class InferenceEngine:
                 max_tokens=max_tokens,
                 temperature=temperature,
                 top_p=top_p,
+                response_format=response_format,
             )
 
         try:
@@ -287,6 +294,7 @@ class InferenceEngine:
                 top_p=request.top_p,
                 top_k=request.top_k,
                 stop=stop_tokens,
+                grammar=request.grammar,
                 stream=True,
                 echo=False,
             )

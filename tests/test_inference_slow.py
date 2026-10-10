@@ -60,3 +60,44 @@ async def test_chat_stream_yields_tokens_and_usage():
     assert chunks[-1].strip() == "data: [DONE]"
     # the penultimate frame carries the real (counted) completion-token usage
     assert any('"completion_tokens"' in c for c in chunks)
+
+
+@skip_no_model
+async def test_json_mode_yields_parseable_json():
+    import json
+
+    from adapta.services.chat import chat
+
+    result = await chat(
+        model_name=_MODEL_NAME,
+        messages=[
+            {"role": "user", "content": "Extract name and age: 'Ana is 31 years old.' Answer as JSON."}
+        ],
+        max_tokens=96,
+        response_format={"type": "json_object"},
+    )
+    assert isinstance(json.loads(result["choices"][0]["message"]["content"]), dict)
+
+
+@skip_no_model
+async def test_json_schema_mode_matches_schema_in_stream():
+    import json
+
+    from adapta.services.chat import chat_stream
+
+    schema = {
+        "type": "object",
+        "properties": {"name": {"type": "string"}, "age": {"type": "integer"}},
+        "required": ["name", "age"],
+    }
+    text = ""
+    async for sse in chat_stream(
+        model_name=_MODEL_NAME,
+        messages=[{"role": "user", "content": "Extract name and age: 'Ana is 31 years old.'"}],
+        max_tokens=96,
+        response_format={"type": "json_schema", "json_schema": {"name": "p", "schema": schema}},
+    ):
+        if sse.startswith("data: {") and '"content"' in sse:
+            text += json.loads(sse[6:])["choices"][0]["delta"].get("content", "")
+    parsed = json.loads(text)
+    assert isinstance(parsed["name"], str) and isinstance(parsed["age"], int)

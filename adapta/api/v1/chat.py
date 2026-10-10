@@ -101,6 +101,14 @@ async def chat_completions(
 
     messages = [_to_dict(m) for m in request_body.messages]
 
+    # JSON mode: plain dict in OpenAI shape; `text` means unconstrained.
+    response_format = (
+        request_body.response_format.model_dump(by_alias=True)
+        if request_body.response_format is not None
+        and request_body.response_format.type != "text"
+        else None
+    )
+
     # Reject payloads exceeding the configured character limit before tokenization —
     # a single huge message could OOM the tokenizer or stall the event loop.
     total_chars = sum(len(str(m.get("content", ""))) for m in messages if isinstance(m.get("content"), str))
@@ -143,6 +151,7 @@ async def chat_completions(
                 project_id=project_id_for_rag,
                 endpoint_id=endpoint.id,
                 adapter_path=adapter_path,
+                response_format=response_format,
             ),
             media_type="text/event-stream",
         )
@@ -155,6 +164,7 @@ async def chat_completions(
             top_p=request_body.top_p,
             project_id=project_id_for_rag,
             adapter_path=adapter_path,
+            response_format=response_format,
         )
         # Meter usage as a background task so it doesn't block the response.
         u = result.get("usage", {})

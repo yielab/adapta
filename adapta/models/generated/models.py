@@ -315,6 +315,37 @@ class BaseModelInfo(BaseModel):
     """
 
 
+class ResponseFormatText(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    type: Literal["text"]
+
+
+class ResponseFormatJsonObject(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    type: Literal["json_object"]
+
+
+class JsonSchema(BaseModel):
+    name: str | None = None
+    strict: bool | None = None
+    schema_: Annotated[dict[str, Any], Field(alias="schema")]
+    """
+    A JSON Schema the output must satisfy.
+    """
+
+
+class ResponseFormatJsonSchema(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    type: Literal["json_schema"]
+    json_schema: JsonSchema
+
+
 class TextContentPart(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -442,3 +473,10 @@ class ChatCompletionRequest(BaseModel):
     max_tokens: int | None = None
     top_p: Annotated[float | None, Field(ge=0.0, le=1.0)] = None
     stream: bool = False
+    response_format: (
+        ResponseFormatText | ResponseFormatJsonObject | ResponseFormatJsonSchema | None
+    ) = None
+    """
+    Constrain the output (OpenAI shape). ``json_object`` forces syntactically valid JSON; ``json_schema`` forces JSON matching the given schema (grammar-constrained decoding in llama.cpp). Try it on the base model before importing an extraction adapter. Omitted or ``text`` leaves decoding unconstrained.
+
+    """

@@ -158,11 +158,16 @@ export const api = {
     request<void>(`${V1}/settings/${encodeURIComponent(key)}?team_id=${encodeURIComponent(teamId)}`, { method: "DELETE" }),
 
   // Chat (uses a scoped adp_ key, NOT the JWT — auth:false + manual header)
-  chat: (slug: string, brnKey: string, messages: WireChatMessage[]) =>
+  chat: (slug: string, brnKey: string, messages: WireChatMessage[], jsonMode = false) =>
     fetch(`${V1}/chat/completions`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${brnKey}` },
-      body: JSON.stringify({ model: slug, messages, stream: false }),
+      body: JSON.stringify({
+        model: slug,
+        messages,
+        stream: false,
+        ...(jsonMode ? { response_format: { type: "json_object" } } : {}),
+      }),
     }).then(async (res) => {
       const data = await res.json();
       if (!res.ok) {

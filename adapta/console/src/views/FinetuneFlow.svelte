@@ -495,7 +495,7 @@
 
         <h4>What makes a good dataset</h4>
         <ul style="margin: 0 0 4px; padding-left: 18px; line-height: 1.8;">
-          <li><strong>Focus on one task.</strong> Don't mix a support-voice dataset with a JSON-extraction task — use a separate adapter for each.</li>
+          <li><strong>Focus on one task.</strong> Don't mix a support-voice dataset with a JSON-extraction task — use a separate adapter for each. For JSON extraction, try <strong>JSON mode</strong> in the Playground on the base model first — import an adapter if the fields are still wrong.</li>
           <li><strong>Consistent output format.</strong> If some responses are JSON and others are prose, the model learns the inconsistency too.</li>
           <li><strong>Coverage over perfection.</strong> 100 diverse examples of the same task outperform 10 polished ones.</li>
           <li><strong>Size matters for evaluation.</strong> Part of a dataset is held out to score an adapter, so keep enough rows for both.</li>

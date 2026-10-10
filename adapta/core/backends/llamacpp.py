@@ -11,14 +11,16 @@ vision LoRA.
 
 from __future__ import annotations
 
-from typing import AsyncIterator, List, Optional
+import json
+from typing import Any, AsyncIterator, List, Optional
 
 from llama_cpp import Llama
+from llama_cpp.llama_grammar import JSON_GBNF, LlamaGrammar
 
 from adapta.core import chat_templates, inference_engine, model_manager
 from adapta.core.backends.base import BackendHandle, ServingBackend
 from adapta.core.inference import InferenceRequest, InferenceResponse, Message
-from adapta.domain.errors import ModelNotFound
+from adapta.domain.errors import InvalidRequest, ModelNotFound
 
 
 def _resolve_chat_template(model_name: str) -> str:
@@ -30,6 +32,29 @@ def _resolve_chat_template(model_name: str) -> str:
 
     entry = resolve_catalog(model_name)
     return entry.chat_template if entry else chat_templates.DEFAULT_TEMPLATE
+
+
+def grammar_for(response_format: Optional[dict]) -> Optional[Any]:
+    """Compile an OpenAI-shape ``response_format`` into a llama-cpp grammar.
+
+    ``json_object`` -> the generic JSON grammar; ``json_schema`` -> a grammar
+    for the given schema. ``text``/None -> None (unconstrained). A fresh grammar
+    per request: grammar objects carry sampler state."""
+    if not response_format:
+        return None
+    kind = response_format.get("type")
+    try:
+        if kind == "json_object":
+            return LlamaGrammar.from_string(JSON_GBNF, verbose=False)
+        if kind == "json_schema":
+            schema = response_format["json_schema"]["schema"]
+            return LlamaGrammar.from_json_schema(json.dumps(schema), verbose=False)
+    except Exception as exc:  # unsupported/invalid schema is the caller's error
+        raise InvalidRequest(
+            message="response_format.json_schema is not a supported JSON Schema",
+            internal_detail=str(exc),
+        ) from exc
+    return None
 
 
 class LlamaCppHandle(BackendHandle):
@@ -84,6 +109,7 @@ class LlamaCppBackend(ServingBackend):
         # Bind the model's serving template (resolved at prepare) onto this
         # request-scoped object so chat.py stays template-agnostic.
         request.chat_template = handle._chat_template
+        request.grammar = grammar_for(request.response_format)
         return await inference_engine.generate(handle._model, request, lock=handle._lock)
 
     async def generate_stream(
@@ -91,6 +117,7 @@ class LlamaCppBackend(ServingBackend):
     ) -> AsyncIterator[str]:
         assert isinstance(handle, LlamaCppHandle)
         request.chat_template = handle._chat_template  # bind serving template (see generate)
+        request.grammar = grammar_for(request.response_format)
         async for token in inference_engine.generate_stream(
             handle._model, request, lock=handle._lock
         ):
