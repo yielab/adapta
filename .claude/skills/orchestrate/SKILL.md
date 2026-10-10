@@ -14,9 +14,12 @@ either here — read them.
 
 The stack bind-mounts the **main checkout** into `adapta-app` and `adapta-worker`. Any edit
 there restarts uvicorn and kills a live test in flight; `make up` restarts every container.
-Therefore: **workers build in git worktrees (never bind-mounted, always safe to edit) and run
-`offline` gates there; the lead owns the main checkout and runs `live` / `gpu` / `rebuild`
-gates one at a time.**
+Therefore: **workers build in git worktrees and run `offline` gates there; the lead owns the
+main checkout and runs `live` / `gpu` / `rebuild` gates one at a time.** Worktrees live under
+`.claude/worktrees/`, i.e. *inside* the mount — they are safe only because uvicorn reloads on
+`/app/adapta` alone (`entrypoint.sh` `--reload-dir`); never widen that. A worktree may start from
+an older commit than the working branch: on merge, rebase and resolve `TODO.md` by taking the
+working branch's file and re-applying the block's row and notes.
 
 ## 1. Lead: read the board, pick the wave
 

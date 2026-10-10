@@ -14,10 +14,12 @@ python -m adapta.db.seed
 
 if [ "${ADAPTA_RELOAD:-0}" = "1" ]; then
     echo "[entrypoint] Starting API server (reload mode)..."
+    # Watch only the package: git worktrees under .claude/worktrees/ sit inside
+    # the bind-mounted checkout, and a reload there kills live gates in flight.
     exec uvicorn adapta.api.app:app \
         --host "${ADAPTA_HOST:-0.0.0.0}" \
         --port "${ADAPTA_PORT:-8000}" \
-        --reload
+        --reload --reload-dir /app/adapta
 else
     echo "[entrypoint] Starting API server..."
     exec uvicorn adapta.api.app:app \

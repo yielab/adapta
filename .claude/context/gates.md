@@ -41,8 +41,9 @@ Never `pip install`; to change deps edit `pyproject.toml` then `make up` (host).
 
 ## Gate classes — where a gate may run when several agents work at once
 
-The stack bind-mounts the **main checkout** (`.:/app` in both `app` and `worker`). A git
-worktree is not mounted, so editing there never trips hot reload. Each `TODO.md` block's
+The stack bind-mounts the **main checkout** (`.:/app` in both `app` and `worker`). Worktrees under
+`.claude/worktrees/` are inside that mount but outside the only reload root (`--reload-dir
+/app/adapta` in `entrypoint.sh`), so editing there never trips hot reload. Each `TODO.md` block's
 **Agent.** line names its class; the `orchestrate` skill schedules by it.
 
 | Class | Gates | Where | Concurrency |
