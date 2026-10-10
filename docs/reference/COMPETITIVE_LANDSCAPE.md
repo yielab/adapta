@@ -59,6 +59,23 @@ Every cell below is backed by a primary source cited in [§Verified claims](#ver
     parsing. The claim here is only that Adapta's RAG is not a naive single-vector lookup; the
     differentiation lives in the columns to its right.
 
+### Licence restrictions on the application-level alternatives
+
+Primary sources, checked 2026-10-10 (the rest of this page is dated 2026-06-25).
+
+| Project | Restriction | Source |
+|---|---|---|
+| Open WebUI | Branding may not be altered or removed above 50 end users in a rolling 30 days, without permission or an enterprise licence | [LICENSE](https://github.com/open-webui/open-webui/blob/main/LICENSE) |
+| Dify | No multi-tenant operation of the source without written authorization; logo and copyright may not be removed | [LICENSE](https://github.com/langgenius/dify/blob/main/LICENSE) |
+| Kiln | Core library and REST server MIT; the desktop app is source-available under the fair-code model | [README](https://github.com/Kiln-AI/Kiln) |
+| Onyx | Community Edition MIT; SSO and RBAC are listed under "Onyx for Enterprise" | [README](https://github.com/onyx-dot-app/onyx) |
+| Flowise | Apache-2.0, archived 2026-08-13 | [repo](https://github.com/FlowiseAI/Flowise) |
+| Cognita | Apache-2.0, archived 2026-03-13 | [repo](https://github.com/truefoundry/cognita) |
+
+Adapta is Apache-2.0 with no user-count or tenant limit. Kiln fine-tunes models and Onyx is a RAG/chat
+product; neither was assessed for the composition matrix above, and BISHENG was not re-verified for this
+update.
+
 ---
 
 ## When **not** to choose Adapta

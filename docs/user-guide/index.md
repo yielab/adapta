@@ -66,5 +66,7 @@ real-life example.
   flows, from register to a live endpoint.
 - **[Knowledge + behavior together](knowledge-and-behavior.md)** — when to use
   RAG vs adapters (real-life cases) and the combined pattern end to end.
+- **[Migrating to Adapta](migrating.md)** — coming from Flowise, Cognita or R2R, or from a setup that
+  trained adapters for you: concept mapping, what has no equivalent, and the API path.
 - **[Consuming the API](consuming-the-api.md)** — how your applications actually
   call the endpoint with the OpenAI SDK, plus citations and usage.

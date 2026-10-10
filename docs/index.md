@@ -1,11 +1,11 @@
 # Adapta
 
 **A self-hosted platform for customizing and serving private language models.**
-Upload documents and (soon) import your own LoRA adapter — then expose
+Upload documents and import your own LoRA adapter — then expose
 the result as an OpenAI-compatible API. Your data never leaves your servers.
 
-!!! warning "Prototype maturity"
-    This is a one-person project at prototype stage. The pieces are wired up — RAG and multi-tenant serving (adapter import and its eval gate are being rebuilt) — but the system has not been independently audited or validated at real team scale. If you are deploying with sensitive data, review the auth, error-handling, and eval-gate code paths yourself before going to production. See [Brand §0](reference/BRAND.md#0-project-status) for the full disclosure.
+!!! warning "Beta maturity"
+    One maintainer, built with AI assistance. The lifecycle works end to end: cited hybrid RAG, bring-your-own-adapter (import, CPU eval gate, promote/rollback) and multi-tenant serving; the API contract gate passes 40 of 40 operations. It has not been independently audited, so review the auth and eval-gate code paths before using sensitive data. Not built yet and known limits: see [Project status](https://github.com/yielab/adapta#project-status). Migrating from another stack: [migration guide](user-guide/migrating.md).
 
 This documentation serves two purposes: it is the operational and developer
 reference for the platform, and it is a concrete learning resource for anyone

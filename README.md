@@ -47,11 +47,30 @@ surface but requires Kubernetes and 10+ microservices. See the
 [competitive landscape](docs/reference/COMPETITIVE_LANDSCAPE.md) for the full comparison matrix with
 citations.
 
+### What you get under Apache-2.0
+
+Adapta is [Apache-2.0](LICENSE) with organizations, invites and scoped API keys in the same tree. Restrictions
+below are quoted from each project's own license page (checked 2026-10-10).
+
+| Feature | Adapta | The restriction elsewhere |
+| --- | --- | --- |
+| Rebrand the console for your team | Yes, Apache-2.0 | Open WebUI forbids altering or removing its branding above 50 end users in a rolling 30 days, without written permission ([LICENSE](https://github.com/open-webui/open-webui/blob/main/LICENSE)) |
+| Run it multi-tenant for several organizations | Yes: registering creates an organization | Dify: "you may not use the Dify source code to operate a multi-tenant environment" without written authorization ([LICENSE](https://github.com/langgenius/dify/blob/main/LICENSE)) |
+| Keep or remove the logo and copyright in the console | Your call (Apache-2.0 notice terms apply) | Dify: you may not remove or modify the logo or copyright information in its console ([LICENSE](https://github.com/langgenius/dify/blob/main/LICENSE)) |
+| Teammates by invite, roles, per-endpoint API keys | In the open tree | Onyx lists SSO and role-based access control under "Onyx for Enterprise" ([README](https://github.com/onyx-dot-app/onyx)) |
+| A full application, not only a library | One Docker Compose stack, API and console included | Kiln: the core library and REST server are MIT; "the desktop app is source-available, free to use, and built on the fair-code model" ([README](https://github.com/Kiln-AI/Kiln)) |
+| An actively maintained home | Yes | Flowise (Apache-2.0) was archived on 2026-08-13 ([repo](https://github.com/FlowiseAI/Flowise)); Cognita (Apache-2.0) on 2026-03-13 ([repo](https://github.com/truefoundry/cognita)) |
+
+Adapta has no SSO. The licence covers the code: some catalog base models carry their own terms (Qwen2.5-3B,
+Coder-3B and VL-3B are research-license, evaluation only; see the model table below). Coming from Flowise,
+Cognita or R2R? See the [migration guide](docs/user-guide/migrating.md).
+
 > [!IMPORTANT]
-> **Status: working prototype — a one-person, AI-assisted (Claude) project.** The full lifecycle
-> works end-to-end for RAG, bring-your-own-adapter (import, CPU eval gate, promote/rollback) and multi-tenant serving,
-> but it is **not production-hardened**: the auth path should be reviewed independently before being trusted with sensitive data.
-> Apache-2.0 licensed and built for private-team use — if you deploy it, expect to audit and harden it yourself.
+> **Status: beta, one maintainer, built with AI assistance (Claude).** It works end to end: cited hybrid RAG
+> (recall@5 0.978 on the 45-question es/en golden set, multilingual embedder, reranker off), bring-your-own-adapter (import, CPU eval gate,
+> promote/rollback with an audit trail) and multi-tenant serving; the API contract gate passes 40 of 40 operations
+> with 0 failures. Audit the auth and eval-gate paths before sensitive data. What is **not built yet** and the
+> known limits are listed under [Project status](#project-status).
 
 ---
 
@@ -246,7 +265,7 @@ inference server (vLLM, TGI). Bring those yourself.
 ## Security
 
 Privacy is the whole pitch — your data stays on your hardware — so the obligations are specific,
-especially for an unaudited prototype. **The [Quick start](#-quick-start-5-minutes-cpu) warning lists
+and the auth path has not had an independent audit. **The [Quick start](#-quick-start-5-minutes-cpu) warning lists
 what to change before exposing the stack.** Beyond that, put it behind a TLS reverse proxy and keep
 Postgres/Redis off any public network.
 
@@ -268,6 +287,17 @@ Phases 0–5 shipped (history in [CHANGELOG.md](CHANGELOG.md)). In-product train
 2026-10-10 (E4.1): no CUDA worker, vLLM or GPU gates remain. The open work is the 2026-09-03 audit,
 roadmap §E, in [TODO.md](TODO.md). *Bring your own adapter* (import, CPU eval gate, promote/rollback, console flow) shipped 2026-10-10 (E4.2–E4.6).
 Hybrid retrieval over Postgres full-text shipped 2026-10-10 (E3.2); Docling + OCR ingestion shipped 2026-10-10 (E3.3b).
+
+**Not built yet** (open roadmap blocks, 2026-10-10): exporting a gated adapter as an Ollama Modelfile bundle (E2.2);
+opt-in contextual retrieval at index time (E5.1); a per-project RAG gate with recall@k on the dashboard (E5.2);
+history-aware retrieval for multi-turn chats (E5.3); visual extraction during ingestion (E5.4). There is no SSO,
+no in-product training and no workflow canvas.
+
+**Known limits** (recorded in the [changelog](CHANGELOG.md)): the eval gate is trustworthy for `classify` and
+`extract` sets; a freeform (token F1) set let a garbage control adapter pass, so prefer the first two. Retrieval
+varies run to run on identically built projects (the golden aggregate is stable, single questions are not).
+The worker is a single serial process, so a huge upload delays the queue. A no-answer decision uses one cosine
+threshold that cannot separate every supported from every unsupported question.
 
 <details>
 <summary><b>Capability matrix</b></summary>

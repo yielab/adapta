@@ -99,6 +99,7 @@ nav:
       - Knowledge + behavior: user-guide/knowledge-and-behavior.md
       - Bring your own adapter: user-guide/bring-your-own-adapter.md
       - Consuming the API: user-guide/consuming-the-api.md
+      - Migrating to Adapta: user-guide/migrating.md
   - Developer Guide:
       - developer-guide/index.md
       - Architecture: developer-guide/architecture.md
