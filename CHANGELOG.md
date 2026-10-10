@@ -106,6 +106,42 @@ bind mount, so uvicorn reloaded on every worker edit — reload now watches `/ap
   delta vs 0.844/0.815), E3.6, E4.8, E5.1, E5.2, E5.3.
 - **Follow-up.** Two scanned pages with `expected_page` once E3.3b lands; MRR/p50 floors once a second data point exists.
 
+### E3.3a `[INFRA+TEST]` Spike: measure Docling + RapidOCR before adopting it (P1 · half a day · kill-or-commit)
+- [x] **Context.** Docling (MIT, ~66k★) replaces `pypdf` + `python-docx` + the HTML regex and adds
+  page/heading/table provenance and OCR only where a page has no text layer
+  (`OcrMode.PDF_AWARE_LAYOUT_REGIONS`, the default). Its docs suggest ≈ 500 MB installed; the tech
+  report (arXiv 2501.17887) measures median 0.79 s/page, p95 16 s on an 8-core x86. Base
+  `pip install docling` ships **no** OCR engine — `docling[rapidocr]` is required. The scope guard
+  says: measure before committing ~500 MB.
+- **Depends.** none. **Unblocks.** E3.3b (the commit/fall-back decision).
+- **Agent.** sonnet + **human decision** · gate class **offline (scratch container from the
+  `adapta-app` image; the stack is not needed)** · serialize with: none · **Handoff.** must name the
+  four numbers and the decision line — the lead shows them to the user before E3.3b starts.
+- **Scope.** A throwaway container + four numbers. No product code.
+- **Steps.** (1) `docker compose run --rm app pip install "docling[rapidocr]"` in a scratch container
+  (never the host, never the running image). (2) Measure: image-size delta; s/page on three PDFs
+  (native 20 pp, scanned 5 pp, mixed) with `latin_PP-OCRv5_rec_mobile`; peak RAM. (3) Confirm: page
+  numbers per element, a DOCX table → markdown, per-line OCR confidence from RapidOCR. (4) Record in
+  OPERATIONS ("Ingestion sizing", 6 lines) and decide: commit (E3.3b) or fall back to Tier 0
+  (`rapidocr` + `pypdfium2`, no layout).
+- **Files.** Scratch only; `docs/reference/OPERATIONS.md` (new subsection). The Done note carries the
+  numbers.
+- **Contract impact.** None.
+- **Gate.** None (spike); the Done note is the artefact.
+- **Acceptance.** MB, s/page ×3, RAM recorded + the decision line "commit E3.3b" or "fall back to
+  Tier 0 (re-scope E3.3b)".
+- **Close.** OPERATIONS subsection; Status snapshot.
+- **Done.** 2026-10-09. Scratch container from `adapta-app` (no repo mount), 16-core CPU, `docling[rapidocr]` 2.137 /
+  RapidOCR 3.10, `latin_PP-OCRv5_rec_mobile`. Image **+≈ 950 MB** (2.22 → 3.16 GB: ≈ 415 MB packages, ≈ 510 MB Docling
+  layout/table models, ≈ 43 MB OCR models — the block's ≈ 500 MB counted only one of the two). Warm s/page: native
+  **0.56** (20 pp) · scanned **3.2** (5 pp) · mixed **1.5** (6 pp); cold start +12–60 s. Peak RAM **≈ 2.5 GB**. Confirmed:
+  `prov.page_no` per element (an item may span several pages), DOCX table → markdown, per-line OCR confidence
+  (`generate_parsed_pages=True`). OPERATIONS "Ingestion sizing" written. Container removed, nothing installed on host.
+- **Handoff.** Decision (user, 2026-10-10): **commit E3.3b** — Docling + RapidOCR, accepting +950 MB and ≈ 2.5 GB RAM
+  per ingesting process. E3.3b must pin `torchvision` to the `+cpu` wheel (PyPI's breaks against CPU torch:
+  `operator torchvision::nms does not exist`) and bake the Docling (HF Hub) and RapidOCR (modelscope.cn) models into
+  the image at build time (air-gapped installs).
+
 ---
 
 ## 2026-10-08 — §E wave 0: the gates every other block is verified by

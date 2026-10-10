@@ -310,7 +310,7 @@ full list of missing/corrupt/oversized images or malformed rows in one upload an
 fixes them together, rather than discovering them one re-upload at a time. The
 console renders the multi-line report verbatim under the dataset row.
 
-#### Ingestion sizing (E3.3a spike — measured, not yet shipped)
+#### Ingestion sizing (E3.3a spike — measured; Docling adopted 2026-10-10, ships with E3.3b)
 
 Measured 2026-10-09 with `docling[rapidocr]` 2.137 / RapidOCR 3.10 (`latin_PP-OCRv5_rec_mobile`, onnxruntime) in a scratch container from `adapta-app`, 16-core CPU, no GPU:
 

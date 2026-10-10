@@ -115,7 +115,7 @@ classes are defined in [`.claude/context/gates.md`](.claude/context/gates.md) ("
 | E1.11 | 0 | sonnet | live | E1.10 | any in-flight `specs/openapi.yaml` edit | done 2026-10-09 |
 | E2.1 | 1 | sonnet | live | none | E4.1, E4.9 (`core/backends/`) | open |
 | E3.1 | 1 | sonnet | live | none | E3.7, E3.2 | done 2026-10-09 |
-| E3.3a | 1 | sonnet + human decision | offline | none | — | ready-for-live (e3.3a) |
+| E3.3a | 1 | sonnet + human decision | offline | none | — | done 2026-10-10 |
 | E3.8 | 1 | sonnet | live | none — must land before E3.2 | — | done 2026-10-09 |
 | E4.1 | 1 | sonnet | rebuild + live (exclusive) | E1.11 | E2.1, E3.3b, E3.7 | ready-for-live (e4.1) |
 | E3.2 | 2 | sonnet | live | E3.1, E3.8 (baseline recorded before this lands) | E3.7, E3.5 | ready-for-live (e3.2) |
@@ -258,32 +258,6 @@ E1.1–E1.9 shipped 2026-09-17 → [CHANGELOG.md](CHANGELOG.md). E1.14 closed 20
   concepts/stack.md, COMPETITIVE_LANDSCAPE retrieval note (the claim becomes true — date it); Status
   snapshot.
 
-### E3.3a `[INFRA+TEST]` Spike: measure Docling + RapidOCR before adopting it (P1 · half a day · kill-or-commit)
-- [ ] **Context.** Docling (MIT, ~66k★) replaces `pypdf` + `python-docx` + the HTML regex and adds
-  page/heading/table provenance and OCR only where a page has no text layer
-  (`OcrMode.PDF_AWARE_LAYOUT_REGIONS`, the default). Its docs suggest ≈ 500 MB installed; the tech
-  report (arXiv 2501.17887) measures median 0.79 s/page, p95 16 s on an 8-core x86. Base
-  `pip install docling` ships **no** OCR engine — `docling[rapidocr]` is required. The scope guard
-  says: measure before committing ~500 MB.
-- **Depends.** none. **Unblocks.** E3.3b (the commit/fall-back decision).
-- **Agent.** sonnet + **human decision** · gate class **offline (scratch container from the
-  `adapta-app` image; the stack is not needed)** · serialize with: none · **Handoff.** must name the
-  four numbers and the decision line — the lead shows them to the user before E3.3b starts.
-- **Scope.** A throwaway container + four numbers. No product code.
-- **Steps.** (1) `docker compose run --rm app pip install "docling[rapidocr]"` in a scratch container
-  (never the host, never the running image). (2) Measure: image-size delta; s/page on three PDFs
-  (native 20 pp, scanned 5 pp, mixed) with `latin_PP-OCRv5_rec_mobile`; peak RAM. (3) Confirm: page
-  numbers per element, a DOCX table → markdown, per-line OCR confidence from RapidOCR. (4) Record in
-  OPERATIONS ("Ingestion sizing", 6 lines) and decide: commit (E3.3b) or fall back to Tier 0
-  (`rapidocr` + `pypdfium2`, no layout).
-- **Files.** Scratch only; `docs/reference/OPERATIONS.md` (new subsection). The Done note carries the
-  numbers.
-- **Contract impact.** None.
-- **Gate.** None (spike); the Done note is the artefact.
-- **Acceptance.** MB, s/page ×3, RAM recorded + the decision line "commit E3.3b" or "fall back to
-  Tier 0 (re-scope E3.3b)".
-- **Close.** OPERATIONS subsection; Status snapshot.
-
 ### E3.3b `[BE]` One parser: Docling (+RapidOCR) for PDF/DOCX/HTML/images, page-aware chunking (P1)
 - [ ] **Context.** `documents.py` flattens newlines before chunking (`:98`) so pages are unrecoverable;
   DOCX tables are dropped (`:49`); HTML is stripped by regex (`:60`); scanned PDFs are rejected
@@ -294,7 +268,9 @@ E1.1–E1.9 shipped 2026-09-17 → [CHANGELOG.md](CHANGELOG.md). E1.14 closed 20
   extensions, `ocr_review_threshold`, image-size delta and s/page.
 - **Scope.** Parser + chunker + accepted types + OCR metadata. Out: VLM extraction (E5.4), review UI.
 - **Steps.** (1) `pyproject.toml`: `docling[rapidocr]`; drop `pypdf`, `python-docx`, `markdown` if
-  nothing else imports them (`grep -rn` in `adapta/` only). `make up`. (2) `documents.py`:
+  nothing else imports them (`grep -rn` in `adapta/` only); pin `torchvision` to the `+cpu` wheel (download.pytorch.org
+  CPU index, as the torch layer does) and pre-download the Docling layout/table and RapidOCR models in a
+  `Dockerfile` build step so first use needs no network (E3.3a Handoff). `make up`. (2) `documents.py`:
   `parse(path) -> DoclingDocument` with `RapidOcrOptions(lang=["latin"])`, `do_ocr=True`, default OCR
   mode; `chunk(doc)` via `HybridChunker` (tokenizer = the embedding model) emitting
   `Chunk(text, index, page, section, ocr, ocr_confidence)` — page from element provenance, `ocr` true
@@ -307,7 +283,7 @@ E1.1–E1.9 shipped 2026-09-17 → [CHANGELOG.md](CHANGELOG.md). E1.14 closed 20
   numbers asserted; a low-confidence fixture sets `needs_review`.
 - **Files.** `pyproject.toml`, `adapta/services/documents.py` (rewrite), `adapta/api/v1/files.py:28-40`,
   `adapta/console/src/views/RagFlow.svelte:188-237`, `adapta/config.py`, `tests/test_basic.py:45-100`,
-  `tests/fixtures/` (new); `Dockerfile` only if RapidOCR needs a system lib (it should not).
+  `tests/fixtures/` (new), `Dockerfile` (torchvision+cpu pin, model pre-download).
 - **Contract impact.** None yet (metadata stays internal until E3.4 exposes it).
 - **Gate.** `make up` (rebuild) → `make test` → `tests/integration/test_rag_e2e.py` with the scanned
   fixture.
