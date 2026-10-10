@@ -1139,6 +1139,46 @@ bind mount, so uvicorn reloaded on every worker edit — reload now watches `/ap
 - **Follow-up.** Measure on a long-document corpus (the golden docs are single-chunk — the wrong test bed for this
   technique); console toggle; "re-index with context" action; context generation is sequential.
 
+### E5.3 `[BE]` History-aware retrieval: condense the conversation into a standalone query (P2)
+- [x] **Context.** Retrieval embeds only the last user message (`chat.py:293`, `:481`); "and the second
+  one?" retrieves on that string. Multi-query/HyDE were deliberately deferred; condensation is the
+  cheap half.
+- **Depends.** E3.2, E3.5, E3.8. **Unblocks.** none.
+- **Agent.** sonnet · gate class **live (`make golden`)** · serialize with: E4.9/E3.5 (`chat.py`) ·
+  **Handoff.** must name the `retrieve(queries)` signature.
+- **Scope.** With ≥ 2 user turns and RAG active, ask the served model for a one-line standalone
+  question (≤ 40 tokens, greedy) and retrieve on it **and** the original — both go into RRF; never
+  drop the original. Opt-out `adapta.condense: false`. Out: multi-query expansion.
+- **Steps.** (1) `chat.py` `_condense_query(messages)` on the same backend handle (metered, logged).
+  (2) `rag.py` `retrieve(queries: list[str])`: vector + FTS per query, one RRF over all lists.
+  (3) Condensation + retrieval share the existing 10 s guard. (4) Tests: single-turn skips it;
+  two-turn calls it once; fusion includes the original.
+- **Files.** `adapta/services/chat.py:280-300, 470-490`, `adapta/services/rag.py:196-277`,
+  `tests/test_context_fit.py`, `tests/test_rag_hybrid.py`, `docs/user-guide/consuming-the-api.md`.
+- **Contract impact.** API (`adapta.condense`, extends E3.5's namespace).
+- **Gate.** `make validate-spec` → `make generate` → `make check-models` → `make test` →
+  `make golden` (add 5 two-turn questions to the set).
+- **Acceptance.** The two-turn golden questions gain recall; single-turn latency unchanged; usage
+  counts the condensation tokens.
+- **Close.** consuming-the-api; knowledge-and-behavior retrieval box; Status snapshot.
+- **Done.** 2026-10-10. With ≥ 2 user turns and RAG active (and `adapta.condense` not `false`; default on per the
+  block), `chat._retrieval_queries` → `_condense_query` (greedy, ≤ 40 tokens, last 6 turns × 500 chars, under the
+  `rag_timeout_seconds` guard; any failure → the raw message) and `RAGService.retrieve` accepts `[condensed, original]`
+  (vector + FTS per query, one RRF over all lists; a chunk keeps its best cosine for `rag_min_score`); condensation
+  tokens are counted in `usage`. Live on `develop`: `make ci` ✓ · golden **0.978 / 0.840** (single-turn unchanged) · RAG
+  e2e ✓ · `test-contracts` 41/41 · 3-turn en + es conversations on the golden corpus: condensed queries correct
+  ("Who has to approve that?" → "Who has to approve the vacation days that can be carried over to the next year?";
+  "¿Cada cuánto debo limpiar eso?" → "…el filtro de la bomba… en mi lavadora?"), all six follow-ups answered correctly
+  — **but they were also answered correctly with `condense: false`** (the model sees the history; the raw follow-up
+  still retrieved the right file), so no answer-level gain is measured yet; cost **+1.0–1.7 s and +110–170 prompt tokens
+  per follow-up** on CPU (1.5B).
+- **Handoff.** `RAGService.retrieve(project_id, query: str | Sequence[str], top_k=None, filters=None)`; first query is
+  primary (reranker scores against it). Log `rag.condense turns= original= condensed= tokens=P+C`. Opt-out
+  `{"adapta": {"condense": false}}`.
+- **Follow-up.** (1) Multi-turn golden questions (`history` in `questions.jsonl` + a harness calling
+  `_retrieval_queries`) — the only way to measure the recall gain; until then reconsider default-on given the measured
+  latency. (2) `docker logs --since` returned nothing after the host reboot (use `--tail`).
+
 ---
 
 ## 2026-10-08 — §E wave 0: the gates every other block is verified by

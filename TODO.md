@@ -131,12 +131,12 @@ classes are defined in [`.claude/context/gates.md`](.claude/context/gates.md) ("
 | E3.6 | 3 | sonnet + human decision | live | E3.1, E3.2, E3.8 | E3.2 | done 2026-10-10 |
 | E4.4 | 3 | sonnet | rebuild + live | E4.2, E4.3 | E3.7, E3.3b | done 2026-10-10 |
 | E5.1 | 3 | sonnet | live | E3.1, E3.7, E3.8 | E5.2, E4.8 | done 2026-10-10 |
-| E5.2 | 3 | sonnet | live | E3.8, E3.7, E4.8 | E5.1, E4.5 | open |
+| E5.2 | 3 | sonnet | live | E3.8, E3.7, E4.8 | E5.1, E4.5 | in progress (worker-e5.2) |
 | E2.2 | 4 | sonnet | live | E2.1, E4.4 | E4.5 (`endpoints.py`, `EndpointPanel.svelte`) | done 2026-10-10 |
 | E4.5 | 4 | sonnet | live | E4.4 | E2.2, E4.6, E5.2 | done 2026-10-10 |
 | E4.6 | 4 | sonnet | live | E4.4 | E4.5, E4.8, E4.9 | done 2026-10-10 |
-| E5.3 | 4 | sonnet | live | E3.2, E3.5, E3.8 | E4.9/E3.5 | ready-for-live (e5.3) |
-| E5.4 | 4 | sonnet | live | E3.3b, E3.4, E3.5, E3.7 | E5.1/E5.2, E3.4 | open |
+| E5.3 | 4 | sonnet | live | E3.2, E3.5, E3.8 | E4.9/E3.5 | done 2026-10-10 |
+| E5.4 | 4 | sonnet | live | E3.3b, E3.4, E3.5, E3.7 | E5.1/E5.2, E3.4 | in progress (worker-e5.4) |
 | E4.7 | 5 | sonnet | offline | E4.4, E4.5, E4.6 | E2.3 (README) | done 2026-10-10 |
 | E2.3 | 6 | haiku | offline | E1.11, E4.7 | E3.2, E3.3b, E4.7 (README) | done 2026-10-10 |
 
@@ -197,29 +197,6 @@ E1.1–E1.9 shipped 2026-09-17 → [CHANGELOG.md](CHANGELOG.md). E1.14 closed 20
   `rag_top_k` to 1 triggers the regression chip on the next run.
 - **Close.** PRODUCT_DEFINITION (RAG-gate paragraph mirroring the fine-tune gate), operator-console
   overview, CLAUDE.md API surface; Status snapshot.
-
-### E5.3 `[BE]` History-aware retrieval: condense the conversation into a standalone query (P2)
-- [ ] **Context.** Retrieval embeds only the last user message (`chat.py:293`, `:481`); "and the second
-  one?" retrieves on that string. Multi-query/HyDE were deliberately deferred; condensation is the
-  cheap half.
-- **Depends.** E3.2, E3.5, E3.8. **Unblocks.** none.
-- **Agent.** sonnet · gate class **live (`make golden`)** · serialize with: E4.9/E3.5 (`chat.py`) ·
-  **Handoff.** must name the `retrieve(queries)` signature.
-- **Scope.** With ≥ 2 user turns and RAG active, ask the served model for a one-line standalone
-  question (≤ 40 tokens, greedy) and retrieve on it **and** the original — both go into RRF; never
-  drop the original. Opt-out `adapta.condense: false`. Out: multi-query expansion.
-- **Steps.** (1) `chat.py` `_condense_query(messages)` on the same backend handle (metered, logged).
-  (2) `rag.py` `retrieve(queries: list[str])`: vector + FTS per query, one RRF over all lists.
-  (3) Condensation + retrieval share the existing 10 s guard. (4) Tests: single-turn skips it;
-  two-turn calls it once; fusion includes the original.
-- **Files.** `adapta/services/chat.py:280-300, 470-490`, `adapta/services/rag.py:196-277`,
-  `tests/test_context_fit.py`, `tests/test_rag_hybrid.py`, `docs/user-guide/consuming-the-api.md`.
-- **Contract impact.** API (`adapta.condense`, extends E3.5's namespace).
-- **Gate.** `make validate-spec` → `make generate` → `make check-models` → `make test` →
-  `make golden` (add 5 two-turn questions to the set).
-- **Acceptance.** The two-turn golden questions gain recall; single-turn latency unchanged; usage
-  counts the condensation tokens.
-- **Close.** consuming-the-api; knowledge-and-behavior retrieval box; Status snapshot.
 
 ### E5.4 `[BE+FE]` Visual extraction in ingestion: the vision base fills structured metadata and re-reads low-confidence pages (P2)
 - [ ] **Context.** After E3.3b scanned invoices index with page text and OCR confidence; after E3.4 the
