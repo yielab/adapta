@@ -720,6 +720,63 @@ bind mount, so uvicorn reloaded on every worker edit — reload now watches `/ap
   eval-set header buttons wrap; "Review" stays enabled. (4) One Playwright seed run failed on login (likely the auth
   rate limit) before passing.
 
+### E3.7 `[BE]` Indexing as a queued job with retry + per-request retrieval metrics (P1)
+- [x] **Context.** Indexing runs in a FastAPI `BackgroundTasks` closure (`files.py:182`): no retry, no
+  visibility, rows stuck in `processing` after a restart (the sweeper does not cover index rows). `core/metrics.py:177-221` has no retrieval metrics. **Measured 2026-10-09 (E3.8):** ~30 concurrent uploads start ~30
+  background tasks and exhaust the DB pool (`QueuePool limit of size 10 overflow 20 reached`; `GET /files` then hangs) — the
+  golden harness uploads in batches of 4 until this block bounds indexing concurrency. Since E3.1 the upload handler
+  parses + chunks synchronously and passes `chunks` to `_index_file`; collection get-or-create and counters are race-free.
+- **Depends.** E3.1, E4.1 (the worker's `kind` dispatch table). **Unblocks.** E5.1, E5.2, E5.4.
+- **Re-anchored 2026-10-10 (E4.1 Handoff).** Dispatch table = `HANDLERS` in `adapta/worker/main.py` (empty, keyed
+  on `meta["kind"]`); enqueue with `JobQueue.enqueue(job_id, kind, payload)`; queue key `adapta:job_queue`; the
+  worker is the app image (`entrypoint: python -m adapta.worker.main`), so no rebuild is needed for worker code.
+- **Agent.** sonnet · gate class **live (`docker compose restart worker` + rag e2e + sweep test)** ·
+  serialize with: E3.1/E3.3b (`files.py`, `documents.py`), E4.4 (`worker/main.py`,
+  `services/jobs.py`, `services/maintenance.py`) ·
+  **Handoff.** must name the job payload shape (`kind`), `_run_index_job`, the metric names, the
+  gates.md trap added.
+- **Scope.** Reuse the Redis BLPOP queue and E4.1's `kind` dispatch table. Out: a second worker
+  process, priorities.
+- **Steps.** (1) Register `_run_index_job` under `kind: "index"` in the worker's dispatch table.
+  (2) `files.py` enqueues `{kind: "index", id: file_id}`; the worker writes `pending → processing → indexed/failed`; one
+  retry on transient failure; the sweeper learns the `index` kind. (3) Hot-reload trap: changes to
+  `adapta/services/documents.py` now need `docker compose restart worker` — add to gates.md.
+  (4) Metrics: `adapta_rag_retrieval_seconds` (histogram), `adapta_rag_chunks_returned`,
+  `adapta_rag_reranker_seconds`, `adapta_index_seconds_per_page`. (5) Tests: `test_jobs.py` kind
+  dispatch; `test_observability.py` metric names; `test_stuck_task_sweep.py` covers index rows.
+- **Files.** `adapta/services/jobs.py`, `adapta/worker/main.py` (dispatch table + `_run_index_job`),
+  `adapta/api/v1/files.py:80-135`, `adapta/services/maintenance.py`, `adapta/core/metrics.py:177-221`,
+  `adapta/services/rag.py`, `.claude/context/gates.md`, `tests/test_jobs.py`,
+  `tests/test_observability.py`, `tests/integration/test_stuck_task_sweep.py`.
+- **Contract impact.** None (`FileResponse.status` values unchanged).
+- **Gate.** `make test` → `docker compose restart worker` → `tests/integration/test_rag_e2e.py` +
+  `test_stuck_task_sweep.py`.
+- **Acceptance.** Killing the app mid-index leaves no row in `processing` after the sweeper runs;
+  `/metrics` exposes the four new series; e2e green.
+- **Close.** architecture.md (ingestion on the queue), OPERATIONS (worker restarts), gates.md trap;
+  Status snapshot.
+- **Done.** 2026-10-10. Indexing is an `index` job on the worker (`HANDLERS["index"] = _run_index_job`, reusing
+  `_index_file` via `index_file_by_id`); upload commits the row and enqueues, `BackgroundTasks` gone; one retry on
+  transient errors (DB/Chroma/I/O/embedding), none for typed or parser errors; worker warm-up loads Docling + embedder
+  once; startup sweeps in app and worker; heartbeat refreshed every 30 s during a job (a job > 90 s used to mark the
+  worker unhealthy); `FileResponse.error_message` added (the sweep's reason was stored but never returned); four
+  histograms on `/metrics`. Live on `develop`: `make ci` ✓ · golden with **all 30 uploads at once: 0.978 / 0.840 / 32 ms,
+  0 QueuePool errors, queue drained, run 17 s** (the harness no longer batches) · `kill -9` mid-index (2 indexed / 28
+  pending / 1 processing) → restart → 30 indexed, 1 failed by the worker-startup sweep, **0 processing** · combined e2e +
+  scanned + sweep session 5 passed twice (sweep test first raced the live worker — fixed by seeding job metadata
+  without enqueuing) · `test-contracts` 36/36, 2727 cases, 0 failures, 0 errored.
+- **Handoff.** Payload: job id = file id, `kind: "index"`, `{"id": file_id}`, queue `adapta:job_queue`, metadata
+  `adapta:job:<id>`. `_run_index_job` → `index_file_by_id(file_id, final=False)`, retried once with `final=True`; the
+  job ends `succeeded` once the file is terminal (outcome on the row). Metrics: `adapta_rag_retrieval_seconds`,
+  `adapta_rag_chunks_returned`, `adapta_rag_reranker_seconds` (app), `adapta_index_seconds_per_page` (worker process —
+  not scraped by the app's `/metrics`). gates.md trap: the worker does not hot-reload — restart it after ingestion
+  changes. **Unblocks** E5.1, E5.2, E5.4.
+- **Follow-up.** (1) Worker-side metrics are not exported (no worker `/metrics`). (2) Finished `adapta:job:*` keys never
+  expire. (3) The worker is serial — a huge upload delays the queue. (4) In the first combined live run the worker went
+  `unhealthy` for ~20 min and a pytest session hung; not reproduced in 6 later runs; the heartbeat-during-job fix may be
+  the cause, Docker was also slow at that moment. (5) The first e2e right after an app hot-reload can time out on the
+  cold model load.
+
 ---
 
 ## 2026-10-08 — §E wave 0: the gates every other block is verified by

@@ -368,8 +368,11 @@ Measured on the 45-question bilingual golden set (`make golden`), 16-core CPU.
   (a 30-row set ≈ 4 s). Each stage is logged by the worker.
 - **Eval sets:** prefer `classify` or `extract` sets. A `freeform` set scored by token F1 let a garbage adapter pass
   (0.383 vs 0.037 base), so freeform gates are not yet trustworthy.
-- **Restarts:** the worker does not hot-reload. After a change under `adapta/worker/` or the adapter services, run
-  `docker compose restart worker`. An adapter left `processing` by a crash is failed by the startup sweep in the app.
+- **Restarts:** the worker does not hot-reload. It runs both adapter jobs and **document indexing** (E3.7), so after a
+  change under `adapta/worker/`, the adapter services, or the ingestion path (`files.py`, `documents.py`, `rag.py`,
+  `embeddings.py`, `maintenance.py`) run `docker compose restart worker`. A hard-killed worker's in-flight file is
+  failed by its own startup sweep (reason in the file's `error_message`); queued files continue. The heartbeat is
+  refreshed every 30 s during a job, so a long OCR job does not mark the worker unhealthy.
 
 ---
 

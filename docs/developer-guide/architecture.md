@@ -41,6 +41,13 @@ the `worker` is the `app` image started with `python -m adapta.worker.main`. Its
 (heartbeat, healthcheck, requeue on SIGTERM) is kept; an unknown job kind fails with a
 typed error. Adapters are imported rather than trained.
 
+**The index job (E3.7).** `POST /v1/projects/{id}/files` saves the bytes, rejects an identical file with 409
+(sha256), commits the row as `pending` and enqueues `{kind: "index", id}` — it never parses in the request. The
+worker (one job at a time, so indexing load is bounded by the worker, not by how many uploads arrive) parses with
+Docling, chunks, writes the `chunks` rows, upserts vectors and marks the file `indexed` or `failed`; a transient
+failure (DB, Chroma, I/O, embedding) is retried once. The worker loads the parser and embedder once at startup and
+sweeps files left `processing` by a dead worker; the app's startup sweep fails rows whose job is gone.
+
 **The adapter job (E4.2–E4.4).** `POST /v1/projects/{id}/adapters` stores the upload as `uploaded` and enqueues
 `{kind: "adapter", id}` on the Redis queue. The worker's `adapter` handler (`services/adapters.py`, `process_adapter`)
 moves the row to `processing`, converts a PEFT upload to GGUF with llama.cpp's vendored converter (`--base` = the base's

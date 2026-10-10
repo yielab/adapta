@@ -120,7 +120,7 @@ classes are defined in [`.claude/context/gates.md`](.claude/context/gates.md) ("
 | E4.1 | 1 | sonnet | rebuild + live (exclusive) | E1.11 | E2.1, E3.3b, E3.7 | done 2026-10-10 |
 | E3.2 | 2 | sonnet | live | E3.1, E3.8 (baseline recorded before this lands) | E3.7, E3.5 | done 2026-10-10 |
 | E3.3b | 2 | sonnet | rebuild + live | E3.3a (commit), E3.1 | E4.1, E4.2, E4.4 (`pyproject.toml`, `Dockerfile`), E3.7, E3.4 | done 2026-10-10 |
-| E3.7 | 2 | sonnet | live | E3.1, E4.1 | E3.1/E3.3b, E4.4 (`worker/main.py`) | ready-for-live (e3.7) |
+| E3.7 | 2 | sonnet | live | E3.1, E4.1 | E3.1/E3.3b, E4.4 (`worker/main.py`) | done 2026-10-10 |
 | E4.2 | 2 | sonnet | live | E4.1 | E4.3 (spec, migrations), E4.5, E2.2 | done 2026-10-10 |
 | E4.3 | 2 | sonnet | live | E4.1 | E4.2 (spec, migrations) | done 2026-10-10 |
 | E4.8 | 2 | sonnet | live | E3.8, E4.1 | E4.6, E5.1 | open |
@@ -234,42 +234,6 @@ E1.1–E1.9 shipped 2026-09-17 → [CHANGELOG.md](CHANGELOG.md). E1.14 closed 20
   block in the rendered prompt (unit test).
 - **Close.** consuming-the-api (`adapta` extension), operator-console settings + playground,
   PRODUCT_DEFINITION Service A; Status snapshot.
-
-### E3.7 `[BE]` Indexing as a queued job with retry + per-request retrieval metrics (P1)
-- [ ] **Context.** Indexing runs in a FastAPI `BackgroundTasks` closure (`files.py:182`): no retry, no
-  visibility, rows stuck in `processing` after a restart (the sweeper does not cover index rows). `core/metrics.py:177-221` has no retrieval metrics. **Measured 2026-10-09 (E3.8):** ~30 concurrent uploads start ~30
-  background tasks and exhaust the DB pool (`QueuePool limit of size 10 overflow 20 reached`; `GET /files` then hangs) — the
-  golden harness uploads in batches of 4 until this block bounds indexing concurrency. Since E3.1 the upload handler
-  parses + chunks synchronously and passes `chunks` to `_index_file`; collection get-or-create and counters are race-free.
-- **Depends.** E3.1, E4.1 (the worker's `kind` dispatch table). **Unblocks.** E5.1, E5.2, E5.4.
-- **Re-anchored 2026-10-10 (E4.1 Handoff).** Dispatch table = `HANDLERS` in `adapta/worker/main.py` (empty, keyed
-  on `meta["kind"]`); enqueue with `JobQueue.enqueue(job_id, kind, payload)`; queue key `adapta:job_queue`; the
-  worker is the app image (`entrypoint: python -m adapta.worker.main`), so no rebuild is needed for worker code.
-- **Agent.** sonnet · gate class **live (`docker compose restart worker` + rag e2e + sweep test)** ·
-  serialize with: E3.1/E3.3b (`files.py`, `documents.py`), E4.4 (`worker/main.py`,
-  `services/jobs.py`, `services/maintenance.py`) ·
-  **Handoff.** must name the job payload shape (`kind`), `_run_index_job`, the metric names, the
-  gates.md trap added.
-- **Scope.** Reuse the Redis BLPOP queue and E4.1's `kind` dispatch table. Out: a second worker
-  process, priorities.
-- **Steps.** (1) Register `_run_index_job` under `kind: "index"` in the worker's dispatch table.
-  (2) `files.py` enqueues `{kind: "index", id: file_id}`; the worker writes `pending → processing → indexed/failed`; one
-  retry on transient failure; the sweeper learns the `index` kind. (3) Hot-reload trap: changes to
-  `adapta/services/documents.py` now need `docker compose restart worker` — add to gates.md.
-  (4) Metrics: `adapta_rag_retrieval_seconds` (histogram), `adapta_rag_chunks_returned`,
-  `adapta_rag_reranker_seconds`, `adapta_index_seconds_per_page`. (5) Tests: `test_jobs.py` kind
-  dispatch; `test_observability.py` metric names; `test_stuck_task_sweep.py` covers index rows.
-- **Files.** `adapta/services/jobs.py`, `adapta/worker/main.py` (dispatch table + `_run_index_job`),
-  `adapta/api/v1/files.py:80-135`, `adapta/services/maintenance.py`, `adapta/core/metrics.py:177-221`,
-  `adapta/services/rag.py`, `.claude/context/gates.md`, `tests/test_jobs.py`,
-  `tests/test_observability.py`, `tests/integration/test_stuck_task_sweep.py`.
-- **Contract impact.** None (`FileResponse.status` values unchanged).
-- **Gate.** `make test` → `docker compose restart worker` → `tests/integration/test_rag_e2e.py` +
-  `test_stuck_task_sweep.py`.
-- **Acceptance.** Killing the app mid-index leaves no row in `processing` after the sweeper runs;
-  `/metrics` exposes the four new series; e2e green.
-- **Close.** architecture.md (ingestion on the queue), OPERATIONS (worker restarts), gates.md trap;
-  Status snapshot.
 
 ### E4. Bring your own adapter — Adapta verifies and serves adapters; it does not train them (weeks 3–9)
 
