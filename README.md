@@ -259,8 +259,8 @@ report a vulnerability via [SECURITY.md](SECURITY.md).
 
 Phases 0–5 shipped (history in [CHANGELOG.md](CHANGELOG.md)). In-product training was removed on
 2026-10-10 (E4.1): no CUDA worker, vLLM or GPU gates remain. The open work is the 2026-09-03 audit,
-roadmap §E, in [TODO.md](TODO.md): *bring your own adapter* (import, CPU eval gate, serve with RAG),
-real hybrid retrieval on Postgres and OCR ingestion.
+roadmap §E, in [TODO.md](TODO.md): *bring your own adapter* (import, CPU eval gate, serve with RAG) and
+Docling + OCR ingestion. Hybrid retrieval over Postgres full-text shipped 2026-10-10 (E3.2).
 
 <details>
 <summary><b>Capability matrix</b></summary>

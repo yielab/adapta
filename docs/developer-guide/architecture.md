@@ -101,12 +101,13 @@ This is the path worth tracing end to end, because it touches the most pieces:
    ([`adapta/api/v1/chat.py`](code-reference.md)) looks up the key by its prefix
    (indexed) and bcrypt-verifies it, resolving it to **its** endpoint. The
    client-supplied `model` slug must match — otherwise `403`.
-2. **Retrieve** — `ChatService` runs **hybrid retrieval** against the project's
-   Chroma collection: a vector search for `top_k × 4` candidates, BM25 keyword
-   scoring over those same candidates, Reciprocal Rank Fusion of the two
+2. **Retrieve** — `ChatService` runs **hybrid retrieval**: a Chroma vector search
+   for `top_k × 4` candidates and an independent Postgres full-text search over
+   the project's whole `chunks` table (OR over the query's lexemes, IDF-ranked,
+   very common lexemes dropped), Reciprocal Rank Fusion of the two
    rankings, then an optional cross-encoder rerank of the top `top_k × 2`
    (run off the event loop, under a timeout). See
-   [Hybrid ranking](../concepts/stack.md#hybrid-ranking-bm25-reciprocal-rank-fusion-cross-encoder).
+   [Hybrid ranking](../concepts/stack.md#hybrid-ranking-postgres-fts-reciprocal-rank-fusion-cross-encoder).
 3. **Assemble** — the retrieved chunks are injected as context ahead of the
    question, and the prompt is checked against the model's context window;
    lowest-relevance chunks are dropped first if it won't fit.

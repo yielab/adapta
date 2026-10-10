@@ -42,7 +42,7 @@ A **single-tenant, self-hosted** application. A company runs it on their own inf
 
 - **Input:** documents (PDF, DOCX, TXT, MD, HTML).
 - **Mechanism:** parse → chunk → embed (sentence-transformers) → store in a per-project ChromaDB collection. No weights change.
-- **Serving:** query → **hybrid retrieval** of top-k (vector + BM25 → RRF → cross-encoder rerank; see *Hybrid RAG (D5)* under [§3 In scope](#in-scope-implemented)) → inject into context → generate → return answer **with citations**.
+- **Serving:** query → **hybrid retrieval** of top-k (vector + Postgres full-text over the whole corpus → RRF → cross-encoder rerank; see *Hybrid RAG (D5)* under [§3 In scope](#in-scope-implemented)) → inject into context → generate → return answer **with citations**.
 - **Cost:** seconds to index, **CPU-only**, cheap. Works on any server.
 - **Updates:** add/remove a file, re-index. Instant.
 
@@ -78,7 +78,7 @@ Serving **composes the project's artifacts** rather than switching on its type. 
 - `make check-leaks` CI gate; `make ci` (leaks + lint + test + validate-spec).
 - **Vision serving:** VLMs serve as base GGUF + `mmproj` through llama-cpp; endpoints accept OpenAI image content-parts (inline data URLs, ≤ 4/request, non-streaming). (Vision fine-tuning was removed with in-product training.)
 - **Operator console:** thin browser UI bundled in `app`, same-origin at `/console/`; project lifecycle (files, datasets, keys, playground, usage, settings).
-- **Hybrid RAG (D5):** BM25 + vector retrieval fused via Reciprocal Rank Fusion, optional cross-encoder reranker (sentence-transformers CrossEncoder, lazy-loaded); configurable via `ADAPTA_RAG_*` env vars.
+- **Hybrid RAG (D5, real since E3.2):** vector search and an independent Postgres full-text search over every chunk (IDF-ranked, statistical stopwords) fused via Reciprocal Rank Fusion, optional cross-encoder reranker (sentence-transformers CrossEncoder, lazy-loaded); configurable via `ADAPTA_RAG_*` env vars.
 - **Dataset review UI (D6):** operators preview, drop, and edit eval-set rows; curated datasets carry `source_dataset_id` lineage; new `GET /datasets/{id}/rows` + `POST /datasets/{id}/curate` endpoints.
 - **Production hardening overlay (§7.4):** `docker-compose.prod.yml` — uid 10001, `cap_drop: ALL`, read-only rootfs, `tmpfs:/tmp`, named `app-data` volume replacing the dev bind-mount.
 

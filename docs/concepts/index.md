@@ -69,7 +69,7 @@ An AI-serving platform adds three systems that traditional stacks don't have:
 | New piece | Job | Familiar equivalent |
 |---|---|---|
 | **Inference engine** | Run a model function to generate text | Evaluating a compiled binary at runtime |
-| **Vector store** | Retrieve documents by semantic similarity (here fused with BM25 keyword scoring and a cross-encoder rerank) | A database index — but for meaning, not exact value |
+| **Vector store** | Retrieve documents by semantic similarity (here fused with Postgres full-text keyword search and a cross-encoder rerank) | A database index — but for meaning, not exact value |
 | **LoRA adapter + eval gate** | A small weight patch that changes behavior, verified before it serves (imported, not trained here) | A feature flag guarded by a CI gate |
 
 Everything else — HTTP routing, relational storage, async job queues, auth,
