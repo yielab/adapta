@@ -58,15 +58,15 @@ procedure. Rules that keep parallel work from colliding:
 
 ---
 
-## Status snapshot (updated 2026-10-10, after wave 2)
+## Status snapshot (updated 2026-10-10, after wave 4)
 
 | Area | State |
 |---|---|
 | Product build (phases 0–5), operator console, image fine-tunes, brand, positioning | ✅ complete — history in [CHANGELOG.md](CHANGELOG.md) |
-| Fine-tuning direction | **Decided 2026-10-09: bring your own adapter (§E4).** Training removed 2026-10-10 (E4.1); no service needs a GPU. Import (E4.2) and CPU scorer (E4.3) shipped; the adapter job that gates and serves an import (E4.4) is in flight. |
-| SDD gates | Pillar 2 ✅ `make migrate-test` · Pillar 3: the GPU perplexity gate is replaced by the CPU task-metric gate on imported adapters (E4.3/E4.4) · Pillar 1 ✅ `make test-contracts` green (E1.11; re-run 2026-10-10 after E4.1: 32 operations, 1813 cases, 0 failures, authenticated) |
-| CI fast gate (`make ci`) | ✅ green 2026-10-10 after E4.1 + E3.2: ruff + mypy clean, 220 unit tests (training tests deleted with the code) |
-| **Audit 2026-09-03 (§E)** | 🟥 **open** — 22/37 done (E1.1–E1.9 2026-09-17; E1.14 2026-10-08; E1.10, E1.11, E3.1, E3.8 2026-10-09; E3.2, E3.3a, E3.3b, E3.6, E4.1, E4.2, E4.3, E4.9 2026-10-10). Training gone (CPU-only, one image, 3.27 GB with Docling); retrieval real hybrid + multilingual (golden recall@5 0.978, floor 0.97); scanned PDFs/images via Docling + OCR; adapters import (E4.2) and the CPU scorer exists (E4.3); JSON mode on every endpoint. In flight: E4.4, E3.4, E2.1. Next: E2 (Ollama + launch kit) and E3 (Postgres chunks → real hybrid FTS, Docling + RapidOCR, citations with page/OCR provenance, system prompt + threshold + filters, multilingual, queued indexing, golden set); E4 (adapter import, CPU eval gate, adapter job, promotion/rollback, console flow, import guide, synthesis for eval sets, JSON mode); E5 (contextual retrieval, RAG gate, history-aware retrieval, visual extraction with the vision base). Scheduling: the §E board. |
+| Fine-tuning direction | **Decided 2026-10-09: bring your own adapter (§E4).** Training removed 2026-10-10 (E4.1); no service needs a GPU. Shipped end to end 2026-10-10: import (E4.2), CPU gate (E4.3/E4.4), promote/rollback (E4.5), console flow (E4.6), eval-set synthesis (E4.8). Pitch + import guide: E4.7. |
+| SDD gates | Pillar 2 ✅ `make migrate-test` · Pillar 3: the GPU perplexity gate is replaced by the CPU task-metric gate on imported adapters (E4.3/E4.4) · Pillar 1 ✅ `make test-contracts` green (E1.11; re-run 2026-10-10 after E4.8: 40 operations, 2320 cases, 0 failures, authenticated) |
+| CI fast gate (`make ci`) | ✅ green 2026-10-10 after E1.15: ruff + mypy clean, 350 unit tests |
+| **Audit 2026-09-03 (§E)** | 🟥 **open** — 31/38 done (E1.15 added 2026-10-10 after a live Chroma hang + socket leak). Shipped 2026-10-10: E2.1, E3.2–E3.7, E4.1–E4.6, E4.8, E4.9, E1.15. Bring-your-own-adapter works end to end (import → CPU gate → promote/rollback with audit, console flow); retrieval is hybrid + multilingual (golden 0.978), deterministic abstention, filters, citations with page/OCR; Docling + OCR ingestion on a queued worker; Ollama backend optional; JSON mode. Open: E2.2, E2.3, E4.7, E5.1–E5.4. Next: E2 (Ollama + launch kit) and E3 (Postgres chunks → real hybrid FTS, Docling + RapidOCR, citations with page/OCR provenance, system prompt + threshold + filters, multilingual, queued indexing, golden set); E4 (adapter import, CPU eval gate, adapter job, promotion/rollback, console flow, import guide, synthesis for eval sets, JSON mode); E5 (contextual retrieval, RAG gate, history-aware retrieval, visual extraction with the vision base). Scheduling: the §E board. |
 
 ---
 
@@ -130,14 +130,14 @@ classes are defined in [`.claude/context/gates.md`](.claude/context/gates.md) ("
 | E3.5 | 3 | sonnet | live | E3.2, E1.11 | E3.4 (spec, `Playground.svelte`), E4.9 and E5.3 | done 2026-10-10 |
 | E3.6 | 3 | sonnet + human decision | live | E3.1, E3.2, E3.8 | E3.2 | done 2026-10-10 |
 | E4.4 | 3 | sonnet | rebuild + live | E4.2, E4.3 | E3.7, E3.3b | done 2026-10-10 |
-| E5.1 | 3 | sonnet | live | E3.1, E3.7, E3.8 | E5.2, E4.8 | open |
+| E5.1 | 3 | sonnet | live | E3.1, E3.7, E3.8 | E5.2, E4.8 | in progress (worker-e5.1) |
 | E5.2 | 3 | sonnet | live | E3.8, E3.7, E4.8 | E5.1, E4.5 | open |
-| E2.2 | 4 | sonnet | live | E2.1, E4.4 | E4.5 (`endpoints.py`, `EndpointPanel.svelte`) | open |
+| E2.2 | 4 | sonnet | live | E2.1, E4.4 | E4.5 (`endpoints.py`, `EndpointPanel.svelte`) | in progress (worker-e2.2) |
 | E4.5 | 4 | sonnet | live | E4.4 | E2.2, E4.6, E5.2 | done 2026-10-10 |
 | E4.6 | 4 | sonnet | live | E4.4 | E4.5, E4.8, E4.9 | done 2026-10-10 |
-| E5.3 | 4 | sonnet | live | E3.2, E3.5, E3.8 | E4.9/E3.5 | open |
+| E5.3 | 4 | sonnet | live | E3.2, E3.5, E3.8 | E4.9/E3.5 | in progress (worker-e5.3) |
 | E5.4 | 4 | sonnet | live | E3.3b, E3.4, E3.5, E3.7 | E5.1/E5.2, E3.4 | open |
-| E4.7 | 5 | sonnet | offline | E4.4, E4.5, E4.6 | E2.3 (README) | open |
+| E4.7 | 5 | sonnet | offline | E4.4, E4.5, E4.6 | E2.3 (README) | in progress (worker-e4.7) |
 | E2.3 | 6 | haiku | offline | E1.11, E4.7 | E3.2, E3.3b, E4.7 (README) | open |
 
 ### E1. P0 — corrections that change the publishable evidence (weeks 1–2)
