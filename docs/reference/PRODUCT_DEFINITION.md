@@ -51,7 +51,7 @@ A **single-tenant, self-hosted** application. A company runs it on their own inf
 "Change **how the model behaves** — its style, format, or skill."
 
 - **Input:** a LoRA adapter trained elsewhere (GGUF or PEFT) plus an **eval set** (JSONL of prompt/response pairs, `specs/schemas/eval_dataset.schema.json`), which can be synthesized from indexed documents (`POST /v1/projects/{id}/datasets/synthesize`).
-- **Mechanism:** import the adapter → gate it on CPU against the base on the project's eval set → register it. *Import is built (E4.2: `POST /v1/projects/{id}/adapters` takes a GGUF LoRA or a zip of `adapter_model.safetensors` + `adapter_config.json`, validated statically for format and base model, stored with its sha256 as `uploaded`) and the CPU scorer is built (E4.3); the job that runs the gate on an upload and marks it `passed`/`failed` is E4.4. Until then `POST /v1/projects/{id}/endpoint` on a finetune project answers "No adapter has passed the eval gate yet".*
+- **Mechanism:** import the adapter → gate it on CPU against the base on the project's eval set → register it. *Import is built (E4.2: `POST /v1/projects/{id}/adapters` takes a GGUF LoRA or a zip of `adapter_model.safetensors` + `adapter_config.json`, validated statically for format and base model, stored with its sha256 as `uploaded`), the CPU scorer is built (E4.3), and the adapter job on the CPU worker (E4.4) converts a PEFT upload to GGUF, probe-loads it, scores adapter and base on the eval set, and marks it `passed` or `failed`. `POST /v1/projects/{id}/endpoint` on a finetune project answers "No adapter has passed the eval gate yet" until one passes.*
 - **Serving:** base model + adapter, OpenAI-compatible.
 - **Cost:** CPU only; no service in the stack needs a GPU.
 - **Updates:** import a new adapter.
@@ -71,7 +71,7 @@ Serving **composes the project's artifacts** rather than switching on its type. 
 - Multi-user within one org: users, teams, roles (admin/member), real JWT auth.
 - Projects (type = `rag` | `finetune`), each → one served endpoint + scoped API keys (`adp_*`).
 - RAG: document upload, parsing, chunking, real sentence-transformers embeddings, per-project ChromaDB collections, cited answers.
-- LoRA: JSONL eval-set upload + validation + review/curation, and serving of a project's adapter path through llama-cpp. (Adapter import and the CPU eval gate: E4.2–E4.4, not built.)
+- LoRA: JSONL eval-set upload + validation + review/curation, and serving of a project's adapter path through llama-cpp. (Adapter import and the CPU eval gate: E4.2–E4.4, live 2026-10-10.)
 - Dataset **synthesis** (documents → instruction pairs) — `POST /v1/projects/{id}/datasets/synthesize`.
 - OpenAI-compatible serving for both modes (`/v1/chat/completions`); per-endpoint scoped keys.
 - Usage metering: `prompt_tokens` / `completion_tokens` / `total_tokens` in every response.
@@ -128,7 +128,7 @@ Endpoint ─< ApiKey (key_prefix, key_hash, is_active)
 
 **RAG:** `POST /v1/projects/{id}/files` → background parse+chunk+embed → ChromaDB collection → `POST /v1/projects/{id}/endpoint` → `POST /v1/chat/completions (model=slug, key=adp_*)` → hybrid retrieval of top-k (vector + BM25 → RRF → rerank) → generate → cited answer
 
-**LoRA:** `POST /v1/projects/{id}/datasets` (JSONL upload) or `POST /v1/projects/{id}/datasets/synthesize` → adapter import + CPU eval gate (E4.2–E4.4, not built) → `POST /v1/projects/{id}/endpoint` → `POST /v1/chat/completions`
+**LoRA:** `POST /v1/projects/{id}/datasets` (JSONL upload) or `POST /v1/projects/{id}/datasets/synthesize` → adapter import + CPU eval gate (E4.2–E4.4) → `POST /v1/projects/{id}/endpoint` → `POST /v1/chat/completions`
 
 ## 5. Infrastructure
 

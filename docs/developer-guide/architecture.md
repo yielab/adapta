@@ -39,8 +39,15 @@ hardware the customer owns:
 In-product training was removed on 2026-10-10: nothing in the stack needs a GPU, and
 the `worker` is the `app` image started with `python -m adapta.worker.main`. Its loop
 (heartbeat, healthcheck, requeue on SIGTERM) is kept; an unknown job kind fails with a
-typed error. Adapters will be imported rather than trained (E4.2–E4.4, see the
-[roadmap](../roadmap.md)).
+typed error. Adapters are imported rather than trained.
+
+**The adapter job (E4.2–E4.4).** `POST /v1/projects/{id}/adapters` stores the upload as `uploaded` and enqueues
+`{kind: "adapter", id}` on the Redis queue. The worker's `adapter` handler (`services/adapters.py`, `process_adapter`)
+moves the row to `processing`, converts a PEFT upload to GGUF with llama.cpp's vendored converter (`--base` = the base's
+`hf_config/`), probe-loads base + adapter with a one-token generation, scores base and adapter with
+`services/eval_gate.py` on the eval set, and writes `eval_metrics` and `gguf_path`. The row ends `passed` or `failed`
+(`failure_reason` set on failure). A startup sweep fails any adapter still `processing` after a restart. Only a `passed`
+adapter can back an endpoint.
 
 ## Two data planes
 
@@ -50,8 +57,8 @@ overlap:
 - **Control plane** — auth, teams, projects, files, datasets, endpoints,
   keys, usage. Plain CRUD over Postgres. Nothing exotic.
 - **Data plane (serving)** — `POST /v1/chat/completions`. For RAG this retrieves
-  from Chroma and calls the inference engine; for a finetune project it will load the base
-  model with an imported adapter (not built yet). This is the only path a customer's *application* hits.
+  from Chroma and calls the inference engine; for a finetune project it loads the base
+  model with a passed, imported adapter. This is the only path a customer's *application* hits.
 
 ## Layers (and the import rule)
 

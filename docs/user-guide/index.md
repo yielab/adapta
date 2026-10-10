@@ -18,7 +18,7 @@ types, and the type decides how you specialize the model:
 | You want to… | Project type | What you provide | Hardware |
 |---|---|---|---|
 | Make a model answer **from your documents** | **Knowledge (RAG)** | Documents (PDF, DOCX, TXT, MD, HTML) | CPU |
-| Change **how a model behaves** (tone, format, a skill) | **Finetune (adapter)** | An eval set (or synthesize one from documents) and an adapter to import (import: coming in E4.2–E4.4) | CPU |
+| Change **how a model behaves** (tone, format, a skill) | **Finetune (adapter)** | An eval set (or synthesize one from documents) and an adapter to import (import converts and gates it on CPU) | CPU |
 
 The platform never generates images; vision base models can read them (see
 [Consuming the API](consuming-the-api.md#images-vision-endpoints)).
@@ -47,9 +47,8 @@ upload (or synthesize) an eval set → import an adapter → it must pass the ev
 ```
 
 In-product training was removed on 2026-10-10. Adapters are imported instead, and
-the import and its CPU eval gate are on the [roadmap](../roadmap.md)
-(E4.2–E4.4); today a finetune project can hold documents and an eval set but
-cannot create an endpoint. The gate is the product's safety promise that an
+the import and its CPU eval gate run on every upload; a finetune endpoint
+exists once an adapter has passed the gate. The gate is the product's safety promise that an
 unverified adapter never reaches your users. See
 [the eval gate](operator-console.md#3b-adapter-finetune-flow).
 

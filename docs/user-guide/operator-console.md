@@ -40,7 +40,7 @@ Click **New project**. The console asks **"How do you want to specialize your
 model?"**:
 
 - **Give it knowledge (RAG)** — for answering from your documents.
-- **Change how it behaves (adapter)** — for tone/format/skill; the adapter is imported, not trained here (import: coming in E4.2–E4.4, see the [roadmap](../roadmap.md)).
+- **Change how it behaves (adapter)** — for tone/format/skill; the adapter is imported, not trained here (the upload is converted and gated on CPU).
 
 Pick one, name the project, and choose a **base model** from the catalog (e.g.
 a Qwen2.5 model). The base model is the foundation both paths build on.
@@ -76,7 +76,7 @@ citations** — the source chunks it used are returned alongside the answer.
 In-product training was removed on 2026-10-10: the console no longer trains
 anything, and a finetune project cannot create an endpoint until an imported
 adapter has passed the eval gate (import: `POST /v1/projects/{id}/adapters`; the
-gate job that marks it `passed` is roadmap E4.4). What the **Setup** tab
+adapter job on the CPU worker marks it `passed` or `failed`). What the **Setup** tab
 does today:
 
 1. **Documents (optional)** — upload PDF/DOCX/TXT/MD/HTML/images, same as the RAG
@@ -100,9 +100,8 @@ does today:
     text fields inline. **Save curated** writes a new derived dataset (marked
     `valid`). This lets you clean a synthesized dataset without re-uploading.
 
-The adapter import and its CPU eval gate are on the [roadmap](../roadmap.md)
-(E4.2–E4.4); until then the endpoint step stays unavailable for finetune
-projects.
+The adapter import and its CPU eval gate run on upload; the endpoint step
+unlocks for a finetune project once an adapter has passed.
 
 ---
 

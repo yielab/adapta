@@ -11,11 +11,10 @@ The strongest production pattern uses **both on one endpoint**: retrieval
 supplies the facts, the adapter makes the answer come out in *your* voice and
 *your* format. This page explains when to use which.
 
-!!! note "Adapter import is not built yet"
-    Adapta no longer trains adapters (removed 2026-10-10). You bring one, and
-    importing it (with a CPU eval gate) is coming in E4.2–E4.4 — see the
-    [roadmap](../roadmap.md). Until then only the knowledge half is usable end
-    to end.
+!!! note "Adapta does not train adapters"
+    In-product training was removed on 2026-10-10. You bring a GGUF or PEFT LoRA;
+    import converts it, probe-loads it and scores it against the base on your eval
+    set. Only a passed adapter can back an endpoint.
 
 **Knowledge inputs:** PDF, DOCX, Markdown, TXT, HTML and images (PNG, JPG, TIFF). Scanned
 pages are OCR'd (Docling + RapidOCR) only where there is no text layer; low-confidence OCR

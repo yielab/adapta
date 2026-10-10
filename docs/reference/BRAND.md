@@ -40,7 +40,7 @@ compose on one endpoint. Short, pronounceable, and literal about what the system
 
 For teams that can't send training data to a cloud API: run this on your own hardware. Upload
 documents for cited retrieval (RAG). Bring a LoRA adapter to change how the model
-responds (import: roadmap E4.2–E4.4). Combine both on the same endpoint. An adapter that doesn't clear the held-out eval gate
+responds (imported and gated on CPU). Combine both on the same endpoint. An adapter that doesn't clear the held-out eval gate
 is blocked from serving — mechanically, not by policy. No telemetry; embeddings and vectors stay
 local.
 

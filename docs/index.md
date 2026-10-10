@@ -77,9 +77,10 @@ your documents, with citations pointing at the source passages. The model's
 weights never change. CPU-only.
 
 **Bring your own adapter (LoRA)** — import a GGUF/PEFT adapter, gate it on CPU
-against the base on your eval set, then serve base model + adapter (import
-flow: [roadmap](roadmap.md) E4.2–E4.4, not built yet). In-product training was
-removed on 2026-10-10; no service needs a GPU.
+against the base on your eval set, then serve base model + adapter. Import,
+conversion and the gate run on CPU (E4.2–E4.4, live 2026-10-10); a rejected
+adapter is never served. In-product training was removed on 2026-10-10; no
+service needs a GPU.
 
 **Both together** — a finetune project can also index documents. Its endpoint
 injects retrieved context and applies the adapter in one call: facts from

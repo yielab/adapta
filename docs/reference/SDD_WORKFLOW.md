@@ -8,7 +8,7 @@ This project is **contract-driven**: nothing of consequence changes unless its c
 |---|---|---|---|---|
 | 1 | **API** | `specs/openapi.yaml` (+ `specs/schemas/*.json`) | `make generate` → Pydantic models | `make test-contracts` (schemathesis) |
 | 2 | **Database schema** | Alembic migrations in `migrations/versions/` | `alembic upgrade head` | up/down migration test |
-| 3 | **Model / eval set** | `specs/schemas/eval_dataset.schema.json` (SFT row) | adapter import registers an adapter (E4.2, not built yet) | **eval threshold gate** before an adapter can back an endpoint (CPU, E4.3/E4.4, not built yet) |
+| 3 | **Model / eval set** | `specs/schemas/eval_dataset.schema.json` (SFT row) | adapter import registers an adapter (E4.2) | **eval threshold gate** before an adapter can back an endpoint (CPU, E4.3/E4.4, run by the adapter job) |
 
 > Why three and not one: this is **self-hosted** software with a **model-adapter** core. Pillar 2 exists because you upgrade databases on servers you don't control — migrations are the only safe path. Pillar 3 exists because an unverified adapter must never be auto-served. See [PRODUCT_DEFINITION.md](PRODUCT_DEFINITION.md).
 
@@ -65,7 +65,7 @@ Postgres holds users, teams, projects, files, datasets, endpoints, and API keys.
 
 ## Pillar 3 — Model / eval-set contract (dataset schema + eval gate)
 
-The adapter lifecycle is the product's moat, so its inputs and outputs are governed. In-product training was removed on 2026-10-10 (E4.1); adapters are imported. The CPU scorer exists (`adapta/services/eval_gate.py`, E4.3: task metric for adapter and base on the same eval set, pass = +0.05 over base or ≥ 0.8 and ≥ base); the import flow that runs it (E4.2, E4.4) is not built yet.
+The adapter lifecycle is the product's moat, so its inputs and outputs are governed. In-product training was removed on 2026-10-10 (E4.1); adapters are imported. The CPU scorer exists (`adapta/services/eval_gate.py`, E4.3: task metric for adapter and base on the same eval set, pass = +0.05 over base or ≥ 0.8 and ≥ base); the import flow that runs it (E4.2, E4.4) is live: the adapter job on the CPU worker runs it on every upload.
 
 ### The rule
 
@@ -122,7 +122,7 @@ A: Pillar 1 (spec the endpoint) and Pillar 2 (migration for the table), in the s
 A: No — chunking is internal strategy, not a contract. Unless it changes a request/response field (Pillar 1) or a stored schema (Pillar 2), just ship it with tests.
 
 **Q: An imported adapter scored below threshold. What happens?**
-A: It cannot back an endpoint; the eval gate did its job. (Import and gate: E4.2–E4.4, not built yet.)
+A: It cannot back an endpoint; the eval gate did its job. (Import and gate: E4.2–E4.4.)
 
 **Q: Do I run `make generate` / migrations in CI?**
 A: Generated Pydantic is committed (CI imports it). Migrations are committed and CI *tests* them (up/down). The deploy *applies* `alembic upgrade head` on startup.

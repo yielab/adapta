@@ -35,7 +35,7 @@ It answers two needs that have no good *private* solution today:
   **hybrid**: multilingual semantic vector search *and* Postgres full-text keyword search over the whole corpus,
   fused, so exact terms (product codes, names) survive alongside meaning. **Spanish and English out of the box** — a
   question in one language finds documents in the other. The model's weights never change. **CPU-only.**
-- 🎛️ **Change how it behaves (bring your own adapter)** — import a GGUF/PEFT LoRA, gate it on CPU against the base on your eval set, then serve it (import flow: roadmap E4.2–E4.4, not built yet). In-product training was removed on 2026-10-10; no service needs a GPU.
+- 🎛️ **Change how it behaves (bring your own adapter)** — import a GGUF/PEFT LoRA, gate it on CPU against the base on your eval set, then serve it. Imports convert, probe and score on CPU; a passed adapter serves, a failed one is refused. In-product training was removed on 2026-10-10; no service needs a GPU.
 
 And knowledge and behavior **compose on a single endpoint**: facts retrieved from your documents
 (cited) *and* the tone/format of your adapter, in the same call.
@@ -91,6 +91,10 @@ service map.
 huggingface-cli download Qwen/Qwen2.5-1.5B-Instruct-GGUF \
   qwen2.5-1.5b-instruct-q4_k_m.gguf \
   --local-dir ./data/models/qwen2.5-1.5b
+
+# 3b. Place the base's HF config (one-time; the only Hub touch for adapter imports — air-gapped hosts copy it in)
+huggingface-cli download Qwen/Qwen2.5-1.5B-Instruct config.json \
+  --local-dir ./data/models/qwen2.5-1.5b/hf_config
 ```
 
 **4. Open the console → [http://localhost:8000/console/](http://localhost:8000/console/)** and sign in
@@ -193,8 +197,7 @@ messages=[{"role": "user", "content": [
 | `worker` | Same image as `app`; consumes the Redis queue and dispatches on job kind (no handlers yet) |
 | `postgres` · `redis` · `chroma` | System of record · job queue · per-project RAG vectors |
 
-A finetune project that also indexes documents serves both at once once an adapter can be imported
-(E4.2–E4.4) — see [Knowledge + behavior together](docs/user-guide/knowledge-and-behavior.md).
+A finetune project that also indexes documents serves both at once on one endpoint — see [Knowledge + behavior together](docs/user-guide/knowledge-and-behavior.md).
 
 <details>
 <summary><b>Tech stack</b></summary>
@@ -270,9 +273,9 @@ Hybrid retrieval over Postgres full-text shipped 2026-10-10 (E3.2); Docling + OC
 | Operator console (RAG lifecycle, datasets, endpoint+keys, playground, usage) | ✅ Done |
 | OpenAI-compatible serving (base + GGUF LoRA adapter, key-scoped) | ✅ Done |
 | RAG retrieval with citations (sentence-transformers; PDF/DOCX/MD/TXT/HTML/images, scanned PDFs and images included via Docling + OCR; per-project ChromaDB) | ✅ Done |
-| Adapter import + CPU eval gate (unverified adapter never serves) | 🚧 Roadmap E4.2–E4.4 |
+| Adapter import + CPU eval gate (unverified adapter never serves) | ✅ Done (E4.2–E4.4) |
 | Dataset synthesis (indexed docs → LLM Q/A pairs → JSONL) | ✅ Done |
-| Combined serving (retrieval + adapter in one call) | ✅ Done (adapter path; import pending) |
+| Combined serving (retrieval + adapter in one call) | ✅ Done |
 | Auth / teams / RBAC (bcrypt + JWT; invite flow; cross-team access is a typed 403) | ✅ Done |
 | Usage metering (per-endpoint daily token rollup) | ✅ Done |
 | API contract (schemathesis `--checks all`, zero 5xx, all operations; models generated + consumed by routers) | ✅ Done |
@@ -295,7 +298,7 @@ Adapta is **contract-driven** (Extended SDD): change the contract before the cod
 | --- | --- | --- |
 | **API** | `specs/openapi.yaml` | `make test-contracts` (schemathesis) |
 | **DB schema** | Alembic migrations | `make migrate-test` (up/down) |
-| **Model/eval set** | eval-dataset JSON Schema + eval threshold | the CPU eval gate (E4.3, not built yet) |
+| **Model/eval set** | eval-dataset JSON Schema + eval threshold | the CPU eval gate (`services/eval_gate.py`, run on every adapter import) |
 
 ```bash
 docker compose exec app make ci    # check-leaks + lint + lint-imports + coverage + validate-spec + check-models

@@ -28,7 +28,7 @@ and then scope it to a directory, never the repo root (`site/`, `node_modules/`,
 |---|---|---|
 | API | `specs/openapi.yaml` (~1.3k lines — read slices with `sed -n`/`grep -n`, not whole) | `make generate` |
 | DB schema | `migrations/versions/*` (latest: `0011_drop_training.py`) | `make migrate` |
-| Eval dataset (SFT row) | `specs/schemas/eval_dataset.schema.json` | CPU eval gate (E4.3, not built yet) |
+| Eval dataset (SFT row) | `specs/schemas/eval_dataset.schema.json` | CPU eval gate (`services/eval_gate.py`; run by the adapter job) |
 
 ## Tests
 

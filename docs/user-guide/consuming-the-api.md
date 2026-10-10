@@ -61,8 +61,8 @@ curl http://your-server:8000/v1/chat/completions \
   the console's Usage tab).
 - **Finetune endpoints serve base + adapter.** A finetune project's endpoint
   applies its LoRA adapter on top of the base model transparently — the
-  request shape is identical. (Creating one requires an imported adapter, which
-  is not built yet; see the [roadmap](../roadmap.md).) If that
+  request shape is identical. (Creating one requires an imported adapter that has
+  passed the CPU eval gate.) If that
   project also indexed documents, retrieval and the adapter compose in the same
   call (see [Knowledge + behavior together](knowledge-and-behavior.md)).
 

@@ -6,7 +6,7 @@
 !!! warning "Adapta's own column predates 2026-10-10"
     The competitor facts below are dated 2026-06-25. Statements about *Adapta's* training and VLM
     fine-tuning describe the product before E4.1, which removed in-product training. Adapta now
-    imports adapters (roadmap E4.2–E4.4) and gates them on CPU; the competitive positioning is
+    imports adapters and gates them on CPU (E4.2–E4.4); the competitive positioning is
     rewritten once in E4.7.
 
 Adapta occupies a genuinely rare niche: **no single confirmed competitor matches its full combination**

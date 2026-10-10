@@ -7,8 +7,8 @@ leaves their infrastructure) to specialize and serve private language models beh
 
 - **Knowledge (RAG):** upload documents → Docling parsing + OCR → chunk → embed (sentence-transformers) → per-project ChromaDB →
   hybrid retrieval (vector + Postgres full-text, RRF, optional cross-encoder rerank) → cited answers. CPU-only.
-- **Bring your own adapter (LoRA):** import a GGUF/PEFT adapter (import flow: E4.2–E4.4, not built yet), gate it
-  on CPU against the base on the project's eval set, then serve it. In-product training was removed 2026-10-10;
+- **Bring your own adapter (LoRA):** import a GGUF/PEFT adapter; the CPU worker converts, probe-loads and gates it
+  against the base on the project's eval set (`passed`/`failed`), and only a passed adapter serves. In-product training was removed 2026-10-10;
   image *generation* is out, permanently.
 - **Composed serving:** one endpoint can inject retrieved context *and* apply the adapter — facts from RAG,
   tone/format from the adapter.
@@ -46,7 +46,7 @@ service needs a GPU) · MkDocs Material docs.
 |---|---|---|---|
 | API | `specs/openapi.yaml` | `make generate` → routers consume the generated DTOs (guard: `tests/test_generated_models_wired.py`) | `make test-contracts` (schemathesis, live server, authenticated) — green 2026-10-10: 32 operations, ~1,800 cases, 0 failures |
 | DB schema | `migrations/versions/*` | `make migrate` | `make migrate-test` (up → down → up) |
-| Model / eval set | `specs/schemas/eval_dataset.schema.json` (SFT row) | adapter import → registered adapter | CPU eval gate `services/eval_gate.py` (E4.3: task metric, adapter vs base); wired to imports by E4.4 |
+| Model / eval set | `specs/schemas/eval_dataset.schema.json` (SFT row) | adapter import → registered adapter | CPU eval gate `services/eval_gate.py` (task metric, adapter vs base), run by the adapter job on every import |
 
 Full doc: [docs/reference/SDD_WORKFLOW.md](docs/reference/SDD_WORKFLOW.md). `make ci` runs check-leaks,
 check-chroma, lint, lint-imports, coverage, validate-spec and check-models; `make ci-full` adds migrate-test and
@@ -95,5 +95,5 @@ go. Never hand-write generated docs (API reference from the spec, code reference
 Phases 0–5, console, brand and positioning shipped (history in `CHANGELOG.md`). Open work is
 the 2026-09-03 audit, roadmap §E: wave 0 (dependency pins E1.10, contract gate E1.11) closed 2026-10-09; the §E board picks the next wave.
 **In-product training was removed 2026-10-10 (E4.1):** no `adapta/training/`, CUDA worker, vLLM or GPU gates; the worker is
-the app image with an empty `HANDLERS` table. Direction: *bring your own adapter* (§E4.2–E4.4) — import a GGUF/PEFT LoRA,
-gate it on CPU against the base, serve it with RAG. Pick a block by its id; read the block and its Files line only.
+the app image; its only worker job is the adapter job (E4.4, 2026-10-10). *Bring your own adapter* is live: import a
+GGUF/PEFT LoRA, gate it on CPU against the base, serve it with RAG. Pick a block by its id; read the block and its Files line only.

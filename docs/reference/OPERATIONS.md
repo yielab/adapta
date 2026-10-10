@@ -14,7 +14,7 @@ strategy, graceful shutdown, and host sizing (base-model catalog). No service ne
 |---|---|---|---|
 | PostgreSQL | all metadata (orgs, users, projects, usage, invites) | `postgres-data` named volume | `pg_dump` |
 | ChromaDB | per-project vector collections (RAG) | `chroma-data` named volume | volume snapshot |
-| Adapters | imported LoRA adapters (import flow: E4.2–E4.4, see [the roadmap](../roadmap.md)) | `./data/adapters` (host bind-mount) | file copy |
+| Adapters | imported LoRA adapters (GGUF or PEFT; converted and gated on import, §6.6) | `./data/adapters` (host bind-mount) | file copy |
 | Uploads | source documents | `./data/uploads` | file copy |
 | Datasets | eval-set JSONL | `./data/datasets` | file copy |
 | Models | base GGUF files | `./data/models` | re-downloadable |
@@ -122,21 +122,21 @@ heartbeat expiring (the container healthcheck goes unhealthy).
 
 ## 5. Image tagging & registry strategy
 
-The multi-stage `Dockerfile` builds one runtime image, `app` (CPU-only, ~2.1 GB);
-the worker runs the same image with a different entrypoint. To distribute via a registry instead of building on
-the host:
+The multi-stage `Dockerfile` builds one runtime image, `adapta-app:latest` (CPU-only, ~2.1 GB). The `app` and
+`worker` services both use it; the worker only overrides the entrypoint (`python -m adapta.worker.main`). The worker
+also bind-mounts the source, so code changes reach it on `docker compose restart worker`. To distribute via a registry
+instead of building on the host:
 
 - **Tag by version + git SHA**, not just `latest`, so a rollback is a tag change:
   ```bash
   docker build --target app    -t registry.example.com/adapta-app:1.4.0-$(git rev-parse --short HEAD) .
   docker push registry.example.com/adapta-app:1.4.0-...
-  docker push registry.example.com/adapta-worker:1.4.0-...
   ```
+  There is no separate worker image; the worker runs the `adapta-app` image.
 - **Pin the deployed tag** in an env-substituted compose override on the host;
   upgrade = change the tag + `up -d` (which re-runs migrations, §3).
-- **App and worker share `pyproject.toml`** but are independent images — they can
-  be on the same version tag and rolled together; the eval gate means a worker
-  rollback never serves an unverified adapter.
+- **App and worker are one image,** so they always share a version. A rollback of the image rolls both back; the
+  eval gate means no adapter is served unless it passed on import.
 - Build + push from CI on a release tag; keep the registry private (these images
   bake customer-agnostic code only — **no secrets** are baked, they come from
   `.env` at runtime).
@@ -347,6 +347,29 @@ Hybrid columns above ran **with** the English-only `ms-marco-MiniLM` reranker. W
 `all-MiniLM-L6-v2` → 0.844 / 0.779 / ~33 ms. The reranker was the bottleneck on cross-lingual
 questions. **Default since 2026-10-10 (E3.6): `paraphrase-multilingual-MiniLM-L12-v2`, reranker off.**
 Measured on the 45-question bilingual golden set (`make golden`), 16-core CPU.
+
+---
+
+### 6.6 Adapter import (E4.2–E4.4)
+
+- **Flow:** `POST /v1/projects/{id}/adapters` (a GGUF LoRA, or a zip of `adapter_model.safetensors` + `adapter_config.json`
+  for a PEFT adapter) stores the upload as `uploaded` and queues the adapter job. The **CPU worker** converts, probe-loads
+  and scores it; the row ends `passed` or `failed` (see [architecture](../developer-guide/architecture.md)). No GPU and no
+  Hub access are needed.
+- **Base configs (the only Hub-shaped input).** PEFT → GGUF conversion reads the base's `config.json` from
+  `data/models/<gguf_subdir>/hf_config/config.json` (e.g. `data/models/qwen2.5-1.5b/hf_config/`). Pulling the base GGUF does
+  not place it; the operator does, once:
+  ```bash
+  huggingface-cli download Qwen/Qwen2.5-1.5B-Instruct config.json \
+    --local-dir ./data/models/qwen2.5-1.5b/hf_config
+  ```
+  On an air-gapped host, copy the file in by hand. A missing file fails the adapter (the worker log has the converter error).
+- **Timing** (0.5B base, 16-core CPU, measured 2026-10-10): convert ~2–4 s, probe ~0.4 s, scoring ~0.09 s per eval row
+  (a 30-row set ≈ 4 s). Each stage is logged by the worker.
+- **Eval sets:** prefer `classify` or `extract` sets. A `freeform` set scored by token F1 let a garbage adapter pass
+  (0.383 vs 0.037 base), so freeform gates are not yet trustworthy.
+- **Restarts:** the worker does not hot-reload. After a change under `adapta/worker/` or the adapter services, run
+  `docker compose restart worker`. An adapter left `processing` by a crash is failed by the startup sweep in the app.
 
 ---
 

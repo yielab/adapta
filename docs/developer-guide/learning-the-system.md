@@ -132,7 +132,7 @@ the most common conceptual error:
 | What it addresses | "What do *the documents* say?" | "How should the model *act*?" |
 | Modifies the weights? | No | Yes (through an adapter) |
 | Comparable to | An **open-book examination** | **Practice until a behavior is habitual** |
-| Input | Documents | A LoRA adapter (imported; import is coming in E4.2–E4.4) and an eval set of prompt → response examples |
+| Input | Documents | A LoRA adapter (imported and gated on CPU) and an eval set of prompt → response examples |
 | Cost | Seconds, CPU | Training happens outside the platform; gating and serving are CPU |
 | Reversibility | Delete a file and re-index | Swap the adapter |
 
@@ -279,7 +279,7 @@ the base quantized to four bits — is done with dedicated tooling elsewhere. Wh
 the platform owns is everything after: import the adapter (PEFT, converted to
 GGUF by `adapta/core/adapter_conversion.py`, or GGUF directly), gate it on CPU
 against the base on the project's eval set, and serve it with RAG. The import
-flow is on the [roadmap](../roadmap.md) (E4.2–E4.4) and is not built yet.
+flow is live (E4.2–E4.4, 2026-10-10).
 
 ### The eval set — labeled examples
 
@@ -330,8 +330,8 @@ and deployment is refused if it fails. That is the role of the evaluation gate.
 !!! note "Status"
     The gate that shipped with in-product training was removed on 2026-10-10
     (E4.1). Its CPU replacement scores adapter and base with a task metric (E4.3,
-    `services/eval_gate.py`); imports run it once E4.4 lands.
-    Until then no endpoint can serve an adapter. The design below is the
+    `services/eval_gate.py`); the adapter job runs it on every import (E4.4). An
+    adapter that fails it never backs an endpoint. The design below is the
     contract the rebuilt gate keeps.
 
 How the score is computed:
@@ -390,7 +390,7 @@ can be read straightforwardly. The platform consists of:
   for meaning) and a **vector store** (a database indexed by meaning);
 - **adapters**, in which **LoRA adapters** — patches over the frozen base —
   are imported and gated by a **continuous-integration-style evaluation** before
-  they may serve (import and gate: roadmap E4.2–E4.4); a **Redis queue** and
+  they may serve (import and gate: E4.2–E4.4); a **Redis queue** and
   **worker** handle background jobs;
 - a single **OpenAI-compatible** API for serving, with `llama-cpp` executing
   **quantized GGUF** models under a **per-model lock**.
