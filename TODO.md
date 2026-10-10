@@ -116,7 +116,7 @@ classes are defined in [`.claude/context/gates.md`](.claude/context/gates.md) ("
 | E2.1 | 1 | sonnet | live | none | E4.1, E4.9 (`core/backends/`) | open |
 | E3.1 | 1 | sonnet | live | none | E3.7, E3.2 | done 2026-10-09 |
 | E3.3a | 1 | sonnet + human decision | offline | none | — | open |
-| E3.8 | 1 | sonnet | live | none — must land before E3.2 | — | ready-for-live (worktree-agent-a2f02700022be07f8) |
+| E3.8 | 1 | sonnet | live | none — must land before E3.2 | — | done 2026-10-09 |
 | E4.1 | 1 | sonnet | rebuild + live (exclusive) | E1.11 | E2.1, E3.3b, E3.7 | open |
 | E3.2 | 2 | sonnet | live | E3.1, E3.8 (baseline recorded before this lands) | E3.7, E3.5 | open |
 | E3.3b | 2 | sonnet | rebuild + live | E3.3a (commit), E3.1 | E4.1, E4.2, E4.4 (`pyproject.toml`, `Dockerfile`), E3.7, E3.4 | open |
@@ -415,7 +415,10 @@ E1.1–E1.9 shipped 2026-09-17 → [CHANGELOG.md](CHANGELOG.md). E1.14 closed 20
 
 ### E3.7 `[BE]` Indexing as a queued job with retry + per-request retrieval metrics (P1)
 - [ ] **Context.** Indexing runs in a FastAPI `BackgroundTasks` closure (`files.py:182`): no retry, no
-  visibility, rows stuck in `processing` after a restart (the sweeper does not cover index rows). `core/metrics.py:177-221` has no retrieval metrics.
+  visibility, rows stuck in `processing` after a restart (the sweeper does not cover index rows). `core/metrics.py:177-221` has no retrieval metrics. **Measured 2026-10-09 (E3.8):** ~30 concurrent uploads start ~30
+  background tasks and exhaust the DB pool (`QueuePool limit of size 10 overflow 20 reached`; `GET /files` then hangs) — the
+  golden harness uploads in batches of 4 until this block bounds indexing concurrency. Since E3.1 the upload handler
+  parses + chunks synchronously and passes `chunks` to `_index_file`; collection get-or-create and counters are race-free.
 - **Depends.** E3.1, E4.1 (the worker's `kind` dispatch table). **Unblocks.** E5.1, E5.2, E5.4.
 - **Agent.** sonnet · gate class **live (`docker compose restart worker` + rag e2e + sweep test)** ·
   serialize with: E3.1/E3.3b (`files.py`, `documents.py`), E4.4 (`worker/main.py`,
@@ -442,31 +445,6 @@ E1.1–E1.9 shipped 2026-09-17 → [CHANGELOG.md](CHANGELOG.md). E1.14 closed 20
   `/metrics` exposes the four new series; e2e green.
 - **Close.** architecture.md (ingestion on the queue), OPERATIONS (worker restarts), gates.md trap;
   Status snapshot.
-
-### E3.8 `[TEST]` Golden set + recall@k harness — the number every later RAG change reports against (P1)
-- [ ] **Context.** There is no retrieval-quality test: `test_rag_hybrid.py` is synthetic ordering and
-  `test_rag_e2e.py` asserts an answer exists. E3.2, E3.6, E5.1 and E5.2 all claim improvements that
-  need one number.
-- **Depends.** none — must land **before E3.2**. **Unblocks.** E3.2, E3.6, E4.8, E5.1, E5.2, E5.3.
-- **Agent.** sonnet · gate class **live (`make golden`)** · serialize with: none (new files + one
-  Makefile target) · **Handoff.** must name the `questions.jsonl` schema, the floor file path, the
-  baseline numbers.
-- **Scope.** A small public bilingual corpus + questions with the expected file/page, and a harness
-  reporting recall@5, MRR and p50 latency. Out: LLM-as-judge faithfulness.
-- **Steps.** (1) `tests/fixtures/golden/`: ~30 public-domain documents (manuals/policies, es+en;
-  2 scanned pages once E3.3b lands) + `questions.jsonl` `{q, expected_file, expected_page?, lang}`.
-  (2) `tests/integration/test_rag_golden.py` (opt-in `ADAPTA_RUN_GOLDEN=1`): index once per session,
-  run all questions through `retrieve()`, print a table, assert recall@5 ≥ the floor in
-  `tests/fixtures/golden/floor.json` (a ratchet: raise it deliberately, never lower it silently).
-  (3) `make golden` target. (4) Record the baseline on the **current** code before E3.2 lands.
-- **Files.** `tests/fixtures/golden/` (new), `tests/integration/test_rag_golden.py` (new), `Makefile`,
-  `docs/developer-guide/workflow.md` (one paragraph), `.claude/context/gates.md` (row: retrieval
-  quality change → `make golden`).
-- **Contract impact.** None.
-- **Gate.** `make golden` (live stack).
-- **Acceptance.** Baseline recall@5 / MRR / latency recorded in the Done note; the floor file exists;
-  the harness runs in under 5 minutes on CPU.
-- **Close.** workflow.md; gates.md row; Status snapshot.
 
 ### E4. Bring your own adapter — Adapta verifies and serves adapters; it does not train them (weeks 3–9)
 

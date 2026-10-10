@@ -60,8 +60,51 @@ bind mount, so uvicorn reloaded on every worker edit — reload now watches `/ap
   synchronously (duplicate check) and hands the chunks to `_index_file` as an optional last arg; on pre-parse failure
   `_index_file` re-parses so the file still lands `failed`. `delete_file` skips Chroma when no `Collection` row exists.
   **Unblocks** E3.2 (FTS leg on `chunks.tsv`), E3.3b (fills `page`/`ocr`), E3.4, E3.6, E3.7, E5.1.
+- **Addendum (2026-10-09, `09f092a`).** The golden run (E3.8) exposed a race E3.1 made fire reliably: concurrent
+  first-time indexing tasks each inserted the `Collection` row (`collections_project_id_key` violation) and the
+  commit failed *after* the Chroma upsert, orphaning vectors. `_index_file` now does `INSERT … ON CONFLICT DO NOTHING`
+  + re-select, bumps counters with one atomic `UPDATE`, creates the Chroma collection up front, and deletes the file's
+  vectors if anything after the upsert fails (`tests/test_index_file_race.py`). Golden 30/30 indexed, twice. The
+  `Collection` row can now exist before any chunk — readers must use `count_project_chunks`, never row existence.
 - **Follow-up.** After E3.2: migration dropping the stored count columns; `services/project_summary.py` still sums
   `ProjectFile.num_chunks` → move to `count_project_chunks`.
+
+### E3.8 `[TEST]` Golden set + recall@k harness — the number every later RAG change reports against (P1)
+- [x] **Context.** There is no retrieval-quality test: `test_rag_hybrid.py` is synthetic ordering and
+  `test_rag_e2e.py` asserts an answer exists. E3.2, E3.6, E5.1 and E5.2 all claim improvements that
+  need one number.
+- **Depends.** none — must land **before E3.2**. **Unblocks.** E3.2, E3.6, E4.8, E5.1, E5.2, E5.3.
+- **Agent.** sonnet · gate class **live (`make golden`)** · serialize with: none (new files + one
+  Makefile target) · **Handoff.** must name the `questions.jsonl` schema, the floor file path, the
+  baseline numbers.
+- **Scope.** A small public bilingual corpus + questions with the expected file/page, and a harness
+  reporting recall@5, MRR and p50 latency. Out: LLM-as-judge faithfulness.
+- **Steps.** (1) `tests/fixtures/golden/`: ~30 public-domain documents (manuals/policies, es+en;
+  2 scanned pages once E3.3b lands) + `questions.jsonl` `{q, expected_file, expected_page?, lang}`.
+  (2) `tests/integration/test_rag_golden.py` (opt-in `ADAPTA_RUN_GOLDEN=1`): index once per session,
+  run all questions through `retrieve()`, print a table, assert recall@5 ≥ the floor in
+  `tests/fixtures/golden/floor.json` (a ratchet: raise it deliberately, never lower it silently).
+  (3) `make golden` target. (4) Record the baseline on the **current** code before E3.2 lands.
+- **Files.** `tests/fixtures/golden/` (new), `tests/integration/test_rag_golden.py` (new), `Makefile`,
+  `docs/developer-guide/workflow.md` (one paragraph), `.claude/context/gates.md` (row: retrieval
+  quality change → `make golden`).
+- **Contract impact.** None.
+- **Gate.** `make golden` (live stack).
+- **Acceptance.** Baseline recall@5 / MRR / latency recorded in the Done note; the floor file exists;
+  the harness runs in under 5 minutes on CPU.
+- **Close.** workflow.md; gates.md row; Status snapshot.
+- **Done.** 2026-10-09. `tests/fixtures/golden/`: 30 hand-written docs (15 es, 15 en; license-clean) + 45 questions
+  incl. paraphrased and cross-lingual; `tests/integration/test_rag_golden.py` indexes through the real upload path (in
+  batches of 4 — 30 at once exhausted the DB pool, see E3.7) and runs every question through `RAGService.retrieve(top_k=5)`.
+  **Baseline (code at `09f092a`, two identical runs):** recall@5 **0.844** · MRR **0.815** · p50 **~83 ms** · whole run
+  43 s. en 0.840 / es 0.850. All 7 misses are cross-lingual (en question → es doc or the reverse) — the English-only
+  `all-MiniLM-L6-v2` embedder; E3.6 is measured against this. The first runs also exposed a pre-existing race
+  (concurrent first-time indexing → `collections_project_id_key` violation + orphaned vectors), fixed under E3.1.
+- **Handoff.** `questions.jsonl`: one object per line `{q, expected_file, lang, expected_page?}` — `expected_file` is the
+  uploaded filename (= chunk `source`), `lang` is the question's language. Floor: `tests/fixtures/golden/floor.json`
+  `recall_at_5 = 0.84` (ratchet). `make golden` needs the live stack + embedding model. **Unblocks** E3.2 (report the
+  delta vs 0.844/0.815), E3.6, E4.8, E5.1, E5.2, E5.3.
+- **Follow-up.** Two scanned pages with `expected_page` once E3.3b lands; MRR/p50 floors once a second data point exists.
 
 ---
 

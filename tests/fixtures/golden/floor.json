@@ -1,4 +1,4 @@
 {
-  "comment": "Placeholder floor. The lead sets recall_at_5 from the baseline `make golden` run on the current code. It is a ratchet: raise it deliberately, never lower it silently.",
-  "recall_at_5": 0.0
+  "comment": "Ratchet: recall@5 must stay >= this. Set 2026-10-09 from the baseline (0.844 recall@5, 0.815 MRR, ~83 ms p50, 45 questions, all-MiniLM-L6-v2). Raise it deliberately when a change measurably improves recall; never lower it silently.",
+  "recall_at_5": 0.84
 }
