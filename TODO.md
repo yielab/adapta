@@ -58,15 +58,15 @@ procedure. Rules that keep parallel work from colliding:
 
 ---
 
-## Status snapshot (updated 2026-10-10, after wave 1)
+## Status snapshot (updated 2026-10-10, after wave 2)
 
 | Area | State |
 |---|---|
 | Product build (phases 0–5), operator console, image fine-tunes, brand, positioning | ✅ complete — history in [CHANGELOG.md](CHANGELOG.md) |
-| Fine-tuning direction | **Decided 2026-10-09: bring your own adapter (§E4).** Training removed 2026-10-10 (E4.1); no service needs a GPU. Next: adapter import (E4.2), CPU eval gate (E4.3), adapter job (E4.4). |
+| Fine-tuning direction | **Decided 2026-10-09: bring your own adapter (§E4).** Training removed 2026-10-10 (E4.1); no service needs a GPU. Import (E4.2) and CPU scorer (E4.3) shipped; the adapter job that gates and serves an import (E4.4) is in flight. |
 | SDD gates | Pillar 2 ✅ `make migrate-test` · Pillar 3: the GPU perplexity gate is replaced by the CPU task-metric gate on imported adapters (E4.3/E4.4) · Pillar 1 ✅ `make test-contracts` green (E1.11; re-run 2026-10-10 after E4.1: 32 operations, 1813 cases, 0 failures, authenticated) |
 | CI fast gate (`make ci`) | ✅ green 2026-10-10 after E4.1 + E3.2: ruff + mypy clean, 220 unit tests (training tests deleted with the code) |
-| **Audit 2026-09-03 (§E)** | 🟥 **open** — 18/37 done (E1.1–E1.9 shipped 2026-09-17, E1.14 on 2026-10-08; E1.10, E1.11, E3.1, E3.8 on 2026-10-09; E3.2, E3.3a, E4.1 on 2026-10-10). Training is gone (E4.1: CPU-only stack, one image); retrieval is real hybrid (E3.2, golden recall@5 0.844); Docling adopted (E3.3a). In flight: E3.3b, E4.3, E3.6. Next: E2 (Ollama + launch kit) and E3 (Postgres chunks → real hybrid FTS, Docling + RapidOCR, citations with page/OCR provenance, system prompt + threshold + filters, multilingual, queued indexing, golden set); E4 (adapter import, CPU eval gate, adapter job, promotion/rollback, console flow, import guide, synthesis for eval sets, JSON mode); E5 (contextual retrieval, RAG gate, history-aware retrieval, visual extraction with the vision base). Scheduling: the §E board. |
+| **Audit 2026-09-03 (§E)** | 🟥 **open** — 22/37 done (E1.1–E1.9 2026-09-17; E1.14 2026-10-08; E1.10, E1.11, E3.1, E3.8 2026-10-09; E3.2, E3.3a, E3.3b, E3.6, E4.1, E4.2, E4.3, E4.9 2026-10-10). Training gone (CPU-only, one image, 3.27 GB with Docling); retrieval real hybrid + multilingual (golden recall@5 0.978, floor 0.97); scanned PDFs/images via Docling + OCR; adapters import (E4.2) and the CPU scorer exists (E4.3); JSON mode on every endpoint. In flight: E4.4, E3.4, E2.1. Next: E2 (Ollama + launch kit) and E3 (Postgres chunks → real hybrid FTS, Docling + RapidOCR, citations with page/OCR provenance, system prompt + threshold + filters, multilingual, queued indexing, golden set); E4 (adapter import, CPU eval gate, adapter job, promotion/rollback, console flow, import guide, synthesis for eval sets, JSON mode); E5 (contextual retrieval, RAG gate, history-aware retrieval, visual extraction with the vision base). Scheduling: the §E board. |
 
 ---
 
