@@ -7,7 +7,7 @@
   import StatusBadge from "../components/StatusBadge.svelte";
   import Overview from "./Overview.svelte";
   import RagFlow from "./RagFlow.svelte";
-  import FinetuneFlow from "./FinetuneFlow.svelte";
+  import AdapterFlow from "./AdapterFlow.svelte";
   import EndpointPanel from "./EndpointPanel.svelte";
   import Playground from "./Playground.svelte";
   import Usage from "./Usage.svelte";
@@ -106,7 +106,7 @@
     {#if project.type === "rag"}
       <RagFlow {project} />
     {:else}
-      <FinetuneFlow {project} />
+      <AdapterFlow {project} />
     {/if}
   {:else if tab === "endpoint"}
     <EndpointPanel {project} />

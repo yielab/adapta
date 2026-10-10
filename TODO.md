@@ -133,7 +133,7 @@ classes are defined in [`.claude/context/gates.md`](.claude/context/gates.md) ("
 | E5.2 | 3 | sonnet | live | E3.8, E3.7, E4.8 | E5.1, E4.5 | open |
 | E2.2 | 4 | sonnet | live | E2.1, E4.4 | E4.5 (`endpoints.py`, `EndpointPanel.svelte`) | open |
 | E4.5 | 4 | sonnet | live | E4.4 | E2.2, E4.6, E5.2 | open |
-| E4.6 | 4 | sonnet | live | E4.4 | E4.5, E4.8, E4.9 | in progress (worker-e4.6) |
+| E4.6 | 4 | sonnet | live | E4.4 | E4.5, E4.8, E4.9 | ready-for-live (e4.6) |
 | E5.3 | 4 | sonnet | live | E3.2, E3.5, E3.8 | E4.9/E3.5 | open |
 | E5.4 | 4 | sonnet | live | E3.3b, E3.4, E3.5, E3.7 | E5.1/E5.2, E3.4 | open |
 | E4.7 | 5 | sonnet | offline | E4.4, E4.5, E4.6 | E2.3 (README) | open |

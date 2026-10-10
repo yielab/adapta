@@ -7,6 +7,7 @@ import type {
   ProjectFile,
   BaseModelInfo,
   Dataset,
+  Adapter,
   Endpoint,
   ApiKey,
   ApiKeyCreated,
@@ -124,6 +125,16 @@ export const api = {
     request<Dataset>(`${V1}/projects/${pid}/datasets/${did}/curate`, { method: "POST", body: { rows } }),
   synthesize: (pid: string, opts: { n_pairs_per_chunk?: number; max_chunks?: number; system_prompt?: string }) =>
     request<{ dataset_id: string; status: string; message: string }>(`${V1}/projects/${pid}/datasets/synthesize`, { method: "POST", body: opts }),
+
+  // Adapters (bring-your-own LoRA, gated against the base on an eval set)
+  listAdapters: (pid: string) => request<Adapter[]>(`${V1}/projects/${pid}/adapters`),
+  uploadAdapter: (pid: string, file: File, evalDatasetId: string, name?: string) =>
+    upload<Adapter>(`${V1}/projects/${pid}/adapters`, file, {
+      eval_dataset_id: evalDatasetId,
+      ...(name ? { name } : {}),
+    }),
+  getAdapter: (pid: string, aid: string) => request<Adapter>(`${V1}/projects/${pid}/adapters/${aid}`),
+  deleteAdapter: (pid: string, aid: string) => request<void>(`${V1}/projects/${pid}/adapters/${aid}`, { method: "DELETE" }),
 
   // Endpoint
   getEndpoint: (pid: string) => request<Endpoint>(`${V1}/projects/${pid}/endpoint`),

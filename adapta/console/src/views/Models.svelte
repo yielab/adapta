@@ -123,9 +123,13 @@
           {/if}
 
           <div class="hf-id">
-            <span class="resource-label">HuggingFace</span>
+            <span class="resource-label">Adapter base id</span>
             <code>{m.hf_repo_id}</code>
           </div>
+          <p class="notes">
+            An imported PEFT adapter's <code>base_model_name_or_path</code> must be this id (or a known mirror);
+            a GGUF adapter must match this model's architecture.
+          </p>
         </div>
       {/each}
     </div>

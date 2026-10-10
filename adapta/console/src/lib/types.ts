@@ -130,6 +130,31 @@ export interface RetrievalSummary {
   indexed_chunks: number;
 }
 
+// One held-out row scored by the eval gate (AdapterResponse.eval_metrics.samples).
+export interface AdapterEvalSample {
+  prompt: string;
+  reference: string;
+  base: string;
+  adapter: string;
+}
+
+// The eval gate's verdict (adapta/services/eval_gate.py). Every field is
+// optional so a partial/legacy payload never breaks rendering.
+export interface AdapterEvalMetrics {
+  task?: string;
+  n_rows?: number;
+  adapter_score?: number;
+  base_score?: number;
+  delta?: number;
+  rule?: string;
+  passed?: boolean;
+  min_improvement?: number;
+  absolute_floor?: number;
+  adapter_seconds_per_row?: number;
+  base_seconds_per_row?: number;
+  samples?: AdapterEvalSample[];
+}
+
 export interface Adapter {
   id: string;
   project_id: string;
@@ -141,7 +166,7 @@ export interface Adapter {
   eval_dataset_id: string | null;
   status: 'uploaded' | 'processing' | 'passed' | 'failed';
   failure_reason: string | null;
-  eval_metrics: Record<string, unknown> | null;
+  eval_metrics: AdapterEvalMetrics | null;
   created_at: string;
 }
 

@@ -1,11 +1,12 @@
 <script lang="ts">
-  // Behavior (fine-tune) setup flow — documents → dataset review → endpoint.
-  // This is the "change how it behaves" path. Dataset validation is async and
-  // polled so a button never sits frozen. Adapters arrive by import (E4.2+).
+  // Behavior (fine-tune) flow — eval set → import adapter → verification → serve.
+  // Adapters are trained elsewhere and imported; the eval gate scores them against
+  // the base model on the chosen eval set. Dataset validation, document indexing
+  // and adapter gating are all async and polled so a button never sits frozen.
   import { api, ApiError } from "../lib/api";
   import { navigate } from "../lib/router";
   import { toastError, toastSuccess } from "../lib/toast";
-  import type { Project, ProjectFile, Dataset } from "../lib/types";
+  import type { Project, ProjectFile, Dataset, Adapter } from "../lib/types";
 
   import StatusBadge from "../components/StatusBadge.svelte";
 
@@ -38,6 +39,7 @@
     loadedId = project.id;
     void loadFiles();
     void loadDatasets();
+    void loadAdapters();
     void checkEndpoint();
   });
 
@@ -51,13 +53,17 @@
   const hasPendingFile = $derived(
     files.some((f) => f.status === "pending" || f.status === "processing"),
   );
+  const hasPendingAdapter = $derived(
+    adapters.some((a) => a.status === "uploaded" || a.status === "processing"),
+  );
 
   $effect(() => {
-    const needPoll = hasPendingDataset || hasPendingFile;
+    const needPoll = hasPendingDataset || hasPendingFile || hasPendingAdapter;
     if (needPoll && poller === null) {
       poller = setInterval(() => {
         if (hasPendingDataset) void refreshPendingDatasets();
         if (hasPendingFile) void loadFiles(true);
+        if (hasPendingAdapter) void refreshPendingAdapters();
       }, POLL_MS);
     } else if (!needPoll && poller !== null) {
       clearInterval(poller);
@@ -182,7 +188,7 @@
   const TASK_HINTS: Record<string, string> = {
     classify: "classify: the response is a label; scored by exact label match",
     extract: "extract: the response is a JSON object; scored by JSON parse rate and per-key match",
-    freeform: "freeform: free text; scored by word overlap (F1) with the response",
+    freeform: "freeform: free text; scored by word overlap (F1) — weak, a poor adapter can pass it; prefer classify or extract",
   };
 
   async function onFilePicked(ev: Event) {
@@ -318,10 +324,118 @@
     const d = new Date(iso);
     return isNaN(d.getTime()) ? iso : d.toLocaleString();
   }
+  // ---- Adapters (E4.6) ----------------------------------------------------
+  let adapters = $state<Adapter[]>([]);
+  let adLoading = $state(false);
+  let adLoadErr = $state(false);
+  let adUploading = $state(false);
+  let adInput = $state<HTMLInputElement | null>(null);
+  let adEvalId = $state("");
+  let adName = $state("");
+  let selectedAdapterId = $state<string | null>(null);
+  let creatingEndpoint = $state(false);
+
+  const validDatasets = $derived(datasets.filter((d) => d.status === "valid"));
+  // Default the eval-set picker to the newest valid set; keep the user's choice.
+  $effect(() => {
+    if (validDatasets.length > 0 && !validDatasets.some((d) => d.id === adEvalId)) {
+      adEvalId = validDatasets[validDatasets.length - 1].id;
+    }
+  });
+
+  // API order is not guaranteed — sort newest first.
+  const sortedAdapters = $derived(
+    [...adapters].sort((a, b) => b.created_at.localeCompare(a.created_at)),
+  );
+  const selectedAdapter = $derived(
+    sortedAdapters.find((a) => a.id === selectedAdapterId) ?? sortedAdapters[0] ?? null,
+  );
+  const latestPassed = $derived(sortedAdapters.find((a) => a.status === "passed") ?? null);
+
+  async function loadAdapters(quiet = false) {
+    if (!quiet) {
+      adLoading = true;
+      adLoadErr = false;
+    }
+    try {
+      adapters = await api.listAdapters(project.id);
+    } catch (e) {
+      if (!quiet) {
+        adLoadErr = true;
+        reportErr(e, "Could not load adapters.");
+      }
+    } finally {
+      if (!quiet) adLoading = false;
+    }
+  }
+
+  // Poll only the in-flight adapters (uploaded/processing) and patch them in.
+  async function refreshPendingAdapters() {
+    const pending = adapters.filter((a) => a.status === "uploaded" || a.status === "processing");
+    for (const a of pending) {
+      try {
+        const fresh = await api.getAdapter(project.id, a.id);
+        adapters = adapters.map((x) => (x.id === fresh.id ? fresh : x));
+      } catch {
+        // Transient poll error — the next tick retries.
+      }
+    }
+  }
+
+  async function onAdapterPicked(ev: Event) {
+    const input = ev.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file || !adEvalId) return;
+    adUploading = true;
+    try {
+      const created = await api.uploadAdapter(project.id, file, adEvalId, adName.trim() || undefined);
+      adapters = [created, ...adapters.filter((a) => a.id !== created.id)];
+      selectedAdapterId = created.id;
+      adName = "";
+      toastSuccess("Adapter imported — the eval gate is scoring it against the base model.");
+    } catch (e) {
+      reportErr(e, "Could not import the adapter.");
+    } finally {
+      adUploading = false;
+      if (adInput) adInput.value = "";
+    }
+  }
+
+  async function removeAdapter(a: Adapter) {
+    try {
+      await api.deleteAdapter(project.id, a.id);
+      adapters = adapters.filter((x) => x.id !== a.id);
+      if (selectedAdapterId === a.id) selectedAdapterId = null;
+    } catch (e) {
+      // 409 while an endpoint is bound to it — the server message says so.
+      reportErr(e, "Could not delete the adapter.");
+    }
+  }
+
+  async function createEndpoint() {
+    if (creatingEndpoint) return;
+    creatingEndpoint = true;
+    try {
+      await api.createEndpoint(project.id);
+      endpointExists = true;
+      toastSuccess("Endpoint created — it serves the adapter that passed the gate.");
+    } catch (e) {
+      reportErr(e, "Could not create the endpoint.");
+    } finally {
+      creatingEndpoint = false;
+    }
+  }
+
+  function fmtScore(n: number) {
+    return n.toFixed(3);
+  }
+  function fmtDelta(n: number | undefined) {
+    if (n == null) return "—";
+    return `${n > 0 ? "+" : ""}${n.toFixed(3)}`;
+  }
 </script>
 
 <div class="stack">
-  <!-- What's an adapter? — explain the jargon inline. -->
   <aside class="card explainer">
     <h2 style="margin: 0 0 6px;">Change how your model behaves</h2>
     <p class="muted" style="margin: 0;">
@@ -332,29 +446,12 @@
     </p>
     <p class="muted" style="margin: 8px 0 0;">
       The path: <strong>1</strong> optionally index documents (knowledge + a
-      source to synthesize examples from), <strong>2</strong> prepare and review
-      a dataset. A served fine-tune endpoint <strong>also answers from any
-      documents you index here</strong> — facts from your documents (with
-      citations), tone and format from the fine-tune.
+      source to synthesize examples from), <strong>2</strong> pick an eval set,
+      <strong>3</strong> import your adapter, <strong>4</strong> read the verdict
+      against the base model, <strong>5</strong> serve it. A served endpoint
+      <strong>also answers from any documents you index here</strong> — facts from
+      your documents (with citations), tone and format from the adapter.
     </p>
-    <div class="use-case-grid">
-      <div class="use-case-item">
-        <strong>Support voice</strong>
-        <span class="muted">Ticket history or chat logs → answers in your team's tone, format, and escalation rules.</span>
-      </div>
-      <div class="use-case-item">
-        <strong>Domain Q&amp;A</strong>
-        <span class="muted">Product docs, handbooks, or policies → accurate on-brand answers. <em>Synthesize</em> skips manual labeling.</span>
-      </div>
-      <div class="use-case-item">
-        <strong>Structured output</strong>
-        <span class="muted">Free-form text → consistent JSON, tables, or a fixed report format. Consistency across rows is what the model learns.</span>
-      </div>
-      <div class="use-case-item">
-        <strong>Code or writing style</strong>
-        <span class="muted">Before/after pairs that enforce a house style, naming convention, or editorial voice.</span>
-      </div>
-    </div>
   </aside>
 
   <!-- ====================== DOCUMENTS (optional) ====================== -->
@@ -445,9 +542,9 @@
   <!-- ============================ DATASET ============================ -->
   <div class="card">
     <div class="row between" style="margin-bottom: 12px;">
-      <h2 style="margin: 0;">2 · Dataset</h2>
+      <h2 style="margin: 0;">2 · Eval set</h2>
       <div class="row" style="gap: 8px;">
-        <select bind:value={evalTask} title={TASK_HINTS[evalTask]} disabled={uploading}>
+        <select bind:value={evalTask} title={TASK_HINTS[evalTask]} disabled={uploading} aria-label="Task">
           <option value="classify">classify</option>
           <option value="extract">extract</option>
           <option value="freeform">freeform</option>
@@ -466,7 +563,7 @@
           disabled={uploading}
         >
           {#if uploading}<span class="spinner"></span>{/if}
-          Upload eval set (JSONL, 20-200 rows)
+          Upload eval set (JSONL, 20–200 rows)
         </button>
         <button class="sm" onclick={() => (showSynth = !showSynth)}>
           Synthesize from documents
@@ -474,60 +571,20 @@
       </div>
     </div>
 
-      <p class="muted" style="margin: 0 0 4px; font-size: 13px;">Choose your path based on what you have:</p>
-      <ul class="approach-list">
-        <li><strong>Have documents?</strong> Index them in step 1, then click <strong>Synthesize</strong> — fastest path to a first dataset.</li>
-        <li><strong>Have logs or past examples?</strong> Export as prompt/response pairs and upload a <span class="mono">.jsonl</span> file.</li>
-        <li><strong>Want exact output format?</strong> Hand-write 50–100 focused examples of the input → output pattern you need.</li>
-      </ul>
-
-    <!-- Collapsible: what a dataset is, its exact format, and where to get one. -->
-    <details class="help" style="margin-bottom: 14px;">
-      <summary>Use cases, format &amp; quality guide</summary>
-      <div class="help-body">
-        <h4>Common use cases</h4>
-        <ul style="margin: 0 0 4px; padding-left: 18px; line-height: 1.8;">
-          <li><strong>Support voice</strong> — export past tickets or chat logs as prompt/response pairs; the model learns your tone, format, and escalation rules.</li>
-          <li><strong>Domain Q&amp;A</strong> — have product docs or handbooks? Use <em>Synthesize</em> to auto-generate Q/A pairs. No manual labeling needed.</li>
-          <li><strong>Structured output</strong> — write focused examples of the exact input → JSON / table / report output you need. Consistency is what the model learns.</li>
-          <li><strong>Code or writing style</strong> — before/after pairs demonstrating a house style, naming convention, or editorial voice.</li>
-        </ul>
-
-        <h4>What makes a good dataset</h4>
-        <ul style="margin: 0 0 4px; padding-left: 18px; line-height: 1.8;">
-          <li><strong>Focus on one task.</strong> Don't mix a support-voice dataset with a JSON-extraction task — use a separate adapter for each. For JSON extraction, try <strong>JSON mode</strong> in the Playground on the base model first — import an adapter if the fields are still wrong.</li>
-          <li><strong>Consistent output format.</strong> If some responses are JSON and others are prose, the model learns the inconsistency too.</li>
-          <li><strong>Coverage over perfection.</strong> 100 diverse examples of the same task outperform 10 polished ones.</li>
-          <li><strong>Size matters for evaluation.</strong> Part of a dataset is held out to score an adapter, so keep enough rows for both.</li>
-        </ul>
-
-        <h4>Format — JSONL (one JSON object per line)</h4>
-        <pre class="code" style="margin: 4px 0 8px; white-space: pre-wrap;">{`{"prompt": "Summarize this support ticket", "response": "Customer can't log in after the 2.3 update; cause is the expired token cache.", "system": "You are a concise support assistant."}`}</pre>
-        <ul>
-          <li><code>prompt</code> <strong>(required)</strong> — the instruction or question.</li>
-          <li><code>response</code> <strong>(required)</strong> — the ideal answer.</li>
-          <li><code>system</code> (optional) — persona / context for the turn.</li>
-          <li><code>metadata</code> (optional) — free-form (source, quality score…).</li>
-        </ul>
-
-        <h4>Minimum requirements</h4>
-        <ul>
-          <li>At least <strong>{MIN_SAMPLES} valid rows</strong>; aim for 50–500+ for a noticeable effect.</li>
-          <li>Every <code>prompt</code> and <code>response</code> must be non-empty.</li>
-        </ul>
-
-        <h4>Where to get one</h4>
-        <ol>
-          <li><strong>Synthesize from your documents</strong> — the button above turns indexed chunks into Q/A pairs. Fastest start.</li>
-          <li><strong>Export from your own systems</strong> — support tickets, chat logs, past Q/A, reshaped into prompt/response pairs.</li>
-          <li><strong>Hand-write</strong> a few dozen gold examples of exactly the behavior you want.</li>
-          <li><strong>Public datasets</strong> — e.g. instruction sets on Hugging Face (Dolly, OpenAssistant); convert each row to the shape above.</li>
-        </ol>
-        <p style="margin: 10px 0 0;">
-          <a href={DOCS_URL} target="_blank" rel="noopener">Full guide →</a>
-        </p>
-      </div>
-    </details>
+    <p class="muted" style="margin: 0 0 8px; font-size: 13px;">
+      The eval set is the held-out test an adapter must pass: 20–200 JSONL rows of
+      <span class="mono">{`{"prompt": "...", "response": "..."}`}</span>, with a task that decides how answers are scored.
+    </p>
+    <ul class="approach-list">
+      <li><strong>classify</strong> — the response is a label; scored by exact match. Recommended.</li>
+      <li><strong>extract</strong> — the response is a JSON object; scored by parse rate and per-key match. Recommended.</li>
+      <li><strong>freeform</strong> — scored by word overlap (token F1), which is weak: a poor adapter can still pass it. Prefer classify or extract whenever the task allows.</li>
+    </ul>
+    <p class="muted" style="margin: 0 0 14px; font-size: 13px;">
+      No labelled rows? Index documents above and use <strong>Synthesize</strong> for a first set, then review it.
+      Use rows the adapter did not train on.
+      <a href={DOCS_URL} target="_blank" rel="noopener">Full guide →</a>
+    </p>
 
     {#if showSynth}
       <div class="muted-box" style="margin-bottom: 14px;">
@@ -595,7 +652,7 @@
         <button class="ghost sm" onclick={loadDatasets}>Retry</button>
       </div>
     {:else if datasets.length === 0}
-      <div class="empty">No datasets yet — upload or synthesize one to begin.</div>
+      <div class="empty">No eval sets yet — upload one or synthesize from your documents to begin.</div>
     {:else}
       <table>
         <thead>
@@ -735,23 +792,197 @@
     {/if}
   </div>
 
+  <!-- ============================ ADAPTER ============================ -->
+  <div class="card">
+    <div class="row between" style="margin-bottom: 10px;">
+      <h2 style="margin: 0;">3 · Adapter</h2>
+    </div>
+    <p class="muted" style="margin: 0 0 12px;">
+      Drop the LoRA you trained elsewhere: a <span class="mono">.gguf</span> adapter, or a
+      <span class="mono">.zip</span> holding exactly <span class="mono">adapter_model.safetensors</span>
+      and <span class="mono">adapter_config.json</span>. It must target
+      <strong class="mono">{project.base_model}</strong>. It is scored against the base model on the
+      eval set you pick; it can only be served if it passes.
+    </p>
+    <p class="muted" style="margin: 0 0 12px; font-size: 13px;">
+      Where do I train it? Adapta does not train. Train a LoRA with any tool, then import it here.
+      <a href={DOCS_URL} target="_blank" rel="noopener">Training guide →</a>
+    </p>
+
+    {#if validDatasets.length === 0}
+      <div class="empty">Add a valid eval set in step 2 first — the adapter is scored on it.</div>
+    {:else}
+      <div class="row wrap" style="gap: 14px; align-items: flex-end;">
+        <div class="field" style="margin: 0; min-width: 220px;">
+          <label for="ad-eval">Eval set</label>
+          <select id="ad-eval" bind:value={adEvalId} disabled={adUploading}>
+            {#each validDatasets as d (d.id)}
+              <option value={d.id}>{d.name} · {d.task ?? "?"} · {d.num_samples ?? "?"} rows</option>
+            {/each}
+          </select>
+        </div>
+        <div class="field" style="margin: 0; min-width: 180px;">
+          <label for="ad-name">Name (optional)</label>
+          <input id="ad-name" type="text" maxlength="128" bind:value={adName} disabled={adUploading} placeholder="defaults to the file name" />
+        </div>
+        <input
+          bind:this={adInput}
+          type="file"
+          accept=".gguf,.zip"
+          onchange={onAdapterPicked}
+          style="display: none;"
+          id="ad-file"
+        />
+        <button class="primary sm" onclick={() => adInput?.click()} disabled={adUploading || !adEvalId}>
+          {#if adUploading}<span class="spinner"></span>{/if}
+          Import adapter (.gguf or .zip)
+        </button>
+      </div>
+    {/if}
+
+    {#if adLoading}
+      <div class="row" style="gap: 8px; margin-top: 12px;"><span class="spinner"></span><small>Loading adapters…</small></div>
+    {:else if adLoadErr}
+      <div class="empty" style="margin-top: 12px;">
+        <p>Could not load adapters.</p>
+        <button class="ghost sm" onclick={() => loadAdapters()}>Retry</button>
+      </div>
+    {:else if sortedAdapters.length > 0}
+      <table style="margin-top: 14px;">
+        <thead>
+          <tr><th>Name</th><th>Format</th><th>Size</th><th>Status</th><th>Imported</th><th></th></tr>
+        </thead>
+        <tbody>
+          {#each sortedAdapters as a (a.id)}
+            <tr>
+              <td class="mono">{a.name}</td>
+              <td>{a.format}</td>
+              <td class="mono">{fmtSize(a.size_bytes)}</td>
+              <td>
+                <div class="row" style="gap: 8px;">
+                  {#if a.status === "uploaded" || a.status === "processing"}<span class="spinner"></span>{/if}
+                  <StatusBadge status={a.status} />
+                </div>
+              </td>
+              <td class="muted">{fmtDate(a.created_at)}</td>
+              <td style="text-align: right; white-space: nowrap;">
+                <button class="ghost sm" onclick={() => (selectedAdapterId = a.id)} disabled={a.id === selectedAdapter?.id}>View</button>
+                <button class="danger ghost sm" onclick={() => removeAdapter(a)}>Delete</button>
+              </td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+    {/if}
+  </div>
+
+  <!-- ========================== VERIFICATION ========================== -->
+  <div class="card">
+    <div class="row between" style="margin-bottom: 10px;">
+      <h2 style="margin: 0;">4 · Verification</h2>
+    </div>
+
+    {#if !selectedAdapter}
+      <div class="empty">Import an adapter to see how it scores against the base model.</div>
+    {:else if selectedAdapter.status === "uploaded" || selectedAdapter.status === "processing"}
+      <div class="row" style="gap: 8px;">
+        <span class="spinner"></span>
+        <span>
+          {selectedAdapter.status === "uploaded" ? "Queued for the eval gate…" : "Scoring the adapter and the base model on the eval set…"}
+        </span>
+      </div>
+      <p class="muted" style="margin: 8px 0 0; font-size: 12px;">
+        Both models answer every held-out row on CPU, so this takes a while. The page updates by itself.
+      </p>
+    {:else}
+      {@const m = selectedAdapter.eval_metrics}
+      <div class="row" style="gap: 10px; margin-bottom: 12px;">
+        <StatusBadge status={selectedAdapter.status} label={selectedAdapter.status === "passed" ? "Passed the gate" : "Failed the gate"} />
+        <span class="mono">{selectedAdapter.name}</span>
+      </div>
+
+      {#if selectedAdapter.failure_reason}
+        <div class="ds-err mono" style="margin: 0 0 12px;">{selectedAdapter.failure_reason}</div>
+      {/if}
+
+      {#if m && m.adapter_score != null && m.base_score != null}
+        <div class="score-grid">
+          <div class="score-tile">
+            <span class="muted score-label">Adapter</span>
+            <span class="score-val">{fmtScore(m.adapter_score)}</span>
+          </div>
+          <div class="score-tile">
+            <span class="muted score-label">Base model</span>
+            <span class="score-val">{fmtScore(m.base_score)}</span>
+          </div>
+          <div class="score-tile">
+            <span class="muted score-label">Difference</span>
+            <span class="score-val" class:good={(m.delta ?? 0) > 0} class:bad={(m.delta ?? 0) < 0}>{fmtDelta(m.delta)}</span>
+          </div>
+        </div>
+        <p class="muted" style="margin: 10px 0 0; font-size: 13px;">
+          Task <strong>{m.task ?? "?"}</strong> on {m.n_rows ?? "?"} held-out rows.
+          {#if m.rule}<strong>Rule:</strong> {m.rule}{/if}
+          {#if m.absolute_floor != null || m.min_improvement != null}
+            <span class="mono">
+              (floor {m.absolute_floor != null ? fmtScore(m.absolute_floor) : "—"},
+              min. improvement {m.min_improvement != null ? fmtScore(m.min_improvement) : "—"})
+            </span>
+          {/if}
+        </p>
+        {#if m.adapter_seconds_per_row != null && m.base_seconds_per_row != null}
+          <p class="muted" style="margin: 4px 0 0; font-size: 12px;">
+            Speed on CPU: adapter {m.adapter_seconds_per_row.toFixed(1)} s/row · base {m.base_seconds_per_row.toFixed(1)} s/row.
+          </p>
+        {/if}
+
+        {#if m.samples && m.samples.length > 0}
+          <h3 style="margin: 16px 0 8px;">Sample predictions</h3>
+          <div class="review-rows">
+            {#each m.samples as s, i (i)}
+              <div class="review-row">
+                <div class="review-row-body">
+                  <div><span class="sample-key">Prompt</span> <span class="review-cell">{s.prompt}</span></div>
+                  <div><span class="sample-key">Expected</span> <span class="review-cell">{s.reference}</span></div>
+                  <div><span class="sample-key">Base</span> <span class="review-cell">{s.base}</span></div>
+                  <div><span class="sample-key">Adapter</span> <span class="review-cell">{s.adapter}</span></div>
+                </div>
+              </div>
+            {/each}
+          </div>
+        {/if}
+      {:else if selectedAdapter.status === "failed" && !selectedAdapter.failure_reason}
+        <p class="muted" style="margin: 0;">The adapter failed before it could be scored.</p>
+      {/if}
+    {/if}
+  </div>
+
   <!-- ============================ ENDPOINT ============================ -->
   <div class="card">
     <div class="row between" style="margin-bottom: 10px;">
-      <h2 style="margin: 0;">3 · Serve</h2>
+      <h2 style="margin: 0;">5 · Serve</h2>
     </div>
 
     {#if endpointExists}
       <p class="muted" style="margin: 0 0 12px;">
-        An endpoint exists for this project. Manage its slug and API keys under
-        the <strong>Endpoint &amp; keys</strong> tab.
+        An endpoint exists for this project. Manage its slug, API keys and the adapter it serves
+        under the <strong>Endpoint &amp; keys</strong> tab.
       </p>
       <button class="sm" onclick={() => navigate("/projects/" + project.id)}>
         Go to Endpoint &amp; keys
       </button>
+    {:else if latestPassed}
+      <p class="muted" style="margin: 0 0 12px;">
+        <span class="mono">{latestPassed.name}</span> passed the gate. Creating the endpoint serves it on
+        <span class="mono">{project.base_model}</span>{#if indexedDocs > 0}, answering from your indexed documents with citations{/if}.
+      </p>
+      <button class="primary sm" onclick={createEndpoint} disabled={creatingEndpoint}>
+        {#if creatingEndpoint}<span class="spinner"></span>{/if}
+        Create endpoint
+      </button>
     {:else}
       <p class="muted" style="margin: 0;">
-        An endpoint is created once an adapter has been imported for this project.
+        An endpoint is created from the latest adapter that has passed the eval gate. None has yet.
       </p>
     {/if}
   </div>
@@ -759,24 +990,6 @@
 
 <style>
   .explainer { background: var(--panel-2); }
-
-  .use-case-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-    gap: 8px;
-    margin-top: 14px;
-  }
-  .use-case-item {
-    display: flex;
-    flex-direction: column;
-    gap: 3px;
-    padding: 10px 12px;
-    background: var(--panel-1);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    font-size: 13px;
-  }
-  .use-case-item strong { font-size: 13px; }
 
   .approach-list {
     margin: 0 0 14px;
@@ -857,4 +1070,32 @@
   }
 
   button.danger { color: var(--red); }
+
+  /* E4.6: eval-gate verdict */
+  .score-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 10px;
+  }
+  .score-tile {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 10px 12px;
+    background: var(--panel-1);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+  }
+  .score-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; }
+  .score-val { font-size: 22px; font-weight: 600; font-family: var(--mono); }
+  .score-val.good { color: var(--green); }
+  .score-val.bad { color: var(--red); }
+  .sample-key {
+    display: inline-block;
+    min-width: 62px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+  }
 </style>
