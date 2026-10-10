@@ -210,7 +210,7 @@ Carried over when the shipped sections moved to the changelog (2026-10-08):
 | Block | Wave | Tier | Gate class | Depends on | Serialize with | Status |
 |---|---|---|---|---|---|---|
 | F1.1 | 1 | sonnet | offline | none | F2.2 (`worker/main.py`) | in progress (worker-f1.1) |
-| F1.2 | 1 | sonnet | live | none | F2.1 (migrations) | in progress (worker-f1.2) |
+| F1.2 | 1 | sonnet | live | none | F2.1 (migrations) | ready-for-live (f1.2) |
 | F1.5 | 1 | haiku | offline | none | — | in progress (worker-f1.5) |
 | F2.2 | 2 | haiku | offline | F1.1 | F1.1 (`worker/main.py`) | open |
 | F2.3 | 2 | haiku | offline | none | — | open |

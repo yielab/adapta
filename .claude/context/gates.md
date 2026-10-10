@@ -10,7 +10,7 @@ Never `pip install`; to change deps edit `pyproject.toml` then `make up` (host).
 | Service or core Python | `make lint` → `make test` |
 | Error raising / handlers | `make check-leaks` → `make test` |
 | `specs/openapi.yaml` | `make validate-spec` → `make generate` → `make check-models` → `make test` → `make test-contracts` (needs the live server) |
-| ORM / migration | `make migrate` → `make migrate-test` (up→down→up) |
+| ORM / migration | `make migrate` → `make migrate-test` (up→down→up, empty + seeded, on a throwaway `<db>_migrate_test` database dropped afterwards — the dev DB is untouched) |
 | Eval / dataset schema | `make test` (`test_dataset_bundles`, `test_eval_gate`) |
 | Adapter import, gate or conversion (`services/adapters.py`, `services/eval_gate.py`, `core/adapter_conversion.py`, `worker/main.py`, `api/v1/endpoints.py`) | `make test` → `docker compose restart worker` → in the app container: `ADAPTA_RUN_ADAPTER_E2E=1 pytest -m integration tests/integration/test_adapter_import_e2e.py` and `ADAPTA_RUN_EVAL_CPU=1 pytest -o addopts="" tests/test_eval_gate_cpu.py` |
 | Retrieval path (`services/rag.py`, `services/documents.py`, chunk metadata) | `make test` (`test_rag_hybrid`, `test_basic`) → `tests/integration/test_rag_e2e.py` (asserts the planted fact + citations) |

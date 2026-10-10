@@ -7,9 +7,11 @@ that can't recast existing rows.
 
 This seeds a fully-connected graph across every table at `head`, then runs
 `downgrade -1 → upgrade head` with that data present, and finally re-seeds to
-prove the schema is functional after the round-trip. Run inside the stack:
+prove the schema is functional after the round-trip. It migrates whatever
+`ADAPTA_DATABASE_URL` points at and leaves the seed rows behind, so never aim it
+at the live DB; `make migrate-test` runs it against a scratch database:
 
-    docker compose exec app python scripts/migrate_seed_test.py
+    docker compose exec app make migrate-test
 """
 
 from __future__ import annotations
@@ -143,13 +145,8 @@ async def main() -> None:
     _alembic("upgrade", "head")
     await _seed("post-roundtrip")  # schema is functional again
 
-    # Reset to a clean migrated-but-empty DB so subsequent CI steps (contract
-    # tests) start with no rows and can bootstrap a fresh org via /v1/auth/register.
-    _alembic("downgrade", "base")
-    _alembic("upgrade", "head")
-
     await engine.dispose()
-    print("✓ seeded migration round-trip verified (DB left clean)")
+    print("✓ seeded migration round-trip verified")
 
 
 if __name__ == "__main__":

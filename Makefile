@@ -33,7 +33,7 @@ help:
 	@echo "  -- DB schema contract --"
 	@echo "  migrate         Apply DB migrations (alembic upgrade head)"
 	@echo "  migration       Autogenerate a migration (MSG=\"description\")"
-	@echo "  migrate-test    Verify upgrade head then downgrade -1 both succeed"
+	@echo "  migrate-test    Verify up/down/up (empty + seeded) on a throwaway DB, not the live one"
 	@echo "  -- security / quality --"
 	@echo "  check-leaks     Fail if any HTTPException(detail=str(e)) leak sites exist"
 	@echo "  ci              Fast offline gate: check-leaks + lint + test (in-process) + validate-spec"
@@ -141,9 +141,14 @@ migration:
 	@test -n "$(MSG)" || (echo "Usage: make migration MSG=\"description\"" && exit 1)
 	alembic revision --autogenerate -m "$(MSG)"
 
+# Runs against a throwaway `<db>_migrate_test` database on the same server (F1.2),
+# never the live dev DB. The scratch DB is dropped on success AND failure (EXIT trap).
 migrate-test:
+	@export ADAPTA_DATABASE_URL="$$(python scripts/scratch_db.py url)"; \
+	trap 'python scripts/scratch_db.py drop' EXIT; \
+	python scripts/scratch_db.py create && \
 	alembic upgrade head && alembic downgrade -1 && alembic upgrade head \
-	  && echo "✓ migration up/down verified (empty DB)"
+	  && echo "✓ migration up/down verified (empty DB)" && \
 	python scripts/migrate_seed_test.py
 
 test:
