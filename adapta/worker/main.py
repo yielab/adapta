@@ -128,7 +128,11 @@ async def _rag_eval_job(meta: dict) -> None:
 
 
 async def _extract_job(meta: dict) -> None:
-    """``extract`` job (E5.4): vision-base field extraction + low-confidence page re-read."""
+    """``extract`` job (E5.4): vision-base field extraction + low-confidence page re-read.
+
+    Each page's model calls are bounded by ``extract_page_timeout_seconds`` (F1.1): a hung
+    generation raises a typed ``Timeout``, the job ends ``failed`` and the worker takes the next one.
+    """
     from adapta.services import extraction
 
     payload = meta.get("payload") or {}

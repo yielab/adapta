@@ -146,6 +146,9 @@ class Settings(BaseSettings):
     extract_model: str = "qwen2.5-vl-7b-instruct"
     extract_max_pages: int = 20
     extract_max_tokens: int = 1024
+    # (F1.1) Deadline for the model calls of ONE page in an `extract` job (~45 s/page on CPU, so the
+    # job's bound is this x pages). A hung vision generation ends the job `failed`, not the worker.
+    extract_page_timeout_seconds: int = 300
     # Longest side of the rendered page image sent to the vision model (bounds image tokens).
     extract_image_side_px: int = 1344
     chunk_size: int = 512

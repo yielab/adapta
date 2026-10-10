@@ -68,11 +68,15 @@ TRANSCRIBE_PROMPT = (
 )
 
 
+# A model that is told "use null" sometimes writes the word instead of the JSON literal (F1.1).
+_ABSENT = frozenset({"null", "none"})
+
+
 def parse_fields(raw: str, schema: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """Parse the model's reply to ``{key: scalar}`` over the schema's keys.
 
-    Tolerates code fences and prose around the object. Unknown keys, nulls, empty strings and
-    nested values are dropped. Returns None when no JSON object is found or no field survives.
+    Tolerates code fences and prose around the object. Unknown keys, nulls (including the strings
+    "null"/"none"), empty strings and nested values are dropped. Returns None when no JSON object is found or no field survives.
     """
     clean = re.sub(r"```(?:json)?", "", raw or "").strip()
     match = re.search(r"\{.*\}", clean, re.DOTALL)
@@ -89,6 +93,8 @@ def parse_fields(raw: str, schema: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         value = data.get(key)
         if isinstance(value, str):
             value = " ".join(value.split())
+        if isinstance(value, str) and value.lower() in _ABSENT:
+            continue
         if isinstance(value, _SCALARS) and value != "":
             out[key] = value
     return out or None
@@ -193,7 +199,7 @@ async def extract_file(file_id: str, *, all_pages: bool = False) -> dict:
     Per selected page: structured read → ``chunks.fields`` on every chunk of the page; if the
     page was flagged and the transcription is non-empty, its chunks are replaced by the
     re-chunked transcription (re-embedded, ``needs_review`` cleared). A page whose model call
-    fails is skipped and logged; if every page fails the job raises so it ends ``failed``.
+    fails is skipped; one that exceeds ``extract_page_timeout_seconds`` raises a typed ``Timeout`` (F1.1) and logged; if every page fails the job raises so it ends ``failed``.
     """
     import asyncio
 
@@ -201,7 +207,7 @@ async def extract_file(file_id: str, *, all_pages: bool = False) -> dict:
 
     from adapta.db.models import Collection, Project, ProjectChunk, ProjectFile
     from adapta.db.session import AsyncSessionLocal
-    from adapta.domain.errors import InferenceFailed, NotFound
+    from adapta.domain.errors import InferenceFailed, NotFound, Timeout
     from adapta.services.documents import Chunk, chunk_text
     from adapta.services.rag import build_chunk_rows, get_rag_service
 
@@ -237,10 +243,24 @@ async def extract_file(file_id: str, *, all_pages: bool = False) -> dict:
         t0 = time.perf_counter()
         try:
             png = await asyncio.to_thread(render_page, path, page)
-            fields = parse_fields(await _ask(png, fields_prompt(schema), model=model), schema)
-            text = ""
-            if page in flagged:
-                text = " ".join((await _ask(png, TRANSCRIBE_PROMPT, model=model)).split())
+
+            async def read_page(png: bytes, page: int) -> tuple:
+                got = parse_fields(await _ask(png, fields_prompt(schema), model=model), schema)
+                said = ""
+                if page in flagged:
+                    said = " ".join((await _ask(png, TRANSCRIBE_PROMPT, model=model)).split())
+                return got, said
+
+            fields, text = await asyncio.wait_for(read_page(png, page), timeout=settings.extract_page_timeout_seconds)
+        except asyncio.TimeoutError as exc:  # a hung model call: end the job so the serial worker moves on (F1.1)
+            budget = settings.extract_page_timeout_seconds
+            raise Timeout(
+                message=(
+                    f"Visual extraction timed out after {budget} s on page {page} - the vision model "
+                    "stopped answering. Check the stack with GET /health/deep, then extract again."
+                ),
+                internal_detail=f"extract deadline {budget}s, file {file_id}, page {page}",
+            ) from exc
         except Exception as exc:  # noqa: BLE001 — per page; counted below
             logger.warning("extract: page %d of %s failed: %r", page, file_id, exc)
             continue

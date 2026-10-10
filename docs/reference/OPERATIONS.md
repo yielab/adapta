@@ -287,6 +287,10 @@ Measured 2026-10-09 with `docling[rapidocr]` 2.137 / RapidOCR 3.10 (`latin_PP-OC
   Apache-licensed `qwen2.5-vl-7b-instruct`, not measured here — download it first): **≈ 43 s per page for fields, ≈ 133 s
   for a flagged page** (fields + transcription). A 0.70-confidence scan went from unreadable OCR to a near-correct
   transcription. Budget it per page; `extract_max_pages` is 20.
+  A hung generation cannot hold the serial worker: the model calls of each page are bounded by
+  `ADAPTA_EXTRACT_PAGE_TIMEOUT_SECONDS` (default 300 s, about 7x the measured field read; raise it for the 7B base on
+  a slow CPU), after which the job ends `failed` with a timeout message and the worker takes the next job. A field the
+  model reports as `null`/`"none"` is absent: it is omitted, never stored as text or exported to `fields.csv`.
 
 ### 6.5 Changing the embedding model (§E1.8)
 
