@@ -1,0 +1,111 @@
+"""E3.1 fix — _index_file: race-free collection get-or-create, atomic counters,
+and orphaned-vector cleanup when the commit after the Chroma upsert fails.
+
+The session is a scripted fake (no Postgres); the SQL-level atomicity itself
+(ON CONFLICT DO NOTHING, ``col = col + n``) is proven by the live rag e2e / golden run.
+"""
+
+from types import SimpleNamespace
+
+from sqlalchemy.dialects import postgresql
+
+from adapta.api.v1 import files as files_mod
+from adapta.config import settings
+from adapta.db.models import FileStatus
+from adapta.services.documents import Chunk
+
+
+class _Result:
+    def __init__(self, obj):
+        self._obj = obj
+
+    def scalar_one_or_none(self):
+        return self._obj
+
+    def scalar_one(self):
+        return self._obj
+
+
+class _Session:
+    """Scripted fake; one shared ``state`` across the main and failure-handling sessions."""
+
+    def __init__(self, state):
+        self.state = state
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *a):
+        return False
+
+    async def execute(self, stmt):
+        sql = str(stmt.compile(dialect=postgresql.dialect())).lower()
+        self.state["sql"].append(sql)
+        if sql.startswith("select") and "project_files" in sql:
+            return _Result(self.state["pfile"])
+        if sql.startswith("select") and "collections" in sql:
+            return _Result(SimpleNamespace(embedding_model=settings.embedding_model))
+        return _Result(None)
+
+    def add_all(self, rows):
+        pass
+
+    async def flush(self):
+        pass
+
+    async def commit(self):
+        self.state["commits"] += 1
+        if self.state["fail_on_commit"] == self.state["commits"]:
+            raise RuntimeError("unique violation")
+
+
+async def _run(monkeypatch, fail_on_commit):
+    import adapta.db.session as session_mod
+
+    state = {
+        "sql": [],
+        "commits": 0,
+        "fail_on_commit": fail_on_commit,
+        "pfile": SimpleNamespace(status=FileStatus.pending, num_chunks=None, error_message=None),
+    }
+    calls = {"index": 0, "delete": []}
+
+    class FakeRag:
+        def ensure_collection(self, pid):
+            return "c"
+
+        def index_chunks(self, pid, fid, chunks):
+            calls["index"] += 1
+            return len(chunks)
+
+        def delete_file_chunks(self, pid, fid):
+            calls["delete"].append((pid, fid))
+
+    monkeypatch.setattr(session_mod, "AsyncSessionLocal", lambda: _Session(state))
+    monkeypatch.setattr(files_mod, "get_rag_service", lambda: FakeRag())
+    chunks = [Chunk(text="hello", source="a.md", index=0)]
+    await files_mod._index_file("f1", None, "text/markdown", "a.md", "p1", "t1", chunks)
+    return state, calls
+
+
+async def test_success_uses_conflict_safe_insert_and_atomic_update(monkeypatch):
+    state, calls = await _run(monkeypatch, fail_on_commit=None)
+    assert any("on conflict" in q and "do nothing" in q for q in state["sql"])
+    upd = [q for q in state["sql"] if q.startswith("update collections")]
+    assert upd and "collections.num_chunks +" in upd[0]
+    assert state["pfile"].status == FileStatus.indexed
+    assert calls["delete"] == []
+
+
+async def test_commit_failure_after_upsert_deletes_orphaned_vectors(monkeypatch):
+    # commits: 1 processing, 2 collection insert, 3 final -> fail the final one
+    state, calls = await _run(monkeypatch, fail_on_commit=3)
+    assert calls["index"] == 1
+    assert calls["delete"] == [("p1", "f1")]
+    assert state["pfile"].status == FileStatus.failed
+    assert "unique violation" in state["pfile"].error_message
+
+
+async def test_failure_before_upsert_does_not_touch_chroma(monkeypatch):
+    state, calls = await _run(monkeypatch, fail_on_commit=2)
+    assert calls["index"] == 0 and calls["delete"] == []

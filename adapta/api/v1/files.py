@@ -11,7 +11,8 @@ from pathlib import Path
 from typing import List, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, UploadFile
-from sqlalchemy import select
+from sqlalchemy import select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from adapta.api._upload import save_capped_upload
@@ -80,6 +81,7 @@ async def _index_file(
     from adapta.db.session import AsyncSessionLocal
 
     logger.info("File indexing task started: %s", file_id)
+    vectors_written = False
     async with AsyncSessionLocal() as db:
         try:
             pfile = None
@@ -100,17 +102,27 @@ async def _index_file(
             pfile.status = FileStatus.processing
             await db.commit()
 
-            # Fetch (not create) the collection row up front: if it already
-            # exists and was built with a different embedding model than the
-            # one configured now, embedding this file into the same Chroma
-            # collection would silently mix vector spaces (or blow up on a
-            # dimension mismatch at retrieve time). Fail fast, before paying
+            # Get-or-create the collection row race-free: concurrent first-time
+            # indexing tasks all INSERT ... ON CONFLICT DO NOTHING, then re-select.
+            # An existing row built with a different embedding model than the one
+            # configured now would silently mix vector spaces (or blow up on a
+            # dimension mismatch at retrieve time), so fail fast, before paying
             # for parsing/embedding.
+            await db.execute(
+                pg_insert(Collection)
+                .values(
+                    project_id=project_id,
+                    chroma_collection_name=collection_name_for(project_id),
+                    embedding_model=settings.embedding_model,
+                )
+                .on_conflict_do_nothing(index_elements=[Collection.project_id])
+            )
+            await db.commit()
             col_result = await db.execute(
                 select(Collection).where(Collection.project_id == project_id)
             )
-            collection = col_result.scalar_one_or_none()
-            if collection is not None and collection.embedding_model != settings.embedding_model:
+            collection = col_result.scalar_one()
+            if collection.embedding_model != settings.embedding_model:
                 raise EmbeddingModelMismatch(
                     message=(
                         f"This project's documents were indexed with '{collection.embedding_model}' "
@@ -119,6 +131,10 @@ async def _index_file(
                         f"ADAPTA_EMBEDDING_MODEL={collection.embedding_model}."
                     )
                 )
+
+            # Make sure the Chroma collection exists too, so a later cleanup/delete never
+            # hits a missing collection (the row above can precede the first upsert).
+            await asyncio.to_thread(get_rag_service().ensure_collection, project_id)
 
             # `chunks` is pre-parsed by the upload handler (for the duplicate check);
             # parse here only when that attempt failed so the error lands on the row.
@@ -150,20 +166,17 @@ async def _index_file(
                 return rag.index_chunks(project_id, file_id, parsed)
 
             count = await asyncio.to_thread(_do_index)
+            vectors_written = True
 
-            # Update collection metadata
-            if collection:
-                collection.num_documents += 1
-                collection.num_chunks += count
-            else:
-                collection = Collection(
-                    project_id=project_id,
-                    chroma_collection_name=collection_name_for(project_id),
-                    embedding_model=settings.embedding_model,
-                    num_documents=1,
-                    num_chunks=count,
+            # Atomic counter bump (no read-modify-write): concurrent tasks don't lose updates.
+            await db.execute(
+                update(Collection)
+                .where(Collection.project_id == project_id)
+                .values(
+                    num_documents=Collection.num_documents + 1,
+                    num_chunks=Collection.num_chunks + count,
                 )
-                db.add(collection)
+            )
 
             pfile.status = FileStatus.indexed
             pfile.num_chunks = count
@@ -172,6 +185,14 @@ async def _index_file(
 
         except Exception as exc:
             logger.exception("File indexing task failed for %s", file_id)
+            if vectors_written:
+                # The upsert succeeded but the commit (or a later step) failed: the
+                # Postgres rows roll back, so drop the now-orphaned vectors. Best effort;
+                # never mask the original error.
+                try:
+                    await asyncio.to_thread(get_rag_service().delete_file_chunks, project_id, file_id)
+                except Exception:
+                    logger.exception("Could not clean up orphaned vectors for %s", file_id)
             async with AsyncSessionLocal() as db2:
                 result = await db2.execute(select(ProjectFile).where(ProjectFile.id == file_id))
                 pfile = result.scalar_one_or_none()
