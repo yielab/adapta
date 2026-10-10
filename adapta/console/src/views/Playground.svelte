@@ -31,7 +31,6 @@
   // Modality comes straight off the endpoint (the server resolves and returns it). Using
   // this field — rather than a separate catalog fetch that could fail — means a vision
   // endpoint always shows the image UI, never silently falls back to a text-only Playground.
-  const isVision = $derived(endpoint?.modality === "vision");
 
   const MAX_IMAGE_MB = 10; // mirrors the server's per-image cap
   let attachedImage = $state<string | null>(null); // data URL
@@ -76,6 +75,7 @@
   let jsonMode = $state(false); // response_format: json_object (grammar-constrained)
 
   const slug = $derived(endpoint?.slug ?? "");
+  const isVision = $derived(endpoint?.modality === "vision");
   const keyLooksValid = $derived(apiKey.trim().startsWith("adp_"));
   const canSend = $derived(
     !!endpoint && !sending && keyLooksValid && draft.trim().length > 0,
@@ -181,7 +181,10 @@
 
   function citationLabel(c: Citation, i: number): string {
     const n = c.index ?? i + 1;
-    return c.source ? `[${n}] ${c.source}` : `[${n}]`;
+    let label = c.source ? `[${n}] ${c.source}` : `[${n}]`;
+    if (c.page != null) label += ` · p.${c.page}`;
+    if (c.ocr) label += c.confidence != null ? ` · OCR conf ${c.confidence.toFixed(2)}` : " · OCR";
+    return label;
   }
 
   onDestroy(() => {
@@ -282,7 +285,10 @@
                     <div class="muted-box" style="padding: 8px 10px;">
                       <span class="mono" style="font-size: 12px;">{citationLabel(c, ci)}</span>
                       {#if c.text}
-                        <div class="muted" style="font-size: 12px; margin-top: 4px;">{c.text}</div>
+                        <details style="margin-top: 4px;">
+                          <summary class="muted" style="font-size: 12px; cursor: pointer;">Passage</summary>
+                          <div class="muted" style="font-size: 12px; margin-top: 4px; white-space: pre-wrap;">{c.text}</div>
+                        </details>
                       {/if}
                     </div>
                   {/each}

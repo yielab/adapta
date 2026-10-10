@@ -51,7 +51,11 @@ curl http://your-server:8000/v1/chat/completions \
 - **Answers carry citations when the project has documents.** If the project
   has indexed documents (a Knowledge project, or a finetune project that also
   uploaded documents), the response is grounded in them and includes the source
-  chunks it used.
+  chunks it used. Each citation is `{index, source, score, score_kind, text,
+  file_id, page, ocr, confidence}`: `text` is the cited passage, `page` is the
+  1-based page (`null` for formats without pages), and for scanned documents
+  `ocr` is `true` and `confidence` is the mean OCR confidence in 0–1 (`null`
+  otherwise). The index matches the `[N]` markers in the answer.
 - **Usage is metered.** Every response includes `prompt_tokens`,
   `completion_tokens`, and `total_tokens`, and is rolled up per day (visible in
   the console's Usage tab).

@@ -44,6 +44,11 @@ class RetrievedChunk:
     # know which, so both construction sites below fill this explicitly.
     score_kind: Literal["reranker", "vector"]
     chunk_id: str = ""  # "{file_id}_{index}" — for the retrieval log line
+    # (E3.4) Provenance, hydrated from Postgres `chunks` by chunk_id after the final cut.
+    file_id: Optional[str] = None
+    page: Optional[int] = None
+    ocr: bool = False
+    ocr_confidence: Optional[float] = None
 
 
 def content_hash(text: str) -> str:
@@ -246,6 +251,53 @@ def _fts_search(project_id: str, query: str, limit: int) -> List[_FtsHit]:
     except BaseException:
         fut.cancel()
         raise
+
+
+_PROVENANCE_SQL = """
+SELECT id, file_id, page, ocr, ocr_confidence FROM chunks WHERE id = ANY(:ids)
+"""
+
+
+def _hydrate_provenance(chunks: List[RetrievedChunk]) -> List[RetrievedChunk]:
+    """Fill file_id / page / OCR fields from Postgres for the final top_k (one query).
+
+    Best-effort like the sparse leg: a Postgres failure leaves the defaults (a citation
+    without provenance is still a valid citation).
+    """
+    from dataclasses import replace
+
+    from sqlalchemy import text as sql_text
+
+    ids = [c.chunk_id for c in chunks if c.chunk_id]
+    if not ids:
+        return chunks
+    loop = _fts_runtime()
+
+    async def _run() -> dict:
+        assert _fts_engine is not None
+        async with _fts_engine.connect() as conn:
+            rows = await conn.execute(sql_text(_PROVENANCE_SQL), {"ids": ids})
+            return {r.id: r for r in rows}
+
+    fut = asyncio.run_coroutine_threadsafe(_run(), loop)
+    try:
+        rows = fut.result(timeout=settings.rag_timeout_seconds)
+    except (SQLAlchemyError, OSError, asyncio.TimeoutError, TimeoutError) as exc:
+        fut.cancel()
+        logger.warning("rag provenance lookup failed, citations without page/OCR: %r", exc)
+        return chunks
+    return [
+        replace(
+            c,
+            file_id=r.file_id,
+            page=r.page,
+            ocr=bool(r.ocr),
+            ocr_confidence=r.ocr_confidence,
+        )
+        if (r := rows.get(c.chunk_id)) is not None
+        else c
+        for c in chunks
+    ]
 
 
 def _rrf_fuse(*rank_lists: list, k: int = 60) -> list:
@@ -479,7 +531,7 @@ class RAGService:
             ]
             candidates = reranked + candidates[rerank_n:]
 
-        final = candidates[:top_k]
+        final = _hydrate_provenance(candidates[:top_k])
         fused_rank = {cid: r for r, cid in enumerate(fused_ids)}
         logger.info(
             "rag.retrieve q=%s project=%s vec=%d fts=%d fused=%d ids=%s scores=%s ms=%d",
@@ -516,6 +568,11 @@ class RAGService:
                 "source": c.source,
                 "score": round(c.score, 4),
                 "score_kind": c.score_kind,
+                "text": c.text,
+                "file_id": c.file_id,
+                "page": c.page,
+                "ocr": c.ocr,
+                "confidence": c.ocr_confidence,
             }
             for i, c in enumerate(chunks)
         ]

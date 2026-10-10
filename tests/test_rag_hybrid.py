@@ -19,6 +19,7 @@ _REAL_FTS_SEARCH = rag_mod._fts_search
 def _no_postgres(monkeypatch):
     """Default sparse leg: no hits. Individual tests override with `_fts(...)`."""
     monkeypatch.setattr(rag_mod, "_fts_search", lambda *a, **k: [])
+    monkeypatch.setattr(rag_mod, "_hydrate_provenance", lambda chunks: chunks)
 
 
 def _fts(monkeypatch, hits):
@@ -256,6 +257,48 @@ def test_citations_match_reranked_order(monkeypatch):
         assert cit["score_kind"] == chunk.score_kind == "reranker"
 
 
+def test_format_citations_carries_text_and_ocr_provenance():
+    chunks = [
+        RetrievedChunk(
+            text="Total: 120.00", source="factura.pdf", score=0.91234, chunk_index=2,
+            score_kind="vector", chunk_id="f1_2", file_id="f1", page=2, ocr=True,
+            ocr_confidence=0.83,
+        ),
+        RetrievedChunk(
+            text="plain", source="notes.md", score=0.5, chunk_index=0, score_kind="vector",
+            chunk_id="f2_0",
+        ),
+    ]
+    cits = RAGService().format_citations(chunks)
+    assert cits[0] == {
+        "index": 1, "source": "factura.pdf", "score": 0.9123, "score_kind": "vector",
+        "text": "Total: 120.00", "file_id": "f1", "page": 2, "ocr": True, "confidence": 0.83,
+    }
+    assert cits[1]["page"] is None and cits[1]["ocr"] is False and cits[1]["confidence"] is None
+
+
+def test_retrieve_hydrates_provenance_after_the_cut(monkeypatch):
+    docs = ["doc A text", "doc B text"]
+    metas = [{"source": f"src{i}", "chunk_index": i} for i in range(2)]
+    chroma_client = _make_chroma_mock(docs, metas, [0.1, 0.2])
+    monkeypatch.setattr("adapta.services.rag._get_chroma_client", lambda: chroma_client)
+    monkeypatch.setattr("adapta.services.rag.get_embedding_service", lambda: _FakeEmbedder())
+    monkeypatch.setattr("adapta.services.rag.get_reranker_service", lambda: None)
+    seen = []
+
+    def fake(chunks):
+        seen.append([c.chunk_id for c in chunks])
+        return [
+            RetrievedChunk(**{**c.__dict__, "page": 3, "ocr": True, "ocr_confidence": 0.7})
+            for c in chunks
+        ]
+
+    monkeypatch.setattr(rag_mod, "_hydrate_provenance", fake)
+    out = RAGService().retrieve("p", "q", top_k=1)
+    assert len(seen[0]) == 1 and len(out) == 1  # hydrated only the top_k, not the candidates
+    assert out[0].page == 3 and out[0].ocr and out[0].ocr_confidence == 0.7
+
+
 # ---------------------------------------------------------------------------
 # chat.py wiring (E1.6) — a team's `rag_top_k` app-settings override must
 # reach `RAGService.retrieve(top_k=...)`, not the env-backed global.
@@ -386,7 +429,11 @@ async def test_chat_stream_final_frame_carries_citations(monkeypatch):
 
     assert finish["choices"][0]["finish_reason"] == "stop"
     assert finish["citations"] == [
-        {"index": 1, "source": "src1", "score": 0.9, "score_kind": "vector"}
+        {
+            "index": 1, "source": "src1", "score": 0.9, "score_kind": "vector",
+            "text": "doc text", "file_id": None, "page": None, "ocr": False,
+            "confidence": None,
+        }
     ]
 
 

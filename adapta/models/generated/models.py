@@ -166,6 +166,7 @@ class FileResponse(BaseModel):
     num_chunks: Annotated[int | None, Field(...)]
     size_bytes: int
     uploaded_at: str
+    pages_needing_review: Annotated[int, Field(ge=0)] = 0
 
 
 class DatasetResponse(BaseModel):
@@ -424,6 +425,23 @@ class Citation(BaseModel):
     """
     How `score` was computed: `reranker` is a cross-encoder sigmoid in (0, 1); `vector` is `1 − cosine distance` (no reranker configured).
 
+    """
+    text: str | None = None
+    """
+    The cited chunk's text.
+    """
+    file_id: str | None = None
+    page: int | None = None
+    """
+    1-based page; null when the format has no pages.
+    """
+    ocr: bool | None = None
+    """
+    True when the chunk's text came from OCR.
+    """
+    confidence: float | None = None
+    """
+    Mean OCR confidence in [0, 1]; null when the chunk was not OCR'd.
     """
 
 

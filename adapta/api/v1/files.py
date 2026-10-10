@@ -12,13 +12,13 @@ from pathlib import Path
 from typing import List, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, UploadFile
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from adapta.api._upload import save_capped_upload
 from adapta.config import settings
-from adapta.db.models import Collection, FileStatus, Project, ProjectFile
+from adapta.db.models import Collection, FileStatus, Project, ProjectChunk, ProjectFile
 from adapta.db.session import get_db
 from adapta.domain.errors import DuplicateDocument, EmbeddingModelMismatch, InvalidRequest, NotFound
 from adapta.models.generated import FileResponse
@@ -47,7 +47,19 @@ _ALLOWED_EXTENSIONS = frozenset(
 )
 
 
-def _file_resp(f: ProjectFile) -> FileResponse:
+async def _pages_needing_review(db: AsyncSession, file_ids: List[str]) -> dict[str, int]:
+    """Distinct flagged (low-confidence OCR) pages per file, in one aggregate query."""
+    if not file_ids:
+        return {}
+    rows = await db.execute(
+        select(ProjectChunk.file_id, func.count(func.distinct(ProjectChunk.page)))
+        .where(ProjectChunk.file_id.in_(file_ids), ProjectChunk.needs_review.is_(True))
+        .group_by(ProjectChunk.file_id)
+    )
+    return {fid: n for fid, n in rows.all()}
+
+
+def _file_resp(f: ProjectFile, pages_needing_review: int = 0) -> FileResponse:
     return FileResponse(
         id=f.id,
         filename=f.filename,
@@ -55,6 +67,7 @@ def _file_resp(f: ProjectFile) -> FileResponse:
         num_chunks=f.num_chunks,
         size_bytes=f.size_bytes,
         uploaded_at=f.uploaded_at.isoformat(),
+        pages_needing_review=pages_needing_review,
     )
 
 
@@ -323,7 +336,9 @@ async def list_files(
     project = await _get_project(db, project_id)
     await require_team_member(db, current_user.id, project.team_id)
     result = await db.execute(select(ProjectFile).where(ProjectFile.project_id == project_id))
-    return [_file_resp(f) for f in result.scalars().all()]
+    files = result.scalars().all()
+    flagged = await _pages_needing_review(db, [f.id for f in files])
+    return [_file_resp(f, flagged.get(f.id, 0)) for f in files]
 
 
 @router.delete("/{file_id}", status_code=204)

@@ -262,6 +262,11 @@
             <tr>
               <td>
                 <div class="mono">{f.filename}</div>
+                {#if (f.pages_needing_review ?? 0) > 0}
+                  <small style="color: var(--amber, var(--red));">
+                    {f.pages_needing_review} page{f.pages_needing_review === 1 ? "" : "s"} low-confidence OCR — re-scan, or re-read with the visual extractor when available.
+                  </small>
+                {/if}
                 {#if f.status === "failed"}
                   <small style="color: var(--red);">Indexing failed — try removing and re-uploading.</small>
                 {/if}

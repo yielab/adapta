@@ -1007,6 +1007,8 @@ components:
         num_chunks: {type: integer, nullable: true}
         size_bytes: {type: integer}
         uploaded_at: {type: string}
+        # E3.4: chunks of this file flagged for review (low-confidence OCR); 0 for non-OCR files.
+        pages_needing_review: {type: integer, minimum: 0, default: 0}
 
     # Datasets
     DatasetResponse:
@@ -1355,6 +1357,14 @@ components:
           description: >
             How `score` was computed: `reranker` is a cross-encoder sigmoid in
             (0, 1); `vector` is `1 − cosine distance` (no reranker configured).
+        text: {type: string, description: The cited chunk's text.}
+        file_id: {type: string, nullable: true}
+        page: {type: integer, nullable: true, description: 1-based page; null when the format has no pages.}
+        ocr: {type: boolean, description: True when the chunk's text came from OCR.}
+        confidence:
+          type: number
+          nullable: true
+          description: Mean OCR confidence in [0, 1]; null when the chunk was not OCR'd.
     ChatCompletionResponse:
       # Response-only (the OpenAI-passthrough dict is validated against this by
       # schemathesis, not constructed from this model), so fields stay optional.

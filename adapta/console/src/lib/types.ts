@@ -79,6 +79,7 @@ export interface ProjectFile {
   num_chunks: number | null;
   size_bytes: number;
   uploaded_at: string;
+  pages_needing_review?: number;
 }
 
 export type Modality = "text" | "vision";
@@ -192,6 +193,11 @@ export interface Citation {
   index?: number;
   source?: string;
   text?: string;
+  score?: number;
+  file_id?: string | null;
+  page?: number | null;
+  ocr?: boolean;
+  confidence?: number | null;
   [k: string]: unknown;
 }
 
