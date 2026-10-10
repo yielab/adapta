@@ -776,7 +776,9 @@ paths:
         `system` message the client sent (merged as a paragraph). Retrieved chunks scoring
         below `ADAPTA_RAG_MIN_SCORE` are dropped (vector cosine, or the reranker's sigmoid
         when a reranker is enabled; keyword-only hits are kept); if none remain,
-        `citations` is `[]` and the abstention instruction is still sent.
+        the server itself answers "I can't find that in the documents." with `citations: []` and
+        zero usage (no model call; streaming sends one content frame then the final frame). A
+        model answer that itself starts with that sentence also returns `citations: []`.
 
         **`adapta` extension:** optional `{top_k, filters: {file_ids, page_min, page_max,
         needs_review}}` narrows retrieval for this request; OpenAI clients ignore it.

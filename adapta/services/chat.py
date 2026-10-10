@@ -232,10 +232,40 @@ async def _load_model(model_name: str, adapter_path: Optional[str] = None):
         ) from exc
 
 
+# Canonical abstention sentence. The server emits it itself when no chunk clears the relevance
+# floor (no model call), and treats a model answer that starts with it as a non-grounded answer.
+ABSTENTION_ANSWER = "I can't find that in the documents."
 ABSTENTION_LINE = (
-    'If the answer is not in the context, say "I can\'t find that in the documents." '
+    f'If the answer is not in the context, say "{ABSTENTION_ANSWER}" '
     "translated into the language the user wrote in, and do not guess or use outside knowledge."
 )
+
+
+def is_abstention(text: str) -> bool:
+    """True when the model's answer is the canonical abstention (prefix, case-insensitive)."""
+    return text.strip().lower().startswith(ABSTENTION_ANSWER.lower().rstrip("."))
+
+
+def _abstention_response(model_name: str) -> dict:
+    """Deterministic no-context completion. No model ran: usage is 0/0 (nothing was
+    prompted or generated), and the request is still metered as one request."""
+    return {
+        "id": f"chatcmpl-{uuid.uuid4().hex[:8]}",
+        "object": "chat.completion",
+        "created": int(time.time()),
+        "model": model_name,
+        "choices": [
+            {
+                "index": 0,
+                "message": {"role": "assistant", "content": ABSTENTION_ANSWER},
+                "finish_reason": "stop",
+            }
+        ],
+        "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+        "citations": [],
+    }
+
+
 _NO_CONTEXT_LINE = "No passage in the project's documents matched this question."
 
 
@@ -378,6 +408,9 @@ async def chat(
             rag_service, project_id, query, effective_top_k, rag_filters
         )
 
+    if project_id and not rag_chunks:
+        return _abstention_response(model_name)
+
     # Content may be a parts array (all-text on the text path); flatten to the
     # plain string the manual prompt formatter expects.
     inference_messages = [
@@ -446,7 +479,9 @@ async def chat(
 
     if project_id:  # [] when nothing cleared the threshold: the model was told to abstain
         rag_service = get_rag_service()
-        result["citations"] = rag_service.format_citations(rag_chunks)
+        result["citations"] = (
+            [] if is_abstention(response.content) else rag_service.format_citations(rag_chunks)
+        )
 
     return result
 
@@ -571,6 +606,27 @@ async def chat_stream(
             rag_service, project_id, query, effective_top_k, rag_filters
         )
 
+    if project_id and not rag_chunks:
+        canned = _abstention_response(model_name)
+        frame = {
+            "id": canned["id"],
+            "object": "chat.completion.chunk",
+            "created": canned["created"],
+            "model": model_name,
+        }
+        content = {"index": 0, "delta": {"content": ABSTENTION_ANSWER}, "finish_reason": None}
+        yield f"data: {json.dumps({**frame, 'choices': [content]})}\n\n"
+        final = {**frame, "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]}
+        final["usage"] = canned["usage"]
+        final["citations"] = []
+        yield f"data: {json.dumps(final)}\n\n"
+        yield "data: [DONE]\n\n"
+        if endpoint_id:
+            from adapta.services.usage import record_usage
+
+            await record_usage(endpoint_id, 0, 0)
+        return
+
     inference_messages = [
         Message(role=m["role"], content=flatten_text(m["content"])) for m in messages
     ]
@@ -608,9 +664,11 @@ async def chat_stream(
     prompt_tokens = handle.count_prompt_tokens(inference_messages, full_system)
     # Each iteration is one generated token, so counting iterations is exact.
     completion_tokens = 0
+    answer_parts: list[str] = []
     try:
         async for token in backend.generate_stream(handle, req):
             completion_tokens += 1
+            answer_parts.append(token)
             chunk = {
                 "id": chunk_id,
                 "object": "chat.completion.chunk",
@@ -642,7 +700,9 @@ async def chat_stream(
         if project_id:
             if rag_service is None:
                 raise InvalidRequest(message="RAG service not configured")
-            finish["citations"] = rag_service.format_citations(rag_chunks)
+            finish["citations"] = (
+                [] if is_abstention("".join(answer_parts)) else rag_service.format_citations(rag_chunks)
+            )
         yield f"data: {json.dumps(finish)}\n\n"
         yield "data: [DONE]\n\n"
 
