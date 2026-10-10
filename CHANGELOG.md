@@ -8,6 +8,63 @@
 
 ---
 
+## 2026-10-09 — §E wave 1: chunks in Postgres, the golden set
+
+Wave 1 = E3.1, E3.8 (+ E1.11 closing wave 0). Found on the way: worktrees under `.claude/worktrees/` sit inside the
+bind mount, so uvicorn reloaded on every worker edit — reload now watches `/app/adapta` only (`entrypoint.sh`).
+
+### E3.1 `[BE]` Persist chunks in Postgres — the pivot pages, filters, ACL and eval hang off (P1)
+- [x] **Context.** Chunks live only in Chroma with metadata `{source, chunk_index, file_id}`
+  (`rag.py:173-175`): no page, no hash, no text in Postgres → no citations with page/text, no dedup, no
+  SQL filters, no full-text leg, and counters that drift (E1.8).
+- **Depends.** none. **Unblocks.** E3.2, E3.3b, E3.4, E3.6, E3.7, E5.1.
+- **Agent.** sonnet · gate class **live (`make migrate-test` + rag e2e)** · serialize with: E3.7
+  (`files.py`), E3.2 (`rag.py`) · **Handoff.** must name the migration revision actually used, the
+  ORM class name, where counts are read from.
+- **Scope.** Table + write-through on index/delete; counters derived from it. Out: the FTS query leg
+  (E3.2), page numbers (E3.3b fills `page`).
+- **Steps.** (1) Migration `0010_chunks`: `chunks(id PK = "{file_id}_{index}", file_id FK ON DELETE
+  CASCADE, project_id, chunk_index, page INT NULL, section TEXT NULL, text TEXT, content_hash CHAR(64),
+  ocr BOOL DEFAULT false, ocr_confidence REAL NULL, needs_review BOOL DEFAULT false,
+  tsv tsvector GENERATED ALWAYS AS (to_tsvector('simple', text)) STORED)`; GIN on `tsv`; index on
+  `project_id`; unique `(file_id, chunk_index)`. (2) `rag.py` `index_chunks`: insert rows in the file
+  row's session **before** the Chroma upsert (Chroma failure → rollback). (3) `delete_file_chunks`:
+  rows go by CASCADE; Chroma delete failures raise a typed error instead of a swallowed warning
+  (`rag.py:193-194`). (4) Read `num_chunks`/`num_documents` as `SELECT count(*)` (keep the columns
+  until E3.2 lands; drop them in a follow-up migration). (5) `content_hash = sha256(text)`; an upload
+  whose every chunk hash already exists in the project → 409 `DuplicateDocument`. (6) Tests: migration
+  round-trip; N rows on index; cascade on delete; duplicate upload 409.
+- **Files.** `migrations/versions/0010_chunks.py` (new), `adapta/db/models.py:300-320`,
+  `adapta/services/rag.py:150-195`, `adapta/api/v1/files.py:80-135, 194-227`,
+  `adapta/domain/errors.py`, `tests/test_rag_hybrid.py`, `tests/integration/test_rag_e2e.py`; also touched (count
+  readers + seeds): `adapta/api/v1/{chat,synthesis,endpoints}.py`, `tests/integration/test_{key_scoping,endpoint_slug}.py`.
+- **Contract impact.** DB (migration 0010).
+- **Gate.** `make migrate` → `make migrate-test` → `make check-leaks` → `make test` →
+  `tests/integration/test_rag_e2e.py`.
+- **Acceptance.** `SELECT count(*) FROM chunks WHERE project_id=…` equals the files' chunk total;
+  deleting a file removes rows and vectors; re-uploading the same PDF returns 409.
+- **Close.** architecture.md data model; `.claude/context/repo-map.md` (12 tables); Status snapshot.
+- **Done.** 2026-10-09. Migration `0010_chunks` creates `chunks` (generated `tsv` via `sa.Computed`, GIN on `tsv`,
+  index on `project_id`, unique `(file_id, chunk_index)`, both FKs `ON DELETE CASCADE`). `_index_file` writes the rows
+  with `persist_chunks` (flush, no commit) before the Chroma upsert, so a Chroma failure rolls them back;
+  `delete_file_chunks` raises the typed `VectorStoreFailed` (502) instead of a swallowed warning. Every chunk count
+  (chat `has_knowledge`, synthesis/endpoint empty-index checks, `indexed_chunks`) reads `count_project_chunks`. An upload
+  whose every chunk hash already exists in the project → 409 `duplicate_document`. Live gate on `develop`: `make migrate`
+  0009→0010 ✓ · `make migrate-test` seeded round-trip ✓ · `check-leaks` ✓ · `make test` 277 passed · `test_rag_e2e`
+  (count, 409, cascade) ✓ · `test_key_scoping` + `test_endpoint_slug` 4 passed. Out of Files: chat/synthesis/endpoints
+  (count readers) and the two seed tests (they seeded `num_chunks`, now need a chunk row).
+- **Handoff.** Revision `0010` (`down_revision "0009"`), table `chunks`, ORM `ProjectChunk` (`adapta/db/models.py`).
+  Counts: `count_project_chunks(db, project_id)` in `adapta/services/rag.py`; `ProjectFile.num_chunks` and
+  `collections.num_chunks/num_documents` still written (drop after E3.2). New `rag.py` helpers: `content_hash`,
+  `build_chunk_rows`, `persist_chunks`, `all_chunks_known`. **For E3.7:** `upload_file` now parses + chunks
+  synchronously (duplicate check) and hands the chunks to `_index_file` as an optional last arg; on pre-parse failure
+  `_index_file` re-parses so the file still lands `failed`. `delete_file` skips Chroma when no `Collection` row exists.
+  **Unblocks** E3.2 (FTS leg on `chunks.tsv`), E3.3b (fills `page`/`ocr`), E3.4, E3.6, E3.7, E5.1.
+- **Follow-up.** After E3.2: migration dropping the stored count columns; `services/project_summary.py` still sums
+  `ProjectFile.num_chunks` → move to `count_project_chunks`.
+
+---
+
 ## 2026-10-08 — §E wave 0: the gates every other block is verified by
 
 Wave 0 = E1.14, E1.10, E1.11 (`make lint`, dependency bounds, `make test-contracts`), the first multi-agent wave:

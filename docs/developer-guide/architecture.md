@@ -81,6 +81,7 @@ dependencies point inward, the domain is pure.
 Org ─< Team ─< User
 Team ─< Project (type: rag|finetune, base_model, status)
 Project ─< ProjectFile (upload, parse status)       # both modes
+ProjectFile ─< ProjectChunk (text, content_hash, page, tsv)  # rag; table `chunks`
 Project ─1 Collection (chroma_collection_name)      # rag
 Project ─< Dataset (JSONL, num_samples, status)     # finetune
 Project ─< TrainingJob (status, progress, eval_score, eval_passed, eval_metrics, attempts)
@@ -89,7 +90,8 @@ Endpoint ─< ApiKey (key_prefix, key_hash, is_active)
 Endpoint ─< UsageEvent (day, prompt/completion/request counts)
 ```
 
-Postgres is the **system of record**. Chroma holds vectors (derived, rebuildable
+Postgres is the **system of record** — including every indexed chunk's text (`chunks`, written before
+the Chroma upsert; chunk counts are `SELECT count(*)` over it). Chroma holds vectors (derived, rebuildable
 from the source files). Redis holds the transient job queue. The filesystem
 volume holds uploaded files and adapter artifacts.
 

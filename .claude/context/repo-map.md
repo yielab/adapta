@@ -14,7 +14,7 @@ and then scope it to a directory, never the repo root (`site/`, `node_modules/`,
 | Request/response DTOs | `adapta/models/generated/models.py` — **generated, never hand-edited** |
 | Error taxonomy (the only exceptions services raise) | `adapta/domain/errors.py` (~200 lines, read whole) |
 | Settings / env | `adapta/config.py` |
-| ORM (11 tables) | `adapta/db/models.py` · session+`get_db()` in `adapta/db/session.py` |
+| ORM (12 tables; `chunks` = `ProjectChunk`, E3.1) | `adapta/db/models.py` · session+`get_db()` in `adapta/db/session.py` |
 | Business logic | `adapta/services/*.py` — auth, chat, rag, embeddings, documents, training, jobs, adapters, synthesis, usage, rate_limit, invitations, app_settings, project_summary, maintenance |
 | Inference / model loading | `adapta/core/inference.py`, `adapta/core/model_manager.py` — **wrap, never rewrite** |
 | Base-model catalog (SSOT) | `adapta/core/model_catalog.py` |

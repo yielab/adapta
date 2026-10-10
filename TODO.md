@@ -114,7 +114,7 @@ classes are defined in [`.claude/context/gates.md`](.claude/context/gates.md) ("
 | E1.10 | 0 | sonnet | rebuild (app image only) | none | E3.3b, E4.1 | done 2026-10-09 |
 | E1.11 | 0 | sonnet | live | E1.10 | any in-flight `specs/openapi.yaml` edit | in progress (worker-e1.11) |
 | E2.1 | 1 | sonnet | live | none | E4.1, E4.9 (`core/backends/`) | open |
-| E3.1 | 1 | sonnet | live | none | E3.7, E3.2 | ready-for-live (worktree-agent-a4c27542d3f7d241e) |
+| E3.1 | 1 | sonnet | live | none | E3.7, E3.2 | done 2026-10-09 |
 | E3.3a | 1 | sonnet + human decision | offline | none | — | open |
 | E3.8 | 1 | sonnet | live | none — must land before E3.2 | — | ready-for-live (worktree-agent-a2f02700022be07f8) |
 | E4.1 | 1 | sonnet | rebuild + live (exclusive) | E1.11 | E2.1, E3.3b, E3.7 | open |
@@ -258,38 +258,6 @@ block's contract gate depends on it).
 - **Close.** Self-contained; Status snapshot.
 
 ### E3. P1 — real hybrid RAG + scanned documents (weeks 3–7)
-
-### E3.1 `[BE]` Persist chunks in Postgres — the pivot pages, filters, ACL and eval hang off (P1)
-- [ ] **Context.** Chunks live only in Chroma with metadata `{source, chunk_index, file_id}`
-  (`rag.py:173-175`): no page, no hash, no text in Postgres → no citations with page/text, no dedup, no
-  SQL filters, no full-text leg, and counters that drift (E1.8).
-- **Depends.** none. **Unblocks.** E3.2, E3.3b, E3.4, E3.6, E3.7, E5.1.
-- **Agent.** sonnet · gate class **live (`make migrate-test` + rag e2e)** · serialize with: E3.7
-  (`files.py`), E3.2 (`rag.py`) · **Handoff.** must name the migration revision actually used, the
-  ORM class name, where counts are read from.
-- **Scope.** Table + write-through on index/delete; counters derived from it. Out: the FTS query leg
-  (E3.2), page numbers (E3.3b fills `page`).
-- **Steps.** (1) Migration `0010_chunks`: `chunks(id PK = "{file_id}_{index}", file_id FK ON DELETE
-  CASCADE, project_id, chunk_index, page INT NULL, section TEXT NULL, text TEXT, content_hash CHAR(64),
-  ocr BOOL DEFAULT false, ocr_confidence REAL NULL, needs_review BOOL DEFAULT false,
-  tsv tsvector GENERATED ALWAYS AS (to_tsvector('simple', text)) STORED)`; GIN on `tsv`; index on
-  `project_id`; unique `(file_id, chunk_index)`. (2) `rag.py` `index_chunks`: insert rows in the file
-  row's session **before** the Chroma upsert (Chroma failure → rollback). (3) `delete_file_chunks`:
-  rows go by CASCADE; Chroma delete failures raise a typed error instead of a swallowed warning
-  (`rag.py:193-194`). (4) Read `num_chunks`/`num_documents` as `SELECT count(*)` (keep the columns
-  until E3.2 lands; drop them in a follow-up migration). (5) `content_hash = sha256(text)`; an upload
-  whose every chunk hash already exists in the project → 409 `DuplicateDocument`. (6) Tests: migration
-  round-trip; N rows on index; cascade on delete; duplicate upload 409.
-- **Files.** `migrations/versions/0010_chunks.py` (new), `adapta/db/models.py:300-320`,
-  `adapta/services/rag.py:150-195`, `adapta/api/v1/files.py:80-135, 194-227`,
-  `adapta/domain/errors.py`, `tests/test_rag_hybrid.py`, `tests/integration/test_rag_e2e.py`; also touched (count
-  readers + seeds): `adapta/api/v1/{chat,synthesis,endpoints}.py`, `tests/integration/test_{key_scoping,endpoint_slug}.py`.
-- **Contract impact.** DB (migration 0010).
-- **Gate.** `make migrate` → `make migrate-test` → `make check-leaks` → `make test` →
-  `tests/integration/test_rag_e2e.py`.
-- **Acceptance.** `SELECT count(*) FROM chunks WHERE project_id=…` equals the files' chunk total;
-  deleting a file removes rows and vectors; re-uploading the same PDF returns 409.
-- **Close.** architecture.md data model; `.claude/context/repo-map.md` (12 tables); Status snapshot.
 
 ### E3.2 `[BE]` Real hybrid retrieval: Postgres full-text leg over the whole corpus, fused with the vector leg (P1)
 - [ ] **Context.** `_bm25_scores` runs over the ≤ 20 Chroma candidates (`rag.py:239`): IDF over 20
