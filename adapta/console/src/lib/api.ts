@@ -10,6 +10,9 @@ import type {
   Adapter,
   Endpoint,
   AdapterEvent,
+  GoldenResults,
+  GoldenRun,
+  GoldenSet,
   ApiKey,
   ApiKeyCreated,
   UsageResponse,
@@ -178,6 +181,10 @@ export const api = {
     }),
   exportOllama: (pid: string) => download(`${V1}/projects/${pid}/endpoint/export?format=ollama`),
   endpointHistory: (pid: string) => request<AdapterEvent[]>(`${V1}/projects/${pid}/endpoint/history`),
+  // RAG gate (E5.2)
+  goldenResults: (pid: string) => request<GoldenResults>(`${V1}/projects/${pid}/golden/results`),
+  uploadGolden: (pid: string, file: File) => upload<GoldenSet>(`${V1}/projects/${pid}/golden`, file),
+  runGolden: (pid: string) => request<GoldenRun>(`${V1}/projects/${pid}/golden/run`, { method: "POST" }),
   createEndpoint: (pid: string) => request<Endpoint>(`${V1}/projects/${pid}/endpoint`, { method: "POST" }),
 
   // Keys

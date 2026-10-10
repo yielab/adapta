@@ -50,6 +50,8 @@ tags:
     description: Bring-your-own LoRA adapters (finetune projects) — import, status, delete
   - name: endpoints
     description: Create and retrieve the servable endpoint for a project
+  - name: golden
+    description: RAG gate - per-project golden retrieval set, recall@5 / MRR runs
   - name: keys
     description: Scoped API key management
   - name: chat
@@ -640,6 +642,71 @@ paths:
         '422': {$ref: '#/components/responses/Error'}
         '200': {description: Events, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/AdapterEvent'}}}}}
 
+  /projects/{project_id}/golden:
+    post:
+      operationId: setGoldenSet
+      tags: [golden]
+      summary: Set the project's golden retrieval set (writer) — upload a .jsonl, or pick an existing rag_eval dataset
+      description: |
+        The RAG gate's question set. Send exactly one of `file` (`.jsonl`, one
+        `{q, expected_file, lang?, expected_page?}` per line, 1-200 rows; the same shape the
+        `rag_eval` synthesis writes) or `dataset_id` (a valid `rag_eval` dataset of this
+        project). `expected_file` is the filename of the document that answers `q`. Replaces
+        the previous golden set; earlier runs stay in the history.
+      security: [{BearerAuth: []}]
+      parameters: [{$ref: '#/components/parameters/ProjectId'}]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file: {type: string, format: binary}
+                dataset_id: {type: string}
+      responses:
+        '200': {description: Golden set stored, content: {application/json: {schema: {$ref: '#/components/schemas/GoldenSetResponse'}}}}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '422': {$ref: '#/components/responses/Error'}
+
+  /projects/{project_id}/golden/run:
+    post:
+      operationId: runGolden
+      tags: [golden]
+      summary: Run the RAG gate now (writer) — queues a worker job that retrieves every golden question and scores recall@5 / MRR
+      description: |
+        202 with the queued run; poll `GET .../golden/results`. A run is also queued
+        automatically after a document finishes indexing when a golden set exists. If a run is
+        already queued or running, that run is returned instead of a second one.
+      security: [{BearerAuth: []}]
+      parameters: [{$ref: '#/components/parameters/ProjectId'}]
+      responses:
+        '202': {description: Run queued, content: {application/json: {schema: {$ref: '#/components/schemas/GoldenRun'}}}}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '422': {$ref: '#/components/responses/Error'}
+
+  /projects/{project_id}/golden/results:
+    get:
+      operationId: getGoldenResults
+      tags: [golden]
+      summary: The golden set and the history of RAG-gate runs, newest first
+      security: [{BearerAuth: []}]
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 50, default: 10}}
+      responses:
+        '200': {description: Results, content: {application/json: {schema: {$ref: '#/components/schemas/GoldenResults'}}}}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '422': {$ref: '#/components/responses/Error'}
+
   /projects/{project_id}/endpoint/export:
     get:
       operationId: exportEndpointAdapter
@@ -1210,6 +1277,69 @@ components:
       required: [indexed_chunks]
       properties:
         indexed_chunks: {type: integer}
+        quality: {$ref: '#/components/schemas/RetrievalQuality', nullable: true, description: Latest RAG-gate result; null until a golden set has been run}
+
+    RetrievalQuality:
+      type: object
+      description: The latest finished RAG-gate run, compared with the median of the previous runs on the same golden set
+      required: [run_id, recall_at_5, mrr, n_questions, run_at, baseline_recall, delta, regression, running]
+      properties:
+        run_id: {type: string}
+        recall_at_5: {type: number}
+        mrr: {type: number}
+        n_questions: {type: integer}
+        run_at: {type: string}
+        baseline_recall: {type: number, nullable: true, description: Median recall@5 of up to the 3 runs before it on the same golden set; null on the first run}
+        delta: {type: number, nullable: true, description: recall_at_5 minus baseline_recall}
+        regression: {type: boolean, description: True when recall fell by more than max(0.05, 1/n_questions) against the baseline - a warning, never a block}
+        running: {type: boolean, description: A newer run is queued or running}
+
+    GoldenSetResponse:
+      type: object
+      required: [dataset_id, name, num_questions]
+      properties:
+        dataset_id: {type: string}
+        name: {type: string}
+        num_questions: {type: integer}
+
+    GoldenQuestionResult:
+      type: object
+      required: [q, expected_file, lang, rank, hit, ms]
+      properties:
+        q: {type: string}
+        expected_file: {type: string}
+        lang: {type: string, nullable: true}
+        rank: {type: integer, nullable: true, description: 1-based rank of the first retrieved chunk from expected_file; null when absent}
+        hit: {type: boolean, description: rank is within the top 5}
+        ms: {type: number}
+
+    GoldenRun:
+      type: object
+      required: [id, status, trigger, dataset_id, k, n_questions, recall_at_5, mrr, p50_ms, baseline_recall, delta, regression, error, created_at, finished_at, questions]
+      properties:
+        id: {type: string}
+        status: {type: string, enum: [queued, running, succeeded, failed]}
+        trigger: {type: string, enum: [manual, index]}
+        dataset_id: {type: string, nullable: true}
+        k: {type: integer}
+        n_questions: {type: integer, nullable: true}
+        recall_at_5: {type: number, nullable: true}
+        mrr: {type: number, nullable: true}
+        p50_ms: {type: number, nullable: true}
+        baseline_recall: {type: number, nullable: true}
+        delta: {type: number, nullable: true}
+        regression: {type: boolean}
+        error: {type: string, nullable: true}
+        created_at: {type: string}
+        finished_at: {type: string, nullable: true}
+        questions: {type: array, items: {$ref: '#/components/schemas/GoldenQuestionResult'}}
+
+    GoldenResults:
+      type: object
+      required: [golden_set, runs]
+      properties:
+        golden_set: {$ref: '#/components/schemas/GoldenSetResponse', nullable: true}
+        runs: {type: array, items: {$ref: '#/components/schemas/GoldenRun'}}
 
     EndpointResponse:
       type: object

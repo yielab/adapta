@@ -5,7 +5,7 @@ Run as a separate process/container (same image as the app):
     python -m adapta.worker.main
 
 The loop owns liveness (heartbeat + ``--healthcheck``) and graceful shutdown (an
-in-flight job is requeued on SIGTERM). Handlers: ``adapter`` (E4.4), ``index`` (E3.7). A job whose kind has no handler fails with :class:`UnknownJobKind`.
+in-flight job is requeued on SIGTERM). Handlers: ``adapter`` (E4.4), ``index`` (E3.7), ``rag_eval`` (E5.2). A job whose kind has no handler fails with :class:`UnknownJobKind`.
 """
 
 from __future__ import annotations
@@ -106,11 +106,31 @@ async def _run_index_job(meta: dict) -> None:
         logger.warning("Index job for %s hit a transient failure — retrying once.", file_id)
         await _index_attempt(file_id, final=True)
     await queue.update_status(meta["job_id"], status="succeeded", progress=1.0)
+    # E5.2: a successful (re)index re-runs the RAG gate when the project has a golden set.
+    from adapta.services import golden
+
+    await golden.enqueue_after_index(file_id)
+
+
+async def _rag_eval_job(meta: dict) -> None:
+    """``rag_eval`` job (E5.2): retrieve every golden question, store recall@5 / MRR.
+
+    Payload ``{"id": run_id}`` (the job id is also the run id). The run row carries the
+    outcome (``succeeded``/``failed`` + reason), like the index job's file row.
+    """
+    from adapta.services import golden
+
+    run_id = (meta.get("payload") or {}).get("id") or meta["job_id"]
+    queue = get_job_queue()
+    await queue.update_status(meta["job_id"], status="running")
+    await golden.process_run(run_id)
+    await queue.update_status(meta["job_id"], status="succeeded", progress=1.0)
 
 
 HANDLERS: dict[str, Callable[[dict], Awaitable[None]]] = {
     "adapter": _adapter_job,
     "index": _run_index_job,
+    "rag_eval": _rag_eval_job,
 }
 
 

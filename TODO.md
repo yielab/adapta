@@ -131,7 +131,7 @@ classes are defined in [`.claude/context/gates.md`](.claude/context/gates.md) ("
 | E3.6 | 3 | sonnet + human decision | live | E3.1, E3.2, E3.8 | E3.2 | done 2026-10-10 |
 | E4.4 | 3 | sonnet | rebuild + live | E4.2, E4.3 | E3.7, E3.3b | done 2026-10-10 |
 | E5.1 | 3 | sonnet | live | E3.1, E3.7, E3.8 | E5.2, E4.8 | done 2026-10-10 |
-| E5.2 | 3 | sonnet | live | E3.8, E3.7, E4.8 | E5.1, E4.5 | in progress (worker-e5.2) |
+| E5.2 | 3 | sonnet | live | E3.8, E3.7, E4.8 | E5.1, E4.5 | ready-for-live (e5.2) |
 | E2.2 | 4 | sonnet | live | E2.1, E4.4 | E4.5 (`endpoints.py`, `EndpointPanel.svelte`) | done 2026-10-10 |
 | E4.5 | 4 | sonnet | live | E4.4 | E2.2, E4.6, E5.2 | done 2026-10-10 |
 | E4.6 | 4 | sonnet | live | E4.4 | E4.5, E4.8, E4.9 | done 2026-10-10 |
@@ -181,15 +181,15 @@ E1.1–E1.9 shipped 2026-09-17 → [CHANGELOG.md](CHANGELOG.md). E1.14 closed 20
   ask). Out: LLM-judge faithfulness.
 - **Steps.** (1) Spec: `POST /v1/projects/{id}/golden` (JSONL upload or an `eval` dataset id),
   `POST /v1/projects/{id}/golden/run` (202 → worker job `kind: "rag_eval"`),
-  `GET /v1/projects/{id}/golden/results`. Migration `0016_rag_eval_runs`. (2) The job runs
+  `GET /v1/projects/{id}/golden/results`. Migration `0020_rag_eval_runs`. (2) The job runs
   `retrieve()` per question and stores metrics + per-question hits. (3) `RetrievalSummary` += latest
   recall@5, MRR, run date, delta vs previous; Overview shows a "Retrieval quality" tile with a warning
   chip when delta < −0.05. (4) Auto-run after any index job when a golden set exists. (5) Tests:
   metric math; job dispatch; summary fields.
-- **Files.** `specs/openapi.yaml`, `migrations/versions/0016_rag_eval_runs.py`, `adapta/db/models.py`,
+- **Files.** `specs/openapi.yaml`, `migrations/versions/0020_rag_eval_runs.py`, `adapta/db/models.py`,
   new `adapta/api/v1/golden.py` + `adapta/services/golden.py`, `adapta/worker/main.py`,
-  `adapta/services/project_summary.py`, `adapta/console/src/views/Overview.svelte`,
-  `adapta/console/src/views/EndpointPanel.svelte`, `tests/test_provenance.py`.
+  `adapta/api/v1/endpoints.py` (the summary lives on the endpoint response),
+  `adapta/console/src/views/EndpointPanel.svelte` (the tile), `tests/test_golden.py`.
 - **Contract impact.** API + DB.
 - **Gate.** `make migrate-test` → `make validate-spec` → `make generate` → `make check-models` →
   `make test` → `make test-contracts` → `make console-build`.

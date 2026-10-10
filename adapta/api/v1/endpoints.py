@@ -37,6 +37,7 @@ from adapta.models.generated import (
 from adapta.models.generated import (
     EndpointResponse,
     PromoteAdapterRequest,
+    RetrievalQuality,
     RetrievalSummary,
 )
 from adapta.models.generated import (
@@ -49,6 +50,7 @@ from adapta.models.generated import (
     ProjectType as ApiProjectType,
 )
 from adapta.services import adapters as adapter_service
+from adapta.services import golden as golden_service
 from adapta.services.auth import get_current_user, require_team_member, require_team_writer
 from adapta.services.rag import count_project_chunks
 
@@ -85,7 +87,11 @@ async def _build_response(
 
     indexed_chunks = await count_project_chunks(db, project.id)
     if indexed_chunks > 0:
-        retrieval = RetrievalSummary(indexed_chunks=indexed_chunks)
+        quality = await golden_service.latest_quality(db, project.id)
+        retrieval = RetrievalSummary(
+            indexed_chunks=indexed_chunks,
+            quality=RetrievalQuality(**quality) if quality else None,
+        )
 
     project_type = project.type.value if hasattr(project.type, "value") else str(project.type)
     return EndpointResponse(

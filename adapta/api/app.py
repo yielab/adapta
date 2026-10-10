@@ -36,6 +36,7 @@ from adapta.api.v1 import (
     datasets,
     endpoints,
     files,
+    golden,
     keys,
     models,
     projects,
@@ -389,6 +390,7 @@ def create_app() -> FastAPI:
     app.include_router(datasets.router, prefix=prefix)
     app.include_router(adapters.router, prefix=prefix)
     app.include_router(endpoints.router, prefix=prefix)
+    app.include_router(golden.router, prefix=prefix)
     app.include_router(keys.router, prefix=prefix)
     app.include_router(chat.router, prefix=prefix)
     app.include_router(synthesis.router, prefix=prefix)

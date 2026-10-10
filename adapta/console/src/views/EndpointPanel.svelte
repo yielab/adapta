@@ -7,7 +7,7 @@
   import { api, ApiError } from "../lib/api";
   import { toastError, toastSuccess } from "../lib/toast";
   import { rememberKey } from "../lib/keyvault";
-  import type { Project, Endpoint, Adapter, AdapterEvent, ApiKey, ApiKeyCreated } from "../lib/types";
+  import type { Project, Endpoint, Adapter, AdapterEvent, ApiKey, ApiKeyCreated, GoldenResults } from "../lib/types";
   import StatusBadge from "../components/StatusBadge.svelte";
   import Modal from "../components/Modal.svelte";
   import ConfirmDialog from "../components/ConfirmDialog.svelte";
@@ -31,6 +31,14 @@
   const previousAdapterId = $derived(
     history.slice(1).find((e) => e.adapter_id && e.adapter_id !== endpoint?.adapter?.id)?.adapter_id ?? null,
   );
+
+  // ── RAG gate: golden set + recall@5 runs (E5.2) ────────────────────────────
+  let golden = $state<GoldenResults | null>(null);
+  let goldenBusy = $state(false);
+  let goldenPoll: ReturnType<typeof setInterval> | null = null;
+  const quality = $derived(endpoint?.retrieval?.quality ?? null);
+  const latestRun = $derived(golden?.runs[0] ?? null);
+  const runInFlight = $derived(latestRun?.status === "queued" || latestRun?.status === "running");
 
   // ── keys ──────────────────────────────────────────────────────────────────
   let keys = $state<ApiKey[]>([]);
@@ -92,6 +100,8 @@
     keys = [];
     adapters = [];
     history = [];
+    golden = null;
+    stopGoldenPoll();
     createdKey = null;
     void loadEndpoint();
     void loadKeys();
@@ -104,6 +114,7 @@
     try {
       endpoint = await api.getEndpoint(project.id);
       if (endpoint.project_type === "finetune") void loadAdapterState();
+      void loadGolden();
     } catch (e) {
       if (e instanceof ApiError && e.status === 404) {
         noEndpoint = true;
@@ -116,6 +127,72 @@
       loadingEndpoint = false;
     }
   }
+
+  function stopGoldenPoll() {
+    if (goldenPoll) clearInterval(goldenPoll);
+    goldenPoll = null;
+  }
+
+  async function loadGolden() {
+    try {
+      golden = await api.goldenResults(project.id);
+    } catch {
+      return; // the tile is optional; the rest of the panel works without it
+    }
+    if (runInFlight && !goldenPoll) {
+      goldenPoll = setInterval(async () => {
+        try {
+          golden = await api.goldenResults(project.id);
+        } catch {
+          return;
+        }
+        if (!runInFlight) {
+          stopGoldenPoll();
+          try {
+            endpoint = await api.getEndpoint(project.id); // refresh the tile
+          } catch {
+            /* keep the previous tile */
+          }
+        }
+      }, 3000);
+    }
+  }
+
+  async function onGoldenFile(e: Event) {
+    const input = e.currentTarget as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = "";
+    if (!file || goldenBusy) return;
+    goldenBusy = true;
+    try {
+      const set = await api.uploadGolden(project.id, file);
+      toastSuccess(`Golden set stored: ${set.num_questions} questions.`);
+      await loadGolden();
+    } catch (err) {
+      if (err instanceof ApiError) toastError(err.message, err.correlationId);
+      else toastError("Could not store the golden set.");
+    } finally {
+      goldenBusy = false;
+    }
+  }
+
+  async function runGolden() {
+    if (goldenBusy) return;
+    goldenBusy = true;
+    try {
+      await api.runGolden(project.id);
+      toastSuccess("Retrieval check queued.");
+      await loadGolden();
+    } catch (err) {
+      if (err instanceof ApiError) toastError(err.message, err.correlationId);
+      else toastError("Could not start the retrieval check.");
+    } finally {
+      goldenBusy = false;
+    }
+  }
+
+  const pct = (x: number) => `${(x * 100).toFixed(0)}%`;
+  const signedPts = (d: number) => `${d >= 0 ? "+" : "−"}${Math.abs(d * 100).toFixed(0)} pts`;
 
   async function loadAdapterState() {
     try {
@@ -252,6 +329,7 @@
   }
 
   onDestroy(() => {
+    stopGoldenPoll();
     // Drop the in-memory secret as soon as the panel goes away.
     createdKey = null;
   });
@@ -322,6 +400,81 @@
     </table>
   {/if}
 </div>
+
+<!-- ── Retrieval quality (RAG gate, E5.2) ─────────────────────────────────── -->
+{#if endpoint}
+  <div class="card">
+    <div class="row between" style="margin-bottom: 4px;">
+      <h2 style="margin: 0; font-size: 16px;">Retrieval quality</h2>
+      <span class="row" style="gap: 8px;">
+        <label class="ghost sm file-btn">
+          {golden?.golden_set ? "Replace golden set" : "Upload golden set"}
+          <input type="file" accept=".jsonl" onchange={onGoldenFile} disabled={goldenBusy} hidden />
+        </label>
+        {#if golden?.golden_set}
+          <button class="primary sm" onclick={runGolden} disabled={goldenBusy || runInFlight}>
+            {runInFlight ? "Running…" : "Run now"}
+          </button>
+        {/if}
+      </span>
+    </div>
+    <small class="muted">
+      A golden set is a list of questions with the document that answers each (one JSON line:
+      <span class="mono">&#123;"q", "expected_file"&#125;</span>). The check retrieves every question the way the
+      endpoint does and reports how often the right document is in the top 5. It re-runs after each document is
+      indexed, and warns if quality drops; it never blocks serving.
+    </small>
+    {#if !golden?.golden_set}
+      <p class="muted">No golden set yet.</p>
+    {:else if quality}
+      <div class="quality">
+        <div class="tile">
+          <div class="tile-v">{pct(quality.recall_at_5)}</div>
+          <div class="muted">recall@5 · {quality.n_questions} questions</div>
+        </div>
+        <div class="tile">
+          <div class="tile-v">{quality.mrr.toFixed(2)}</div>
+          <div class="muted">MRR</div>
+        </div>
+        <div class="tile">
+          <div class="tile-v">
+            {#if quality.delta !== null}{signedPts(quality.delta)}{:else}—{/if}
+          </div>
+          <div class="muted">vs previous runs · {fmtDate(quality.run_at)}</div>
+        </div>
+        {#if quality.regression}
+          <span class="chip-warn" title="Recall fell by more than one question and 5 points against the median of the last runs.">
+            Retrieval got worse
+          </span>
+        {/if}
+      </div>
+    {:else if latestRun?.status === "failed"}
+      <p class="muted">The last check failed: {latestRun.error}</p>
+    {:else}
+      <p class="muted">{runInFlight ? "First check running…" : "Run the check to see recall@5."}</p>
+    {/if}
+    {#if golden?.golden_set && golden.runs.some((r) => r.status === "succeeded")}
+      <h3 style="margin: 14px 0 4px; font-size: 14px;">Runs</h3>
+      <table>
+        <thead><tr><th>When</th><th>Trigger</th><th>recall@5</th><th>MRR</th><th>vs previous</th></tr></thead>
+        <tbody>
+          {#each golden.runs.filter((r) => r.status === "succeeded") as r (r.id)}
+            <tr>
+              <td>{fmtDate(r.finished_at ?? r.created_at)}</td>
+              <td>{r.trigger === "index" ? "after indexing" : "manual"}</td>
+              <td class="mono">{r.recall_at_5 !== null ? pct(r.recall_at_5) : "—"}</td>
+              <td class="mono">{r.mrr !== null ? r.mrr.toFixed(2) : "—"}</td>
+              <td class="mono">
+                {r.delta !== null ? signedPts(r.delta) : "—"}
+                {#if r.regression}<span class="chip-warn">worse</span>{/if}
+              </td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+    {/if}
+  </div>
+{/if}
 
 <!-- ── Adapters (fine-tune endpoints): promote / roll back, with the audit trail ── -->
 {#if endpoint && endpoint.project_type === "finetune"}
@@ -526,6 +679,10 @@
   .comp-adapter { color: var(--text); }
   .badge-current { margin-left: 6px; padding: 1px 6px; border-radius: 8px; font-size: 11px; background: var(--accent-soft, rgba(80, 160, 120, 0.18)); color: var(--text); }
   .comp-retrieval { color: var(--text); }
+  .quality { display: flex; flex-wrap: wrap; align-items: center; gap: 24px; margin-top: 12px; }
+  .tile-v { font-family: var(--display); font-size: 26px; }
+  .chip-warn { margin-left: 6px; padding: 2px 8px; border-radius: 8px; font-size: 12px; background: var(--amber-weak); color: var(--amber); border: 1px solid var(--amber); }
+  .file-btn { cursor: pointer; }
 </style>
 
 {#if promoteTarget}

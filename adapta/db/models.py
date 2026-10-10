@@ -116,6 +116,13 @@ class AdapterAction(str, enum.Enum):
     rollback = "rollback"
 
 
+class RagEvalRunStatus(str, enum.Enum):
+    queued = "queued"
+    running = "running"
+    succeeded = "succeeded"
+    failed = "failed"
+
+
 class EndpointStatus(str, enum.Enum):
     pending = "pending"
     active = "active"
@@ -253,6 +260,9 @@ class Project(Base):
     contextual_retrieval: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
     )
+    # (E5.2) The rag_eval dataset the RAG gate scores. Deliberately not a FK (projects <->
+    # datasets would be circular); a dangling id reads as "no golden set".
+    golden_dataset_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
     type: Mapped[ProjectType] = mapped_column(
         Enum(ProjectType, native_enum=False, length=16), nullable=False
     )
@@ -548,6 +558,40 @@ class AdapterEvent(Base):
 
     adapter: Mapped[Optional[Adapter]] = relationship("Adapter", lazy="selectin")
     actor: Mapped[Optional[User]] = relationship("User", lazy="selectin")
+
+
+class RagEvalRun(Base):
+    """One RAG-gate run (E5.2): every golden question retrieved, recall@k / MRR scored.
+    The table is the history; ``baseline_recall``/``delta``/``regression`` are fixed at the
+    end of the run so later runs never re-judge it."""
+
+    __tablename__ = "rag_eval_runs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    project_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    dataset_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    status: Mapped[RagEvalRunStatus] = mapped_column(
+        Enum(RagEvalRunStatus, native_enum=False, length=16),
+        nullable=False,
+        default=RagEvalRunStatus.queued,
+    )
+    trigger: Mapped[str] = mapped_column(String(16), nullable=False, default="manual")  # manual | index
+    k: Mapped[int] = mapped_column(Integer, nullable=False, default=5)
+    n_questions: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    recall: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    mrr: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    p50_ms: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    baseline_recall: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    delta: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    regression: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    questions: Mapped[Optional[list]] = mapped_column(JSONB, nullable=True)
+    error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class ApiKey(Base):

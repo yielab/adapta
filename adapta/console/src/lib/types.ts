@@ -128,8 +128,61 @@ export interface DatasetRowsResponse {
   page_size: number;
 }
 
+// Latest RAG-gate result (E5.2); regression is a warning, never a block.
+export interface RetrievalQuality {
+  run_id: string;
+  recall_at_5: number;
+  mrr: number;
+  n_questions: number;
+  run_at: string;
+  baseline_recall: number | null;
+  delta: number | null;
+  regression: boolean;
+  running: boolean;
+}
+
 export interface RetrievalSummary {
   indexed_chunks: number;
+  quality?: RetrievalQuality | null;
+}
+
+export interface GoldenSet {
+  dataset_id: string;
+  name: string;
+  num_questions: number;
+}
+
+export interface GoldenQuestionResult {
+  q: string;
+  expected_file: string;
+  lang: string | null;
+  rank: number | null;
+  hit: boolean;
+  ms: number;
+}
+
+export interface GoldenRun {
+  id: string;
+  status: 'queued' | 'running' | 'succeeded' | 'failed';
+  trigger: 'manual' | 'index';
+  dataset_id: string | null;
+  k: number;
+  n_questions: number | null;
+  recall_at_5: number | null;
+  mrr: number | null;
+  p50_ms: number | null;
+  baseline_recall: number | null;
+  delta: number | null;
+  regression: boolean;
+  error: string | null;
+  created_at: string;
+  finished_at: string | null;
+  questions: GoldenQuestionResult[];
+}
+
+export interface GoldenResults {
+  golden_set: GoldenSet | null;
+  runs: GoldenRun[];
 }
 
 // One held-out row scored by the eval gate (AdapterResponse.eval_metrics.samples).

@@ -239,20 +239,85 @@ class AdapterResponse(BaseModel):
     created_at: str
 
 
-class RetrievalSummary(BaseModel):
-    indexed_chunks: int
+class RetrievalQuality(BaseModel):
+    run_id: str
+    recall_at_5: float
+    mrr: float
+    n_questions: int
+    run_at: str
+    baseline_recall: Annotated[float | None, Field(...)]
+    """
+    Median recall@5 of up to the 3 runs before it on the same golden set; null on the first run
+    """
+    delta: Annotated[float | None, Field(...)]
+    """
+    recall_at_5 minus baseline_recall
+    """
+    regression: bool
+    """
+    True when recall fell by more than max(0.05
+    """
+    running: bool
+    """
+    A newer run is queued or running
+    """
 
 
-class EndpointResponse(BaseModel):
+class GoldenSetResponse(BaseModel):
+    dataset_id: str
+    name: str
+    num_questions: int
+
+
+class GoldenQuestionResult(BaseModel):
+    q: str
+    expected_file: str
+    lang: Annotated[str | None, Field(...)]
+    rank: Annotated[int | None, Field(...)]
+    """
+    1-based rank of the first retrieved chunk from expected_file; null when absent
+    """
+    hit: bool
+    """
+    rank is within the top 5
+    """
+    ms: float
+
+
+class Status(Enum):
+    queued = "queued"
+    running = "running"
+    succeeded = "succeeded"
+    failed = "failed"
+
+
+class Trigger(Enum):
+    manual = "manual"
+    index = "index"
+
+
+class GoldenRun(BaseModel):
     id: str
-    slug: str
-    status: EndpointStatus
-    base_model: str
-    modality: Modality
-    project_type: ProjectType
+    status: Status
+    trigger: Trigger
+    dataset_id: Annotated[str | None, Field(...)]
+    k: int
+    n_questions: Annotated[int | None, Field(...)]
+    recall_at_5: Annotated[float | None, Field(...)]
+    mrr: Annotated[float | None, Field(...)]
+    p50_ms: Annotated[float | None, Field(...)]
+    baseline_recall: Annotated[float | None, Field(...)]
+    delta: Annotated[float | None, Field(...)]
+    regression: bool
+    error: Annotated[str | None, Field(...)]
     created_at: str
-    retrieval: Annotated[RetrievalSummary | None, Field(...)]
-    adapter: Annotated[AdapterResponse | None, Field(...)]
+    finished_at: Annotated[str | None, Field(...)]
+    questions: list[GoldenQuestionResult]
+
+
+class GoldenResults(BaseModel):
+    golden_set: Annotated[GoldenSetResponse | None, Field(...)]
+    runs: list[GoldenRun]
 
 
 class PromoteAdapterRequest(BaseModel):
@@ -556,6 +621,26 @@ class ProjectResponse(BaseModel):
     team_id: str
     created_at: str
     summary: Annotated[ProjectSummary | None, Field(...)]
+
+
+class RetrievalSummary(BaseModel):
+    indexed_chunks: int
+    quality: RetrievalQuality | None = None
+    """
+    Latest RAG-gate result; null until a golden set has been run
+    """
+
+
+class EndpointResponse(BaseModel):
+    id: str
+    slug: str
+    status: EndpointStatus
+    base_model: str
+    modality: Modality
+    project_type: ProjectType
+    created_at: str
+    retrieval: Annotated[RetrievalSummary | None, Field(...)]
+    adapter: Annotated[AdapterResponse | None, Field(...)]
 
 
 class AdaptaOptions(BaseModel):

@@ -21,12 +21,12 @@ import json
 import logging
 import os
 import re
-import statistics
 import time
 from pathlib import Path
 
 import pytest
 
+from adapta.services.golden import first_rank, summarize
 from adapta.services.rag import get_rag_service
 
 pytestmark = [pytest.mark.integration, pytest.mark.slow]
@@ -48,24 +48,8 @@ def _load_questions() -> list[dict]:
     return [json.loads(ln) for ln in lines if ln.strip()]
 
 
-def _first_rank(sources: list[str], expected: str) -> int | None:
-    """1-based rank of the first chunk from ``expected``; None when absent."""
-    for i, src in enumerate(sources, start=1):
-        if src == expected:
-            return i
-    return None
-
-
 def _summarize(rows: list[dict]) -> dict:
-    n = len(rows)
-    hits = sum(1 for r in rows if r["rank"] is not None and r["rank"] <= _K)
-    rr = sum(1.0 / r["rank"] for r in rows if r["rank"] is not None)
-    return {
-        "n": n,
-        "recall": hits / n if n else 0.0,
-        "mrr": rr / n if n else 0.0,
-        "p50_ms": statistics.median(r["ms"] for r in rows) if rows else 0.0,
-    }
+    return summarize(rows, _K)
 
 
 def _print_table(rows: list[dict]) -> None:
@@ -157,7 +141,7 @@ async def test_golden_retrieval(client, admin, caplog):
             if (m := re.search(r"rag\.retrieve .* fts=(\d+)", r.getMessage()))
         ]
         assert len(fts) == 1, f"expected one rag.retrieve log line, got {len(fts)}"
-        rank = _first_rank([c.source for c in chunks], q["expected_file"])
+        rank = first_rank([c.source for c in chunks], q["expected_file"])
         rows.append({**q, "rank": rank, "ms": ms, "fts": fts[0]})
 
     with_fts = sum(1 for r in rows if r["fts"] > 0)
