@@ -44,7 +44,7 @@ service needs a GPU) · MkDocs Material docs.
 
 | Contract | SSOT | Apply | Gate |
 |---|---|---|---|
-| API | `specs/openapi.yaml` | `make generate` → routers consume the generated DTOs (guard: `tests/test_generated_models_wired.py`) | `make test-contracts` (schemathesis, live server, authenticated) — green 2026-10-09: 35 operations, ~2,060 cases, 0 failures |
+| API | `specs/openapi.yaml` | `make generate` → routers consume the generated DTOs (guard: `tests/test_generated_models_wired.py`) | `make test-contracts` (schemathesis, live server, authenticated) — green 2026-10-10: 32 operations, ~1,800 cases, 0 failures |
 | DB schema | `migrations/versions/*` | `make migrate` | `make migrate-test` (up → down → up) |
 | Model / eval set | `specs/schemas/eval_dataset.schema.json` (SFT row) | adapter import → registered adapter | CPU eval gate on imported adapters (E4.3/E4.4, not built yet) |
 
