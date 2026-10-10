@@ -23,6 +23,10 @@ logger = logging.getLogger(__name__)
 QUEUE_KEY = "adapta:job_queue"
 JOB_KEY_PREFIX = "adapta:job:"
 HEARTBEAT_KEY = "adapta:worker:heartbeat"
+# Finished job hashes expire after 7 days so Redis does not grow without bound.
+# Queued/running jobs carry no TTL; a requeue (back to queued) clears it again.
+JOB_RESULT_TTL_SECONDS = 7 * 24 * 3600
+TERMINAL_JOB_STATUSES = ("succeeded", "failed", "cancelled")
 
 
 def _now_iso() -> str:
@@ -117,9 +121,12 @@ class JobQueue:
             meta["logs"] = logs
         if error is not None:
             meta["error"] = error
-        if status in ("succeeded", "failed", "cancelled"):
+        ttl: Optional[int] = None
+        if status in TERMINAL_JOB_STATUSES:
             meta["finished_at"] = _now_iso()
-        await self.redis.set(f"{JOB_KEY_PREFIX}{job_id}", json.dumps(meta))
+            ttl = JOB_RESULT_TTL_SECONDS
+        # SET without EX clears any previous TTL, so a non-terminal update (e.g. requeue) keeps the key.
+        await self.redis.set(f"{JOB_KEY_PREFIX}{job_id}", json.dumps(meta), ex=ttl)
 
     async def get_status(self, job_id: str) -> Optional[dict]:
         raw = await self.redis.get(f"{JOB_KEY_PREFIX}{job_id}")

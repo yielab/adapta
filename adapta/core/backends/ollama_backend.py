@@ -80,11 +80,11 @@ def _payload(handle: "OllamaHandle", request: InferenceRequest, stream: bool) ->
 
 
 class OllamaHandle(BackendHandle):
-    """The resolved Ollama tag plus the client to reach it."""
+    """The resolved Ollama tag. Holds no HTTP client: each call opens and closes its own,
+    so a handle that never reaches generation leaks nothing."""
 
-    def __init__(self, tag: str, client: httpx.AsyncClient, n_ctx: int) -> None:
+    def __init__(self, tag: str, n_ctx: int) -> None:
         self.tag = tag
-        self.client = client
         self._n_ctx = n_ctx
 
     def context_size(self) -> int:
@@ -111,8 +111,8 @@ class OllamaBackend(ServingBackend):
         self._transport = transport
 
     def _client(self) -> httpx.AsyncClient:
-        # A client per request: the app is long-lived but Ollama calls are few and
-        # slow; this avoids sharing a client across event loops (tests, reload).
+        # A client per call, always used as `async with`: closed on every path, and never
+        # shared across event loops (tests, reload).
         return httpx.AsyncClient(
             base_url=settings.ollama_base_url,
             timeout=httpx.Timeout(settings.inference_timeout_seconds, connect=10.0),
@@ -133,42 +133,38 @@ class OllamaBackend(ServingBackend):
                 message=f"Model '{model_name}' has no Ollama mapping",
                 internal_detail="not in ADAPTA_OLLAMA_MODEL_MAP",
             )
-        client = self._client()
-        try:
-            resp = await client.post("/api/show", json={"model": tag})
-        except httpx.HTTPError as exc:
-            await client.aclose()
-            raise _failed(exc) from exc
+        async with self._client() as client:
+            try:
+                resp = await client.post("/api/show", json={"model": tag})
+            except httpx.HTTPError as exc:
+                raise _failed(exc) from exc
         if resp.status_code == 404:
-            await client.aclose()
             raise ModelNotFound(
                 message=f"Model '{model_name}' is not available on the Ollama host",
                 internal_detail=f"ollama pull {tag}",
             )
         if resp.status_code >= 400:
-            await client.aclose()
             raise InferenceFailed(
                 message="Inference failed",
                 internal_detail=f"ollama /api/show {resp.status_code}: {resp.text[:200]}",
             )
-        return OllamaHandle(tag, client, settings.max_context_length)
+        return OllamaHandle(tag, settings.max_context_length)
 
     async def generate(
         self, handle: BackendHandle, request: InferenceRequest
     ) -> InferenceResponse:
         assert isinstance(handle, OllamaHandle)
-        try:
-            resp = await handle.client.post("/api/chat", json=_payload(handle, request, False))
-            if resp.status_code >= 400:
-                raise InferenceFailed(
-                    message="Inference failed",
-                    internal_detail=f"ollama /api/chat {resp.status_code}: {resp.text[:200]}",
-                )
-            data = resp.json()
-        except httpx.HTTPError as exc:
-            raise _failed(exc) from exc
-        finally:
-            await handle.client.aclose()
+        async with self._client() as client:
+            try:
+                resp = await client.post("/api/chat", json=_payload(handle, request, False))
+                if resp.status_code >= 400:
+                    raise InferenceFailed(
+                        message="Inference failed",
+                        internal_detail=f"ollama /api/chat {resp.status_code}: {resp.text[:200]}",
+                    )
+                data = resp.json()
+            except httpx.HTTPError as exc:
+                raise _failed(exc) from exc
         prompt = int(data.get("prompt_eval_count") or 0)
         completion = int(data.get("eval_count") or 0)
         handle.usage = (prompt, completion)
@@ -185,34 +181,33 @@ class OllamaBackend(ServingBackend):
         self, handle: BackendHandle, request: InferenceRequest
     ) -> AsyncIterator[str]:
         assert isinstance(handle, OllamaHandle)
-        try:
-            async with handle.client.stream(
-                "POST", "/api/chat", json=_payload(handle, request, True)
-            ) as resp:
-                if resp.status_code >= 400:
-                    body = (await resp.aread()).decode(errors="replace")[:200]
-                    raise InferenceFailed(
-                        message="Inference failed",
-                        internal_detail=f"ollama /api/chat {resp.status_code}: {body}",
-                    )
-                async for line in resp.aiter_lines():
-                    if not line.strip():
-                        continue
-                    frame = json.loads(line)
-                    if frame.get("error"):
+        async with self._client() as client:
+            try:
+                async with client.stream(
+                    "POST", "/api/chat", json=_payload(handle, request, True)
+                ) as resp:
+                    if resp.status_code >= 400:
+                        body = (await resp.aread()).decode(errors="replace")[:200]
                         raise InferenceFailed(
-                            message="Inference failed", internal_detail=str(frame["error"])
+                            message="Inference failed",
+                            internal_detail=f"ollama /api/chat {resp.status_code}: {body}",
                         )
-                    if frame.get("done"):
-                        handle.usage = (
-                            int(frame.get("prompt_eval_count") or 0),
-                            int(frame.get("eval_count") or 0),
-                        )
-                        break
-                    token = frame.get("message", {}).get("content", "")
-                    if token:
-                        yield token
-        except httpx.HTTPError as exc:
-            raise _failed(exc) from exc
-        finally:
-            await handle.client.aclose()
+                    async for line in resp.aiter_lines():
+                        if not line.strip():
+                            continue
+                        frame = json.loads(line)
+                        if frame.get("error"):
+                            raise InferenceFailed(
+                                message="Inference failed", internal_detail=str(frame["error"])
+                            )
+                        if frame.get("done"):
+                            handle.usage = (
+                                int(frame.get("prompt_eval_count") or 0),
+                                int(frame.get("eval_count") or 0),
+                            )
+                            break
+                        token = frame.get("message", {}).get("content", "")
+                        if token:
+                            yield token
+            except httpx.HTTPError as exc:
+                raise _failed(exc) from exc

@@ -13,7 +13,7 @@ import pytest
 from redis.exceptions import TimeoutError as RedisTimeoutError
 
 from adapta.domain.errors import UnknownJobKind
-from adapta.services.jobs import JOB_KEY_PREFIX, QUEUE_KEY, JobQueue
+from adapta.services.jobs import JOB_KEY_PREFIX, JOB_RESULT_TTL_SECONDS, QUEUE_KEY, JobQueue
 from adapta.worker import main as worker
 
 
@@ -46,6 +46,7 @@ class FakeRedis:
     def __init__(self):
         self.store: dict[str, str] = {}
         self.lists: dict[str, list] = {}
+        self.ttls: dict[str, int | None] = {}
         self.blpop_should_timeout = False
 
     def pipeline(self):
@@ -65,6 +66,7 @@ class FakeRedis:
 
     async def set(self, key, value, ex=None):
         self.store[key] = value
+        self.ttls[key] = ex  # None = no expiry (SET without EX clears it, as in Redis)
 
     async def lpush(self, key, value):
         self.lists.setdefault(key, []).insert(0, value)
@@ -113,6 +115,26 @@ async def test_update_status_merges_fields(queue):
     assert meta["progress"] == 0.5  # preserved across updates
     assert meta["logs"] == "done"
     assert "finished_at" in meta  # terminal status stamps a finish time
+
+
+@pytest.mark.parametrize("status", ["succeeded", "failed", "cancelled"])
+async def test_terminal_job_key_expires_within_seven_days(queue, status):
+    await queue.enqueue("job-t", "probe", {})
+    await queue.update_status("job-t", status="running")
+    key = f"{JOB_KEY_PREFIX}job-t"
+    assert queue._redis.ttls[key] is None  # in-flight keys never expire
+    await queue.update_status("job-t", status=status)
+    assert 0 < queue._redis.ttls[key] <= 7 * 24 * 3600
+    assert queue._redis.ttls[key] == JOB_RESULT_TTL_SECONDS
+
+
+async def test_requeue_clears_ttl_so_the_job_is_not_lost(queue):
+    await queue.enqueue("job-r", "probe", {})
+    await queue.update_status("job-r", status="failed", error="boom")
+    key = f"{JOB_KEY_PREFIX}job-r"
+    assert queue._redis.ttls[key] is not None
+    await queue.requeue("job-r")
+    assert queue._redis.ttls[key] is None
 
 
 async def test_get_status_missing_returns_none(queue):

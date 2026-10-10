@@ -35,6 +35,20 @@ def _backend(handler, seen=None):
     return OllamaBackend(transport=httpx.MockTransport(wrapped))
 
 
+def _tracked_backend(handler, created):
+    """Backend whose every HTTP client is recorded, so tests can assert each one closed."""
+    backend = _backend(handler)
+    make = backend._client
+
+    def tracked():
+        client = make()
+        created.append(client)
+        return client
+
+    backend._client = tracked
+    return backend
+
+
 def _req(**kw):
     return InferenceRequest(
         messages=[Message(role="user", content="hola")],
@@ -165,6 +179,30 @@ async def test_chat_http_error_is_typed():
     handle = await backend.prepare(MODEL, None)
     with pytest.raises(InferenceFailed):
         await backend.generate(handle, _req())
+
+
+async def test_prepare_without_generation_closes_its_client():
+    created: list = []
+    backend = _tracked_backend(_ok_show_then(lambda r: httpx.Response(200, json={})), created)
+    await backend.prepare(MODEL, None)  # e.g. a context-fit guard rejects before generate
+    assert created and all(c.is_closed for c in created)
+
+
+async def test_failed_prepare_closes_its_client():
+    created: list = []
+    backend = _tracked_backend(lambda r: httpx.Response(404, json={}), created)
+    with pytest.raises(ModelNotFound):
+        await backend.prepare(MODEL, None)
+    assert created and all(c.is_closed for c in created)
+
+
+async def test_generate_closes_its_client_on_error():
+    created: list = []
+    backend = _tracked_backend(_ok_show_then(lambda r: httpx.Response(500, text="oom")), created)
+    handle = await backend.prepare(MODEL, None)
+    with pytest.raises(InferenceFailed):
+        await backend.generate(handle, _req())
+    assert all(c.is_closed for c in created)
 
 
 async def test_adapter_is_rejected_if_routing_is_bypassed():

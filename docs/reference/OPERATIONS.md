@@ -21,7 +21,7 @@ strategy, graceful shutdown, and host sizing (base-model catalog). No service ne
 | Redis | the job queue + worker heartbeat | `redis-data` | ephemeral — not backed up |
 
 Redis is a transient queue; a graceful worker shutdown requeues in-flight jobs
-(§4 below), so Redis loss costs at most queued-but-unstarted jobs.
+(§4 below), so Redis loss costs at most queued-but-unstarted jobs. Finished job records (`adapta:job:*`) expire 7 days after they reach a terminal status (`JOB_RESULT_TTL_SECONDS` in `adapta/services/jobs.py`); queued and running jobs have no expiry.
 
 ---
 
