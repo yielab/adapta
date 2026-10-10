@@ -111,7 +111,7 @@ classes are defined in [`.claude/context/gates.md`](.claude/context/gates.md) ("
 | Block | Wave | Tier | Gate class | Depends on | Serialize with | Status |
 |---|---|---|---|---|---|---|
 | E1.14 | 0 | haiku | offline | none | E3.2/E3.5 (`chat.py`) | done 2026-10-08 |
-| E1.15 | 3 | sonnet | live | none | E3.5 (`rag.py`), E5.1 (`rag.py`, `worker/main.py`) | ready-for-live (e1.15) |
+| E1.15 | 3 | sonnet | live | none | E3.5 (`rag.py`), E5.1 (`rag.py`, `worker/main.py`) | done 2026-10-10 |
 | E1.10 | 0 | sonnet | rebuild (app image only) | none | E3.3b, E4.1 | done 2026-10-09 |
 | E1.11 | 0 | sonnet | live | E1.10 | any in-flight `specs/openapi.yaml` edit | done 2026-10-09 |
 | E2.1 | 1 | sonnet | live | none | E4.1, E4.9 (`core/backends/`) | done 2026-10-10 |
@@ -143,41 +143,6 @@ classes are defined in [`.claude/context/gates.md`](.claude/context/gates.md) ("
 ### E1. P0 — corrections that change the publishable evidence (weeks 1–2)
 
 E1.1–E1.9 shipped 2026-09-17 → [CHANGELOG.md](CHANGELOG.md). E1.14 closed 2026-10-08, E1.10 and E1.11 on 2026-10-09 — wave 0 is done.
-
-### E1.15 `[INFRA+BE]` Survive a hung Chroma — indexing must time out, retry and say so (P0)
-- [ ] **Context.** Measured 2026-10-10 on the live stack: the Chroma server (`chromadb/chroma` 1.5.9) stopped
-  answering (heartbeat `ReadTimeout` after 10 s, 0 % CPU — deadlocked, not busy) after a contract-gate run plus
-  concurrent indexing. The app's retrieval degraded correctly (its 10 s budget → typed 504), but the worker's index
-  job blocked **forever** on the Chroma upsert: 1 file `processing`, 29 queued, worker "healthy" (the heartbeat now
-  refreshes during a job). `docker restart adapta-chroma` cleared it (52 indexed, 8 failed). An earlier ~20 min worker
-  stall the same day (E3.7 follow-up 4) was very likely the same hang. `rag.py` builds `chromadb.HttpClient(host,
-  port)` with no timeout (`_get_chroma_client`), and the Chroma 1.x image has no curl, so compose has no healthcheck.
-  **Root cause found the same day:** the worker had **1018 open sockets against a 1024 soft limit** — a new Chroma
-  `HttpClient` is built per call and never closed (`rag.py`: "A new ChromaDB HTTP client is created on every call"),
-  leaking ~3 sockets per index job; indexing then failed with `[Errno 24] Too many open files` (restart frees them;
-  29 fds after 3 jobs). A thousand idle client connections is a plausible trigger for the Chroma hang. **Fix this
-  first:** one long-lived client per process (or close each), then measure fds flat across 100 jobs.
-- **Depends.** none. **Unblocks.** nothing formally; every live gate that indexes depends on it in practice.
-- **Agent.** sonnet · gate class **live** · serialize with: E3.7 follow-ups (`worker/main.py`, `rag.py`) ·
-  **Handoff.** must name the timeout settings, the job-level deadline, how a Chroma hang now surfaces (status,
-  `error_message`, metric/log) and the healthcheck command.
-- **Scope.** (1) A request timeout on every Chroma client call (`chromadb` HttpClient settings / httpx timeout —
-  check what 1.5.9 exposes; a setting `chroma_timeout_seconds`, default ~30 s). (2) A job-level deadline in the
-  worker (`asyncio.wait_for` around one index job, setting `index_job_timeout_seconds`, sized from the measured s/page)
-  — a timeout is a transient failure (one retry, then `failed` with a clear `error_message`). (3) A compose
-  healthcheck for chroma without curl (e.g. `python -c` is absent too — use the `/api/v2/heartbeat` via a bash
-  `/dev/tcp` probe or the image's own binary; verify what the image ships). (4) `/health/deep` reports Chroma latency.
-  Out: replacing Chroma (E6 records the pgvector option), reproducing the deadlock's trigger.
-- **Files.** `adapta/services/rag.py` (`_get_chroma_client`), `adapta/worker/main.py`, `adapta/config.py`,
-  `docker-compose.yml` (chroma healthcheck), `adapta/core/health.py`, `docs/reference/OPERATIONS.md` (Chroma section),
-  tests.
-- **Gate.** `make test` → live: worker fd count flat across 100 index jobs (`ls /proc/1/fd | wc -l` in the worker) → `docker pause adapta-chroma` during an upload → the file ends `failed` with a Chroma
-  timeout message within the deadline, the worker keeps taking jobs, `docker unpause` → re-upload indexes; chat during
-  the pause → typed 504; compose shows chroma `unhealthy` while paused.
-- **Acceptance.** No indexing job can hang longer than its deadline; a paused Chroma is visible in `docker compose ps`,
-  `/health/deep` and the file's `error_message`.
-- **Close.** OPERATIONS (Chroma troubleshooting: restart command, symptoms); Status snapshot.
-
 
 ### E2. Distribution + launch kit (weeks 2–3)
 

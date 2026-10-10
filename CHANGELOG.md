@@ -929,6 +929,61 @@ bind mount, so uvicorn reloaded on every worker edit — reload now watches `/ap
   answer, source_chunk_id}`), **behavior/classify 31 rows in 28 s** (`kind: behavior`, `task: classify`, `valid`, ≥ 20 rows
   so usable as an adapter eval set). Docs: operator-console Synthesize, knowledge-and-behavior.
 
+### E1.15 `[INFRA+BE]` Survive a hung Chroma — indexing must time out, retry and say so (P0)
+- [x] **Context.** Measured 2026-10-10 on the live stack: the Chroma server (`chromadb/chroma` 1.5.9) stopped
+  answering (heartbeat `ReadTimeout` after 10 s, 0 % CPU — deadlocked, not busy) after a contract-gate run plus
+  concurrent indexing. The app's retrieval degraded correctly (its 10 s budget → typed 504), but the worker's index
+  job blocked **forever** on the Chroma upsert: 1 file `processing`, 29 queued, worker "healthy" (the heartbeat now
+  refreshes during a job). `docker restart adapta-chroma` cleared it (52 indexed, 8 failed). An earlier ~20 min worker
+  stall the same day (E3.7 follow-up 4) was very likely the same hang. `rag.py` builds `chromadb.HttpClient(host,
+  port)` with no timeout (`_get_chroma_client`), and the Chroma 1.x image has no curl, so compose has no healthcheck.
+  **Root cause found the same day:** the worker had **1018 open sockets against a 1024 soft limit** — a new Chroma
+  `HttpClient` is built per call and never closed (`rag.py`: "A new ChromaDB HTTP client is created on every call"),
+  leaking ~3 sockets per index job; indexing then failed with `[Errno 24] Too many open files` (restart frees them;
+  29 fds after 3 jobs). A thousand idle client connections is a plausible trigger for the Chroma hang. **Fix this
+  first:** one long-lived client per process (or close each), then measure fds flat across 100 jobs.
+- **Depends.** none. **Unblocks.** nothing formally; every live gate that indexes depends on it in practice.
+- **Agent.** sonnet · gate class **live** · serialize with: E3.7 follow-ups (`worker/main.py`, `rag.py`) ·
+  **Handoff.** must name the timeout settings, the job-level deadline, how a Chroma hang now surfaces (status,
+  `error_message`, metric/log) and the healthcheck command.
+- **Scope.** (1) A request timeout on every Chroma client call (`chromadb` HttpClient settings / httpx timeout —
+  check what 1.5.9 exposes; a setting `chroma_timeout_seconds`, default ~30 s). (2) A job-level deadline in the
+  worker (`asyncio.wait_for` around one index job, setting `index_job_timeout_seconds`, sized from the measured s/page)
+  — a timeout is a transient failure (one retry, then `failed` with a clear `error_message`). (3) A compose
+  healthcheck for chroma without curl (e.g. `python -c` is absent too — use the `/api/v2/heartbeat` via a bash
+  `/dev/tcp` probe or the image's own binary; verify what the image ships). (4) `/health/deep` reports Chroma latency.
+  Out: replacing Chroma (E6 records the pgvector option), reproducing the deadlock's trigger.
+- **Files.** `adapta/services/rag.py` (`_get_chroma_client`), `adapta/worker/main.py`, `adapta/config.py`,
+  `docker-compose.yml` (chroma healthcheck), `adapta/core/health.py`, `docs/reference/OPERATIONS.md` (Chroma section),
+  tests.
+- **Gate.** `make test` → live: worker fd count flat across 100 index jobs (`ls /proc/1/fd | wc -l` in the worker) → `docker pause adapta-chroma` during an upload → the file ends `failed` with a Chroma
+  timeout message within the deadline, the worker keeps taking jobs, `docker unpause` → re-upload indexes; chat during
+  the pause → typed 504; compose shows chroma `unhealthy` while paused.
+- **Acceptance.** No indexing job can hang longer than its deadline; a paused Chroma is visible in `docker compose ps`,
+  `/health/deep` and the file's `error_message`.
+- **Close.** OPERATIONS (Chroma troubleshooting: restart command, symptoms); Status snapshot.
+- **Done.** 2026-10-10. One thread-safe process-wide Chroma client (`rag._get_chroma_client`) instead of one per call;
+  every Chroma request bounded by `chroma_timeout_seconds` (chromadb 1.5.9 exposes no setting — set on its httpx
+  session); Chroma failures in `ensure_collection`/`index_chunks` → `VectorStoreFailed` (transient, retried once); each
+  index attempt bounded by `index_job_timeout_seconds` (`asyncio.wait_for`, then `failed` with a clear message); chroma
+  compose healthcheck via bash `/dev/tcp` (the image ships bash, no curl/wget/python); `/health/deep` reports Chroma
+  latency without blocking the loop; OPERATIONS §6.7. Live on `develop` (after a host reboot): **worker fds 11 → 13
+  across 120 index jobs** (was ~3 leaked per job; 1018/1024 before), 120/120 indexed, queue drained in 5 s · `docker
+  pause adapta-chroma`: upload → 202 at once, the file **`failed` after 60 s** ("The vector index (Chroma) did not answer
+  within 30 s…"), chat → typed **504 in 10 s**, compose `unhealthy`, `/health/deep` chroma unhealthy, worker healthy and
+  still dequeuing · `docker unpause` → compose healthy, new upload indexed, chat answers from it · `make test` 350 passed
+  (11 new resilience tests incl. an fd-growth test).
+- **Handoff.** `ADAPTA_CHROMA_TIMEOUT_SECONDS=30` (per request, app + worker), `ADAPTA_INDEX_JOB_TIMEOUT_SECONDS=900` (one
+  attempt; sized generously — scanned OCR is ~1.3 s/page), `ADAPTA_CHROMA_SLOW_MS=1000` (`/health/deep` degraded).
+  A hang surfaces as: file `failed` + `error_message`, chat 504, `docker compose ps` chroma `unhealthy`, `/health/deep`.
+  Healthcheck: `bash -c "exec 3<>/dev/tcp/127.0.0.1/8000 && printf 'GET /api/v2/heartbeat HTTP/1.0\r\nHost:
+  localhost\r\n\r\n' >&3 && read -t 5 -r l <&3 && [[ $l == *\" 200 \"* ]]"` (interval 15 s, retries 3).
+- **Follow-up.** (1) Client construction itself makes an unbounded tenant check (only if Chroma hangs at the moment a
+  process first builds its client). (2) A stuck `to_thread` parse cannot be killed by `wait_for` (thread stays). (3)
+  `RAGService.retrieve` swallows `get_collection` errors as "no results". (4) `ollama_backend` leaks its httpx client
+  if `prepare()` succeeds and generation never runs. (5) What deadlocked Chroma originally was not reproduced; with the
+  leak gone it may not recur.
+
 ---
 
 ## 2026-10-08 — §E wave 0: the gates every other block is verified by
