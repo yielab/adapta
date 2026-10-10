@@ -5,6 +5,10 @@
  * Uses native fetch; call from beforeAll in spec files.
  */
 
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+
 const BASE = "http://localhost:8000/v1";
 
 const DEMO_DOC_CONTENT = `# Support Knowledge Base
@@ -39,58 +43,8 @@ A: Yes. Go to Settings → Data export and choose CSV or JSON. Exports are
 A: SAML 2.0 and OAuth2 SSO is available on Enterprise plans.
 `;
 
-const DEMO_DATASET_JSONL = [
-  {
-    messages: [
-      { role: "user", content: "My order arrived damaged. What should I do?" },
-      {
-        role: "assistant",
-        content:
-          "I'm sorry to hear your order arrived damaged. Please email support@example.com with your order number and a photo of the damage. We'll arrange a replacement or full refund within 2 business days.",
-      },
-    ],
-  },
-  {
-    messages: [
-      { role: "user", content: "How do I upgrade my plan?" },
-      {
-        role: "assistant",
-        content:
-          "To upgrade your plan, go to Settings → Billing and click 'Upgrade'. Choose the plan that fits your needs and confirm payment. The upgrade takes effect immediately.",
-      },
-    ],
-  },
-  {
-    messages: [
-      { role: "user", content: "Can I add a team member to my account?" },
-      {
-        role: "assistant",
-        content:
-          "Yes! Go to Settings → Team and click 'Invite member'. Enter their email address and select a role. They'll receive an invitation link valid for 48 hours.",
-      },
-    ],
-  },
-  {
-    messages: [
-      { role: "user", content: "What's the response time for support tickets?" },
-      {
-        role: "assistant",
-        content:
-          "Pro subscribers receive a response within 4 hours during business hours (Mon–Fri, 9 AM–6 PM EST). Free accounts have a 24-hour SLA. For urgent issues, Pro subscribers can use our live chat.",
-      },
-    ],
-  },
-  {
-    messages: [
-      { role: "user", content: "I forgot my password. How do I reset it?" },
-      {
-        role: "assistant",
-        content:
-          "On the login page, click 'Forgot password?' and enter your email. You'll receive a reset link within a few minutes. The link expires after 1 hour. If you don't see the email, check your spam folder.",
-      },
-    ],
-  },
-].map((row) => JSON.stringify(row)).join("\n");
+// The E4.1 fixture set: a 30-row classify eval set and a LoRA that passes the gate on it.
+const FIXTURES = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "tests", "fixtures", "adapters", "classify-pass");
 
 export interface SeedResult {
   token: string;
@@ -153,10 +107,12 @@ async function uploadDataset(
   token: string,
   filename: string,
   content: string,
+  task: string,
 ) {
   const blob = new Blob([content], { type: "application/jsonlines" });
   const form = new FormData();
   form.append("file", blob, filename);
+  form.append("task", task);
   const res = await fetch(`${BASE}/projects/${projectId}/datasets`, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}` },
@@ -167,6 +123,38 @@ async function uploadDataset(
     throw new Error(`Dataset upload → ${res.status}: ${txt}`);
   }
   return res.json();
+}
+
+async function pollUntil<T>(
+  what: string,
+  fetchIt: () => Promise<T>,
+  done: (v: T) => boolean,
+  failed: (v: T) => string | null,
+  maxWaitMs: number,
+) {
+  const deadline = Date.now() + maxWaitMs;
+  while (Date.now() < deadline) {
+    const v = await fetchIt();
+    const bad = failed(v);
+    if (bad) throw new Error(`${what} failed: ${bad}`);
+    if (done(v)) return v;
+    await new Promise((r) => setTimeout(r, 2000));
+  }
+  throw new Error(`${what} did not finish within ${maxWaitMs}ms`);
+}
+
+async function importAdapter(projectId: string, token: string, evalDatasetId: string) {
+  const form = new FormData();
+  form.append("file", new Blob([fs.readFileSync(path.join(FIXTURES, "adapter.gguf"))]), "adapter.gguf");
+  form.append("eval_dataset_id", evalDatasetId);
+  form.append("name", "classify-pass");
+  const res = await fetch(`${BASE}/projects/${projectId}/adapters`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: form,
+  });
+  if (!res.ok) throw new Error(`Adapter import → ${res.status}: ${await res.text()}`);
+  return res.json() as Promise<{ id: string }>;
 }
 
 async function pollFileIndexed(
@@ -258,12 +246,28 @@ export async function seedDemoData(): Promise<SeedResult> {
   // 5. Generate an API key
   await post(`/projects/${ragProject.id}/keys`, { name: "demo-key" }, token);
 
-  // 6. Upload a dataset to the fine-tune project
-  await uploadDataset(
+  // 6. Eval set (valid, task=classify, 30 rows) → import the passing adapter → wait for the gate
+  const ds = await uploadDataset(
     finetuneProject.id,
     token,
-    "customer-tone.jsonl",
-    DEMO_DATASET_JSONL,
+    "dataset_eval.jsonl",
+    fs.readFileSync(path.join(FIXTURES, "dataset_eval.jsonl"), "utf8"),
+    "classify",
+  );
+  await pollUntil(
+    "dataset validation",
+    () => get(`/projects/${finetuneProject.id}/datasets/${ds.id}`, token),
+    (d: { status: string }) => d.status === "valid",
+    (d: { status: string; validation_error?: string }) => (d.status === "invalid" ? (d.validation_error ?? "invalid") : null),
+    30_000,
+  );
+  const ad = await importAdapter(finetuneProject.id, token, ds.id);
+  await pollUntil(
+    "adapter eval gate",
+    () => get(`/projects/${finetuneProject.id}/adapters/${ad.id}`, token),
+    (a: { status: string }) => a.status === "passed",
+    (a: { status: string; failure_reason?: string }) => (a.status === "failed" ? (a.failure_reason ?? "failed") : null),
+    180_000,
   );
 
   return {

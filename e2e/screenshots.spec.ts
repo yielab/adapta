@@ -22,6 +22,7 @@ const CREDS = { email: "admin@example.com", password: "admin12345" };
 let seed: SeedResult;
 
 test.beforeAll(async () => {
+  test.setTimeout(300_000); // dataset validation + the adapter eval gate run on the live worker
   seed = await seedDemoData();
 });
 
@@ -110,14 +111,18 @@ test("project-rag-playground", async ({ page }) => {
   });
 });
 
-// ── 6. Fine-tune project — setup tab (dataset uploaded) ───────────────────
+// ── 6. Fine-tune project — eval set → adapter → gate verdict → serve ──────
 test("project-finetune-setup", async ({ page }) => {
   await login(page);
   await openProject(page, seed.finetuneProjectId);
+  // The seeded adapter has passed the gate: the verdict card must be on screen.
+  await expect(page.getByRole("heading", { name: /4 · Verification/ })).toBeVisible();
+  await expect(page.getByText("Passed the gate", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /5 · Serve/ })).toBeVisible();
   await page.waitForTimeout(800);
   await page.screenshot({
     path: path.join(OUT, "project-finetune-setup.png"),
-    fullPage: false,
+    fullPage: true,
   });
 });
 
