@@ -32,7 +32,7 @@ infrastructure** — there is no telemetry and no callback to any external servi
 It answers two needs that have no good *private* solution today:
 
 - 📚 **Give it knowledge (RAG)** — answer from *your* documents, with citations. Retrieval is
-  **hybrid**: semantic vector search *and* BM25 keyword search, fused and re-scored by a
+  **hybrid**: semantic vector search *and* Postgres full-text keyword search over the whole corpus, fused and re-scored by a
   cross-encoder reranker, so exact terms (product codes, names) survive alongside meaning. The
   model's weights never change. **CPU-only.**
 - 🎛️ **Change how it behaves (fine-tuning / LoRA)** — train an adapter on *your* data; it only goes live after passing an automatic **eval gate**. **Needs a GPU.**
@@ -372,7 +372,7 @@ bundle format and an SDK call: [Image understanding (OCR)](docs/user-guide/ocr-v
 | | 📚 Knowledge (RAG) | 🎛️ Fine-tuning (LoRA) |
 | --- | --- | --- |
 | Changes model weights? | No (retrieval at query time) | Yes — a trained adapter |
-| How context is found | Hybrid vector + BM25 → RRF → cross-encoder rerank → top-k cited chunks | n/a — behavior is in the adapter weights |
+| How context is found | Hybrid vector + Postgres FTS → RRF → cross-encoder rerank → top-k cited chunks | n/a — behavior is in the adapter weights |
 | Input | PDF/DOCX/TXT/MD/HTML | Instruction pairs (JSONL), or image+instruction bundles (vision) |
 | Hardware | CPU | GPU |
 | Speed | Seconds to index | Minutes–hours to train |
@@ -413,7 +413,7 @@ retrieval, voice from the adapter, in a single call.
 | Inference | llama-cpp-python (GGUF models) |
 | Fine-tuning | PEFT / TRL (QLoRA), PyTorch — in a separate GPU worker |
 | Vector store · Embeddings | ChromaDB (per-project) · sentence-transformers |
-| Retrieval | Hybrid: vector + BM25, fused via Reciprocal Rank Fusion, cross-encoder reranker |
+| Retrieval | Hybrid: vector + Postgres FTS, fused via Reciprocal Rank Fusion, cross-encoder reranker |
 | Metadata DB | PostgreSQL + SQLAlchemy 2.x (async) + Alembic |
 | Job queue | Redis + `redis.asyncio` (BLPOP worker) |
 | Operator console | Vite + Svelte 5 + TypeScript (static SPA, served same-origin) |

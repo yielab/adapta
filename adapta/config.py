@@ -3,6 +3,7 @@ All env vars are prefixed ADAPTA_ (e.g. ADAPTA_DATABASE_URL).
 """
 
 from pathlib import Path
+from typing import Literal
 
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -81,9 +82,14 @@ class Settings(BaseSettings):
     chroma_host: str = "chroma"
     chroma_port: int = 8000
     rag_top_k: int = 5
-    # Hybrid retrieval (D5): fetch top_k * N vector candidates before BM25 fusion
-    # so the keyword signal has a larger pool to reorder. 4× keeps latency low on CPU.
+    # Hybrid retrieval (D5): fetch top_k * N vector candidates from Chroma for the
+    # dense leg of the RRF fusion. 4× keeps latency low on CPU.
     rag_hybrid_fetch_multiplier: int = 4
+    # Sparse leg (E3.2): Postgres full-text search over chunks.tsv, top_k * N hits.
+    rag_sparse_fetch_multiplier: int = 4
+    # Text-search config for the query side: simple | english | spanish. chunks.tsv is
+    # generated with 'simple' (E3.1), so anything else only matches after E3.6 regenerates it.
+    rag_fts_config: Literal["simple", "english", "spanish"] = "simple"
     # Cross-encoder reranker model (D5). Set to "" to disable; rag_timeout_seconds
     # guards the whole retrieval path including reranking.
     rag_reranker_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"

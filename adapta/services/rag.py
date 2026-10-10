@@ -2,9 +2,9 @@
 RAG service: per-project ChromaDB collections + hybrid cited retrieval.
 
 Retrieval pipeline (D5):
-  1. Vector search — fetch top_k × multiplier candidates from Chroma.
-  2. BM25 score — keyword signal over the same candidates.
-  3. Reciprocal Rank Fusion — merge the two ranked lists.
+  1. Dense leg — top top_k × multiplier candidates from Chroma.
+  2. Sparse leg — Postgres full-text search over ``chunks.tsv`` (whole corpus, E3.2).
+  3. Reciprocal Rank Fusion of the two independent ranked lists.
   4. Optional cross-encoder rerank over the top candidates.
   5. Return top_k chunks, best-first (§A4.3 pop() invariant preserved).
 """
@@ -14,7 +14,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import math
-import re
+import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, List, Literal, Optional
 
@@ -39,6 +39,7 @@ class RetrievedChunk:
     # a cross-encoder sigmoid or 1 − cosine distance. Callers (citations) need to
     # know which, so both construction sites below fill this explicitly.
     score_kind: Literal["reranker", "vector"]
+    chunk_id: str = ""  # "{file_id}_{index}" — for the retrieval log line
 
 
 def content_hash(text: str) -> str:
@@ -123,57 +124,66 @@ def collection_name_for(project_id: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _tokenize(text: str) -> list[str]:
-    return re.findall(r"\w+", text.lower())
+@dataclass
+class _FtsHit:
+    id: str
+    text: str
+    source: str
+    chunk_index: int
 
 
-def _bm25_scores(
-    query: str,
-    docs: list[str],
-    k1: float = 1.5,
-    b: float = 0.75,
-) -> list[float]:
-    """BM25 relevance score for *query* against each document in *docs*.
+_FTS_SQL = """
+SELECT c.id, c.text, c.chunk_index, f.filename
+FROM chunks c JOIN project_files f ON f.id = c.file_id
+WHERE c.project_id = :p AND c.tsv @@ websearch_to_tsquery(CAST(:cfg AS regconfig), :q)
+ORDER BY ts_rank_cd(c.tsv, websearch_to_tsquery(CAST(:cfg AS regconfig), :q)) DESC, c.id
+LIMIT :n
+"""
 
-    Standard Robertson BM25 with k1=1.5 and b=0.75 on whitespace tokens.
-    Returns one float per document; higher = more relevant.
+_fts_engine = None
+
+
+def _get_fts_engine():
+    """Lazy NullPool engine for the sparse leg.
+
+    ``retrieve()`` is synchronous and runs in worker threads (``chat._retrieve``) or
+    plain scripts, so it cannot borrow the app's loop-bound async engine. NullPool opens
+    each connection inside the loop ``asyncio.run`` creates for the call, so the engine
+    is safe to share across threads and loops.
     """
-    if not docs:
-        return []
+    global _fts_engine
+    if _fts_engine is None:
+        from sqlalchemy.ext.asyncio import create_async_engine
+        from sqlalchemy.pool import NullPool
 
-    query_tokens = set(_tokenize(query))
-    tokenized_docs = [_tokenize(d) for d in docs]
-    dl = [len(td) for td in tokenized_docs]
-    avgdl = sum(dl) / len(dl) if dl else 1.0
-    n_docs = len(docs)
-
-    scores: list[float] = []
-    for i, doc_tokens in enumerate(tokenized_docs):
-        tf_map: dict[str, int] = {}
-        for t in doc_tokens:
-            tf_map[t] = tf_map.get(t, 0) + 1
-
-        score = 0.0
-        for t in query_tokens:
-            tf = tf_map.get(t, 0)
-            if tf == 0:
-                continue
-            df = sum(1 for td in tokenized_docs if t in set(td))
-            idf = math.log((n_docs - df + 0.5) / (df + 0.5) + 1)
-            score += idf * (tf * (k1 + 1)) / (tf + k1 * (1 - b + b * dl[i] / avgdl))
-
-        scores.append(score)
-
-    return scores
+        _fts_engine = create_async_engine(settings.database_url, poolclass=NullPool)
+    return _fts_engine
 
 
-def _rrf_fuse(*rank_lists: list[int], k: int = 60) -> list[int]:
-    """Reciprocal Rank Fusion over multiple ranked index lists.
+def _fts_search(project_id: str, query: str, limit: int) -> List[_FtsHit]:
+    """Sparse leg: ranked Postgres full-text hits over the project's whole corpus."""
+    import asyncio
 
-    Each list contains document indices ordered best-first.  Returns a merged
-    list of indices ordered by descending RRF score.
+    from sqlalchemy import text as sql_text
+
+    async def _run() -> List[_FtsHit]:
+        async with _get_fts_engine().connect() as conn:
+            rows = await conn.execute(
+                sql_text(_FTS_SQL),
+                {"p": project_id, "cfg": settings.rag_fts_config, "q": query, "n": limit},
+            )
+            return [_FtsHit(r.id, r.text, r.filename, r.chunk_index) for r in rows]
+
+    return asyncio.run(_run())
+
+
+def _rrf_fuse(*rank_lists: list, k: int = 60) -> list:
+    """Reciprocal Rank Fusion over multiple ranked id lists.
+
+    Each list contains chunk ids ordered best-first.  Returns the union ordered by
+    descending RRF score (ties keep first-seen order).
     """
-    rrf: dict[int, float] = {}
+    rrf: dict = {}
     for ranks in rank_lists:
         for rank, idx in enumerate(ranks):
             rrf[idx] = rrf.get(idx, 0.0) + 1.0 / (k + rank + 1)
@@ -285,17 +295,18 @@ class RAGService:
         query: str,
         top_k: Optional[int] = None,
     ) -> List[RetrievedChunk]:
-        """Hybrid retrieval: vector + BM25 fused via RRF, optional cross-encoder reranker.
+        """Hybrid retrieval: Chroma vector leg + Postgres FTS leg fused via RRF, then rerank.
 
-        Pipeline (D5):
-          1. Fetch fetch_k = top_k × multiplier candidates via Chroma vector search.
-          2. BM25-score those candidates against the query.
-          3. Reciprocal Rank Fusion of vector order + BM25 order.
+        Pipeline:
+          1. Dense: fetch top_k × rag_hybrid_fetch_multiplier candidates from Chroma.
+          2. Sparse: Postgres FTS over chunks.tsv, top_k × rag_sparse_fetch_multiplier.
+          3. RRF over the two independent ranked lists (union by chunk id).
           4. Optional cross-encoder reranker over the top rerank_n candidates.
-          5. Return top_k, best-first (§A4.3 pop() invariant preserved).
+          5. Return top_k, best-first (§A4.3 pop() invariant preserved); log one line.
 
         Citations reflect the final reranked scores (§A4.3 ordering).
         """
+        t0 = time.perf_counter()
         top_k = top_k or settings.rag_top_k
         fetch_k = max(top_k * settings.rag_hybrid_fetch_multiplier, top_k + 1)
 
@@ -333,28 +344,44 @@ class RAGService:
             include=["documents", "metadatas", "distances"],
         )
 
+        ids: list[str] = results["ids"][0]
         docs: list[str] = results["documents"][0]
         metas: list[dict] = results["metadatas"][0]
         dists: list[float] = results["distances"][0]
 
-        if not docs:
+        # Sparse leg over the whole corpus. A Postgres failure degrades to vector-only
+        # rather than failing the request (the dense leg is still a valid answer).
+        try:
+            fts_hits = _fts_search(project_id, query, top_k * settings.rag_sparse_fetch_multiplier)
+        except Exception as exc:
+            logger.warning("rag fts leg failed, vector-only: %r", exc)
+            fts_hits = []
+
+        if not docs and not fts_hits:
             return []
 
-        bm25 = _bm25_scores(query, docs)
-        vec_order = list(range(len(docs)))
-        bm25_order = sorted(range(len(docs)), key=lambda i: bm25[i], reverse=True)
-        fused_order = _rrf_fuse(vec_order, bm25_order)
-
-        candidates: List[RetrievedChunk] = [
-            RetrievedChunk(
-                text=docs[idx],
-                source=metas[idx].get("source", "unknown"),
-                score=1.0 - dists[idx],  # cosine distance → similarity
-                chunk_index=metas[idx].get("chunk_index", 0),
+        by_id: dict[str, RetrievedChunk] = {
+            cid: RetrievedChunk(
+                text=docs[i],
+                source=metas[i].get("source", "unknown"),
+                score=1.0 - dists[i],  # cosine distance → similarity
+                chunk_index=metas[i].get("chunk_index", 0),
                 score_kind="vector",
+                chunk_id=cid,
             )
-            for idx in fused_order
-        ]
+            for i, cid in enumerate(ids)
+        }
+        for h in fts_hits:
+            # Keyword-only hit the embedder missed: no cosine score exists for it.
+            by_id.setdefault(
+                h.id,
+                RetrievedChunk(
+                    text=h.text, source=h.source, score=0.0,
+                    chunk_index=h.chunk_index, score_kind="vector", chunk_id=h.id,
+                ),
+            )
+        fused_ids = _rrf_fuse(ids, [h.id for h in fts_hits])
+        candidates: List[RetrievedChunk] = [by_id[cid] for cid in fused_ids]
 
         reranker = get_reranker_service()
         if reranker is not None and len(candidates) > 1:
@@ -375,12 +402,26 @@ class RAGService:
                     score=round(1.0 / (1.0 + math.exp(-s)), 4),
                     chunk_index=c.chunk_index,
                     score_kind="reranker",
+                    chunk_id=c.chunk_id,
                 )
                 for s, c in ranked
             ]
             candidates = reranked + candidates[rerank_n:]
 
-        return candidates[:top_k]
+        final = candidates[:top_k]
+        fused_rank = {cid: r for r, cid in enumerate(fused_ids)}
+        logger.info(
+            "rag.retrieve q=%s project=%s vec=%d fts=%d fused=%d ids=%s scores=%s ms=%d",
+            hashlib.sha256(query.encode("utf-8")).hexdigest()[:12],
+            project_id,
+            len(ids),
+            len(fts_hits),
+            len(fused_ids),
+            [f"{c.chunk_id}@{fused_rank[c.chunk_id]}" for c in final],
+            [round(c.score, 4) for c in final],
+            int((time.perf_counter() - t0) * 1000),
+        )
+        return final
 
     def build_context_block(self, chunks: List[RetrievedChunk]) -> str:
         """Format retrieved chunks into a numbered context block for the system prompt.

@@ -24,7 +24,7 @@ alternatives, and where it lives in the codebase.
 | llama-cpp-python | GGUF model inference (CPU and GPU) | AI: Inference |
 | sentence-transformers | Text → dense embedding vectors; cross-encoder reranking | AI: Retrieval |
 | ChromaDB | Per-project vector collections | AI: Retrieval |
-| BM25 + RRF (in-process) | Keyword signal fused with vector search — no extra service | AI: Retrieval |
+| Postgres FTS + RRF | Keyword signal over the whole corpus fused with vector search — no extra service | AI: Retrieval |
 | PEFT + TRL | QLoRA fine-tuning (adapter training) | AI: Training |
 | bcrypt + JWT | Password hashing, session auth, scoped API keys | Auth |
 
@@ -265,7 +265,7 @@ Key files: `adapta/services/rag.py`, `adapta/services/embeddings.py`
 
 ---
 
-### Hybrid ranking — BM25 + Reciprocal Rank Fusion + cross-encoder
+### Hybrid ranking — Postgres FTS + Reciprocal Rank Fusion + cross-encoder
 
 Vector search alone has a well-known blind spot: it matches *meaning*, so it can
 miss an exact token that carries all the signal — a part number, an error code,
@@ -278,8 +278,8 @@ Retrieval therefore runs both and merges them, in four stages:
 | Stage | What it does | Why |
 |---|---|---|
 | 1. Vector search | Fetch `top_k × 4` nearest chunks from Chroma | A wider candidate pool than is returned, so later stages have something to reorder |
-| 2. BM25 | Score those candidates by keyword relevance (Robertson BM25, `k1=1.5`, `b=0.75`) | Recovers exact-term matches the embedding smoothed away |
-| 3. Reciprocal Rank Fusion | Merge the two rankings by `Σ 1/(k + rank)`, `k=60` | Combines rank *positions*, so two incomparable score scales never have to be normalized against each other |
+| 2. Full-text search | Postgres FTS (`ts_rank_cd` over `chunks.tsv`, `top_k × 4` hits) over the project's *whole* corpus, independent of stage 1 | Recovers exact-term matches the embedding smoothed away, including chunks the vector stage never returned |
+| 3. Reciprocal Rank Fusion | Merge the two independent rankings (union by chunk id) by `Σ 1/(k + rank)`, `k=60` | Combines rank *positions*, so two incomparable score scales never have to be normalized against each other |
 | 4. Cross-encoder rerank | Re-score the top `top_k × 2` with a cross-encoder, sigmoid-normalized | The most accurate stage, run last on the fewest candidates |
 
 **Bi-encoder vs cross-encoder.** The embedding model is a *bi-encoder*: it
@@ -290,12 +290,15 @@ both — markedly more accurate, and far too slow to run over a whole
 collection. Running it over a handful of already-shortlisted candidates buys
 most of the accuracy for a bounded cost.
 
-**Why BM25 in-process rather than a search engine?** BM25 here is ~30 lines of
-pure Python scoring an already-fetched candidate list — no Elasticsearch, no
-second index to keep in sync with Chroma, no new container. The trade-off is
-that the keyword signal only reranks what vector search already retrieved; it
-cannot surface a chunk the vector stage missed entirely. Widening the candidate
-pool (`ADAPTA_RAG_HYBRID_FETCH_MULTIPLIER`) is the dial for that.
+**Why Postgres full-text rather than a search engine?** The chunk text already
+lives in Postgres (`chunks`, with a generated `tsv` column and a GIN index), so
+the keyword leg is one indexed query: no Elasticsearch, no second index to keep
+in sync, no new container. Because it searches the whole corpus rather than the
+vector candidates, a chunk the embedder missed can still be recalled by an exact
+term. Dials: `ADAPTA_RAG_SPARSE_FETCH_MULTIPLIER` (FTS list size) and
+`ADAPTA_RAG_FTS_CONFIG` (`simple` default; `english`/`spanish` only match once
+`chunks.tsv` is regenerated with that config). If Postgres is unreachable the
+request degrades to vector-only and logs a warning.
 
 **Cost and how to turn it off.** The reranker is a second small model
 (~90 MB, `cross-encoder/ms-marco-MiniLM-L-6-v2`), lazily loaded on first use in
@@ -303,7 +306,7 @@ the `app` container. Setting `ADAPTA_RAG_RERANKER_MODEL=""` disables stage 4
 and falls back to the RRF-fused order — lower latency and RAM, slightly lower
 accuracy. The whole path is bounded by `ADAPTA_RAG_TIMEOUT_SECONDS`.
 
-Key file: `adapta/services/rag.py` (`_bm25_scores`, `_rrf_fuse`,
+Key file: `adapta/services/rag.py` (`_fts_search`, `_rrf_fuse`,
 `RAGService.retrieve`)
 
 ---

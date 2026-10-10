@@ -1,75 +1,26 @@
 """
-D5 — hybrid (BM25+vector) retrieval + cross-encoder reranker.
+D5/E3.2 — hybrid (Postgres FTS + vector) retrieval + cross-encoder reranker.
 
-Pure unit tests: no Chroma, no model loading.  The pure functions (_bm25_scores,
-_rrf_fuse) are tested with synthetic data; RAGService.retrieve() is tested by
+Pure unit tests: no Chroma, no Postgres, no model loading.  The pure function _rrf_fuse is tested with synthetic data; RAGService.retrieve() is tested by
 monkeypatching Chroma and the reranker so no network or GPU is needed.
 """
 
-from adapta.services.rag import (
-    RAGService,
-    RetrievedChunk,
-    _bm25_scores,
-    _rrf_fuse,
-    _tokenize,
-)
+import logging
 
-# ---------------------------------------------------------------------------
-# _tokenize
-# ---------------------------------------------------------------------------
+import pytest
+
+from adapta.services import rag as rag_mod
+from adapta.services.rag import RAGService, RetrievedChunk, _FtsHit, _rrf_fuse
 
 
-def test_tokenize_lowercases_and_strips_punctuation():
-    tokens = _tokenize("Hello, World! It's a test.")
-    assert "hello" in tokens
-    assert "world" in tokens
-    assert "," not in tokens
+@pytest.fixture(autouse=True)
+def _no_postgres(monkeypatch):
+    """Default sparse leg: no hits. Individual tests override with `_fts(...)`."""
+    monkeypatch.setattr(rag_mod, "_fts_search", lambda *a, **k: [])
 
 
-# ---------------------------------------------------------------------------
-# _bm25_scores
-# ---------------------------------------------------------------------------
-
-
-def test_bm25_empty_docs():
-    assert _bm25_scores("anything", []) == []
-
-
-def test_bm25_no_overlap_returns_zero():
-    scores = _bm25_scores("dragon unicorn", ["apple banana cherry"])
-    assert scores == [0.0]
-
-
-def test_bm25_exact_match_scores_highest():
-    docs = [
-        "The capital of France is Paris.",  # idx 0 — matches "capital Paris France"
-        "London is in the United Kingdom.",  # idx 1 — no overlap
-        "Paris has the Eiffel Tower.",  # idx 2 — matches "Paris" only
-    ]
-    scores = _bm25_scores("capital Paris France", docs)
-    assert len(scores) == 3
-    # Doc 0 contains all three query tokens; must outscore docs 1 and 2.
-    assert scores[0] > scores[1]
-    assert scores[0] > scores[2]
-
-
-def test_bm25_all_query_terms_present_beats_partial():
-    docs = [
-        "quick brown fox jumps over the lazy dog",  # all terms
-        "quick brown fox",  # partial
-    ]
-    scores = _bm25_scores("quick brown fox", docs)
-    # Both have the query terms, but length penalises the long doc slightly via b.
-    # The shorter doc (idx 1) gets a higher per-term TF contribution so it scores higher.
-    # Either way, both should be positive.
-    assert scores[0] > 0
-    assert scores[1] > 0
-
-
-def test_bm25_returns_one_score_per_doc():
-    docs = ["a", "b c", "d e f"]
-    scores = _bm25_scores("a b", docs)
-    assert len(scores) == len(docs)
+def _fts(monkeypatch, hits):
+    monkeypatch.setattr(rag_mod, "_fts_search", lambda *a, **k: hits)
 
 
 # ---------------------------------------------------------------------------
@@ -121,6 +72,7 @@ def _make_chroma_mock(docs: list[str], metas: list[dict], dists: list[float]):
             # Cap at what's "in the collection" — mirrors real Chroma behaviour.
             n = min(n, len(docs))
             return {
+                "ids": [[f"f_{i}" for i in range(n)]],
                 "documents": [docs[:n]],
                 "metadatas": [metas[:n]],
                 "distances": [dists[:n]],
@@ -138,55 +90,64 @@ class _FakeEmbedder:
         return [0.0] * 8  # fixed dummy vector
 
 
-def test_retrieve_hybrid_promotes_keyword_match(monkeypatch):
-    """BM25+RRF fusion promotes the keyword-rich doc above the pure-vector leader.
-
-    Construction (5 docs, docs provided in vector-rank order — smallest dist first):
-      - "weather" (idx 0): vec_rank=0 (best by vector), BM25 rank=4 (no query keywords)
-      - "paris"   (idx 1): vec_rank=1, BM25 rank=3 (only "paris")
-      - "eiffel"  (idx 2): vec_rank=2, BM25 rank=0 (all four query tokens)
-      - "tower"   (idx 3): vec_rank=3, BM25 rank=1 ("tower"+"landmark")
-      - "french"  (idx 4): vec_rank=4, BM25 rank=2 ("landmark"+"paris")
-
-    RRF with k=60 (approximate):
-      eiffel: 1/(63) + 1/(61) ≈ 0.03227  ← highest
-      weather: 1/(61) + 1/(65) ≈ 0.03178
-
-    RRF is symmetric for a pure rank-swap of two docs, but here the BM25 rank gap
-    (4) is larger than the vector rank gap (2), so eiffel wins.
-    """
-    docs = [
-        "The weather forecast shows rain in London today.",  # vec_rank=0
-        "Paris is the capital city of France.",  # vec_rank=1
-        "The Eiffel Tower is a famous landmark in Paris.",  # vec_rank=2, BM25 rank=0
-        "The tower bridge landmark is located in London.",  # vec_rank=3
-        "French culture includes visits to landmark sites in Paris.",  # vec_rank=4
-    ]
-    metas = [
-        {"source": "weather", "chunk_index": 0},
-        {"source": "paris", "chunk_index": 1},
-        {"source": "eiffel", "chunk_index": 2},
-        {"source": "tower", "chunk_index": 3},
-        {"source": "french", "chunk_index": 4},
-    ]
-    dists = [0.05, 0.12, 0.20, 0.30, 0.40]  # ascending = vector-rank order
-
-    chroma_client = _make_chroma_mock(docs, metas, dists)
-    monkeypatch.setattr("adapta.services.rag._get_chroma_client", lambda: chroma_client)
+def _std_chroma(monkeypatch, n=10):
+    docs = [f"doc text {i}" for i in range(n)]
+    metas = [{"source": f"s{i}", "chunk_index": i} for i in range(n)]
+    dists = [i * 0.05 for i in range(n)]
+    monkeypatch.setattr(
+        "adapta.services.rag._get_chroma_client", lambda: _make_chroma_mock(docs, metas, dists)
+    )
     monkeypatch.setattr("adapta.services.rag.get_embedding_service", lambda: _FakeEmbedder())
-    # Disable cross-encoder — testing BM25+RRF signal only.
     monkeypatch.setattr("adapta.services.rag.get_reranker_service", lambda: None)
 
-    rag = RAGService()
-    chunks = rag.retrieve("proj-1", "Eiffel Tower Paris landmark", top_k=5)
 
-    assert len(chunks) == 5
+def test_retrieve_returns_keyword_hit_outside_vector_candidates(monkeypatch):
+    """A chunk the vector leg never returned, but FTS ranks first, is recalled."""
+    _std_chroma(monkeypatch, n=12)
+    _fts(monkeypatch, [_FtsHit("zz_0", "error code ERR-4471 means disk full", "ops.md", 7)])
+
+    chunks = RAGService().retrieve("p", "ERR-4471", top_k=3)
+
+    # fetch_k = 3*4 = 12 vector hits, none is zz_0; RRF puts the FTS-only top hit in.
+    hit = [c for c in chunks if c.source == "ops.md"]
+    assert hit and hit[0].chunk_index == 7 and "ERR-4471" in hit[0].text
+    assert hit[0].chunk_id == "zz_0"
+
+
+def test_retrieve_fts_promotes_vector_candidate(monkeypatch):
+    """Agreement between legs lifts a low vector rank above the vector leader."""
+    _std_chroma(monkeypatch)
+    _fts(monkeypatch, [_FtsHit("f_3", "doc text 3", "s3", 3)])
+
+    chunks = RAGService().retrieve("p", "q", top_k=5)
     sources = [c.source for c in chunks]
+    assert sources.index("s3") < sources.index("s2")  # f_3 in both lists beats f_2
 
-    # After hybrid RRF, "eiffel" must rank above "weather" (which had the vector lead).
-    assert sources.index("eiffel") < sources.index("weather"), (
-        f"Eiffel doc should rank above weather doc after BM25+RRF; got {sources}"
-    )
+
+def test_retrieve_survives_fts_failure(monkeypatch):
+    _std_chroma(monkeypatch)
+
+    def boom(*a, **k):
+        raise RuntimeError("postgres down")
+
+    monkeypatch.setattr(rag_mod, "_fts_search", boom)
+    chunks = RAGService().retrieve("p", "q", top_k=4)
+    assert [c.source for c in chunks] == ["s0", "s1", "s2", "s3"]
+
+
+def test_retrieve_logs_one_structured_line(monkeypatch, caplog):
+    _std_chroma(monkeypatch)
+    _fts(monkeypatch, [_FtsHit("f_1", "doc text 1", "s1", 1)])
+    with caplog.at_level(logging.INFO, logger="adapta.services.rag"):
+        RAGService().retrieve("p", "q", top_k=2)
+    lines = [r.getMessage() for r in caplog.records if r.getMessage().startswith("rag.retrieve")]
+    assert len(lines) == 1
+    assert "fts=1" in lines[0] and "f_1@" in lines[0] and "ms=" in lines[0]
+
+
+def test_bm25_is_gone():
+    assert not hasattr(rag_mod, "_bm25_scores")
+    assert not hasattr(rag_mod, "_tokenize")
 
 
 def test_retrieve_returns_top_k(monkeypatch):
