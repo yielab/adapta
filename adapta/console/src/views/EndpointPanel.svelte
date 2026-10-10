@@ -7,7 +7,7 @@
   import { api, ApiError } from "../lib/api";
   import { toastError, toastSuccess } from "../lib/toast";
   import { rememberKey } from "../lib/keyvault";
-  import type { Project, Endpoint, ApiKey, ApiKeyCreated } from "../lib/types";
+  import type { Project, Endpoint, Adapter, AdapterEvent, ApiKey, ApiKeyCreated } from "../lib/types";
   import StatusBadge from "../components/StatusBadge.svelte";
   import Modal from "../components/Modal.svelte";
   import ConfirmDialog from "../components/ConfirmDialog.svelte";
@@ -20,6 +20,17 @@
   let noEndpoint = $state(false); // 404 — not created yet
   let loadingEndpoint = $state(true);
   let endpointErr = $state(false);
+
+  // ── adapters + audit trail (fine-tune endpoints, E4.5) ─────────────────────
+  let adapters = $state<Adapter[]>([]);
+  let history = $state<AdapterEvent[]>([]);
+  let promoteTarget = $state<Adapter | null>(null);
+  let promoting = $state(false);
+  const passedAdapters = $derived(adapters.filter((a) => a.status === "passed"));
+  // The newest history row is what the endpoint serves; a rollback restores an earlier one.
+  const previousAdapterId = $derived(
+    history.slice(1).find((e) => e.adapter_id && e.adapter_id !== endpoint?.adapter?.id)?.adapter_id ?? null,
+  );
 
   // ── keys ──────────────────────────────────────────────────────────────────
   let keys = $state<ApiKey[]>([]);
@@ -79,6 +90,8 @@
     loadedId = project.id;
     endpoint = null;
     keys = [];
+    adapters = [];
+    history = [];
     createdKey = null;
     void loadEndpoint();
     void loadKeys();
@@ -90,6 +103,7 @@
     noEndpoint = false;
     try {
       endpoint = await api.getEndpoint(project.id);
+      if (endpoint.project_type === "finetune") void loadAdapterState();
     } catch (e) {
       if (e instanceof ApiError && e.status === 404) {
         noEndpoint = true;
@@ -101,6 +115,38 @@
     } finally {
       loadingEndpoint = false;
     }
+  }
+
+  async function loadAdapterState() {
+    try {
+      [adapters, history] = await Promise.all([api.listAdapters(project.id), api.endpointHistory(project.id)]);
+    } catch (e) {
+      if (e instanceof ApiError) toastError(e.message, e.correlationId);
+      else toastError("Could not load the adapters.");
+    }
+  }
+
+  async function doPromote() {
+    if (!promoteTarget || promoting) return;
+    promoting = true;
+    try {
+      endpoint = await api.promoteAdapter(project.id, promoteTarget.id);
+      toastSuccess(`Now serving "${promoteTarget.name}". The next request uses it; no restart needed.`);
+      promoteTarget = null;
+      await loadAdapterState();
+    } catch (e) {
+      if (e instanceof ApiError) toastError(e.message, e.correlationId);
+      else toastError("Could not switch the adapter.");
+    } finally {
+      promoting = false;
+    }
+  }
+
+  // "adapter vs base" on the task metric, e.g. "0.92 vs 0.40 (+0.52)".
+  function scoreLine(m: Adapter["eval_metrics"]): string {
+    if (!m || m.adapter_score === undefined || m.base_score === undefined) return "—";
+    const d = m.adapter_score - m.base_score;
+    return `${m.adapter_score.toFixed(2)} vs ${m.base_score.toFixed(2)} (${d >= 0 ? "+" : ""}${d.toFixed(2)})`;
   }
 
   async function loadKeys() {
@@ -257,6 +303,65 @@
   {/if}
 </div>
 
+<!-- ── Adapters (fine-tune endpoints): promote / roll back, with the audit trail ── -->
+{#if endpoint && endpoint.project_type === "finetune"}
+  <div class="card">
+    <h2 style="margin: 0 0 6px; font-size: 16px;">Adapters</h2>
+    <small class="muted">
+      Only adapters that passed the eval gate can be served. Switching takes effect on the next request;
+      no restart.
+    </small>
+    {#if passedAdapters.length === 0}
+      <p class="muted">No passed adapters.</p>
+    {:else}
+      <table>
+        <thead>
+          <tr><th>Adapter</th><th>Task score vs base</th><th>Imported</th><th></th></tr>
+        </thead>
+        <tbody>
+          {#each passedAdapters as a (a.id)}
+            <tr>
+              <td>
+                {a.name}
+                {#if a.id === endpoint.adapter?.id}<span class="badge-current">current</span>{/if}
+              </td>
+              <td class="mono">{scoreLine(a.eval_metrics)}</td>
+              <td>{fmtDate(a.created_at)}</td>
+              <td>
+                {#if a.id !== endpoint.adapter?.id}
+                  <button class="ghost sm" onclick={() => (promoteTarget = a)}>
+                    {a.id === previousAdapterId ? "Roll back" : "Promote"}
+                  </button>
+                {/if}
+              </td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+    {/if}
+
+    {#if history.length > 0}
+      <h3 style="margin: 14px 0 4px; font-size: 14px;">History</h3>
+      <table>
+        <thead>
+          <tr><th>When</th><th>Action</th><th>Adapter</th><th>Score vs base</th><th>By</th></tr>
+        </thead>
+        <tbody>
+          {#each history as e (e.id)}
+            <tr>
+              <td>{fmtDate(e.created_at)}</td>
+              <td>{e.action}</td>
+              <td>{e.adapter_name ?? "(deleted)"}</td>
+              <td class="mono">{scoreLine(e.eval_metrics)}</td>
+              <td>{e.actor_email ?? "—"}</td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+    {/if}
+  </div>
+{/if}
+
 <!-- ── API keys ───────────────────────────────────────────────────────────── -->
 {#if endpoint}
   <div class="card">
@@ -395,5 +500,17 @@
   .comp-sep { color: var(--muted); font-weight: 600; }
   .comp-base { font-weight: 600; }
   .comp-adapter { color: var(--text); }
+  .badge-current { margin-left: 6px; padding: 1px 6px; border-radius: 8px; font-size: 11px; background: var(--accent-soft, rgba(80, 160, 120, 0.18)); color: var(--text); }
   .comp-retrieval { color: var(--text); }
 </style>
+
+{#if promoteTarget}
+  <ConfirmDialog
+    title={promoteTarget.id === previousAdapterId ? "Roll back to this adapter?" : "Serve this adapter?"}
+    message={`"${promoteTarget.name}" will answer every request to this endpoint from now on, replacing "${endpoint?.adapter?.name ?? "the current adapter"}". The change is logged.`}
+    confirmLabel={promoteTarget.id === previousAdapterId ? "Roll back" : "Promote"}
+    busy={promoting}
+    onconfirm={doPromote}
+    oncancel={() => !promoting && (promoteTarget = null)}
+  />
+{/if}

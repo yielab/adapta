@@ -586,6 +586,40 @@ paths:
         '422': {$ref: '#/components/responses/Error'}
         '200': {description: Endpoint, content: {application/json: {schema: {$ref: '#/components/schemas/EndpointResponse'}}}}
 
+  /projects/{project_id}/endpoint/promote:
+    post:
+      operationId: promoteAdapter
+      tags: [endpoints]
+      summary: Re-bind the endpoint to another passed adapter of the project (writer). Serving switches without a restart; promoting one that served before is recorded as a rollback.
+      security: [{BearerAuth: []}]
+      parameters: [{$ref: '#/components/parameters/ProjectId'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/PromoteAdapterRequest'}
+      responses:
+        '200': {description: Endpoint now serving the adapter, content: {application/json: {schema: {$ref: '#/components/schemas/EndpointResponse'}}}}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '422': {$ref: '#/components/responses/Error'}
+
+  /projects/{project_id}/endpoint/history:
+    get:
+      operationId: getEndpointHistory
+      tags: [endpoints]
+      summary: Promotion and rollback audit trail of the endpoint, newest first
+      security: [{BearerAuth: []}]
+      parameters: [{$ref: '#/components/parameters/ProjectId'}]
+      responses:
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '422': {$ref: '#/components/responses/Error'}
+        '200': {description: Events, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/AdapterEvent'}}}}}
+
   # ──────────────────────────────────────────────────────────────────────────
   # Usage metering
   # ──────────────────────────────────────────────────────────────────────────
@@ -1142,6 +1176,26 @@ components:
         created_at: {type: string}
         retrieval: {$ref: '#/components/schemas/RetrievalSummary', nullable: true}
         adapter: {$ref: '#/components/schemas/AdapterResponse', nullable: true}
+
+    PromoteAdapterRequest:
+      type: object
+      required: [adapter_id]
+      properties:
+        adapter_id: {type: string, description: A passed adapter of this project}
+
+    AdapterEvent:
+      type: object
+      required: [id, endpoint_id, adapter_id, adapter_name, action, actor_user_id, actor_email, eval_metrics, created_at]
+      properties:
+        id: {type: string}
+        endpoint_id: {type: string}
+        adapter_id: {type: string, nullable: true, description: Null once the adapter was deleted}
+        adapter_name: {type: string, nullable: true, description: Null once the adapter was deleted}
+        action: {type: string, enum: [promote, rollback]}
+        actor_user_id: {type: string, nullable: true}
+        actor_email: {type: string, nullable: true}
+        eval_metrics: {type: object, nullable: true, additionalProperties: true, description: The adapter's gate verdict}
+        created_at: {type: string}
 
     # Usage
     UsageDay:

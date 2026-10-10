@@ -1,5 +1,6 @@
 """Project endpoint management (create, get, enable/disable)."""
 
+import uuid
 from typing import Optional
 
 from fastapi import APIRouter, Depends
@@ -8,8 +9,11 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from adapta.api.v1.adapters import adapter_response
+from adapta.core import model_manager
 from adapta.db.models import (
     Adapter,
+    AdapterAction,
+    AdapterEvent,
     AdapterStatus,
     Endpoint,
     EndpointStatus,
@@ -20,7 +24,14 @@ from adapta.db.models import (
 from adapta.db.session import get_db
 from adapta.domain.errors import Conflict, InvalidRequest, NotFound
 from adapta.models.generated import (
+    Action as ApiAction,
+)
+from adapta.models.generated import (
+    AdapterEvent as ApiAdapterEvent,
+)
+from adapta.models.generated import (
     EndpointResponse,
+    PromoteAdapterRequest,
     RetrievalSummary,
 )
 from adapta.models.generated import (
@@ -135,6 +146,7 @@ async def create_endpoint(
     slug = f"{base}-{suffix}"
 
     endpoint = Endpoint(
+        id=str(uuid.uuid4()),
         project_id=project_id,
         slug=slug,
         status=EndpointStatus.active,
@@ -142,6 +154,15 @@ async def create_endpoint(
         adapter_id=adapter_id,
     )
     db.add(endpoint)
+    if adapter_id is not None:  # the first binding opens the audit trail
+        db.add(
+            AdapterEvent(
+                endpoint_id=endpoint.id,
+                adapter_id=adapter_id,
+                action=AdapterAction.promote,
+                actor_user_id=current_user.id,
+            )
+        )
     project.status = ProjectStatus.ready
     try:
         await db.commit()
@@ -167,3 +188,106 @@ async def get_endpoint(
     if not endpoint:
         raise NotFound(message="No endpoint for this project. Create one first.")
     return await _build_response(db, endpoint, project)
+
+
+async def _get_endpoint(db: AsyncSession, project_id: str) -> Endpoint:
+    result = await db.execute(select(Endpoint).where(Endpoint.project_id == project_id))
+    endpoint = result.scalar_one_or_none()
+    if not endpoint:
+        raise NotFound(message="No endpoint for this project. Create one first.")
+    return endpoint
+
+
+@router.post("/promote", response_model=EndpointResponse)
+async def promote_adapter(
+    project_id: str,
+    body: PromoteAdapterRequest,
+    current_user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Re-bind the endpoint to another `passed` adapter of this project (E4.5).
+
+    Takes effect on the next chat request without a restart: chat resolves
+    ``endpoint.adapter.gguf_path`` per request and the model cache is keyed on (base, adapter),
+    so the new variant loads on demand; the previous variant is evicted. Promoting an adapter
+    that served this endpoint before is recorded as a ``rollback``.
+    """
+    project = await _get_project(db, project_id)
+    await require_team_writer(db, current_user.id, project.team_id)
+    endpoint = await _get_endpoint(db, project_id)
+    if project.type != ProjectType.finetune:
+        raise InvalidRequest(message="Only fine-tune endpoints serve an adapter.")
+
+    result = await db.execute(
+        select(Adapter).where(Adapter.id == body.adapter_id, Adapter.project_id == project_id)
+    )
+    adapter = result.scalar_one_or_none()
+    if adapter is None:
+        raise NotFound(message=f"Adapter not found: {body.adapter_id}")
+    if adapter.status != AdapterStatus.passed:
+        raise InvalidRequest(
+            message=f"Only adapters that passed the eval gate can be promoted "
+            f"(this one is '{adapter.status.value}')."
+        )
+    if endpoint.adapter_id == adapter.id:
+        raise InvalidRequest(message="This adapter is already the one being served.")
+    if not adapter.gguf_path:
+        raise InvalidRequest(message="This adapter has no servable GGUF; re-import it.")
+
+    served_before = await db.execute(
+        select(AdapterEvent.id)
+        .where(AdapterEvent.endpoint_id == endpoint.id, AdapterEvent.adapter_id == adapter.id)
+        .limit(1)
+    )
+    action = (
+        AdapterAction.rollback if served_before.first() is not None else AdapterAction.promote
+    )
+    old = endpoint.adapter
+    old_path = old.gguf_path if old is not None else None
+
+    endpoint.adapter_id = adapter.id
+    endpoint.adapter = adapter
+    db.add(
+        AdapterEvent(
+            endpoint_id=endpoint.id,
+            adapter_id=adapter.id,
+            action=action,
+            actor_user_id=current_user.id,
+        )
+    )
+    await db.commit()  # before evicting: no request may reload the old binding afterwards
+
+    if old_path:
+        await model_manager.evict(endpoint.base_model, old_path)
+    return await _build_response(db, endpoint, project)
+
+
+@router.get("/history", response_model=list[ApiAdapterEvent])
+async def endpoint_history(
+    project_id: str,
+    current_user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Promotion / rollback audit trail, newest first."""
+    project = await _get_project(db, project_id)
+    await require_team_member(db, current_user.id, project.team_id)
+    endpoint = await _get_endpoint(db, project_id)
+    result = await db.execute(
+        select(AdapterEvent)
+        .where(AdapterEvent.endpoint_id == endpoint.id)
+        .order_by(AdapterEvent.created_at.desc())
+    )
+    return [
+        ApiAdapterEvent(
+            id=e.id,
+            endpoint_id=e.endpoint_id,
+            adapter_id=e.adapter_id,
+            adapter_name=e.adapter.name if e.adapter is not None else None,
+            action=ApiAction(e.action.value),
+            actor_user_id=e.actor_user_id,
+            actor_email=e.actor.email if e.actor is not None else None,
+            eval_metrics=e.adapter.eval_metrics if e.adapter is not None else None,
+            created_at=e.created_at.isoformat(),
+        )
+        for e in result.scalars().all()
+    ]

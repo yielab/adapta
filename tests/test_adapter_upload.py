@@ -326,3 +326,141 @@ async def test_finetune_endpoint_binds_the_passed_adapter(monkeypatch):
     with pytest.raises(_Stop):
         await _create(db, monkeypatch)
     assert db.added[0].adapter_id == "ad-9"
+    assert db.added[1].adapter_id == "ad-9" and db.added[1].endpoint_id == db.added[0].id
+
+
+# ── promotion, rollback, eviction (E4.5) ─────────────────────────────────────
+
+
+class _PromoteResult:
+    def __init__(self, value):
+        self._value = value
+
+    def scalar_one_or_none(self):
+        return self._value
+
+    def first(self):
+        return self._value
+
+
+class _PromoteDB:
+    """Answers promote's selects in order: project, endpoint, target adapter, served-before."""
+
+    def __init__(self, project, endpoint, adapter, served_before=False):
+        self._answers = [project, endpoint, adapter, 1 if served_before else None]
+        self.added = []
+        self.commits = 0
+
+    async def execute(self, _stmt):
+        return _PromoteResult(self._answers.pop(0))
+
+    def add(self, obj):
+        self.added.append(obj)
+
+    async def commit(self):
+        self.commits += 1
+
+
+def _adapter(aid, status=AdapterStatus.passed, gguf="/data/adapters/x/adapter.gguf"):
+    return SimpleNamespace(id=aid, name=aid, status=status, gguf_path=gguf)
+
+
+def _endpoint(current):
+    return SimpleNamespace(
+        id="ep-1",
+        base_model=BASE,
+        adapter_id=current.id if current else None,
+        adapter=current,
+    )
+
+
+async def _promote(db, monkeypatch, target_id="ad-2", role_ok=True):
+    from adapta.api.v1 import endpoints
+
+    evicted = []
+
+    class _MM:
+        async def evict(self, model, path):
+            evicted.append((model, path))
+
+    async def _writer(*_a, **_k):
+        if not role_ok:
+            from adapta.domain.errors import Forbidden
+
+            raise Forbidden(message="read-only")
+
+    async def _built(_db, ep, _project):
+        return ep
+
+    monkeypatch.setattr(endpoints, "require_team_writer", _writer)
+    monkeypatch.setattr(endpoints, "model_manager", _MM())
+    monkeypatch.setattr(endpoints, "_build_response", _built)
+    body = SimpleNamespace(adapter_id=target_id)
+    out = await endpoints.promote_adapter("p-1234567890", body, SimpleNamespace(id="u-1"), db)
+    return out, evicted
+
+
+async def test_promote_swaps_the_binding_logs_it_and_evicts_the_old_variant(monkeypatch):
+    first, second = _adapter("ad-1", gguf="/a/one.gguf"), _adapter("ad-2", gguf="/a/two.gguf")
+    ep = _endpoint(first)
+    db = _PromoteDB(_project(), ep, second)
+    out, evicted = await _promote(db, monkeypatch)
+    assert out.adapter_id == "ad-2" and out.adapter is second
+    assert db.commits == 1
+    event = db.added[0]
+    assert (event.adapter_id, event.actor_user_id, event.endpoint_id) == ("ad-2", "u-1", "ep-1")
+    assert event.action.value == "promote"
+    assert evicted == [(BASE, "/a/one.gguf")]  # the OLD (base, adapter) entry
+
+
+async def test_promoting_one_that_served_before_is_a_rollback(monkeypatch):
+    ep = _endpoint(_adapter("ad-2"))
+    db = _PromoteDB(_project(), ep, _adapter("ad-1"), served_before=True)
+    out, _ = await _promote(db, monkeypatch, target_id="ad-1")
+    assert out.adapter_id == "ad-1"
+    assert db.added[0].action.value == "rollback"
+
+
+@pytest.mark.parametrize("status", [AdapterStatus.failed, AdapterStatus.processing])
+async def test_a_non_passed_adapter_cannot_be_promoted(monkeypatch, status):
+    ep = _endpoint(_adapter("ad-1"))
+    db = _PromoteDB(_project(), ep, _adapter("ad-2", status=status))
+    with pytest.raises(InvalidRequest) as exc:
+        await _promote(db, monkeypatch)
+    assert exc.value.status == 400
+    assert ep.adapter_id == "ad-1" and not db.added and db.commits == 0
+
+
+async def test_another_projects_adapter_is_not_found(monkeypatch):
+    from adapta.domain.errors import NotFound
+
+    db = _PromoteDB(_project(), _endpoint(_adapter("ad-1")), None)  # project-scoped select: miss
+    with pytest.raises(NotFound):
+        await _promote(db, monkeypatch, target_id="foreign")
+
+
+async def test_promoting_the_served_adapter_is_refused(monkeypatch):
+    cur = _adapter("ad-1")
+    db = _PromoteDB(_project(), _endpoint(cur), cur)
+    with pytest.raises(InvalidRequest):
+        await _promote(db, monkeypatch, target_id="ad-1")
+
+
+async def test_a_viewer_cannot_promote(monkeypatch):
+    from adapta.domain.errors import Forbidden
+
+    db = _PromoteDB(_project(), _endpoint(_adapter("ad-1")), _adapter("ad-2"))
+    with pytest.raises(Forbidden):
+        await _promote(db, monkeypatch, role_ok=False)
+    assert db.commits == 0 and not db.added
+
+
+async def test_model_manager_evict_drops_only_the_named_variant():
+    from adapta.core.model_manager import ModelManager
+
+    mm = ModelManager()
+    old, new = mm._cache_key(BASE, "/a/one.gguf"), mm._cache_key(BASE, "/a/two.gguf")
+    mm._models[old], mm._models[new] = object(), object()
+    assert await mm.evict(BASE, "/a/one.gguf") is True
+    assert old not in mm._models and new in mm._models
+    assert await mm.evict(BASE, "/a/one.gguf") is False

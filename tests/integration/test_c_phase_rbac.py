@@ -307,3 +307,51 @@ async def test_settings_delete_resets_to_default(client, admin):
     entry = next(s for s in settings_r.json() if s["key"] == "top_k")
     assert entry["source"] in ("default", "env")
     assert entry["value"] != 99
+
+
+# ---------------------------------------------------------------------------
+# POST /v1/projects/{id}/endpoint/promote  +  GET .../endpoint/history   (E4.5)
+# ---------------------------------------------------------------------------
+
+
+async def _finetune_project(client, h, team_id) -> str:
+    r = await client.post(
+        "/v1/projects",
+        headers=h,
+        json={
+            "name": "promote-rbac",
+            "type": "finetune",
+            "base_model": "qwen2.5-0.5b-instruct",
+            "team_id": team_id,
+        },
+    )
+    assert r.status_code == 201, r.text
+    return r.json()["id"]
+
+
+async def test_promote_viewer_403(client, admin):
+    h, team_id = admin["headers"], admin["team_id"]
+    pid = await _finetune_project(client, h, team_id)
+    viewer_h = await _invite_and_join(client, h, team_id, "c-viewer-p@itest.dev", "viewer")
+    _assert_forbidden(
+        await client.post(
+            f"/v1/projects/{pid}/endpoint/promote", headers=viewer_h, json={"adapter_id": "x"}
+        ),
+        "promote viewer",
+    )
+
+
+async def test_promote_and_history_cross_team_403(client, admin):
+    h, team_id = admin["headers"], admin["team_id"]
+    pid = await _finetune_project(client, h, team_id)
+    b_headers = await _register_and_login(client, _OUTSIDER)
+    _assert_forbidden(
+        await client.post(
+            f"/v1/projects/{pid}/endpoint/promote", headers=b_headers, json={"adapter_id": "x"}
+        ),
+        "promote cross-team",
+    )
+    _assert_forbidden(
+        await client.get(f"/v1/projects/{pid}/endpoint/history", headers=b_headers),
+        "history cross-team",
+    )

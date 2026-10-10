@@ -246,6 +246,39 @@ class EndpointResponse(BaseModel):
     adapter: Annotated[AdapterResponse | None, Field(...)]
 
 
+class PromoteAdapterRequest(BaseModel):
+    adapter_id: str
+    """
+    A passed adapter of this project
+    """
+
+
+class Action(Enum):
+    promote = "promote"
+    rollback = "rollback"
+
+
+class AdapterEvent(BaseModel):
+    id: str
+    endpoint_id: str
+    adapter_id: Annotated[str | None, Field(...)]
+    """
+    Null once the adapter was deleted
+    """
+    adapter_name: Annotated[str | None, Field(...)]
+    """
+    Null once the adapter was deleted
+    """
+    action: Action
+    actor_user_id: Annotated[str | None, Field(...)]
+    actor_email: Annotated[str | None, Field(...)]
+    eval_metrics: Annotated[dict[str, Any] | None, Field(...)]
+    """
+    The adapter's gate verdict
+    """
+    created_at: str
+
+
 class UsageDay(BaseModel):
     day: str
     prompt_tokens: int

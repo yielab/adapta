@@ -9,6 +9,7 @@ import type {
   Dataset,
   Adapter,
   Endpoint,
+  AdapterEvent,
   ApiKey,
   ApiKeyCreated,
   UsageResponse,
@@ -140,6 +141,12 @@ export const api = {
 
   // Endpoint
   getEndpoint: (pid: string) => request<Endpoint>(`${V1}/projects/${pid}/endpoint`),
+  promoteAdapter: (pid: string, adapterId: string) =>
+    request<Endpoint>(`${V1}/projects/${pid}/endpoint/promote`, {
+      method: "POST",
+      body: { adapter_id: adapterId },
+    }),
+  endpointHistory: (pid: string) => request<AdapterEvent[]>(`${V1}/projects/${pid}/endpoint/history`),
   createEndpoint: (pid: string) => request<Endpoint>(`${V1}/projects/${pid}/endpoint`, { method: "POST" }),
 
   // Keys

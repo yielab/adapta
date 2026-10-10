@@ -108,6 +108,14 @@ class AdapterStatus(str, enum.Enum):
     failed = "failed"
 
 
+class AdapterAction(str, enum.Enum):
+    """promote: the endpoint was bound to an adapter that had not served before (the first
+    binding at creation included). rollback: re-bound to one that had."""
+
+    promote = "promote"
+    rollback = "rollback"
+
+
 class EndpointStatus(str, enum.Enum):
     pending = "pending"
     active = "active"
@@ -503,6 +511,31 @@ class Endpoint(Base):
     keys: Mapped[list[ApiKey]] = relationship(
         "ApiKey", back_populates="endpoint", cascade="all, delete-orphan"
     )
+
+
+class AdapterEvent(Base):
+    """Audit trail of which adapter an endpoint served and who switched it (E4.5).
+    ``adapter_id`` goes NULL if the adapter is later deleted; the event stays."""
+
+    __tablename__ = "adapter_events"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    endpoint_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("endpoints.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    adapter_id: Mapped[Optional[str]] = mapped_column(
+        String(36), ForeignKey("adapters.id", ondelete="SET NULL"), nullable=True
+    )
+    action: Mapped[AdapterAction] = mapped_column(
+        Enum(AdapterAction, native_enum=False, length=16), nullable=False
+    )
+    actor_user_id: Mapped[Optional[str]] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    adapter: Mapped[Optional[Adapter]] = relationship("Adapter", lazy="selectin")
+    actor: Mapped[Optional[User]] = relationship("User", lazy="selectin")
 
 
 class ApiKey(Base):

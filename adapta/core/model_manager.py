@@ -325,6 +325,16 @@ class ModelManager:
             if base in self._configs:
                 self._configs[base].loaded = False
 
+    async def evict(self, model_name: str, adapter_path: Optional[str] = None) -> bool:
+        """Drop one (base, adapter) variant from the cache (E4.5). Wraps ``unload_model`` with
+        the same cache key ``load_model`` uses; a request already holding the Llama finishes,
+        the next one reloads. Returns whether the variant was loaded."""
+        cache_key = self._cache_key(self._resolve_serving_name(model_name), adapter_path)
+        async with self._load_lock:
+            loaded = cache_key in self._models
+            await self.unload_model(cache_key)
+        return loaded
+
     def get_model(self, model_name: str) -> Optional[Llama]:
         """Return a loaded model by cache key, or None if not loaded."""
         return self._models.get(model_name)

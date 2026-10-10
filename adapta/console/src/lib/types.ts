@@ -183,6 +183,18 @@ export interface Endpoint {
   adapter: Adapter | null;
 }
 
+export interface AdapterEvent {
+  id: string;
+  endpoint_id: string;
+  adapter_id: string | null;
+  adapter_name: string | null;
+  action: 'promote' | 'rollback';
+  actor_user_id: string | null;
+  actor_email: string | null;
+  eval_metrics: AdapterEvalMetrics | null;
+  created_at: string;
+}
+
 export interface ApiKey {
   id: string;
   name: string;
