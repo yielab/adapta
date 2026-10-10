@@ -631,6 +631,55 @@ bind mount, so uvicorn reloaded on every worker edit — reload now watches `/ap
   they can be trusted; until then, prefer `classify`/`extract`. (2) The worker-kill → sweep check was not run. (3) The
   sweep runs only at app startup and would fail a job genuinely in flight at that moment (same as file/dataset sweeps).
 
+### E2.1 `[BE+INFRA]` Ollama as an inference backend for base-model and RAG-only endpoints (P1)
+- [x] **Context.** `adapta/core/backends/` already abstracts serving (`ServingBackend` ABC; llama-cpp
+  default). Ollama (180k★, MIT) is the substrate the local-AI ecosystem
+  builds on — Open WebUI grew by attaching to it, and every "works with Ollama" integration is a free
+  acquisition channel. RAG-only and base endpoints don't need an in-process llama-cpp when an Ollama
+  host exists.
+- **Depends.** none. **Unblocks.** E2.2.
+- **Re-anchored 2026-10-10 (E4.9 Handoff).** `InferenceRequest.response_format` exists (OpenAI shape) — the Ollama
+  backend must forward it as Ollama's native `format` (`"json"` or the schema), not a llama.cpp grammar.
+- **Agent.** sonnet · gate class **live (`--profile ollama`)** · serialize with: E4.1, E4.9
+  (`core/backends/*.py`) · **Handoff.** must name `ollama_model_map` keys and the routing rule.
+- **Scope.** Read-only client for adapter-less text requests via Ollama's OpenAI-compatible
+  `/v1/chat/completions`. Out: serving imported adapters through Ollama at runtime (E2.2 exports
+  them), vision.
+- **Steps.** (1) `core/backends/ollama_backend.py`: `OllamaBackend(ServingBackend)` with httpx (already
+  a dep), implementing the same interface as `llamacpp.py` — `prepare()`, non-streaming + streaming, usage from Ollama's
+  `prompt_eval_count`/`eval_count` (exact token counts). (2) Routing in
+  `core/backends/__init__.py`: `ADAPTA_SERVING_BACKEND=ollama` sends adapter-less text requests to
+  Ollama; adapters and vision stay on llama-cpp. (3) `config.py`: `ollama_base_url`,
+  `ollama_model_map` (catalog name → Ollama tag; default map for the Apache entries of E1.2).
+  (4) `docker-compose.yml`: optional `ollama` service under `profiles: [ollama]` (official image,
+  CPU; an operator with a GPU adds `devices` in their own override). (5) `tests/test_backend_ollama.py`: mocked httpx transport — routing,
+  usage mapping, streaming frames. (6) OPERATIONS §9-style runbook "Serve RAG through Ollama".
+- **Files.** `adapta/core/backends/base.py`, `adapta/core/backends/llamacpp.py` (interface),
+  `adapta/core/backends/__init__.py` (routing), `adapta/config.py`, `docker-compose.yml`,
+  `docs/reference/OPERATIONS.md` §9.
+- **Contract impact.** None (env config).
+- **Gate.** `make test` → live: `docker compose --profile ollama up -d` + one RAG chat in the playground.
+- **Acceptance.** With the profile on, a RAG project's endpoint answers through Ollama with exact token
+  counts and citations; llama-cpp still serves adapters and vision; `make ci` green.
+- **Close.** OPERATIONS §9 sibling section; README "Using the API" one line; Status snapshot.
+- **Done.** 2026-10-10. `OllamaBackend` (`core/backends/ollama_backend.py`) talks to Ollama's native `/api/chat` (it
+  accepts `format` and returns `prompt_eval_count`/`eval_count`; the OpenAI-compatible route does neither), streaming and
+  non-streaming; `response_format` → Ollama `format`; `BackendHandle.usage` carries the engine's exact counts. Optional
+  `ollama` compose service under `profiles: [ollama]` (`ollama/ollama:0.12.6`, **3.45 GB**; tag `qwen2.5:1.5b-instruct`
+  **986 MB**, pulled in ~5 min total), OPERATIONS §9 runbook, README line. Live with `ADAPTA_SERVING_BACKEND=ollama`: RAG
+  chat grounded ("45 days") with citation `policy.md`; non-stream and stream usage identical (75/22/97, Ollama's
+  counts); JSON mode → `{"days": 45, "code": "DSK-7781"}`; an adapter endpoint (E4.4 fixture, passed) answered `billing`
+  on llama-cpp with **zero** Ollama hits (Ollama logged exactly the 3 RAG calls). `make test` 302 passed. Stack restored to
+  the default backend afterwards; the Ollama container is stopped, its model kept in the `ollama-data` volume.
+- **Handoff.** `ollama_model_map`: `qwen2.5-0.5b-instruct → qwen2.5:0.5b-instruct`, `qwen2.5-1.5b-instruct →
+  qwen2.5:1.5b-instruct`, `qwen2.5-7b-instruct → qwen2.5:7b-instruct` (E2.2 reads tags from it). Routing: Ollama only if
+  `ADAPTA_SERVING_BACKEND=ollama` **and** the endpoint has no adapter **and** the model is a map key; adapters, the eval
+  gate, unmapped models and vision (which never calls `get_backend`) stay on llama-cpp. A mapped-but-unpulled tag → typed
+  404 `model_not_found` (no silent fallback). Context-fit uses a pessimistic 3 chars/token estimate (no tokenizer
+  endpoint). Ollama applies its own chat template for the tag. **Unblocks** E2.2.
+- **Follow-up.** `chat.py` reads `handle.usage` via `getattr` because a test fake lacks it — give the fake `usage = None`
+  and drop the `getattr`. Vision under the Ollama backend was verified by code path only.
+
 ---
 
 ## 2026-10-08 — §E wave 0: the gates every other block is verified by

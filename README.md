@@ -161,6 +161,10 @@ resp = client.chat.completions.create(
 print(resp.choices[0].message.content)  # RAG answers include citations
 ```
 
+Optional: already running Ollama? Serve adapter-less RAG and base endpoints through it with
+`docker compose --profile ollama up -d` + `ADAPTA_SERVING_BACKEND=ollama` — adapters and vision stay on
+llama-cpp ([OPERATIONS §9](docs/reference/OPERATIONS.md)).
+
 Vision endpoints accept standard OpenAI image content-parts as inline base64 `data:` URLs (the
 server never fetches remote URLs):
 
