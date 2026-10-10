@@ -74,6 +74,7 @@ GET  /health · /health/deep · /gpu · /v1/models
 POST /v1/auth/register · /login · /invite · /accept-invite      GET /v1/auth/me · /invitations
 GET/POST /v1/projects · GET/DELETE /v1/projects/{id}             GET /v1/teams/{team_id}/members
 POST/GET/DELETE /v1/projects/{id}/files                          upload (202) + queued index job on the worker
+POST …/files/{fid}/extract · GET /v1/projects/{id}/fields.csv     opt-in visual extraction (vision base) + re-read of low-confidence pages
 POST/GET /v1/projects/{id}/datasets · POST …/datasets/synthesize · GET …/datasets/{did}
 POST/GET /v1/projects/{id}/adapters · GET/DELETE …/adapters/{aid}  GGUF or PEFT-zip import (status uploaded→…→passed)
 POST/GET /v1/projects/{id}/endpoint (finetune: binds the latest passed adapter) · POST …/endpoint/promote · GET …/endpoint/history

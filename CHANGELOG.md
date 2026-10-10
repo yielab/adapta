@@ -1223,6 +1223,61 @@ bind mount, so uvicorn reloaded on every worker edit — reload now watches `/ap
 - **Follow-up.** Auto-run on delete/re-ingest; `rag_eval` synthesis for RAG-type projects (synthesize is finetune-only);
   `expected_page` not scored; when should the warning block serving.
 
+### E5.4 `[BE+FE]` Visual extraction in ingestion: the vision base fills structured metadata and re-reads low-confidence pages (P2)
+- [x] **Context.** After E3.3b scanned invoices index with page text and OCR confidence; after E3.4 the
+  operator sees `needs_review` pages. The catalog's vision base already reads images through the serving
+  path (`services/chat.py` `_chat_vision`), and ingestion never uses it. On CPU it takes ≈ 40 s per image
+  (llama.cpp issue #17801), so it runs only on the pages that need it, as a queued job.
+- **Depends.** E3.3b, E3.4, E3.5, E3.7. **Unblocks.** none.
+- **Agent.** sonnet · gate class **live** · serialize with: E5.1/E5.2 (`worker/main.py`), E3.4
+  (`RagFlow.svelte`) · **Handoff.** must name the `fields` header format and the measured s/page.
+- **Scope.** A queued `kind: "extract"` job: for a file's `needs_review` pages (all pages on request), run
+  the Apache vision base with a project-defined JSON-schema prompt → `chunks.fields JSONB`; replace the page
+  text when OCR confidence was below threshold and the output is non-empty; clear `needs_review`. Fields
+  are filterable through E3.5's `adapta.filters` and injected as a one-line header in the chunk. Out:
+  vision adapters (§E6), bbox UI, human approval queue, aggregations (offer a CSV of `fields`).
+- **Steps.** (1) Migration `chunk_fields`: `chunks.fields JSONB NULL`, `projects.extraction_schema JSONB
+  NULL`. Spec: the project field, `POST /v1/projects/{id}/files/{fid}/extract` (202),
+  `GET /v1/projects/{id}/fields.csv`. (2) Worker handler `extract` in the dispatch table: loads the vision
+  base through `model_manager` (wrap only) and the same image content-part path as `_chat_vision`; prompt =
+  schema + "return JSON only"; parse with the synthesis helper. (3) `rag.py`: header
+  `"Invoice · {vendor} · {date} · {total}"` when `fields` is present; filters on `fields ->> key`.
+  (4) Console: file-row action "Extract fields" with the per-page time estimate, fields drawer, CSV
+  download. (5) Tests: parser + header; dispatch; RBAC.
+- **Files.** `migrations/versions/` (new), `specs/openapi.yaml`, `adapta/worker/main.py`,
+  `adapta/services/chat.py` (`_chat_vision`, reuse), `adapta/core/model_manager.py` (wrap only),
+  `adapta/services/rag.py`, `adapta/api/v1/files.py`, `adapta/console/src/views/RagFlow.svelte`,
+  `tests/test_rag_hybrid.py`, `tests/integration/test_rag_e2e.py` (one opt-in extraction on the scanned fixture).
+- **Contract impact.** API + DB.
+- **Gate.** `make migrate-test` → `make validate-spec` → `make generate` → `make check-models` →
+  `make test` → `ADAPTA_RUN_EXTRACT=1 tests/integration/test_rag_e2e.py`.
+- **Acceptance.** An invoice PNG indexed with low OCR confidence gets `fields = {vendor, total, …}`,
+  `needs_review` clears, a filtered question ("Qorvex invoices") cites only those files, the CSV lists
+  them, and s/page is recorded in OPERATIONS.
+- **Close.** knowledge-and-behavior (scanned documents), PRODUCT_DEFINITION Service A (bounded:
+  extraction, not analytics), OPERATIONS timing, CLAUDE.md API surface; Status snapshot.
+- **Done.** 2026-10-10. Opt-in per project (`extraction_schema {title, properties}` via PATCH; null = off, ingestion
+  unchanged): `POST /v1/projects/{id}/files/{fid}/extract[?all_pages=true]` queues an `extract` worker job — per page
+  (flagged pages by default) the vision base returns the schema fields (`chunks.fields`, migration `0021_chunk_fields`)
+  and a flagged page is transcribed again; a non-empty transcription replaces the page's chunks (re-chunked,
+  re-embedded, `needs_review` cleared). Fields show as a one-line header in the RAG context, filter with
+  `adapta.filters.fields {key: value}`, export via `GET /v1/projects/{id}/fields.csv`; console schema editor, per-file
+  "Extract fields" button, CSV download. Live on `develop`: migrate 0020→0021 + `migrate-test` ✓ · `make ci` ✓ ·
+  svelte-check 0 errors (4 new warnings in `RagFlow.svelte`) · `test-contracts` 46/46, 2653 cases, 0 failures · golden
+  0.978/0.840 (off = unchanged) · with `qwen2.5-vl-3b-instruct` (the 7B default is not downloaded): new low-confidence
+  fixture (OCR 0.70) re-read from "sola otten us a Peiblee ood an 2018…" to "Scanned report about offers. The mascot of
+  Project Nimbus is Puddles. Founded in Brindiswood in 2019." (near-correct), `needs_review` cleared; invoice fields
+  vendor/date/total correct; **43 s per field page, 133 s per re-read page** on CPU; CSV ✓; chat with a vendor filter
+  cites only the invoice, a non-matching filter → deterministic abstention; a project without a schema → 400.
+- **Handoff.** `chunks.fields` JSONB `{key: scalar}` (schema keys only); `projects.extraction_schema` JSON (plain JSON
+  keeps property order = header order); job kind `extract`, `job_id` `{file_id}-x{rand}` (no status endpoint — poll
+  `pages_needing_review`/`fields.csv`); re-read pages store `ocr=true, ocr_confidence=null`; after a re-read
+  `chunk_index` is no longer in page order. Settings `extract_model` (default `qwen2.5-vl-7b-instruct`, Apache),
+  `extract_max_pages` 20, `extract_max_tokens` 1024, `extract_image_side_px` 1344.
+- **Follow-up.** (1) **Bug:** a field the model reports as `null` is stored as the string `"null"` (seen live: `total:
+  "null"`) — drop it. (2) Measure the 7B default (download first). (3) Per-chunk fields drawer (needs a read endpoint);
+  job status endpoint. (4) 4 svelte-check warnings in `RagFlow.svelte`. (5) No per-job deadline on extraction.
+
 ---
 
 ## 2026-10-08 — §E wave 0: the gates every other block is verified by

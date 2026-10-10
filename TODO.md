@@ -58,7 +58,7 @@ procedure. Rules that keep parallel work from colliding:
 
 ---
 
-## Status snapshot (updated 2026-10-10, after wave 4)
+## Status snapshot (updated 2026-10-10, §E complete)
 
 | Area | State |
 |---|---|
@@ -66,7 +66,7 @@ procedure. Rules that keep parallel work from colliding:
 | Fine-tuning direction | **Decided 2026-10-09: bring your own adapter (§E4).** Training removed 2026-10-10 (E4.1); no service needs a GPU. Shipped end to end 2026-10-10: import (E4.2), CPU gate (E4.3/E4.4), promote/rollback (E4.5), console flow (E4.6), eval-set synthesis (E4.8). Pitch + import guide: E4.7. |
 | SDD gates | Pillar 2 ✅ `make migrate-test` · Pillar 3: the GPU perplexity gate is replaced by the CPU task-metric gate on imported adapters (E4.3/E4.4) · Pillar 1 ✅ `make test-contracts` green (E1.11; re-run 2026-10-10 after E4.8: 40 operations, 2320 cases, 0 failures, authenticated) |
 | CI fast gate (`make ci`) | ✅ green 2026-10-10 after E1.15: ruff + mypy clean, 350 unit tests |
-| **Audit 2026-09-03 (§E)** | 🟥 **open** — 31/38 done (E1.15 added 2026-10-10 after a live Chroma hang + socket leak). Shipped 2026-10-10: E2.1, E3.2–E3.7, E4.1–E4.6, E4.8, E4.9, E1.15. Bring-your-own-adapter works end to end (import → CPU gate → promote/rollback with audit, console flow); retrieval is hybrid + multilingual (golden 0.978), deterministic abstention, filters, citations with page/OCR; Docling + OCR ingestion on a queued worker; Ollama backend optional; JSON mode. Open: E2.2, E2.3, E4.7, E5.1–E5.4. Next: E2 (Ollama + launch kit) and E3 (Postgres chunks → real hybrid FTS, Docling + RapidOCR, citations with page/OCR provenance, system prompt + threshold + filters, multilingual, queued indexing, golden set); E4 (adapter import, CPU eval gate, adapter job, promotion/rollback, console flow, import guide, synthesis for eval sets, JSON mode); E5 (contextual retrieval, RAG gate, history-aware retrieval, visual extraction with the vision base). Scheduling: the §E board. |
+| **Audit 2026-09-03 (§E)** | ✅ **all 39 blocks closed 2026-10-10** (E1.15 added after a live Chroma hang + socket leak). Bring-your-own-adapter end to end (import → CPU gate → promote/rollback, console, Ollama export); hybrid + multilingual retrieval (golden 0.978) with a per-project RAG gate, deterministic abstention, filters, citations with page/OCR; Docling + OCR ingestion on a queued worker, opt-in visual extraction; optional Ollama backend; JSON mode. Opt-ins measured honestly: contextual retrieval and history condensation showed no gain on the golden corpus. Open follow-ups live in each block's CHANGELOG entry. Next: E2 (Ollama + launch kit) and E3 (Postgres chunks → real hybrid FTS, Docling + RapidOCR, citations with page/OCR provenance, system prompt + threshold + filters, multilingual, queued indexing, golden set); E4 (adapter import, CPU eval gate, adapter job, promotion/rollback, console flow, import guide, synthesis for eval sets, JSON mode); E5 (contextual retrieval, RAG gate, history-aware retrieval, visual extraction with the vision base). Scheduling: the §E board. |
 
 ---
 
@@ -136,7 +136,7 @@ classes are defined in [`.claude/context/gates.md`](.claude/context/gates.md) ("
 | E4.5 | 4 | sonnet | live | E4.4 | E2.2, E4.6, E5.2 | done 2026-10-10 |
 | E4.6 | 4 | sonnet | live | E4.4 | E4.5, E4.8, E4.9 | done 2026-10-10 |
 | E5.3 | 4 | sonnet | live | E3.2, E3.5, E3.8 | E4.9/E3.5 | done 2026-10-10 |
-| E5.4 | 4 | sonnet | live | E3.3b, E3.4, E3.5, E3.7 | E5.1/E5.2, E3.4 | ready-for-live (e5.4) |
+| E5.4 | 4 | sonnet | live | E3.3b, E3.4, E3.5, E3.7 | E5.1/E5.2, E3.4 | done 2026-10-10 |
 | E4.7 | 5 | sonnet | offline | E4.4, E4.5, E4.6 | E2.3 (README) | done 2026-10-10 |
 | E2.3 | 6 | haiku | offline | E1.11, E4.7 | E3.2, E3.3b, E4.7 (README) | done 2026-10-10 |
 
@@ -168,40 +168,6 @@ E1.1–E1.9 shipped 2026-09-17 → [CHANGELOG.md](CHANGELOG.md). E1.14 closed 20
 > for serving (`ADAPTA_N_GPU_LAYERS`) is unaffected.
 
 ### E5. Differentiation (weeks 10–13)
-
-### E5.4 `[BE+FE]` Visual extraction in ingestion: the vision base fills structured metadata and re-reads low-confidence pages (P2)
-- [ ] **Context.** After E3.3b scanned invoices index with page text and OCR confidence; after E3.4 the
-  operator sees `needs_review` pages. The catalog's vision base already reads images through the serving
-  path (`services/chat.py` `_chat_vision`), and ingestion never uses it. On CPU it takes ≈ 40 s per image
-  (llama.cpp issue #17801), so it runs only on the pages that need it, as a queued job.
-- **Depends.** E3.3b, E3.4, E3.5, E3.7. **Unblocks.** none.
-- **Agent.** sonnet · gate class **live** · serialize with: E5.1/E5.2 (`worker/main.py`), E3.4
-  (`RagFlow.svelte`) · **Handoff.** must name the `fields` header format and the measured s/page.
-- **Scope.** A queued `kind: "extract"` job: for a file's `needs_review` pages (all pages on request), run
-  the Apache vision base with a project-defined JSON-schema prompt → `chunks.fields JSONB`; replace the page
-  text when OCR confidence was below threshold and the output is non-empty; clear `needs_review`. Fields
-  are filterable through E3.5's `adapta.filters` and injected as a one-line header in the chunk. Out:
-  vision adapters (§E6), bbox UI, human approval queue, aggregations (offer a CSV of `fields`).
-- **Steps.** (1) Migration `chunk_fields`: `chunks.fields JSONB NULL`, `projects.extraction_schema JSONB
-  NULL`. Spec: the project field, `POST /v1/projects/{id}/files/{fid}/extract` (202),
-  `GET /v1/projects/{id}/fields.csv`. (2) Worker handler `extract` in the dispatch table: loads the vision
-  base through `model_manager` (wrap only) and the same image content-part path as `_chat_vision`; prompt =
-  schema + "return JSON only"; parse with the synthesis helper. (3) `rag.py`: header
-  `"Invoice · {vendor} · {date} · {total}"` when `fields` is present; filters on `fields ->> key`.
-  (4) Console: file-row action "Extract fields" with the per-page time estimate, fields drawer, CSV
-  download. (5) Tests: parser + header; dispatch; RBAC.
-- **Files.** `migrations/versions/` (new), `specs/openapi.yaml`, `adapta/worker/main.py`,
-  `adapta/services/chat.py` (`_chat_vision`, reuse), `adapta/core/model_manager.py` (wrap only),
-  `adapta/services/rag.py`, `adapta/api/v1/files.py`, `adapta/console/src/views/RagFlow.svelte`,
-  `tests/test_rag_hybrid.py`, `tests/integration/test_rag_e2e.py` (one opt-in extraction on the scanned fixture).
-- **Contract impact.** API + DB.
-- **Gate.** `make migrate-test` → `make validate-spec` → `make generate` → `make check-models` →
-  `make test` → `ADAPTA_RUN_EXTRACT=1 tests/integration/test_rag_e2e.py`.
-- **Acceptance.** An invoice PNG indexed with low OCR confidence gets `fields = {vendor, total, …}`,
-  `needs_review` clears, a filtered question ("Qorvex invoices") cites only those files, the CSV lists
-  them, and s/page is recorded in OPERATIONS.
-- **Close.** knowledge-and-behavior (scanned documents), PRODUCT_DEFINITION Service A (bounded:
-  extraction, not analytics), OPERATIONS timing, CLAUDE.md API surface; Status snapshot.
 
 ### E6. Deferred — recorded, not promised (open a block only when a user asks)
 - Guardrails (LLM Guard) · connectors beyond folder/S3 sync · Helm · OIDC · GraphRAG/RAPTOR · ColPali ·

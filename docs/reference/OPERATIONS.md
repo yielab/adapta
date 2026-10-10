@@ -281,6 +281,12 @@ Measured 2026-10-09 with `docling[rapidocr]` 2.137 / RapidOCR 3.10 (`latin_PP-OC
 - **Peak RAM:** ≈ 2.5 GB RSS per converting process — budget it per ingest worker, not per request.
 - **Verified:** page number on every element (`prov.page_no`), DOCX table → markdown table, per-line OCR confidence (`TextCell.confidence`, needs `generate_parsed_pages=True`; per-page `ocr_score` is always present).
 - **Gotchas:** PyPI's `torchvision` does not match the CPU-only `torch` (`operator torchvision::nms does not exist`) — pin the `+cpu` wheel; Docling and RapidOCR download their models at first use, so bake them into the image for air-gapped installs.
+- **Visual extraction (opt-in, E5.4):** `PATCH /v1/projects/{id}` with an `extraction_schema` enables
+  `POST …/files/{fid}/extract`, a worker job where the vision base fills the schema's fields per page and re-reads
+  pages flagged `needs_review`. Measured on 16 CPU cores with `qwen2.5-vl-3b-instruct` (the shipped default is the
+  Apache-licensed `qwen2.5-vl-7b-instruct`, not measured here — download it first): **≈ 43 s per page for fields, ≈ 133 s
+  for a flagged page** (fields + transcription). A 0.70-confidence scan went from unreadable OCR to a near-correct
+  transcription. Budget it per page; `extract_max_pages` is 20.
 
 ### 6.5 Changing the embedding model (§E1.8)
 
