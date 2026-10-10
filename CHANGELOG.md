@@ -680,6 +680,46 @@ bind mount, so uvicorn reloaded on every worker edit — reload now watches `/ap
 - **Follow-up.** `chat.py` reads `handle.usage` via `getattr` because a test fake lacks it — give the fake `usage = None`
   and drop the `getattr`. Vision under the Ollama backend was verified by code path only.
 
+### E4.6 `[FE]` Console: "change how it behaves" becomes eval set → import → verify → serve (P1)
+- [x] **Context.** After E4.1 `FinetuneFlow.svelte` only uploads and reviews datasets; nothing imports an
+  adapter or shows why one passed or failed.
+- **Depends.** E4.4. **Unblocks.** E4.7.
+- **Agent.** sonnet · gate class **live** (+ `make console-build`) · serialize with: E4.5
+  (`EndpointPanel.svelte`), E4.8 and E4.9 (the same view) · **Handoff.** must name the view and the
+  refreshed screenshot paths.
+- **Scope.** Four steps in the existing project view: (1) eval set — upload or synthesize, pick the task;
+  (2) adapter — drop a `.gguf` or `.zip`; (3) verification — live status, then the task metric vs base, the
+  deciding rule and sample predictions, or the typed failure reason; (4) create the endpoint. A short "where
+  do I train it?" box links the E4.7 guide. Out: anything that trains.
+- **Steps.** Rename the view `AdapterFlow.svelte` and rebuild it on the E4.2/E4.3 types; poll
+  `GET …/adapters/{aid}` while `processing`; the Models page shows the accepted base ids and aliases per
+  catalog entry; `make screenshots` refreshes the console captures.
+- **Files.** `adapta/console/src/views/FinetuneFlow.svelte` → `AdapterFlow.svelte`,
+  `adapta/console/src/views/{Project,Models}.svelte`, `adapta/console/src/lib/{api,types}.ts`,
+  `docs/screenshots/`.
+- **Contract impact.** None.
+- **Gate.** `make console-build` → live walk-through importing the E4.1 fixture.
+- **Acceptance.** An operator imports the fixture and serves it without leaving the console; the control
+  shows its failure reason with both measured scores.
+- **Close.** operator-console (behaviour section rewritten); Status snapshot.
+- **Done.** 2026-10-10. "Change how it behaves" is one five-step view, `AdapterFlow.svelte` (renamed from
+  `FinetuneFlow.svelte`): optional documents → eval set (task selector; classify/extract recommended, "freeform is weak"
+  warning; review floor raised to the server's 20 rows) → adapter import (`.gguf`/`.zip` against a chosen eval set) →
+  live-polled verification (Passed/Failed badge, adapter / base / difference tiles, rule, floor, min. improvement, CPU
+  s/row, 5 sample predictions or the typed `failure_reason`) → serve (create endpoint). Typed `Adapter`,
+  `AdapterEvalMetrics`, adapter API client; Models labels the adapter base id. `svelte-check` **0 errors** (one first
+  pass had 2 use-before-declaration errors, fixed); console build ✓. `make screenshots` repaired (seed posted no `task`
+  since E4.3; now uploads the 30-row classify set and imports `classify-pass`, polling to `passed`) and run live: **9
+  passed**; refreshed PNGs; `finetune-proof`/`combined-proof` specs + their 9 PNGs deleted (they proved GPU training).
+  The live screenshot shows the verdict 0.700 vs 0.333 (+0.367, rule improvement) with samples.
+- **Handoff.** View `adapta/console/src/views/AdapterFlow.svelte` (imported by `Project.svelte`). Screenshots
+  `docs/screenshots/project-finetune-setup.png` (full page), `models.png`. Serve creates the first endpoint only —
+  promote/re-bind is E4.5. "Training guide →" points at the docs root until E4.7 writes the import guide.
+- **Follow-up.** (1) The 5 samples are the first 5 rows — pick them across labels and include adapter misses and
+  wins. (2) Models cannot list `adapter_base_aliases` (not in `BaseModelInfo`; needs a spec change). (3) Cosmetic: the
+  eval-set header buttons wrap; "Review" stays enabled. (4) One Playwright seed run failed on login (likely the auth
+  rate limit) before passing.
+
 ---
 
 ## 2026-10-08 — §E wave 0: the gates every other block is verified by

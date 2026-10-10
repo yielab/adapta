@@ -133,7 +133,7 @@ classes are defined in [`.claude/context/gates.md`](.claude/context/gates.md) ("
 | E5.2 | 3 | sonnet | live | E3.8, E3.7, E4.8 | E5.1, E4.5 | open |
 | E2.2 | 4 | sonnet | live | E2.1, E4.4 | E4.5 (`endpoints.py`, `EndpointPanel.svelte`) | open |
 | E4.5 | 4 | sonnet | live | E4.4 | E2.2, E4.6, E5.2 | open |
-| E4.6 | 4 | sonnet | live | E4.4 | E4.5, E4.8, E4.9 | ready-for-live (e4.6) |
+| E4.6 | 4 | sonnet | live | E4.4 | E4.5, E4.8, E4.9 | done 2026-10-10 |
 | E5.3 | 4 | sonnet | live | E3.2, E3.5, E3.8 | E4.9/E3.5 | open |
 | E5.4 | 4 | sonnet | live | E3.3b, E3.4, E3.5, E3.7 | E5.1/E5.2, E3.4 | open |
 | E4.7 | 5 | sonnet | offline | E4.4, E4.5, E4.6 | E2.3 (README) | open |
@@ -316,29 +316,6 @@ E1.1–E1.9 shipped 2026-09-17 → [CHANGELOG.md](CHANGELOG.md). E1.14 closed 20
   rollback restores the first; history shows actor and scores; a failed adapter cannot be promoted (400).
 - **Close.** operator-console endpoint section, consuming-the-api, PRODUCT_DEFINITION serving paragraph,
   CLAUDE.md API surface; Status snapshot.
-
-### E4.6 `[FE]` Console: "change how it behaves" becomes eval set → import → verify → serve (P1)
-- [ ] **Context.** After E4.1 `FinetuneFlow.svelte` only uploads and reviews datasets; nothing imports an
-  adapter or shows why one passed or failed.
-- **Depends.** E4.4. **Unblocks.** E4.7.
-- **Agent.** sonnet · gate class **live** (+ `make console-build`) · serialize with: E4.5
-  (`EndpointPanel.svelte`), E4.8 and E4.9 (the same view) · **Handoff.** must name the view and the
-  refreshed screenshot paths.
-- **Scope.** Four steps in the existing project view: (1) eval set — upload or synthesize, pick the task;
-  (2) adapter — drop a `.gguf` or `.zip`; (3) verification — live status, then the task metric vs base, the
-  deciding rule and sample predictions, or the typed failure reason; (4) create the endpoint. A short "where
-  do I train it?" box links the E4.7 guide. Out: anything that trains.
-- **Steps.** Rename the view `AdapterFlow.svelte` and rebuild it on the E4.2/E4.3 types; poll
-  `GET …/adapters/{aid}` while `processing`; the Models page shows the accepted base ids and aliases per
-  catalog entry; `make screenshots` refreshes the console captures.
-- **Files.** `adapta/console/src/views/FinetuneFlow.svelte` → `AdapterFlow.svelte`,
-  `adapta/console/src/views/{Project,Models}.svelte`, `adapta/console/src/lib/{api,types}.ts`,
-  `docs/screenshots/`.
-- **Contract impact.** None.
-- **Gate.** `make console-build` → live walk-through importing the E4.1 fixture.
-- **Acceptance.** An operator imports the fixture and serves it without leaving the console; the control
-  shows its failure reason with both measured scores.
-- **Close.** operator-console (behaviour section rewritten); Status snapshot.
 
 ### E4.7 `[DOCS]` Import guide and pitch: "bring your own adapter" wherever training was claimed (P1)
 - [ ] **Context.** README, PRODUCT_DEFINITION, BRAND, COMPETITIVE_LANDSCAPE, knowledge-and-behavior,
