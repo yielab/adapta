@@ -67,6 +67,7 @@ procedure. Rules that keep parallel work from colliding:
 | SDD gates | Pillar 2 ✅ `make migrate-test` · Pillar 3: the GPU perplexity gate is replaced by the CPU task-metric gate on imported adapters (E4.3/E4.4) · Pillar 1 ✅ `make test-contracts` green (E1.11; re-run 2026-10-10 after E4.8: 40 operations, 2320 cases, 0 failures, authenticated) |
 | CI fast gate (`make ci`) | ✅ green 2026-10-10 after E1.15: ruff + mypy clean, 350 unit tests |
 | **Audit 2026-09-03 (§E)** | ✅ **all 39 blocks closed 2026-10-10** (E1.15 added after a live Chroma hang + socket leak). Bring-your-own-adapter end to end (import → CPU gate → promote/rollback, console, Ollama export); hybrid + multilingual retrieval (golden 0.978) with a per-project RAG gate, deterministic abstention, filters, citations with page/OCR; Docling + OCR ingestion on a queued worker, opt-in visual extraction; optional Ollama backend; JSON mode. Opt-ins measured honestly: contextual retrieval and history condensation showed no gain on the golden corpus. Open follow-ups live in each block's CHANGELOG entry. Next: no §E block is open; the highest-value follow-ups are the `"null"` field-string bug (E5.4), measuring the 7B vision default, multi-turn golden questions (E5.3), running `migrate-test` against a scratch DB (E2.3), and a long-document corpus for contextual retrieval (E5.1). |
+| **Post-audit follow-ups (§F)** | Opened 2026-10-10: 9 blocks from the §E Follow-up lines — 5 correctness (extraction `"null"`, migrate-test wipes the dev DB, freeform gate passes garbage, non-deterministic retrieval, teacher-URL SSRF), 3 hygiene, 1 measurement (condensation default). Wave 1: F1.1, F1.2, F1.5. |
 
 ---
 
@@ -189,6 +190,205 @@ Carried over when the shipped sections moved to the changelog (2026-10-08):
   suites (`chat.py`, `rag.py`, `embeddings.py` are exercised only by the RAG e2e + slow tests).
 - Adapta as an assistant inside Tack: [docs/adr/0001-adapta-as-tack-assistant.md](docs/adr/0001-adapta-as-tack-assistant.md)
   (status: proposed; no block opened).
+---
+
+## F. Post-audit follow-ups — bugs and debts the §E live gates surfaced (opened 2026-10-10)
+
+> **Source.** The **Follow-up.** lines of the §E blocks in [CHANGELOG.md](CHANGELOG.md) (2026-10-08 → 2026-10-10).
+> Admitted under the §E scope guard: each block fixes something false or broken today, removes dead code, or
+> measures a default that was shipped without evidence. Not admitted (stay as CHANGELOG follow-ups until a user
+> asks): schemathesis stateful links, worker `/metrics`, per-chunk fields drawer, per-adapter Ollama export,
+> language-aware FTS, a long-document corpus for contextual retrieval (opt-in, off by default).
+> **Needs the user, not an agent:** measuring the `qwen2.5-vl-7b-instruct` extraction default (multi-GB download;
+> see [OPERATIONS.md](docs/reference/OPERATIONS.md)).
+>
+> Same rules as §E: read only your block and its **Files**; anchors are symbols; close with **Done.** + **Handoff.**,
+> move the block to CHANGELOG.md, flip the board row. Migration revisions are nominal (`0022_…`): take the next free one.
+
+#### §F board
+
+| Block | Wave | Tier | Gate class | Depends on | Serialize with | Status |
+|---|---|---|---|---|---|---|
+| F1.1 | 1 | sonnet | offline | none | F2.2 (`worker/main.py`) | in progress (worker-f1.1) |
+| F1.2 | 1 | sonnet | live | none | F2.1 (migrations) | in progress (worker-f1.2) |
+| F1.5 | 1 | haiku | offline | none | — | in progress (worker-f1.5) |
+| F2.2 | 2 | haiku | offline | F1.1 | F1.1 (`worker/main.py`) | open |
+| F2.3 | 2 | haiku | offline | none | — | open |
+| F1.4 | 2 | sonnet | live | none | F2.1, F3.1 (`rag.py`) | open |
+| F2.1 | 3 | sonnet | live | F1.2 | F1.4, F3.1 (`rag.py`, `chat.py`) | open |
+| F1.3 | 3 | sonnet + human decision | live | none | — | open |
+| F3.1 | 3 | sonnet + human decision | live | F1.4 | F1.4, F2.1 (`chat.py`, golden harness) | open |
+
+### F1. Correctness
+
+### F1.1 [BE] Extraction stores a model `null` as the string `"null"`; extraction has no job deadline
+- **Context.** E5.4 live run: a field the vision model reports as `null` is persisted as `"null"` (`total: "null"`) and
+  exported that way in `fields.csv`. The extract job, unlike index jobs since E1.15, has no per-job deadline — a hung
+  vision generation holds the serial worker forever.
+- **Scope.** Parse-side fix (absent/`null`/empty → field omitted) + the same deadline mechanism E1.15 gave index jobs.
+  No new fields, no endpoint changes.
+- **Steps.** (1) Find where the model's JSON is turned into stored fields (`adapta/services/extraction.py`); drop
+  `None`, `"null"`, `"none"`, `""` values (case-insensitive) before storing. (2) Wrap the extract handler in the
+  E1.15 job deadline (reuse its setting/helper; add `ADAPTA_EXTRACT_JOB_TIMEOUT_SECONDS` only if the index one cannot
+  be reused sensibly — extraction is ~45 s/page, so a per-page budget × pages is the honest bound). (3) Unit tests.
+- **Files.** `adapta/services/extraction.py`, `adapta/worker/main.py` (extract handler, E1.15 deadline helper),
+  `adapta/config.py` (only if a setting is added), `tests/test_extraction*.py`.
+- **Contract impact.** None.
+- **Gate.** offline: `make test` + `make ci` rungs in the worktree.
+- **Acceptance.** A model reply `{"total": null, "vendor": "ACME"}` stores only `vendor`; an extract job exceeding its
+  deadline ends `failed` with a typed reason and the worker takes the next job (test with a fake slow model).
+- **Close.** OPERATIONS.md visual-extraction section (deadline + setting); CHANGELOG.
+- **Depends.** none. Unblocks F2.2.
+- **Agent.** sonnet · offline · serialize with F2.2 · Handoff names the deadline setting and its default.
+
+### F1.2 [INFRA] `make migrate-test` wipes the live dev database
+- **Context.** `migrate-test` round-trips the live DB (`upgrade head → downgrade -1 → upgrade head`) and
+  `scripts/migrate_seed_test.py` runs against it, so after every run the seeded dev admin is gone and test rows remain
+  (seen four times during §E; recreated by hand). A gate must not destroy the developer's data.
+- **Scope.** Run the round-trip against a throwaway database on the same Postgres server; leave `make migrate` alone.
+- **Steps.** (1) In the `migrate-test` target: create `<db>_migrate_test` (drop first if it exists), run the alembic
+  round-trip and the seed script with `DATABASE_URL` pointing at it, drop it at the end (also on failure). Use what the
+  image already has (`psql`/`createdb` or a small Python helper via SQLAlchemy) — no new dependency. (2) Make sure
+  `migrations/env.py` and `scripts/migrate_seed_test.py` honour the overridden URL. (3) Update gates.md wording.
+- **Files.** `Makefile` (`migrate-test`), `scripts/migrate_seed_test.py`, `migrations/env.py` (only if it ignores the
+  env URL), `.claude/context/gates.md`.
+- **Contract impact.** None (the gate itself changes).
+- **Gate.** live: `docker compose exec app make migrate-test` green, then `POST /v1/auth/login` as the dev admin still
+  succeeds and `select count(*) from projects` is unchanged.
+- **Acceptance.** Running `make migrate-test` twice in a row leaves the dev DB byte-for-byte the same in row counts;
+  no `_migrate_test` database survives the run.
+- **Close.** SDD_WORKFLOW.md (Pillar 2 wording), CLAUDE.md contract table if it mentions the live DB; CHANGELOG.
+- **Depends.** none. Unblocks F2.1 (its migration gate).
+- **Agent.** sonnet · live · Handoff names the scratch DB name and how a failure cleans up.
+
+### F1.3 [BE] The eval gate passes a garbage adapter on `freeform` eval sets
+- **Context.** E4.4 live: scored as `freeform` (token F1), the `garbage-control` fixture **passed** (0.383 vs base
+  0.037) — it reproduces template words F1 rewards. The gate is the product's differentiator; today it only holds for
+  `classify`/`extract`.
+- **Scope.** Measure, then stop for a decision. Candidates to measure on both fixtures (`classify-pass`,
+  `garbage-control`) and the 0.5B base: (a) `freeform` is not gateable — import of an adapter whose eval set is
+  freeform ends `failed` with reason "freeform eval sets cannot gate; use classify or extract"; (b) a minimum absolute
+  score + minimum delta for freeform; (c) exact-match share as a second freeform metric. LLM-as-judge stays deferred (§E6).
+- **Steps.** (1) Reproduce the E4.4 numbers with the fixtures. (2) Compute each candidate on both fixtures without
+  changing the gate. (3) Report a table and stop. (4) After the user picks: implement, update the import guide.
+- **Files.** `adapta/services/eval_gate.py`, `tests/test_eval_gate*.py`, `tests/integration/test_adapter_import_e2e.py`,
+  `docs/user-guide/bring-your-own-adapter.md`.
+- **Contract impact.** Pillar 3 (gate rule); API only if a new failure reason enum is added (spec first).
+- **Gate.** live: `ADAPTA_RUN_ADAPTER_E2E=1 HF_HUB_OFFLINE=1 pytest -m integration tests/integration/test_adapter_import_e2e.py`
+  + `ADAPTA_RUN_EVAL_CPU=1 pytest -o addopts="" tests/test_eval_gate_cpu.py`.
+- **Acceptance.** Under the chosen rule `garbage-control` fails on every task type and `classify-pass` still passes.
+- **Close.** bring-your-own-adapter.md (what freeform sets prove); CHANGELOG.
+- **Depends.** none.
+- **Agent.** sonnet + human decision · live · stop after the measurement table · Handoff names the rule and threshold.
+
+### F1.4 [BE] Retrieval is not deterministic across identically built projects
+- **Context.** E3.5 live: the same question on two projects built from the same files scored a top cosine of 0.45 in
+  one run and 0.29 in another. Golden recall is stable (0.978) but single questions flip, so per-project gates (E5.2)
+  and abstention (`rag_min_score`) can change verdicts without any input change.
+- **Scope.** Find the source (candidates: RRF ties broken by random chunk ids in `_rrf_fuse`; HNSW build randomness in
+  Chroma; FTS ordering without a tie-break) and remove what is ours to remove. If HNSW is the cause, document it and
+  make the fused order stable given identical candidate sets.
+- **Steps.** (1) Build the golden project twice; diff per-question top-5 and scores. (2) Add a stable secondary key
+  (e.g. content sha256, then chunk_index) wherever ranks tie; order FTS by `(rank desc, stable key)`. (3) Re-measure.
+- **Files.** `adapta/services/rag.py` (`_rrf_fuse`, the FTS query, `retrieve`), `tests/test_rag_hybrid.py`,
+  `tests/integration/test_rag_golden.py` (only for a determinism check helper).
+- **Contract impact.** None.
+- **Gate.** live: `make golden` twice on fresh projects → identical per-question top-5; recall@5 ≥ 0.97 floor.
+- **Acceptance.** Two fresh builds of the golden project return identical top-5 for all 45 questions (or the residual
+  difference is attributed to HNSW with evidence and documented).
+- **Close.** knowledge-and-behavior.md retrieval box only if behaviour visible to users changed; CHANGELOG.
+- **Depends.** none. Unblocks F3.1 (a stable baseline).
+- **Agent.** sonnet · live · serialize with F2.1, F3.1 · Handoff names the tie-break key and the measured diff count.
+
+### F1.5 [BE] SSRF guard on the synthesis teacher URL
+- **Context.** `teacher_base_url` (E4.8) is a server-side fetch to any URL a project member supplies. Self-hosted
+  teachers legitimately live on localhost/LAN (Ollama, llama.cpp), so loopback/private stay allowed; cloud metadata
+  and link-local do not.
+- **Scope.** Reject at request time: link-local `169.254.0.0/16`, `fe80::/10`, `metadata.google.internal`, and
+  non-http(s) schemes, after DNS resolution. No allow-list setting unless one is needed to keep a test green.
+- **Steps.** (1) Validate in the synthesis service before the job is queued; raise a typed `DomainError` → 422.
+  (2) Spec: document the 422 on the synthesize operation if it is not already there (spec first, `make generate`).
+  (3) Unit tests for each blocked class and an allowed localhost URL.
+- **Files.** `adapta/services/synthesis.py`, `adapta/api/v1/synthesis.py`, `adapta/domain/errors.py`,
+  `specs/openapi.yaml` (only if the 422 is missing), `tests/test_synthesis*.py`.
+- **Contract impact.** API (error response) only if missing.
+- **Gate.** offline: `make test`, `make ci` rungs; `make validate-spec check-models` if the spec changed.
+- **Acceptance.** `http://169.254.169.254/` and a hostname resolving there → 422 typed error; `http://localhost:11434/v1`
+  accepted.
+- **Close.** operator-console.md Synthesize (one sentence); CHANGELOG.
+- **Depends.** none.
+- **Agent.** haiku · offline · Handoff names the error class.
+
+### F2. Hygiene
+
+### F2.1 [BE] Dead code and stored counters left behind by E3.1/E3.2
+- **Context.** Chunk counts are computed from `chunks` since E3.2, yet `ProjectFile.num_chunks` / the collection
+  counter are still stored and `services/project_summary.py` still sums `ProjectFile.num_chunks`.
+  `rag.all_chunks_known` has no production caller. `chat.py` reads `handle.usage` via `getattr` only because a test fake
+  lacks the attribute.
+- **Scope.** Remove, don't redesign. `RAGService.retrieve` swallowing `get_collection` errors is in scope only as a
+  log line at warning level (behaviour unchanged).
+- **Steps.** (1) `project_summary.py` → `count_project_chunks`. (2) Drop the stored count columns that nothing reads
+  (autogenerate the migration, review it). (3) Delete `all_chunks_known` + its test. (4) Fake gets `usage = None`;
+  drop the `getattr`. (5) Warning log in `retrieve`.
+- **Files.** `adapta/services/project_summary.py`, `adapta/db/models.py`, `migrations/versions/0022_drop_chunk_counters.py`,
+  `adapta/services/rag.py`, `adapta/services/chat.py`, `tests/test_rag_hybrid.py`, the chat test fake.
+- **Contract impact.** Pillar 2 (migration); API only if a response field disappears (it must not — counts stay, computed).
+- **Gate.** live: `make migrate` + `make migrate-test` (scratch DB after F1.2), `make ci`, `tests/integration/test_rag_e2e.py`.
+- **Acceptance.** Project summaries report the same chunk counts as before on the golden project; no reader of the
+  dropped columns remains (`git grep`).
+- **Close.** CHANGELOG.
+- **Depends.** F1.2.
+- **Agent.** sonnet · live · serialize with F1.4, F3.1 · Handoff names the migration revision.
+
+### F2.2 [BE] Finished job keys never expire; the Ollama backend can leak its HTTP client
+- **Context.** `adapta:job:*` hashes in Redis are kept forever after a job finishes (E3.7). `ollama_backend` creates an
+  `httpx.AsyncClient` in `prepare()` that is not closed when generation never runs (E1.15 follow-up 4).
+- **Scope.** A TTL on terminal job states (7 days, one constant/setting) and closing the client on every path.
+- **Files.** `adapta/services/jobs.py`, `adapta/worker/main.py` (only where a job reaches a terminal state),
+  `adapta/core/backends/ollama_backend.py`, `tests/test_jobs*.py`, `tests/test_ollama_backend*.py`.
+- **Contract impact.** None.
+- **Gate.** offline: `make test`, `make ci` rungs.
+- **Acceptance.** A job set to `completed`/`failed` has a TTL ≤ 7 days; a `prepare()` followed by no generation closes
+  the client (test asserts `aclose` called).
+- **Close.** OPERATIONS.md (job retention, one line); CHANGELOG.
+- **Depends.** F1.1 (same file).
+- **Agent.** haiku · offline · Handoff names the TTL constant.
+
+### F2.3 [FE] Console warnings and training-era proof assets
+- **Context.** `svelte-check` reports 4 warnings in `RagFlow.svelte` (E5.4). `e2e/usecase-proof.spec.ts`,
+  `e2e/vision-proof.spec.ts` and `docs/screenshots/usecase-proof/`, `vision-proof/` were recorded for the training
+  era (E4.1 follow-up 2).
+- **Scope.** Zero svelte-check warnings. Delete proof specs/screenshots that exercise training; keep any that only
+  exercise surviving features (check what each spec drives) and any screenshot a doc page references.
+- **Files.** `adapta/console/src/**/RagFlow.svelte`, `e2e/usecase-proof.spec.ts`, `e2e/vision-proof.spec.ts`,
+  `docs/screenshots/usecase-proof/`, `docs/screenshots/vision-proof/`.
+- **Contract impact.** None.
+- **Gate.** offline: `npm run check` (0 errors, 0 warnings) + `make console-build` in the worktree; `git grep` shows no doc
+  links to deleted assets; `make docs-build` if any doc changed.
+- **Acceptance.** As in Gate.
+- **Close.** CHANGELOG.
+- **Depends.** none.
+- **Agent.** haiku · offline · Handoff lists the deleted files.
+
+### F3. Measure what shipped on by default
+
+### F3.1 [TEST] Multi-turn golden questions — does history condensation earn its default?
+- **Context.** E5.3 ships follow-up condensation **on by default** (+1–1.7 s and ~150 prompt tokens per follow-up turn
+  on CPU) with no measured recall gain: the golden set has no multi-turn questions, so the gain cannot be seen.
+- **Scope.** Add ~10 bilingual follow-up questions (`history` + `q` + `expected_file`) to the golden fixtures, a harness
+  path that runs them through `_retrieval_queries`, and measure recall@5 with condensation on vs off. Then stop for a
+  decision on the default.
+- **Files.** `tests/fixtures/golden/questions.jsonl` (or a sibling `followups.jsonl`), `tests/integration/test_rag_golden.py`,
+  `adapta/services/chat.py` (`_retrieval_queries` — read only unless the harness needs a seam), `Makefile` (`golden`
+  target only if a flag is needed).
+- **Contract impact.** None (fixtures + harness).
+- **Gate.** live: `make golden` (single-turn floor unchanged) + the follow-up run on/off.
+- **Acceptance.** A table: follow-up recall@5 and p50 latency with condensation on vs off; the single-turn floor holds.
+- **Close.** knowledge-and-behavior.md "Follow-up questions" tip with the measured numbers; CHANGELOG.
+- **Depends.** F1.4 (stable baseline).
+- **Agent.** sonnet + human decision · live · stop after the table · Handoff names the fixture file and the numbers.
+
 ---
 
 ## Definition of done (per task)

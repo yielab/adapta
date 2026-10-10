@@ -95,8 +95,8 @@ go. Never hand-write generated docs (API reference from the spec, code reference
 
 ## Where things stand
 
-Phases 0–5, console, brand and positioning shipped (history in `CHANGELOG.md`). Open work is
-the 2026-09-03 audit, roadmap §E: wave 0 (dependency pins E1.10, contract gate E1.11) closed 2026-10-09; the §E board picks the next wave.
+Phases 0–5, console, brand and positioning shipped (history in `CHANGELOG.md`). The 2026-09-03 audit (§E, 39 blocks)
+closed 2026-10-10. Open work is roadmap §F (post-audit follow-ups); the §F board picks the next wave.
 **In-product training was removed 2026-10-10 (E4.1):** no `adapta/training/`, CUDA worker, vLLM or GPU gates; the worker is
 the app image; its only worker job is the adapter job (E4.4, 2026-10-10). *Bring your own adapter* is live: import a
 GGUF/PEFT LoRA, gate it on CPU against the base, serve it with RAG. Pick a block by its id; read the block and its Files line only.

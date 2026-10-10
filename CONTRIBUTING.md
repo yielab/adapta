@@ -86,7 +86,7 @@ Steps for a schema change:
 
 ## Hard constraints
 
-1. **Do NOT rewrite inference engine internals.** `adapta/core/inference.py`, `adapta/core/model_manager.py`, and `adapta/training/trainer.py` are wrapped/called, not modified.
+1. **Do NOT rewrite inference engine internals.** `adapta/core/inference.py` and `adapta/core/model_manager.py` are wrapped/called, not modified.
 2. **No raw exceptions to clients.** Never write `raise HTTPException(status_code=500, detail=str(e))`. Raise a typed `DomainError` subclass from `adapta/domain/errors.py`. The `make check-leaks` gate enforces this.
 3. **No pip on the host.** All dependency changes go through `pyproject.toml` + container rebuild.
 4. **Never hand-edit generated files.** `adapta/models/generated/models.py` is auto-generated from the spec.
