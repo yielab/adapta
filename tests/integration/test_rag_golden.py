@@ -8,6 +8,9 @@ prints a table and asserts recall@5 against the ratchet in ``floor.json``.
 Opt-in (needs the live stack and the embedding model): ADAPTA_RUN_GOLDEN=1.
 
 Run:  make golden
+      ADAPTA_GOLDEN_CONTEXTUAL=1 make golden   # E5.1: project created with contextual_retrieval
+                                                # (needs the base model on the worker; the ON/OFF
+                                                # comparison is printed, the floor still applies)
 """
 
 from __future__ import annotations
@@ -35,6 +38,7 @@ skip_unless_optin = pytest.mark.skipif(
 
 _GOLDEN = Path(__file__).resolve().parent.parent / "fixtures" / "golden"
 _K = 5
+_CONTEXTUAL = os.environ.get("ADAPTA_GOLDEN_CONTEXTUAL") == "1"
 # Catalog name only; creating a RAG project does not load the model.
 _MODEL_NAME = "qwen2.5-3b-instruct"
 
@@ -100,7 +104,14 @@ async def test_golden_retrieval(client, admin, caplog):
     proj = await client.post(
         "/v1/projects",
         headers=h,
-        json={"name": "golden", "type": "rag", "base_model": _MODEL_NAME, "team_id": team_id},
+        json={
+            "name": "golden",
+            "type": "rag",
+            "base_model": _MODEL_NAME,
+            "team_id": team_id,
+            # Default OFF: the payload gains a field only when the opt-in env var is set.
+            **({"contextual_retrieval": True} if _CONTEXTUAL else {}),
+        },
     )
     assert proj.status_code == 201, proj.text
     pid = proj.json()["id"]
@@ -108,6 +119,7 @@ async def test_golden_retrieval(client, admin, caplog):
     # Index once through the real upload path, all documents at once: indexing runs as
     # queued worker jobs (E3.7), so concurrency is bounded by the worker, not by the number
     # of uploads in flight.
+    index_t0 = time.perf_counter()
     for d in docs:
         files = {"file": (d.name, io.BytesIO(d.read_bytes()), "text/plain")}
         up = await client.post(f"/v1/projects/{pid}/files", headers=h, files=files)
@@ -123,6 +135,8 @@ async def test_golden_retrieval(client, admin, caplog):
     got = await _poll(lambda: client.get(f"/v1/projects/{pid}/files", headers=h), _all_terminal)
     assert _all_terminal(got), f"indexing did not finish: {got.text[:300]}"
 
+    index_s = time.perf_counter() - index_t0
+    print(f"\nindexing: {index_s:.1f}s for {len(docs)} docs (contextual_retrieval={_CONTEXTUAL})")
     statuses = {f["filename"]: f["status"] for f in got.json()}
     assert all(s == "indexed" for s in statuses.values()), f"indexing incomplete: {statuses}"
 

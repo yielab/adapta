@@ -25,6 +25,9 @@ class _Result:
     def scalar_one(self):
         return self._obj
 
+    def one(self):
+        return self._obj
+
 
 class _Session:
     """Scripted fake; one shared ``state`` across the main and failure-handling sessions."""
@@ -45,6 +48,8 @@ class _Session:
             return _Result(self.state["pfile"])
         if sql.startswith("select") and "collections" in sql:
             return _Result(SimpleNamespace(embedding_model=settings.embedding_model, embedding_dim=8))
+        if sql.startswith("select") and "contextual_retrieval" in sql:  # E5.1: opt-in OFF
+            return _Result(SimpleNamespace(contextual_retrieval=False, base_model="m"))
         return _Result(None)
 
     def add_all(self, rows):

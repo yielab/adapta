@@ -249,6 +249,10 @@ class Project(Base):
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     # (E3.5) Operator prompt, rendered first in the system message at serving time.
     system_prompt: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # (E5.1) Opt-in: index each chunk with an LLM-written situating sentence (chunks.context).
+    contextual_retrieval: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
     type: Mapped[ProjectType] = mapped_column(
         Enum(ProjectType, native_enum=False, length=16), nullable=False
     )
@@ -328,7 +332,8 @@ class ProjectChunk(Base):
 
     ``id`` is ``"{file_id}_{chunk_index}"``, identical to the Chroma id. Rows go with
     their file via ``ON DELETE CASCADE``. ``tsv`` is a GENERATED column (never written)
-    that feeds the full-text leg (E3.2).
+    that feeds the full-text leg (E3.2) over ``context + text`` (E5.1; ``context`` is NULL unless the
+    project opted into contextual retrieval, which yields the same vector as ``text`` alone).
     """
 
     __tablename__ = "chunks"
@@ -344,6 +349,8 @@ class ProjectChunk(Base):
     page: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     section: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     text: Mapped[str] = mapped_column(Text, nullable=False)
+    # (E5.1) Situating sentence (contextual retrieval). Indexed (embedding + tsv) but never cited.
+    context: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     ocr: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     ocr_confidence: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
@@ -351,7 +358,7 @@ class ProjectChunk(Base):
         Boolean, nullable=False, default=False, server_default="false"
     )
     tsv: Mapped[Optional[str]] = mapped_column(
-        TSVECTOR, Computed("to_tsvector('simple', text)", persisted=True), nullable=True
+        TSVECTOR, Computed("to_tsvector('simple', coalesce(context, '') || ' ' || text)", persisted=True), nullable=True
     )
 
     __table_args__ = (

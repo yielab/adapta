@@ -3,7 +3,7 @@ All env vars are prefixed ADAPTA_ (e.g. ADAPTA_DATABASE_URL).
 """
 
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Optional
 
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -133,6 +133,13 @@ class Settings(BaseSettings):
     # upsert). A timeout is a transient failure: one retry, then the file ends `failed`.
     # Sized for the largest scanned PDF the OCR path accepts; lower it for text-only deployments.
     index_job_timeout_seconds: int = 900
+    # (E5.1) Contextual retrieval (opt-in per project). The situating sentence is written by the
+    # project's base model unless a teacher endpoint is set (same shape as dataset synthesis).
+    contextual_teacher_base_url: Optional[str] = None
+    contextual_teacher_model: Optional[str] = None
+    contextual_max_tokens: int = 80
+    # Characters of surrounding document shown to the model per chunk (whole doc when it fits).
+    contextual_window_chars: int = 12000
     chunk_size: int = 512
     chunk_overlap: int = 64
     # OCR'd chunks whose mean line confidence is below this are flagged needs_review (E3.3b).

@@ -251,6 +251,8 @@ async def _generate(
     model: str,
     teacher_base_url: Optional[str],
     teacher_model: Optional[str],
+    max_tokens: int = 768,
+    temperature: float = 0.7,
 ) -> str:
     if teacher_base_url:
         import httpx
@@ -259,8 +261,8 @@ async def _generate(
         payload = {
             "model": teacher_model or model,
             "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
-            "temperature": 0.7,
-            "max_tokens": 768,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
         }
         async with httpx.AsyncClient(timeout=120) as client:
             resp = await client.post(url, json=payload)
@@ -273,10 +275,82 @@ async def _generate(
         model_name=model,
         messages=[{"role": "user", "content": user}],
         system_prompt=system,
-        temperature=0.7,
-        max_tokens=768,
+        temperature=temperature,
+        max_tokens=max_tokens,
     )
     return str(result.get("choices", [{}])[0].get("message", {}).get("content", ""))
+
+
+_CONTEXT_SYSTEM = (
+    "You write one short sentence that situates a passage inside its document so a search "
+    "engine can find the passage. Answer with that sentence only, in the language of the "
+    "document, with no preamble."
+)
+_CONTEXT_MAX_CHARS = 400  # ~60 tokens; a runaway generation is cut, never stored whole
+
+
+def _context_window(texts: List[str], i: int, budget: int) -> str:
+    """The whole document when it fits ``budget`` chars, else the chunks around ``i``."""
+    if sum(len(t) for t in texts) <= budget:
+        return "\n\n".join(texts)
+    lo = hi = i
+    used = len(texts[i])
+    while True:
+        grew = False
+        if lo > 0 and used + len(texts[lo - 1]) <= budget:
+            lo -= 1
+            used += len(texts[lo])
+            grew = True
+        if hi < len(texts) - 1 and used + len(texts[hi + 1]) <= budget:
+            hi += 1
+            used += len(texts[hi])
+            grew = True
+        if not grew:
+            return "\n\n".join(texts[lo : hi + 1])
+
+
+async def contextualize_chunks(chunks: list, *, model: str) -> list:
+    """(E5.1) Return ``chunks`` with ``context`` set to a one-sentence situating blurb each.
+
+    ``chunks`` are one file's chunks in order (``Chunk`` named tuples). Reuses :func:`_generate`
+    (project base model, or the ``contextual_teacher_*`` endpoint). A chunk whose generation
+    fails keeps ``context=None`` (indexed as plain text); if *every* chunk fails the model is
+    unavailable and an ``InternalError`` surfaces so the file ends ``failed``, not silently OFF.
+    """
+    if not chunks:
+        return chunks
+    texts = [c.text for c in chunks]
+    out, failures = [], 0
+    for i, c in enumerate(chunks):
+        doc = _context_window(texts, i, settings.contextual_window_chars)
+        user = (
+            f"<document>\n{doc}\n</document>\n<chunk>\n{c.text}\n</chunk>\n"
+            "Write one short sentence situating this chunk within the document, to improve "
+            "search retrieval of the chunk."
+        )
+        try:
+            raw = await _generate(
+                _CONTEXT_SYSTEM,
+                user,
+                model=model,
+                teacher_base_url=settings.contextual_teacher_base_url,
+                teacher_model=settings.contextual_teacher_model,
+                max_tokens=settings.contextual_max_tokens,
+                temperature=0.0,
+            )
+        except Exception as exc:  # noqa: BLE001 — per-chunk; counted below
+            logger.warning("Contextual retrieval: chunk %d failed: %s", c.index, exc)
+            failures += 1
+            out.append(c)
+            continue
+        ctx = " ".join(raw.split())[:_CONTEXT_MAX_CHARS] or None
+        out.append(c._replace(context=ctx))
+    if failures == len(chunks):
+        raise InternalError(
+            message="Contextual retrieval could not generate context. Check model availability.",
+            internal_detail=f"All {failures} chunks failed context generation (model={model!r})",
+        )
+    return out
 
 
 async def synthesize_from_chunks(

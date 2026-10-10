@@ -45,6 +45,7 @@ class Chunk(NamedTuple):
     section: Optional[str] = None  # heading path, "H1 > H2"
     ocr: bool = False  # the page had no text layer and was read by OCR
     ocr_confidence: Optional[float] = None  # mean OCR line score of that page, 0..1
+    context: Optional[str] = None  # (E5.1) LLM situating sentence; indexed with the text, never shown
 
 
 @dataclass

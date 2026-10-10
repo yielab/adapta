@@ -1050,16 +1050,18 @@ components:
         description: {type: string, nullable: true}
         team_id: {type: string}
         system_prompt: {type: string, nullable: true, maxLength: 8000, description: "Operator prompt, rendered first in the system message (E3.5)."}
+        contextual_retrieval: {type: boolean, default: false, description: "Index each chunk with an LLM-written situating sentence (E5.1). Applies to files indexed after it is set; re-upload to apply to existing ones."}
 
     ProjectUpdate:
       type: object
       description: "Only the fields present are changed; ``system_prompt: null`` (or empty) clears it."
       properties:
         system_prompt: {type: string, nullable: true, maxLength: 8000}
+        contextual_retrieval: {type: boolean, description: "See ProjectCreate (E5.1)."}
 
     ProjectResponse:
       type: object
-      required: [id, name, type, status, base_model, description, system_prompt, team_id, created_at, summary]
+      required: [id, name, type, status, base_model, description, system_prompt, contextual_retrieval, team_id, created_at, summary]
       properties:
         id: {type: string}
         name: {type: string}
@@ -1068,6 +1070,7 @@ components:
         base_model: {type: string}
         description: {type: string, nullable: true}
         system_prompt: {type: string, nullable: true}
+        contextual_retrieval: {type: boolean}
         team_id: {type: string}
         created_at: {type: string}
         # Dashboard read-model (§C2.1) — null on create, populated on list/get.

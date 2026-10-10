@@ -225,6 +225,27 @@ async def _index_file(
                     chunk_overlap=chunk_overlap,
                 )
 
+            # (E5.1) Opt-in contextual retrieval: one situating sentence per chunk, written by
+            # the project's base model, embedded and full-text indexed with the text.
+            proj = (
+                await db.execute(
+                    select(Project.contextual_retrieval, Project.base_model).where(
+                        Project.id == project_id
+                    )
+                )
+            ).one()
+            if proj.contextual_retrieval and parsed:
+                from adapta.services.synthesis import contextualize_chunks
+
+                ctx_started = time.perf_counter()
+                parsed = await contextualize_chunks(parsed, model=proj.base_model)
+                logger.info(
+                    "contextual retrieval: %s chunks in %.1fs (%s)",
+                    len(parsed),
+                    time.perf_counter() - ctx_started,
+                    file_id,
+                )
+
             # Postgres rows first, in this session: if the Chroma upsert below fails the
             # exception skips the commit and the rows roll back with the session.
             await persist_chunks(db, project_id, file_id, parsed)

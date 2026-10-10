@@ -129,10 +129,18 @@ class ProjectCreate(BaseModel):
     """
     Operator prompt, rendered first in the system message (E3.5).
     """
+    contextual_retrieval: bool = False
+    """
+    Index each chunk with an LLM-written situating sentence (E5.1). Applies to files indexed after it is set; re-upload to apply to existing ones.
+    """
 
 
 class ProjectUpdate(BaseModel):
     system_prompt: Annotated[str | None, Field(max_length=8000)] = None
+    contextual_retrieval: bool | None = None
+    """
+    See ProjectCreate (E5.1).
+    """
 
 
 class FileSummary(BaseModel):
@@ -544,6 +552,7 @@ class ProjectResponse(BaseModel):
     base_model: str
     description: Annotated[str | None, Field(...)]
     system_prompt: Annotated[str | None, Field(...)]
+    contextual_retrieval: bool
     team_id: str
     created_at: str
     summary: Annotated[ProjectSummary | None, Field(...)]

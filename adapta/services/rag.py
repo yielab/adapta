@@ -115,6 +115,13 @@ def _needs_review(c: object) -> bool:
     return ocr and conf is not None and conf < settings.ocr_review_threshold
 
 
+def indexed_text(chunk: object) -> str:
+    """What gets embedded for a chunk: ``context + text`` when it has a situating sentence."""
+    ctx = getattr(chunk, "context", None)
+    text = chunk.text  # type: ignore[attr-defined]
+    return f"{ctx}\n\n{text}" if ctx else text
+
+
 def build_chunk_rows(project_id: str, file_id: str, chunks: list) -> List[ProjectChunk]:
     """ORM rows for a file's chunks; ids match the Chroma ids (``{file_id}_{index}``)."""
     return [
@@ -124,6 +131,7 @@ def build_chunk_rows(project_id: str, file_id: str, chunks: list) -> List[Projec
             project_id=project_id,
             chunk_index=c.index,
             text=c.text,
+            context=getattr(c, "context", None),
             content_hash=content_hash(c.text),
             page=getattr(c, "page", None),
             section=getattr(c, "section", None),
@@ -521,7 +529,9 @@ class RAGService:
 
         emb_service = get_embedding_service()
         texts = [c.text for c in chunks]
-        embeddings = emb_service.embed(texts)
+        # (E5.1) The vector covers context + text; the stored document stays the raw text so
+        # citations quote the source. No context -> the exact pre-E5.1 input.
+        embeddings = emb_service.embed([indexed_text(c) for c in chunks])
 
         name = collection_name_for(project_id)
         ids = [f"{file_id}_{c.index}" for c in chunks]

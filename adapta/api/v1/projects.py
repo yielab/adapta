@@ -40,6 +40,7 @@ def _proj_resp(p: Project, summary: Optional[Dict[str, Any]] = None) -> ProjectR
         base_model=p.base_model,
         description=p.description,
         system_prompt=p.system_prompt,
+        contextual_retrieval=p.contextual_retrieval,
         team_id=p.team_id,
         created_at=p.created_at.isoformat(),
         summary=ApiProjectSummary.model_validate(summary) if summary is not None else None,
@@ -85,6 +86,7 @@ async def create_project(
         base_model=body.base_model,
         description=body.description,
         system_prompt=body.system_prompt or None,
+        contextual_retrieval=bool(body.contextual_retrieval),
         status=ProjectStatus.created,
     )
     db.add(project)
@@ -137,6 +139,8 @@ async def update_project(
     await require_team_writer(db, current_user.id, project.team_id)
     if "system_prompt" in body.model_fields_set:
         project.system_prompt = (body.system_prompt or "").strip() or None
+    if body.contextual_retrieval is not None:
+        project.contextual_retrieval = body.contextual_retrieval
     await db.commit()  # durable before response (read-your-write)
     from adapta.services.project_summary import compute_summary
 
