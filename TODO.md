@@ -133,7 +133,7 @@ classes are defined in [`.claude/context/gates.md`](.claude/context/gates.md) ("
 | E5.1 | 3 | sonnet | live | E3.1, E3.7, E3.8 | E5.2, E4.8 | open |
 | E5.2 | 3 | sonnet | live | E3.8, E3.7, E4.8 | E5.1, E4.5 | open |
 | E2.2 | 4 | sonnet | live | E2.1, E4.4 | E4.5 (`endpoints.py`, `EndpointPanel.svelte`) | open |
-| E4.5 | 4 | sonnet | live | E4.4 | E2.2, E4.6, E5.2 | ready-for-live (e4.5) |
+| E4.5 | 4 | sonnet | live | E4.4 | E2.2, E4.6, E5.2 | done 2026-10-10 |
 | E4.6 | 4 | sonnet | live | E4.4 | E4.5, E4.8, E4.9 | done 2026-10-10 |
 | E5.3 | 4 | sonnet | live | E3.2, E3.5, E3.8 | E4.9/E3.5 | open |
 | E5.4 | 4 | sonnet | live | E3.3b, E3.4, E3.5, E3.7 | E5.1/E5.2, E3.4 | open |
@@ -251,33 +251,6 @@ E1.1–E1.9 shipped 2026-09-17 → [CHANGELOG.md](CHANGELOG.md). E1.14 closed 20
 > **One image, all CPU.** After E4.1 the worker runs the `app` image and consumes queued job kinds
 > (`adapter` E4.4, `index` E3.7, `extract` E5.4); no service reserves a GPU. Optional llama.cpp GPU offload
 > for serving (`ADAPTA_N_GPU_LAYERS`) is unaffected.
-
-### E4.5 `[BE+FE]` Adapter promotion, rollback and an audit trail (P2)
-- [ ] **Context.** E4.2 binds `Endpoint.adapter_id` at creation and nothing changes it; a project can hold
-  several `passed` adapters but none can be compared or swapped, and nobody records who did what.
-- **Depends.** E4.4. **Unblocks.** E4.7.
-- **Agent.** sonnet · gate class **live** · serialize with: E2.2 (`endpoints.py`, `EndpointPanel.svelte`),
-  E4.6 and E5.2 (`EndpointPanel.svelte`) · **Handoff.** must name the migration revision, the promote route,
-  the eviction wrapper.
-- **Scope.** List passed adapters with scores; promote one; rollback = promote the previous; every change
-  logged. Out: A/B traffic split, shadow mode.
-- **Steps.** (1) Migration `adapter_events(id, endpoint_id, adapter_id, action promote|rollback,
-  actor_user_id, created_at)`. (2) Spec: `POST /v1/projects/{id}/endpoint/promote {adapter_id}` (writer;
-  adapter must be `passed`), `GET /v1/projects/{id}/endpoint/history`. (3) `endpoints.py`: promote swaps
-  `adapter_id`, evicts the old `(base, adapter)` cache entry, writes the event. (4) Console
-  `EndpointPanel.svelte`: adapters table (task metric vs base, date, Promote), history, current badge.
-  (5) Tests: promote/rollback state machine; viewer 403; eviction called.
-- **Files.** `migrations/versions/` (new), `adapta/db/models.py`, `specs/openapi.yaml` (endpoint section),
-  `adapta/api/v1/endpoints.py`, `adapta/core/model_manager.py` (an `evict(key)` wrapper if absent),
-  `adapta/console/src/views/EndpointPanel.svelte`, `tests/test_adapter_upload.py`,
-  `tests/integration/test_c_phase_rbac.py`.
-- **Contract impact.** API + DB.
-- **Gate.** `make migrate-test` → `make validate-spec` → `make generate` → `make check-models` → `make test`
-  → `make test-contracts` → `make console-build`.
-- **Acceptance.** Promoting a second passed adapter changes what the endpoint serves without a restart;
-  rollback restores the first; history shows actor and scores; a failed adapter cannot be promoted (400).
-- **Close.** operator-console endpoint section, consuming-the-api, PRODUCT_DEFINITION serving paragraph,
-  CLAUDE.md API surface; Status snapshot.
 
 ### E4.7 `[DOCS]` Import guide and pitch: "bring your own adapter" wherever training was claimed (P1)
 - [ ] **Context.** README, PRODUCT_DEFINITION, BRAND, COMPETITIVE_LANDSCAPE, knowledge-and-behavior,

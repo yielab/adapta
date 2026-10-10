@@ -836,6 +836,51 @@ bind mount, so uvicorn reloaded on every worker edit — reload now watches `/ap
   individual questions are not. (3) Vision requests ignore the project prompt. (4) Page/review filters can return
   fewer than `top_k` (×4 over-fetch heuristic).
 
+### E4.5 `[BE+FE]` Adapter promotion, rollback and an audit trail (P2)
+- [x] **Context.** E4.2 binds `Endpoint.adapter_id` at creation and nothing changes it; a project can hold
+  several `passed` adapters but none can be compared or swapped, and nobody records who did what.
+- **Depends.** E4.4. **Unblocks.** E4.7.
+- **Agent.** sonnet · gate class **live** · serialize with: E2.2 (`endpoints.py`, `EndpointPanel.svelte`),
+  E4.6 and E5.2 (`EndpointPanel.svelte`) · **Handoff.** must name the migration revision, the promote route,
+  the eviction wrapper.
+- **Scope.** List passed adapters with scores; promote one; rollback = promote the previous; every change
+  logged. Out: A/B traffic split, shadow mode.
+- **Steps.** (1) Migration `adapter_events(id, endpoint_id, adapter_id, action promote|rollback,
+  actor_user_id, created_at)`. (2) Spec: `POST /v1/projects/{id}/endpoint/promote {adapter_id}` (writer;
+  adapter must be `passed`), `GET /v1/projects/{id}/endpoint/history`. (3) `endpoints.py`: promote swaps
+  `adapter_id`, evicts the old `(base, adapter)` cache entry, writes the event. (4) Console
+  `EndpointPanel.svelte`: adapters table (task metric vs base, date, Promote), history, current badge.
+  (5) Tests: promote/rollback state machine; viewer 403; eviction called.
+- **Files.** `migrations/versions/` (new), `adapta/db/models.py`, `specs/openapi.yaml` (endpoint section),
+  `adapta/api/v1/endpoints.py`, `adapta/core/model_manager.py` (an `evict(key)` wrapper if absent),
+  `adapta/console/src/views/EndpointPanel.svelte`, `tests/test_adapter_upload.py`,
+  `tests/integration/test_c_phase_rbac.py`.
+- **Contract impact.** API + DB.
+- **Gate.** `make migrate-test` → `make validate-spec` → `make generate` → `make check-models` → `make test`
+  → `make test-contracts` → `make console-build`.
+- **Acceptance.** Promoting a second passed adapter changes what the endpoint serves without a restart;
+  rollback restores the first; history shows actor and scores; a failed adapter cannot be promoted (400).
+- **Close.** operator-console endpoint section, consuming-the-api, PRODUCT_DEFINITION serving paragraph,
+  CLAUDE.md API surface; Status snapshot.
+- **Done.** 2026-10-10. Migration `0017_adapter_events` (`adapter_events`: endpoint, adapter, action promote|rollback,
+  actor, created_at); `POST /v1/projects/{id}/endpoint/promote {adapter_id}` (writer role; only a `passed` adapter of
+  the same project; already-served/no-GGUF/non-finetune → 400) and `GET …/endpoint/history` (newest first, with adapter
+  name, actor email, eval metrics); promoting an adapter that served this endpoint before is recorded as `rollback`;
+  `create_endpoint` writes the initial `promote`. Additive `ModelManager.evict()` frees the old variant after commit;
+  chat resolves `endpoint.adapter.gguf_path` per request, so a swap needs no restart. Console: Adapters card + history in
+  `EndpointPanel.svelte`. Live on `develop`: migrate 0017 + `migrate-test` ✓ · `make ci` ✓ · svelte-check 0 errors ·
+  `test_c_phase_rbac` 20 passed · `test-contracts` 39/39 · first live walk-through **red** — creating any finetune
+  endpoint 409'd (the initial event was inserted before the endpoint row; unit tests used a fake session) → flush first
+  + a real-DB promote/rollback integration test · then `test_adapter_import_e2e` 3 passed; promote → chat `billing` on
+  the new adapter, log shows unload/load with no restart; rollback ✓; promoting a failed adapter → 400; history
+  `rollback, promote, promote` with actor.
+- **Handoff.** Migration `0017`. Routes in `adapta/api/v1/endpoints.py`. `ModelManager.evict(model_name, adapter_path=None)
+  -> bool` (additive wrapper over `unload_model`). `AdapterEvent.adapter_id`/`adapter_name` nullable (an adapter can be
+  deleted; its history stays). **Lesson for every gate touching endpoints/adapters:** include
+  `tests/integration/test_adapter_import_e2e.py` — it exercises the real DB. **Unblocks** E2.2, E4.7.
+- **Follow-up.** Endpoints created before 0017 have no initial event (their first rollback records `promote`). Two
+  concurrent promotes: last write wins, both logged.
+
 ---
 
 ## 2026-10-08 — §E wave 0: the gates every other block is verified by
