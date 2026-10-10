@@ -58,7 +58,7 @@ procedure. Rules that keep parallel work from colliding:
 
 ---
 
-## Status snapshot (updated 2026-10-09)
+## Status snapshot (updated 2026-10-09, after wave 0 + E3.1/E3.8)
 
 | Area | State |
 |---|---|
@@ -66,7 +66,7 @@ procedure. Rules that keep parallel work from colliding:
 | Fine-tuning direction | **Decided 2026-10-09: bring your own adapter (§E4).** Adapta stops training; it imports a GGUF or PEFT LoRA, gates it on CPU against the base on the project's eval set, and serves it with RAG. Until E4.1 lands the training code still exists; after it no service needs a GPU. |
 | SDD gates | Pillar 2 ✅ `make migrate-test` · Pillar 3: the GPU perplexity gate is replaced by the CPU task-metric gate on imported adapters (E4.3/E4.4) · Pillar 1 ✅ `make test-contracts` green twice 2026-10-09 (E1.11): 35 operations, ~2,060 cases, authenticated |
 | CI fast gate (`make ci`) | ✅ green 2026-10-09 in the pinned app image (E1.10): ruff + mypy clean, 269 unit tests pass |
-| **Audit 2026-09-03 (§E)** | 🟥 **open** — 11/37 done (E1.1–E1.9 shipped 2026-09-17, E1.14 on 2026-10-08, E1.10 on 2026-10-09). Wave 0: E1.11 left. Then E4.1 removes training and the GPU from the stack, alongside E2 (Ollama + launch kit) and E3 (Postgres chunks → real hybrid FTS, Docling + RapidOCR, citations with page/OCR provenance, system prompt + threshold + filters, multilingual, queued indexing, golden set); E4 (adapter import, CPU eval gate, adapter job, promotion/rollback, console flow, import guide, synthesis for eval sets, JSON mode); E5 (contextual retrieval, RAG gate, history-aware retrieval, visual extraction with the vision base). Scheduling: the §E board. |
+| **Audit 2026-09-03 (§E)** | 🟥 **open** — 14/37 done (E1.1–E1.9 shipped 2026-09-17, E1.14 on 2026-10-08; E1.10, E1.11, E3.1, E3.8 on 2026-10-09). Wave 0 done (gates green: `make ci`, `make test-contracts`, `make golden` baseline recall@5 0.844). In flight: E4.1, E3.2, E3.3a. E4.1 removes training and the GPU from the stack, alongside E2 (Ollama + launch kit) and E3 (Postgres chunks → real hybrid FTS, Docling + RapidOCR, citations with page/OCR provenance, system prompt + threshold + filters, multilingual, queued indexing, golden set); E4 (adapter import, CPU eval gate, adapter job, promotion/rollback, console flow, import guide, synthesis for eval sets, JSON mode); E5 (contextual retrieval, RAG gate, history-aware retrieval, visual extraction with the vision base). Scheduling: the §E board. |
 
 ---
 
