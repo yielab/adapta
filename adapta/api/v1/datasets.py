@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import List
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, Query, UploadFile
+from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -39,6 +40,7 @@ def _ds_resp(d: Dataset) -> DatasetResponse:
         created_at=d.created_at.isoformat(),
         source_dataset_id=d.source_dataset_id,
         task=d.task,
+        kind=d.kind,
     )
 
 
@@ -243,6 +245,27 @@ async def get_dataset_rows(
     return DatasetRowsResponse(rows=page_rows, total=total, page=page, page_size=page_size)
 
 
+@router.get("/{dataset_id}/download")
+async def download_dataset(
+    project_id: str,
+    dataset_id: str,
+    current_user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Download a valid dataset as JSONL (e.g. a ``behavior`` set to train an adapter elsewhere)."""
+    project = await _get_finetune_project(db, project_id)
+    await require_team_member(db, current_user.id, project.team_id)
+    dataset = await _get_valid_dataset(db, project_id, dataset_id)
+    if not dataset.storage_path or not Path(dataset.storage_path).is_file():
+        raise NotFound(message="Dataset file not found")
+    stem = Path(dataset.name).stem or "dataset"
+    return FileResponse(
+        dataset.storage_path,
+        media_type="application/x-ndjson",
+        filename=f"{stem}.jsonl",
+    )
+
+
 @router.post("/{dataset_id}/curate", response_model=DatasetResponse, status_code=201)
 async def curate_dataset(
     project_id: str,
@@ -292,6 +315,7 @@ async def curate_dataset(
         num_samples=num_samples,
         source_dataset_id=source.id,
         task=source.task,
+        kind=source.kind,
     )
     db.add(curated)
     await db.flush()  # assigns curated.id

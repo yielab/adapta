@@ -118,6 +118,7 @@ export interface Dataset {
   created_at: string;
   source_dataset_id: string | null;
   task: string | null;
+  kind: "upload" | "rag_eval" | "behavior";
 }
 
 export interface DatasetRowsResponse {

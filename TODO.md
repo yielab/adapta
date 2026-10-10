@@ -124,7 +124,7 @@ classes are defined in [`.claude/context/gates.md`](.claude/context/gates.md) ("
 | E3.7 | 2 | sonnet | live | E3.1, E4.1 | E3.1/E3.3b, E4.4 (`worker/main.py`) | done 2026-10-10 |
 | E4.2 | 2 | sonnet | live | E4.1 | E4.3 (spec, migrations), E4.5, E2.2 | done 2026-10-10 |
 | E4.3 | 2 | sonnet | live | E4.1 | E4.2 (spec, migrations) | done 2026-10-10 |
-| E4.8 | 2 | sonnet | live | E3.8, E4.1 | E4.6, E5.1 | in progress (worker-e4.8) |
+| E4.8 | 2 | sonnet | live | E3.8, E4.1 | E4.6, E5.1 | ready-for-live (e4.8) |
 | E4.9 | 2 | sonnet | live | E1.11 | E2.1, E3.5/E5.3, E4.6 | done 2026-10-10 |
 | E3.4 | 3 | sonnet | live | E3.1, E3.3b, E1.11 | E3.5 (spec, `Playground.svelte`), E3.3b | done 2026-10-10 |
 | E3.5 | 3 | sonnet | live | E3.2, E1.11 | E3.4 (spec, `Playground.svelte`), E4.9 and E5.3 | done 2026-10-10 |
@@ -295,7 +295,7 @@ E1.1–E1.9 shipped 2026-09-17 → [CHANGELOG.md](CHANGELOG.md). E1.14 closed 20
   one guidance line each. (6) Tests: parsing per mode; dedup; download.
 - **Files.** `specs/openapi.yaml` (`SynthesizeRequest`, `DatasetResponse.kind`, download path),
   `migrations/versions/` (new), `adapta/services/synthesis.py`, `adapta/api/v1/{synthesis,datasets}.py`,
-  `adapta/db/models.py`, `adapta/console/src/views/FinetuneFlow.svelte` (synthesis section),
+  `adapta/db/models.py`, `adapta/console/src/views/AdapterFlow.svelte` (synthesis section; `FinetuneFlow.svelte` no longer exists),
   `tests/test_synthesis_helpers.py`.
 - **Contract impact.** API + DB.
 - **Gate.** `make migrate-test` → `make validate-spec` → `make generate` → `make check-models` →
@@ -303,6 +303,22 @@ E1.1–E1.9 shipped 2026-09-17 → [CHANGELOG.md](CHANGELOG.md). E1.14 closed 20
 - **Acceptance.** `rag_eval` output loads into the E3.8 harness unchanged; a `behavior` set uploads as an
   E4.3 eval set and downloads as JSONL; the console default is `rag_eval`.
 - **Close.** knowledge-and-behavior, operator-console; Status snapshot.
+- **Done.** (offline, branch `e4.8`) Migration `0018_dataset_kind` (`datasets.kind`, default `upload`; down `0017`).
+  Spec: `SynthesizeRequest` gains `mode` (`rag_eval` default | `behavior`), `task`, `style_instructions`,
+  `teacher_base_url`/`teacher_model`; `DatasetResponse.kind`; `GET …/datasets/{did}/download` (JSONL). `synthesis.py`
+  rewritten: chunks come from Postgres (not Chroma), generator = local base via `chat()` or any OpenAI-compatible
+  teacher over httpx; `rag_eval` rows are golden-format `{q, expected_file, lang, expected_page?, answer, source_chunk_id}`;
+  `behavior` rows are shaped by `task` (classify yes/no, extract JSON-object fields quoted from the chunk, freeform),
+  registered with that `task`; exact then embedding near-dup (cosine > 0.92) filter. Console: mode radio (default
+  `rag_eval`) + task/style in `AdapterFlow.svelte`. Gates: validate-spec, generate, check-models, lint, check-leaks, test,
+  svelte-check (0 errors), vite build. NOT run: migrate-test, test-contracts, live synthesis.
+- **Handoff.** `Dataset.kind` values: `upload` (default; curated sets inherit their source's), `rag_eval`, `behavior`.
+  `rag_eval` rows are E3.8's `questions.jsonl` shape plus `answer` and `source_chunk_id` (extra keys are ignored by the
+  harness), so E5.2 can read them unchanged; `rag_eval` datasets have `task = NULL`. `synthesis.py` helpers E5.1 can reuse:
+  `_generate(system, user, model=, teacher_base_url=, teacher_model=)` (teacher or local chat) and `load_chunks`.
+  Migration `0018` must merge after E4.5's `0017`. The `extract` task is E4.3's JSON-object response, not a bare span.
+- **Follow-up.** The teacher call is keyless and unauthenticated (self-hosted default); a hosted teacher needs an API-key
+  field, and `teacher_base_url` is a server-side fetch an SSRF guard (block link-local/metadata ranges) should cover.
 
 ### E5. Differentiation (weeks 10–13)
 

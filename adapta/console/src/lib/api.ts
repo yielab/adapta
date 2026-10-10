@@ -126,7 +126,19 @@ export const api = {
     request<import("./types").DatasetRowsResponse>(`${V1}/projects/${pid}/datasets/${did}/rows?page=${page}&page_size=${pageSize}`),
   curateDataset: (pid: string, did: string, rows: Record<string, unknown>[]) =>
     request<Dataset>(`${V1}/projects/${pid}/datasets/${did}/curate`, { method: "POST", body: { rows } }),
-  synthesize: (pid: string, opts: { n_pairs_per_chunk?: number; max_chunks?: number; system_prompt?: string }) =>
+  synthesize: (
+    pid: string,
+    opts: {
+      n_pairs_per_chunk?: number;
+      max_chunks?: number;
+      system_prompt?: string;
+      mode?: "rag_eval" | "behavior";
+      task?: "classify" | "extract" | "freeform";
+      style_instructions?: string;
+      teacher_base_url?: string;
+      teacher_model?: string;
+    },
+  ) =>
     request<{ dataset_id: string; status: string; message: string }>(`${V1}/projects/${pid}/datasets/synthesize`, { method: "POST", body: opts }),
 
   // Adapters (bring-your-own LoRA, gated against the base on an eval set)

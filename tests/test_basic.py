@@ -249,22 +249,6 @@ def test_synthesis_extract_pairs_malformed_returns_empty():
     assert _extract_pairs("") == []
 
 
-def test_synthesis_to_instruction_pair():
-    from adapta.services.synthesis import _to_instruction_pair
-
-    record = _to_instruction_pair({"question": "Q?", "answer": "A."})
-    assert record["prompt"] == "Q?"
-    assert record["response"] == "A."
-    assert "system" not in record
-
-
-def test_synthesis_to_instruction_pair_with_system():
-    from adapta.services.synthesis import _to_instruction_pair
-
-    record = _to_instruction_pair({"question": "Q?", "answer": "A."}, system="Be concise.")
-    assert record["system"] == "Be concise."
-
-
 # ---------------------------------------------------------------------------
 # Health endpoint (in-process, no infra needed)
 # ---------------------------------------------------------------------------

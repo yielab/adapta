@@ -420,6 +420,11 @@ class Dataset(Base):
     # Eval task (classify | extract | freeform): which metric the eval gate scores this set
     # with. Required on upload; NULL on datasets that predate it or were synthesized.
     task: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
+    # What the dataset is: upload | rag_eval (synthesized golden-set questions) | behavior
+    # (synthesized prompt/response rows). Curated datasets inherit their source's kind.
+    kind: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="upload", server_default="upload"
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     project: Mapped[Project] = relationship("Project", back_populates="datasets")

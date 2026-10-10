@@ -19,6 +19,7 @@ from adapta.services.rag import count_project_chunks
 router = APIRouter()
 
 
+
 async def _run_synthesis(
     project_id: str,
     dataset_id: str,
@@ -30,19 +31,25 @@ async def _run_synthesis(
     from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
     from adapta.domain.errors import DomainError
-    from adapta.services.synthesis import synthesize_from_project
+    from adapta.services.synthesis import load_chunks, synthesize_from_chunks
 
     engine = create_async_engine(db_url, echo=False)
     async_session = async_sessionmaker(engine, class_=_AS, expire_on_commit=False)
 
     async with async_session() as db:
         try:
-            _path, count = await synthesize_from_project(
-                project_id=project_id,
+            chunks = await load_chunks(db, project_id, req.max_chunks)
+            _path, count = await synthesize_from_chunks(
+                project_id,
+                chunks,
+                mode=req.mode,
+                task=req.task,
                 n_pairs_per_chunk=req.n_pairs_per_chunk,
-                max_chunks=req.max_chunks,
                 system_prompt=req.system_prompt,
+                style_instructions=req.style_instructions,
                 base_model=req.base_model,
+                teacher_base_url=req.teacher_base_url,
+                teacher_model=req.teacher_model,
             )
             result = await db.execute(select(Dataset).where(Dataset.id == dataset_id))
             ds = result.scalar_one_or_none()
@@ -73,7 +80,7 @@ async def _run_synthesis(
     response_model=SynthesizeResponse,
     status_code=202,
     tags=["datasets"],
-    summary="Synthesize an instruction dataset from indexed documents",
+    summary="Synthesize a RAG eval set or an adapter eval set from indexed documents",
 )
 async def synthesize_dataset(
     project_id: str,
@@ -94,13 +101,23 @@ async def synthesize_dataset(
     if await count_project_chunks(db, project_id) == 0:
         raise InvalidRequest(message="No indexed documents found. Upload and index files first.")
 
+    from adapta.services.synthesis import check_synthesis_args
+
+    check_synthesis_args(
+        req.mode, req.task, req.n_pairs_per_chunk, req.teacher_base_url
+    )
+
     dataset_id = str(uuid.uuid4())
+    is_behavior = req.mode == "behavior"
     ds = Dataset(
         id=dataset_id,
         project_id=project_id,
-        name=f"synthesized_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}",
+        name=f"synthesized_{req.mode}_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}",
         storage_path="",  # filled in by background task
         status=DatasetStatus.validating,
+        kind=req.mode,
+        # A behavior set is registered with its eval task so it is usable as an adapter eval set.
+        task=req.task if is_behavior else None,
     )
     db.add(ds)
     await db.commit()

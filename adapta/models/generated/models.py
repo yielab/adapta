@@ -183,6 +183,7 @@ class DatasetResponse(BaseModel):
     name: str
     status: str
     num_samples: Annotated[int | None, Field(...)]
+    kind: str
     validation_error: Annotated[str | None, Field(...)]
     created_at: str
     task: Annotated[str | None, Field(...)]
@@ -323,6 +324,11 @@ class SynthesizeRequest(BaseModel):
     max_chunks: Annotated[int, Field(ge=1, le=500)] = 50
     system_prompt: Annotated[str | None, Field(max_length=1000)] = None
     base_model: str | None = None
+    mode: str = "rag_eval"
+    task: str = "extract"
+    style_instructions: Annotated[str | None, Field(max_length=1000)] = None
+    teacher_base_url: Annotated[str | None, Field(max_length=512)] = None
+    teacher_model: Annotated[str | None, Field(max_length=128)] = None
 
 
 class SynthesizeResponse(BaseModel):

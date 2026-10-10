@@ -216,6 +216,11 @@
   let nPairs = $state(2);
   let maxChunks = $state(50);
   let synthesizing = $state(false);
+  // rag_eval (default): retrieval questions for the RAG golden harness.
+  // behavior: prompt/response rows usable as an adapter eval set.
+  let synthMode = $state<"rag_eval" | "behavior">("rag_eval");
+  let synthTask = $state<"classify" | "extract" | "freeform">("extract");
+  let synthStyle = $state("");
 
   async function submitSynthesize() {
     if (synthesizing) return;
@@ -224,9 +229,13 @@
       await api.synthesize(project.id, {
         n_pairs_per_chunk: nPairs,
         max_chunks: maxChunks,
+        mode: synthMode,
+        ...(synthMode === "behavior"
+          ? { task: synthTask, ...(synthStyle.trim() ? { style_instructions: synthStyle.trim() } : {}) }
+          : {}),
       });
       showSynth = false;
-      toastSuccess("Synthesis started — generating Q/A pairs from your documents.");
+      toastSuccess("Synthesis started — generating questions from your documents.");
       await loadDatasets();
     } catch (e) {
       reportErr(e, "Could not start synthesis.");
@@ -600,6 +609,35 @@
           <strong>Pairs per chunk</strong>: how many examples to draft from each passage.
           <strong>Max chunks</strong>: how many passages to use — higher means more data, but slower.
         </p>
+        <fieldset class="field" style="margin: 0 0 12px; border: 0; padding: 0;" disabled={synthesizing}>
+          <legend>What to generate</legend>
+          <label style="display: block;">
+            <input type="radio" bind:group={synthMode} value="rag_eval" />
+            <strong>Retrieval questions</strong> (default) — questions a user could ask of your
+            documents, to measure how well search finds the right file.
+          </label>
+          <label style="display: block;">
+            <input type="radio" bind:group={synthMode} value="behavior" />
+            <strong>Adapter eval set</strong> — prompt/response rows, with facts quoted from your
+            documents, to test an adapter against the base model.
+          </label>
+        </fieldset>
+        {#if synthMode === "behavior"}
+          <div class="row wrap" style="gap: 14px; margin-bottom: 12px;">
+            <div class="field" style="margin: 0; max-width: 180px;">
+              <label for="synth-task">Task</label>
+              <select id="synth-task" bind:value={synthTask} disabled={synthesizing}>
+                <option value="extract">extract (JSON fields)</option>
+                <option value="classify">classify (yes/no)</option>
+                <option value="freeform">freeform</option>
+              </select>
+            </div>
+            <div class="field" style="margin: 0; flex: 1; min-width: 220px;">
+              <label for="synth-style">Style (optional)</label>
+              <input id="synth-style" type="text" maxlength="1000" bind:value={synthStyle} disabled={synthesizing} />
+            </div>
+          </div>
+        {/if}
         <div class="row wrap" style="gap: 14px; align-items: flex-end;">
           <div class="field" style="margin: 0; max-width: 180px;">
             <label for="synth-pairs">Pairs per chunk</label>

@@ -442,6 +442,26 @@ paths:
         '422': {$ref: '#/components/responses/Error'}
         '200': {description: Dataset rows, content: {application/json: {schema: {$ref: '#/components/schemas/DatasetRowsResponse'}}}}
 
+  /projects/{project_id}/datasets/{dataset_id}/download:
+    get:
+      operationId: downloadDataset
+      tags: [datasets]
+      summary: Download a valid dataset as JSONL
+      security: [{BearerAuth: []}]
+      parameters:
+        - {$ref: '#/components/parameters/ProjectId'}
+        - {name: dataset_id, in: path, required: true, schema: {type: string}}
+      responses:
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '422': {$ref: '#/components/responses/Error'}
+        '200':
+          description: The dataset's JSONL file
+          content:
+            application/x-ndjson:
+              schema: {type: string, format: binary}
+
   /projects/{project_id}/datasets/{dataset_id}/curate:
     post:
       operationId: curateDataset
@@ -749,11 +769,16 @@ paths:
     post:
       operationId: synthesizeDataset
       tags: [datasets]
-      summary: Synthesize an instruction dataset from indexed documents
+      summary: Synthesize a RAG eval set or an adapter eval set from indexed documents
       description: |
-        Kicks off a background job that reads the project's ChromaDB collection,
-        calls the local inference engine to generate question/answer pairs, and
-        writes a validated JSONL dataset. Poll the returned dataset_id via
+        Kicks off a background job that reads the project's indexed chunks (Postgres),
+        asks a generator to write questions, drops near-duplicates (embedding cosine
+        > 0.92) and writes a JSONL dataset. The generator is the local base model by
+        default; `teacher_base_url` / `teacher_model` point it at any OpenAI-compatible
+        endpoint instead. `mode: rag_eval` (default) writes retrieval questions in the
+        golden-set format (`q`, `expected_file`, `lang`, `expected_page`, plus `answer`
+        and `source_chunk_id`); `mode: behavior` writes `{prompt, response}` rows
+        shaped by `task` (classify | extract | freeform), usable as an adapter eval set. Poll the returned dataset_id via
         GET /v1/projects/{project_id}/datasets/{dataset_id} for status.
         Only available for `finetune` projects that already have indexed files.
       security: [{BearerAuth: []}]
@@ -1089,12 +1114,15 @@ components:
     # Datasets
     DatasetResponse:
       type: object
-      required: [id, name, status, num_samples, validation_error, created_at, source_dataset_id, task]
+      required: [id, name, status, num_samples, validation_error, created_at, source_dataset_id, task, kind]
       properties:
         id: {type: string}
         name: {type: string}
         status: {type: string}
         num_samples: {type: integer, nullable: true}
+        # upload (operator file) | rag_eval (synthesized retrieval questions, golden-set rows)
+        # | behavior (synthesized prompt/response rows, usable as an adapter eval set).
+        kind: {type: string}
         validation_error: {type: string, nullable: true}
         created_at: {type: string}
         # classify | extract | freeform; null for datasets that predate it or were synthesized.
@@ -1253,6 +1281,14 @@ components:
         max_chunks: {type: integer, minimum: 1, maximum: 500, default: 50}
         system_prompt: {type: string, nullable: true, maxLength: 1000}
         base_model: {type: string, nullable: true}
+        mode: {type: string, default: rag_eval}  # rag_eval | behavior
+        # behavior only: row shape and the eval task the resulting dataset is registered with.
+        task: {type: string, default: extract}  # classify | extract | freeform
+        # behavior only: tone/format the responses should follow (facts stay quoted from the chunk).
+        style_instructions: {type: string, nullable: true, maxLength: 1000}
+        # Optional stronger generator: any OpenAI-compatible endpoint (http/https).
+        teacher_base_url: {type: string, nullable: true, maxLength: 512}
+        teacher_model: {type: string, nullable: true, maxLength: 128}
 
     SynthesizeResponse:
       type: object
