@@ -154,8 +154,10 @@ async def chat_completions(
     # `adapta` request namespace (E3.5): per-request retrieval options.
     top_k_rag: Optional[int] = None
     rag_filters: Optional[RetrievalFilters] = None
+    condense = True
     if request_body.adapta is not None:
         top_k_rag = request_body.adapta.top_k
+        condense = request_body.adapta.condense is not False
         f = request_body.adapta.filters
         if f is not None and any(
             v is not None for v in (f.file_ids, f.page_min, f.page_max, f.needs_review)
@@ -178,6 +180,7 @@ async def chat_completions(
                 project_id=project_id_for_rag,
                 top_k_rag=top_k_rag,
                 rag_filters=rag_filters,
+                condense=condense,
                 endpoint_id=endpoint.id,
                 adapter_path=adapter_path,
                 response_format=response_format,
@@ -195,6 +198,7 @@ async def chat_completions(
             project_id=project_id_for_rag,
             top_k_rag=top_k_rag,
             rag_filters=rag_filters,
+            condense=condense,
             adapter_path=adapter_path,
             response_format=response_format,
         )

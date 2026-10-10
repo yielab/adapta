@@ -563,6 +563,11 @@ class AdaptaOptions(BaseModel):
     """
     Chunks to retrieve (overrides the org/env default).
     """
+    condense: bool | None = None
+    """
+    History-aware retrieval (default true). With two or more user turns, the served model first rewrites the last question as a standalone one (greedy, at most 40 tokens, one extra generation, metered in `usage`); retrieval fuses that query with the original. `false` retrieves on the last user message only.
+
+    """
     filters: RetrievalFilters | None = None
 
 

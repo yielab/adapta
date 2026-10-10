@@ -11,7 +11,7 @@ import asyncio
 import logging
 import time
 import uuid
-from typing import AsyncIterator, List, Optional
+from typing import Any, AsyncIterator, List, Optional
 
 from adapta.config import settings
 from adapta.core import inference_engine, model_manager
@@ -55,7 +55,7 @@ async def _resolve_rag_top_k(project_id: Optional[str], top_k_rag: Optional[int]
 async def _retrieve(
     rag_service,
     project_id: str,
-    query: str,
+    query: "str | list[str]",
     top_k: int,
     filters: Optional[RetrievalFilters] = None,
 ) -> list:
@@ -73,6 +73,90 @@ async def _retrieve(
     except asyncio.TimeoutError as exc:
         raise Timeout(message="Document retrieval timed out", internal_detail=str(exc)) from exc
     return apply_min_score(chunks, settings.rag_min_score)
+
+
+# --- History-aware retrieval (E5.3) ----------------------------------------------------
+CONDENSE_MAX_TOKENS = 40  # one short question; bounds the extra CPU generation
+_CONDENSE_HISTORY_MSGS = 6  # prior turns shown to the condenser
+_CONDENSE_MSG_CHARS = 500  # per-turn truncation, bounds the extra prompt
+_CONDENSE_SYSTEM = (
+    "Rewrite the user's last question as one standalone question that can be understood "
+    "without the conversation: resolve pronouns and references from the earlier turns. "
+    "Keep the question's language. Do not answer it. Output only the question."
+)
+
+
+def user_turn_count(messages: List[dict]) -> int:
+    return sum(1 for m in messages if m.get("role") == "user")
+
+
+def _condense_prompt(messages: List[dict]) -> str:
+    def clip(m: dict) -> str:
+        text = flatten_text(m.get("content", "")).strip()
+        return text[:_CONDENSE_MSG_CHARS]
+
+    history = [m for m in messages[:-1] if m.get("role") in ("user", "assistant")]
+    lines = [
+        f"{'User' if m['role'] == 'user' else 'Assistant'}: {clip(m)}"
+        for m in history[-_CONDENSE_HISTORY_MSGS:]
+    ]
+    return "Conversation:\n" + "\n".join(lines) + "\n\nLast question: " + clip(messages[-1])
+
+
+async def _condense_query(
+    backend, handle, *, model_name: str, adapter_path: Optional[str], messages: List[dict]
+) -> tuple[Optional[str], int, int]:
+    """Ask the served model for a standalone version of the last user question (E5.3).
+
+    Returns ``(question, prompt_tokens, completion_tokens)``. Greedy, ≤ ``CONDENSE_MAX_TOKENS``
+    tokens, under the same ``rag_timeout_seconds`` guard as retrieval. Any failure (timeout,
+    engine error, empty output) returns ``(None, 0, 0)`` and the caller retrieves on the raw
+    last user message alone: condensation can lower latency-sensitive quality, never availability.
+    """
+    req = InferenceRequest(
+        messages=[Message(role="user", content=_condense_prompt(messages))],
+        model_name=model_name,
+        temperature=0.0,
+        max_tokens=CONDENSE_MAX_TOKENS,
+        stream=False,
+        system_prompt=_CONDENSE_SYSTEM,
+        adapter_path=adapter_path,
+    )
+    try:
+        resp: InferenceResponse = await asyncio.wait_for(
+            backend.generate(handle, req), timeout=settings.rag_timeout_seconds
+        )
+    except Exception as exc:  # noqa: BLE001 - degrade to the raw query, never fail the request
+        logger.warning("rag.condense failed, using the raw query: %r", exc)
+        return None, 0, 0
+    lines = [ln for ln in resp.content.strip().splitlines() if ln.strip()]
+    question = lines[0].strip().strip("\"'`") if lines else ""
+    if not question:
+        return None, resp.prompt_tokens, resp.completion_tokens
+    return question[:400], resp.prompt_tokens, resp.completion_tokens
+
+
+async def _retrieval_queries(
+    *, model_name: str, adapter_path: Optional[str], messages: List[dict], condense: bool
+) -> tuple["str | list[str]", int, int, Any, Any]:
+    """The query (or ``[condensed, original]``) to retrieve on, plus condensation usage and
+    the backend/handle if one was prepared. Single-turn or ``condense=False`` -> the raw last
+    user message, no model call, latency unchanged."""
+    original = flatten_text(messages[-1].get("content", "")) if messages else ""
+    if not condense or user_turn_count(messages) < 2 or not original.strip():
+        return original, 0, 0, None, None
+    backend = get_backend(model_name, adapter_path)
+    handle = await backend.prepare(model_name, adapter_path)
+    question, pt, ct = await _condense_query(
+        backend, handle, model_name=model_name, adapter_path=adapter_path, messages=messages
+    )
+    logger.info(
+        "rag.condense turns=%d original=%r condensed=%r tokens=%d+%d",
+        user_turn_count(messages), original[:120], (question or "")[:120], pt, ct,
+    )
+    if not question or question.strip().lower() == original.strip().lower():
+        return original, pt, ct, backend, handle
+    return [question, original], pt, ct, backend, handle  # the original is never dropped
 
 
 def split_client_system(messages: List[dict]) -> tuple[List[dict], Optional[str]]:
@@ -361,6 +445,8 @@ async def chat(
     adapter_path: Optional[str] = None,
     # JSON mode: OpenAI-shape response_format dict (None = unconstrained)
     response_format: Optional[dict] = None,
+    # E5.3: condense multi-turn history into a standalone retrieval query (adapta.condense)
+    condense: bool = True,
 ) -> dict:
     """
     Non-streaming chat completion.
@@ -400,16 +486,28 @@ async def chat(
     messages, client_system = split_client_system(messages)
     rag_chunks: list = []
     rag_service = None
+    backend: Any = None
+    handle: Any = None
+    cond_pt = cond_ct = 0
     if project_id:
         rag_service = get_rag_service()
-        query = flatten_text(messages[-1].get("content", "")) if messages else ""
+        query, cond_pt, cond_ct, backend, handle = await _retrieval_queries(
+            model_name=model_name, adapter_path=adapter_path, messages=messages,
+            condense=condense,
+        )
         effective_top_k = await _resolve_rag_top_k(project_id, top_k_rag)
         rag_chunks = await _retrieve(
             rag_service, project_id, query, effective_top_k, rag_filters
         )
 
     if project_id and not rag_chunks:
-        return _abstention_response(model_name)
+        canned = _abstention_response(model_name)
+        canned["usage"] = {  # only the condensation call (if any) ran
+            "prompt_tokens": cond_pt,
+            "completion_tokens": cond_ct,
+            "total_tokens": cond_pt + cond_ct,
+        }
+        return canned
 
     # Content may be a parts array (all-text on the text path); flatten to the
     # plain string the manual prompt formatter expects.
@@ -417,8 +515,9 @@ async def chat(
         Message(role=m["role"], content=flatten_text(m["content"])) for m in messages
     ]
 
-    backend = get_backend(model_name, adapter_path)
-    handle = await backend.prepare(model_name, adapter_path)
+    if backend is None:
+        backend = get_backend(model_name, adapter_path)
+        handle = await backend.prepare(model_name, adapter_path)
 
     # Fit prompt + answer into the model's context window before dispatch.
     # count_prompt_tokens / context_size are synchronous (llama-cpp: C call); run the whole fit off the event loop so a large
@@ -471,9 +570,12 @@ async def chat(
             }
         ],
         "usage": {
-            "prompt_tokens": response.prompt_tokens,
-            "completion_tokens": response.completion_tokens,
-            "total_tokens": response.total_tokens,
+            # + the condensation call (E5.3): it is metered like any generation
+            "prompt_tokens": response.prompt_tokens + cond_pt,
+            "completion_tokens": response.completion_tokens + cond_ct,
+            "total_tokens": (
+                response.prompt_tokens + response.completion_tokens + cond_pt + cond_ct
+            ),
         },
     }
 
@@ -577,6 +679,7 @@ async def chat_stream(
     endpoint_id: Optional[str] = None,
     adapter_path: Optional[str] = None,
     response_format: Optional[dict] = None,
+    condense: bool = True,
 ) -> AsyncIterator[str]:
     """
     Streaming chat — yields SSE-formatted strings.
@@ -598,9 +701,15 @@ async def chat_stream(
     messages, client_system = split_client_system(messages)
     rag_chunks: list = []
     rag_service = None
+    backend: Any = None
+    handle: Any = None
+    cond_pt = cond_ct = 0
     if project_id:
         rag_service = get_rag_service()
-        query = flatten_text(messages[-1].get("content", "")) if messages else ""
+        query, cond_pt, cond_ct, backend, handle = await _retrieval_queries(
+            model_name=model_name, adapter_path=adapter_path, messages=messages,
+            condense=condense,
+        )
         effective_top_k = await _resolve_rag_top_k(project_id, top_k_rag)
         rag_chunks = await _retrieve(
             rag_service, project_id, query, effective_top_k, rag_filters
@@ -608,6 +717,11 @@ async def chat_stream(
 
     if project_id and not rag_chunks:
         canned = _abstention_response(model_name)
+        canned["usage"] = {
+            "prompt_tokens": cond_pt,
+            "completion_tokens": cond_ct,
+            "total_tokens": cond_pt + cond_ct,
+        }
         frame = {
             "id": canned["id"],
             "object": "chat.completion.chunk",
@@ -624,7 +738,7 @@ async def chat_stream(
         if endpoint_id:
             from adapta.services.usage import record_usage
 
-            await record_usage(endpoint_id, 0, 0)
+            await record_usage(endpoint_id, cond_pt, cond_ct)
         return
 
     inference_messages = [
@@ -632,8 +746,9 @@ async def chat_stream(
     ]
 
     # Backend selection (D3): same routing as non-streaming chat().
-    backend = get_backend(model_name, adapter_path)
-    handle = await backend.prepare(model_name, adapter_path)
+    if backend is None:
+        backend = get_backend(model_name, adapter_path)
+        handle = await backend.prepare(model_name, adapter_path)
 
     # Fit prompt + answer into the context window before streaming (A4.3).
     full_system, rag_chunks, max_tokens = _fit_context(
@@ -681,6 +796,8 @@ async def chat_stream(
         engine_usage = getattr(handle, "usage", None)
         if engine_usage:  # engine-reported exact counts (Ollama) beat our own
             prompt_tokens, completion_tokens = engine_usage
+        prompt_tokens += cond_pt  # the condensation call (E5.3) is metered too
+        completion_tokens += cond_ct
         finish = {
             "id": chunk_id,
             "object": "chat.completion.chunk",

@@ -19,7 +19,7 @@ import threading
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, List, Literal, Optional
+from typing import TYPE_CHECKING, List, Literal, Optional, Sequence
 
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -569,7 +569,7 @@ class RAGService:
     def retrieve(
         self,
         project_id: str,
-        query: str,
+        query: str | Sequence[str],
         top_k: Optional[int] = None,
         filters: Optional[RetrievalFilters] = None,
     ) -> List[RetrievedChunk]:
@@ -584,11 +584,17 @@ class RAGService:
 
         Citations reflect the final reranked scores (§A4.3 ordering).
 
+        ``query`` is one string or a list of queries (E5.3: the condensed standalone question
+        plus the original). Each query runs both legs; one RRF fuses all the lists. The first
+        query is the primary one (the reranker scores against it). A plain string is the
+        single-query case, unchanged.
+
         ``filters`` (E3.5) restricts both legs: ``file_ids`` as a Chroma ``where`` and SQL
         ``WHERE`` on the FTS leg; page / review filters in SQL on the FTS leg and over the
         vector candidates (over-fetched 4x to leave survivors). ``None`` changes nothing.
         """
         t0 = time.perf_counter()
+        query_list = [query] if isinstance(query, str) else list(query)
         top_k = top_k or settings.rag_top_k
         fetch_k = max(top_k * settings.rag_hybrid_fetch_multiplier, top_k + 1)
         if filters is not None and filters.sql_only:
@@ -620,66 +626,77 @@ class RAGService:
             )
 
         emb_service = get_embedding_service()
-        query_embedding = emb_service.embed_one(query)
-
         query_kwargs: dict = {}
         if filters is not None and filters.file_ids:
             query_kwargs["where"] = {"file_id": {"$in": list(filters.file_ids)}}
-        results = collection.query(
-            query_embeddings=[query_embedding],
-            n_results=fetch_k,
-            include=["documents", "metadatas", "distances"],
-            **query_kwargs,
-        )
 
-        ids: list[str] = results["ids"][0]
-        docs: list[str] = results["documents"][0]
-        metas: list[dict] = results["metadatas"][0]
-        dists: list[float] = results["distances"][0]
-        if filters is not None and filters.sql_only:
-            keep = _filter_vector_ids(ids, filters)
-            kept = [i for i, cid in enumerate(ids) if cid in keep]
-            ids = [ids[i] for i in kept]
-            docs = [docs[i] for i in kept]
-            metas = [metas[i] for i in kept]
-            dists = [dists[i] for i in kept]
-
-        # Sparse leg over the whole corpus. A Postgres failure degrades to vector-only
-        # rather than failing the request (the dense leg is still a valid answer).
-        try:
-            fts_kwargs = {"filters": filters} if filters is not None else {}
-            fts_hits = _fts_search(
-                project_id, query, top_k * settings.rag_sparse_fetch_multiplier, **fts_kwargs
+        # One vector list and one FTS list per query (E5.3). A chunk seen under several
+        # queries keeps its best cosine score; RRF below fuses every list at once.
+        by_id: dict[str, RetrievedChunk] = {}
+        vec_lists: list[list[str]] = []
+        fts_lists: list[list[str]] = []
+        n_vec = n_fts = 0
+        for q in query_list:
+            q_emb = emb_service.embed_one(q)
+            results = collection.query(
+                query_embeddings=[q_emb],
+                n_results=fetch_k,
+                include=["documents", "metadatas", "distances"],
+                **query_kwargs,
             )
-        except (SQLAlchemyError, OSError, asyncio.TimeoutError) as exc:
-            logger.warning("rag fts leg failed, vector-only: %r", exc)
-            fts_hits = []
+            ids: list[str] = results["ids"][0]
+            docs: list[str] = results["documents"][0]
+            metas: list[dict] = results["metadatas"][0]
+            dists: list[float] = results["distances"][0]
+            if filters is not None and filters.sql_only:
+                keep = _filter_vector_ids(ids, filters)
+                kept = [i for i, cid in enumerate(ids) if cid in keep]
+                ids = [ids[i] for i in kept]
+                docs = [docs[i] for i in kept]
+                metas = [metas[i] for i in kept]
+                dists = [dists[i] for i in kept]
+            for i, cid in enumerate(ids):
+                score = 1.0 - dists[i]  # cosine distance -> similarity
+                prev = by_id.get(cid)
+                if prev is None or score > prev.score:
+                    by_id[cid] = RetrievedChunk(
+                        text=docs[i],
+                        source=metas[i].get("source", "unknown"),
+                        score=score,
+                        chunk_index=metas[i].get("chunk_index", 0),
+                        score_kind="vector",
+                        chunk_id=cid,
+                    )
+            vec_lists.append(ids)
+            n_vec += len(ids)
 
-        if not docs and not fts_hits:
+            # Sparse leg over the whole corpus. A Postgres failure degrades to vector-only
+            # rather than failing the request (the dense leg is still a valid answer).
+            try:
+                fts_kwargs = {"filters": filters} if filters is not None else {}
+                fts_hits = _fts_search(
+                    project_id, q, top_k * settings.rag_sparse_fetch_multiplier, **fts_kwargs
+                )
+            except (SQLAlchemyError, OSError, asyncio.TimeoutError) as exc:
+                logger.warning("rag fts leg failed, vector-only: %r", exc)
+                fts_hits = []
+            for h in fts_hits:
+                # Keyword-only hit the embedder missed: no cosine score exists for it.
+                by_id.setdefault(
+                    h.id,
+                    RetrievedChunk(
+                        text=h.text, source=h.source, score=0.0,
+                        chunk_index=h.chunk_index, score_kind="vector", chunk_id=h.id,
+                        lexical_only=True,
+                    ),
+                )
+            fts_lists.append([h.id for h in fts_hits])
+            n_fts += len(fts_hits)
+
+        if not by_id:
             return []
 
-        by_id: dict[str, RetrievedChunk] = {
-            cid: RetrievedChunk(
-                text=docs[i],
-                source=metas[i].get("source", "unknown"),
-                score=1.0 - dists[i],  # cosine distance → similarity
-                chunk_index=metas[i].get("chunk_index", 0),
-                score_kind="vector",
-                chunk_id=cid,
-            )
-            for i, cid in enumerate(ids)
-        }
-        for h in fts_hits:
-            # Keyword-only hit the embedder missed: no cosine score exists for it.
-            by_id.setdefault(
-                h.id,
-                RetrievedChunk(
-                    text=h.text, source=h.source, score=0.0,
-                    chunk_index=h.chunk_index, score_kind="vector", chunk_id=h.id,
-                    lexical_only=True,
-                ),
-            )
-        fused_ids = _rrf_fuse(ids, [h.id for h in fts_hits])
+        fused_ids = _rrf_fuse(*vec_lists, *fts_lists)
         candidates: List[RetrievedChunk] = [by_id[cid] for cid in fused_ids]
 
         reranker = get_reranker_service()
@@ -687,7 +704,7 @@ class RAGService:
             rerank_n = min(top_k * 2, len(candidates))
             to_rerank = candidates[:rerank_n]
             t_rerank = time.perf_counter()
-            raw_scores = reranker.rerank(query, [c.text for c in to_rerank])
+            raw_scores = reranker.rerank(query_list[0], [c.text for c in to_rerank])
             get_metrics_collector().rag_reranker_seconds.observe(time.perf_counter() - t_rerank)
             ranked = sorted(
                 zip(raw_scores, to_rerank, strict=False),
@@ -716,10 +733,10 @@ class RAGService:
         mc.rag_chunks_returned.observe(len(final))
         logger.info(
             "rag.retrieve q=%s project=%s vec=%d fts=%d fused=%d ids=%s scores=%s ms=%d",
-            hashlib.sha256(query.encode("utf-8")).hexdigest()[:12],
+            "+".join(hashlib.sha256(q.encode("utf-8")).hexdigest()[:12] for q in query_list),
             project_id,
-            len(ids),
-            len(fts_hits),
+            n_vec,
+            n_fts,
             len(fused_ids),
             [f"{c.chunk_id}@{fused_rank[c.chunk_id]}" for c in final],
             [round(c.score, 4) for c in final],

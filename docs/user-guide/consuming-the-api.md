@@ -56,6 +56,15 @@ curl http://your-server:8000/v1/chat/completions \
   1-based page (`null` for formats without pages), and for scanned documents
   `ocr` is `true` and `confidence` is the mean OCR confidence in 0–1 (`null`
   otherwise). The index matches the `[N]` markers in the answer.
+- **Follow-up questions are understood.** On a project with documents, once the
+  conversation has two or more user turns the server first asks the model to
+  rewrite your last question as a standalone one ("and how many days for that?"
+  becomes "How many vacation days do employees get?"), then retrieves on that
+  rewrite **and** your original text. It costs one short extra generation (at
+  most 40 tokens) only on those follow-up turns; first questions are unaffected.
+  Those tokens are counted in `usage`. If the rewrite fails or times out, the
+  server quietly retrieves on your last message alone. Send
+  `"adapta": {"condense": false}` to turn it off for a request.
 - **Usage is metered.** Every response includes `prompt_tokens`,
   `completion_tokens`, and `total_tokens`, and is rolled up per day (visible in
   the console's Usage tab).

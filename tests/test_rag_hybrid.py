@@ -743,3 +743,40 @@ def test_filter_sql_clauses():
     assert "c.needs_review = :f_needs_review" in sql
     assert params == {"f_file_ids": ["a"], "f_page_max": 9, "f_needs_review": False}
     assert RetrievalFilters().sql_clauses() == ("", {})
+
+
+# ---------------------------------------------------------------------------
+# E5.3 — multi-query retrieval: one RRF over every query's vector + FTS lists
+# ---------------------------------------------------------------------------
+
+
+def test_retrieve_multi_query_fuses_the_original_and_the_condensed(monkeypatch):
+    """The condensed query's keyword hit and the original query's vector hits both survive."""
+    _std_chroma(monkeypatch, n=3)
+    embedded = []
+
+    class Emb:
+        def embed_one(self, text):
+            embedded.append(text)
+            return [0.0] * 8
+
+    monkeypatch.setattr("adapta.services.rag.get_embedding_service", lambda: Emb())
+    monkeypatch.setattr(
+        rag_mod, "_fts_search",
+        lambda pid, q, *a, **k: [_FtsHit("kw_0", "vacation days", "hr.md", 1)]
+        if q == "condensed question" else [],
+    )
+    chunks = RAGService().retrieve("p", ["condensed question", "and that?"], top_k=4)
+    assert embedded == ["condensed question", "and that?"]  # each query embedded, original kept
+    ids = {c.chunk_id for c in chunks}
+    assert "kw_0" in ids and "f_0" in ids
+
+
+def test_retrieve_multi_query_logs_one_line_and_single_query_unchanged(monkeypatch, caplog):
+    _std_chroma(monkeypatch, n=6)
+    with caplog.at_level(logging.INFO, logger=rag_mod.logger.name):
+        multi = RAGService().retrieve("p", ["a", "b"], top_k=3)
+        single = RAGService().retrieve("p", "a", top_k=3)
+    lines = [r.getMessage() for r in caplog.records if r.getMessage().startswith("rag.retrieve")]
+    assert len(lines) == 2
+    assert [c.chunk_id for c in multi] == [c.chunk_id for c in single]

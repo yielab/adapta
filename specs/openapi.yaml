@@ -857,7 +857,7 @@ paths:
         model answer that itself starts with that sentence also returns `citations: []`.
 
         **`adapta` extension:** optional `{top_k, filters: {file_ids, page_min, page_max,
-        needs_review}}` narrows retrieval for this request; OpenAI clients ignore it.
+        needs_review}, condense}` narrows retrieval for this request; OpenAI clients ignore it.
       security: [{ApiKeyAuth: []}]
       requestBody:
         required: true
@@ -1416,6 +1416,14 @@ components:
           maximum: 20
           nullable: true
           description: Chunks to retrieve (overrides the org/env default).
+        condense:
+          type: boolean
+          nullable: true
+          description: >
+            History-aware retrieval (default true). With two or more user turns, the served model
+            first rewrites the last question as a standalone one (greedy, at most 40 tokens, one
+            extra generation, metered in `usage`); retrieval fuses that query with the original.
+            `false` retrieves on the last user message only.
         filters:
           nullable: true
           allOf:
