@@ -115,6 +115,7 @@ export interface Dataset {
   validation_error: string | null;
   created_at: string;
   source_dataset_id: string | null;
+  task: string | null;
 }
 
 export interface DatasetRowsResponse {

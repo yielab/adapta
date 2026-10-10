@@ -81,9 +81,10 @@ async function request<T>(path: string, opts: ReqOpts = {}): Promise<T> {
   return data as T;
 }
 
-function upload<T>(path: string, file: File): Promise<T> {
+function upload<T>(path: string, file: File, fields: Record<string, string> = {}): Promise<T> {
   const fd = new FormData();
   fd.append("file", file);
+  for (const [k, v] of Object.entries(fields)) fd.append(k, v);
   return request<T>(path, { method: "POST", body: fd, raw: true });
 }
 
@@ -114,7 +115,8 @@ export const api = {
 
   // Datasets (fine-tune)
   listDatasets: (pid: string) => request<Dataset[]>(`${V1}/projects/${pid}/datasets`),
-  uploadDataset: (pid: string, file: File) => upload<{ id: string; name: string; status: string }>(`${V1}/projects/${pid}/datasets`, file),
+  uploadDataset: (pid: string, file: File, task: string) =>
+    upload<{ id: string; name: string; status: string }>(`${V1}/projects/${pid}/datasets`, file, { task }),
   getDataset: (pid: string, did: string) => request<Dataset>(`${V1}/projects/${pid}/datasets/${did}`),
   getDatasetRows: (pid: string, did: string, page = 0, pageSize = 200) =>
     request<import("./types").DatasetRowsResponse>(`${V1}/projects/${pid}/datasets/${did}/rows?page=${page}&page_size=${pageSize}`),

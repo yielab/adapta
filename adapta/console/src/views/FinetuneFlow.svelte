@@ -178,6 +178,12 @@
   // ---- Upload JSONL -------------------------------------------------------
   let uploading = $state(false);
   let fileInput = $state<HTMLInputElement | null>(null);
+  let evalTask = $state("classify");
+  const TASK_HINTS: Record<string, string> = {
+    classify: "classify: the response is a label; scored by exact label match",
+    extract: "extract: the response is a JSON object; scored by JSON parse rate and per-key match",
+    freeform: "freeform: free text; scored by word overlap (F1) with the response",
+  };
 
   async function onFilePicked(ev: Event) {
     const input = ev.target as HTMLInputElement;
@@ -185,7 +191,7 @@
     if (!file) return;
     uploading = true;
     try {
-      await api.uploadDataset(project.id, file);
+      await api.uploadDataset(project.id, file, evalTask);
       toastSuccess("Dataset uploaded — validating against the schema…");
       await loadDatasets();
     } catch (e) {
@@ -441,6 +447,11 @@
     <div class="row between" style="margin-bottom: 12px;">
       <h2 style="margin: 0;">2 · Dataset</h2>
       <div class="row" style="gap: 8px;">
+        <select bind:value={evalTask} title={TASK_HINTS[evalTask]} disabled={uploading}>
+          <option value="classify">classify</option>
+          <option value="extract">extract</option>
+          <option value="freeform">freeform</option>
+        </select>
         <input
           bind:this={fileInput}
           type="file"
@@ -455,7 +466,7 @@
           disabled={uploading}
         >
           {#if uploading}<span class="spinner"></span>{/if}
-          Upload JSONL
+          Upload eval set (JSONL, 20-200 rows)
         </button>
         <button class="sm" onclick={() => (showSynth = !showSynth)}>
           Synthesize from documents
@@ -591,6 +602,7 @@
           <tr>
             <th>Name</th>
             <th>Status</th>
+            <th>Task</th>
             <th>Samples</th>
             <th>Created</th>
             <th></th>
@@ -616,6 +628,7 @@
                   <div class="ds-err mono">{d.validation_error}</div>
                 {/if}
               </td>
+              <td>{d.task ?? "—"}</td>
               <td>{d.status === "valid" && d.num_samples !== null ? d.num_samples : "—"}</td>
               <td class="muted">{fmtDate(d.created_at)}</td>
               <td>
