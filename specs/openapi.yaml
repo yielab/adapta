@@ -807,15 +807,21 @@ components:
         # They are intentionally NOT schema constraints (minLength/pattern), since
         # those would pre-empt the handler with a structural 422. maxLength stays
         # a schema cap — it mirrors the DB column size and prevents a 500 overflow.
+        # `email` deliberately has no `format: email`: JSON Schema's format is looser
+        # than the real validator (email-validator rejects special-use TLDs such as
+        # .test/.local, malformed punycode and addresses over 254 chars), so a
+        # fuzzer-valid address would be a structural 422. Address validity is a
+        # DOMAIN rule — the handler answers 400 invalid_request; maxLength 254 is the
+        # RFC 5321 path limit.
         org_name: {type: string, maxLength: 128, description: "Must not be blank (handler → 400)."}
-        email: {type: string, format: email, maxLength: 256}
+        email: {type: string, maxLength: 254, description: "A valid address (handler → 400 invalid_request)."}
         password: {type: string, description: "Minimum 8 characters (handler → 400 invalid_request)."}
 
     LoginRequest:
       type: object
       required: [email, password]
       properties:
-        email: {type: string, format: email}
+        email: {type: string, maxLength: 254, description: "Opaque identifier; an unknown or malformed address is a 401, never a 422."}
         password: {type: string}
 
     # Response schemas list every field they always carry in `required`, so the
@@ -856,7 +862,7 @@ components:
       type: object
       required: [email, team_id]
       properties:
-        email: {type: string, format: email, maxLength: 255}
+        email: {type: string, maxLength: 254, description: "A valid address (handler → 400 invalid_request)."}
         team_id: {type: string}
         # Optional on the wire; the handler defaults a missing role to `member`
         # (a $ref + default trips codegen's enum-default mypy bug, so the

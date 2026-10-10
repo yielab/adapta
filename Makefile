@@ -126,8 +126,9 @@ validate-spec:
 
 test-contracts:
 	@echo "Starting contract tests against http://localhost:8000/v1 ..."
-	# schemathesis 4.x CLI. ADAPTA_BEARER_TOKEN (a bootstrap JWT) is injected as a
-	# Bearer header so authenticated operations are exercised, not just their 401s.
+	# schemathesis 4.x CLI. A Bearer token is injected so authenticated operations are
+	# exercised, not just their 401s: ADAPTA_BEARER_TOKEN if set, else one minted for
+	# a throwaway org by scripts/contract_token.py (register + login on the live API).
 	# `unsupported_method` is excluded: GET /datasets/synthesize legitimately matches
 	# the GET /datasets/{dataset_id} route (id="synthesize") and returns 404, not 405 —
 	# a literal-vs-parameter path overlap, not a contract defect.
@@ -137,6 +138,8 @@ test-contracts:
 	# allow-x00=false: PostgreSQL cannot store NUL bytes in text, ever — the API
 	# answers them with a typed 422 (the DBAPIError net), which the positive-
 	# acceptance check would miscount as rejecting valid data.
+	@TOKEN="$(ADAPTA_BEARER_TOKEN)"; \
+	if [ -z "$$TOKEN" ]; then TOKEN=$$(python3 scripts/contract_token.py http://localhost:8000/v1) || exit 1; fi; \
 	schemathesis run specs/openapi.yaml \
 	  --url http://localhost:8000/v1 \
 	  --checks all \
@@ -144,7 +147,7 @@ test-contracts:
 	  --suppress-health-check filter_too_much \
 	  --generation-allow-x00 false \
 	  --max-examples 30 \
-	  -H "Authorization: Bearer $(ADAPTA_BEARER_TOKEN)" \
+	  -H "Authorization: Bearer $$TOKEN" \
 	  $(SCHEMATHESIS_ARGS)
 
 migrate:

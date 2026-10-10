@@ -6,6 +6,7 @@ and imported from adapta.models.generated — never hand-redefined here.
 
 from typing import List
 
+from email_validator import EmailNotValidError, validate_email
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -46,6 +47,16 @@ from adapta.services.rate_limit import enforce_auth
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
+def _valid_email(address: str) -> str:
+    """Normalized address, or a 400. Validity is a domain rule, not a schema
+    constraint: JSON Schema's ``format: email`` is looser than email-validator
+    (special-use TLDs, bad punycode), so the contract promises a 400 instead."""
+    try:
+        return validate_email(address, check_deliverability=False).normalized
+    except EmailNotValidError as exc:
+        raise InvalidRequest(message="Email address is not valid") from exc
+
+
 async def _load_teams(db: AsyncSession, user_id: str) -> List[TeamSummary]:
     """The teams a user belongs to + their role — so a client can discover the
     team_id every /v1/projects call requires."""
@@ -61,8 +72,14 @@ async def _load_teams(db: AsyncSession, user_id: str) -> List[TeamSummary]:
 
 @router.post("/login", response_model=TokenResponse)
 async def login(body: LoginRequest, request: Request, db: AsyncSession = Depends(get_db)):
-    await enforce_auth(request, body.email)
-    user = await authenticate_user(db, body.email, body.password)
+    # Lenient on purpose: login treats the email as an opaque identifier, so a
+    # malformed address is simply an unknown one (401), never a validation error.
+    try:
+        email = validate_email(body.email, check_deliverability=False).normalized
+    except EmailNotValidError:
+        email = body.email
+    await enforce_auth(request, email)
+    user = await authenticate_user(db, email, body.password)
     token = create_access_token(user.id, user.org_id)
     return TokenResponse(access_token=token)
 
@@ -80,6 +97,7 @@ async def register(body: RegisterRequest, request: Request, db: AsyncSession = D
         raise InvalidRequest(message="Password must be at least 8 characters")
     if not body.org_name.strip():
         raise InvalidRequest(message="Organization name must not be empty")
+    email = _valid_email(body.email)
 
     try:
         org = Org(name=body.org_name)
@@ -90,7 +108,7 @@ async def register(body: RegisterRequest, request: Request, db: AsyncSession = D
         db.add(team)
         await db.flush()
 
-        user = await create_user(db, org.id, body.email, body.password)
+        user = await create_user(db, org.id, email, body.password)
 
         membership = TeamMember(team_id=team.id, user_id=user.id, role=Role.admin)
         db.add(membership)
@@ -148,11 +166,12 @@ async def invite(
 ):
     """Admin issues an invite for a user to join one of their teams."""
     await require_team_admin(db, current_user.id, body.team_id)
+    email = _valid_email(body.email)
     # The contract leaves role optional; default a missing one to member. Convert
     # the generated enum to the DB enum by value (they are distinct classes).
     role = Role(body.role.value) if body.role is not None else Role.member
     inv = await create_invitation(
-        db, team_id=body.team_id, email=body.email, role=role, invited_by=current_user.id
+        db, team_id=body.team_id, email=email, role=role, invited_by=current_user.id
     )
     # Token is shown once, at creation (the operator delivers it out-of-band).
     return _invite_resp(inv, include_token=True)

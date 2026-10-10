@@ -116,6 +116,35 @@ async def lifespan(app: FastAPI):
 # ---------------------------------------------------------------------------
 
 
+_HTTP_METHODS = ("DELETE", "GET", "PATCH", "POST", "PUT")
+
+
+def _allowed_methods(app: FastAPI, path: str) -> list[str]:
+    """Methods the app serves at ``path``, read from the OpenAPI path table.
+
+    A literal path wins over a parameterised one (``/datasets/synthesize`` is not
+    ``/datasets/{dataset_id}``), mirroring the contract. Empty when nothing matches.
+    """
+    paths = app.openapi().get("paths", {})
+    segments = path.rstrip("/").split("/")
+    best = -1
+    methods: set[str] = set()
+    for template, item in paths.items():
+        parts = template.rstrip("/").split("/")
+        if len(parts) != len(segments):
+            continue
+        pairs = list(zip(parts, segments, strict=True))
+        if not all(p == s or (p.startswith("{") and p.endswith("}")) for p, s in pairs):
+            continue
+        literal_hits = sum(p == s for p, s in pairs)
+        if literal_hits < best:
+            continue
+        if literal_hits > best:
+            best, methods = literal_hits, set()
+        methods.update(m.upper() for m in item if m.upper() in _HTTP_METHODS)
+    return sorted(methods)
+
+
 class CorrelationIdMiddleware:
     def __init__(self, app):
         self.app = app
@@ -229,6 +258,14 @@ def create_app() -> FastAPI:
         # Preserve framework headers (e.g. the RFC 9110 `Allow` header on a 405)
         # that the default routing attaches to the exception.
         headers = dict(getattr(exc, "headers", None) or {})
+        if exc.status_code == 405:
+            # Starlette lists only the FIRST partially-matching route's methods, but
+            # FastAPI registers one route per method (GET /x and POST /x are two
+            # routes), so its `Allow` omits the siblings. Report the union
+            # (RFC 9110 §15.5.6: Allow lists every method the resource supports).
+            allowed = _allowed_methods(request.app, request.url.path)
+            if allowed:
+                headers["Allow"] = ", ".join(allowed)
         if cid:
             headers["X-Correlation-ID"] = cid
         return JSONResponse(

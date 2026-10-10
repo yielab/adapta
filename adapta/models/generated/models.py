@@ -6,7 +6,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, RootModel
+from pydantic import BaseModel, ConfigDict, Field, RootModel
 
 
 class Role(Enum):
@@ -61,7 +61,10 @@ class RegisterRequest(BaseModel):
     """
     Must not be blank (handler → 400).
     """
-    email: Annotated[EmailStr, Field(max_length=256)]
+    email: Annotated[str, Field(max_length=254)]
+    """
+    A valid address (handler → 400 invalid_request).
+    """
     password: str
     """
     Minimum 8 characters (handler → 400 invalid_request).
@@ -69,7 +72,10 @@ class RegisterRequest(BaseModel):
 
 
 class LoginRequest(BaseModel):
-    email: EmailStr
+    email: Annotated[str, Field(max_length=254)]
+    """
+    Opaque identifier; an unknown or malformed address is a 401, never a 422.
+    """
     password: str
 
 
@@ -85,7 +91,10 @@ class TeamSummary(BaseModel):
 
 
 class InviteRequest(BaseModel):
-    email: Annotated[EmailStr, Field(max_length=255)]
+    email: Annotated[str, Field(max_length=254)]
+    """
+    A valid address (handler → 400 invalid_request).
+    """
     team_id: str
     role: Role | None = None
 

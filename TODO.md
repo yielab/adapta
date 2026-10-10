@@ -112,7 +112,7 @@ classes are defined in [`.claude/context/gates.md`](.claude/context/gates.md) ("
 |---|---|---|---|---|---|---|
 | E1.14 | 0 | haiku | offline | none | E3.2/E3.5 (`chat.py`) | done 2026-10-08 |
 | E1.10 | 0 | sonnet | rebuild (app image only) | none | E3.3b, E4.1 | done 2026-10-09 |
-| E1.11 | 0 | sonnet | live | E1.10 | any in-flight `specs/openapi.yaml` edit | in progress (worker-e1.11) |
+| E1.11 | 0 | sonnet | live | E1.10 | any in-flight `specs/openapi.yaml` edit | ready-for-live (worktree-agent-aa63f02568c89f434) |
 | E2.1 | 1 | sonnet | live | none | E4.1, E4.9 (`core/backends/`) | open |
 | E3.1 | 1 | sonnet | live | none | E3.7, E3.2 | done 2026-10-09 |
 | E3.3a | 1 | sonnet + human decision | offline | none | — | open |
@@ -167,6 +167,12 @@ block's contract gate depends on it).
   (3) Re-run until 0 failures; restore the “all operations, zero 5xx” claim with its real count.
 - **Files.** `adapta/api/app.py` (CORS/middleware), `specs/openapi.yaml` (`grep -n 'options:'`, the
   auth request schemas), `Makefile:128-145`, `CLAUDE.md` Workflow table (Pillar-1 line), `TODO.md` Status snapshot.
+- **Status 2026-10-09.** Fixes landed on `worktree-agent-aa63f02568c89f434`, offline gates green; only
+  `make test-contracts` (live, twice) remains. `OPTIONS`: code was wrong (the 405 `Allow` listed one
+  route's methods) → `app.py` now reports the union from the OpenAPI path table. Auth: spec was wrong
+  (`format: email` is looser than email-validator) → dropped from the three request schemas,
+  `maxLength: 254`, validity is a handler 400 (login: opaque, 401). Gate: the Makefile token was
+  empty (32 ops hit only 401) → `scripts/contract_token.py` mints one for a throwaway org.
 - **Contract impact.** API.
 - **Gate.** `make validate-spec` → `make generate` → `make check-models` → `make test-contracts`
   (must be **0 failures**, not “only the known ones”).
