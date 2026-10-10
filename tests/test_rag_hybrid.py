@@ -407,6 +407,8 @@ async def test_explicit_top_k_rag_bypasses_settings_lookup(monkeypatch):
 
 
 class _FakeStreamHandle:
+    usage = None
+
     def context_size(self):
         return 4096
 
@@ -516,16 +518,6 @@ async def test_persist_chunks_adds_and_flushes_rows():
     db = _FakeSession()
     n = await persist_chunks(db, "proj1", "file1", _chunks("a", "b"))
     assert n == 2 and len(db.added) == 2 and db.flushed
-
-
-async def test_all_chunks_known_requires_every_distinct_hash():
-    from adapta.services.rag import all_chunks_known
-
-    chunks = _chunks("a", "b", "a")  # two distinct hashes
-    assert await all_chunks_known(_FakeSession(scalar_result=2), "p", chunks) is True
-    assert await all_chunks_known(_FakeSession(scalar_result=1), "p", chunks) is False
-    assert await all_chunks_known(_FakeSession(scalar_result=0), "p", chunks) is False
-    assert await all_chunks_known(_FakeSession(scalar_result=0), "p", []) is False
 
 
 async def test_count_project_chunks_reads_scalar():

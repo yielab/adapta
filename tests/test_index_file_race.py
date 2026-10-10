@@ -100,11 +100,11 @@ async def _run(monkeypatch, fail_on_commit, final=True, fail_with=None):
     return state, calls
 
 
-async def test_success_uses_conflict_safe_insert_and_atomic_update(monkeypatch):
+async def test_success_uses_conflict_safe_insert_and_writes_no_counters(monkeypatch):
     state, calls = await _run(monkeypatch, fail_on_commit=None)
     assert any("on conflict" in q and "do nothing" in q for q in state["sql"])
     upd = [q for q in state["sql"] if q.startswith("update collections")]
-    assert upd and "collections.num_chunks +" in upd[0]
+    assert not upd, "no stored counters: nothing updates collections once the dim is known"
     assert state["pfile"].status == FileStatus.indexed
     assert calls["delete"] == []
 

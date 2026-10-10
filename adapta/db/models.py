@@ -320,7 +320,6 @@ class ProjectFile(Base):
     status: Mapped[FileStatus] = mapped_column(
         Enum(FileStatus, native_enum=False, length=16), nullable=False, default=FileStatus.pending
     )
-    num_chunks: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     # sha256 of the raw uploaded bytes — the synchronous duplicate check (E3.3b). NULL for
     # files uploaded before it existed.
@@ -401,8 +400,6 @@ class Collection(Base):
     embedding_model: Mapped[str] = mapped_column(String(128), nullable=False)
     # Vector size of `embedding_model`; NULL until first indexing/re-embed records it (E3.6).
     embedding_dim: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    num_documents: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    num_chunks: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()

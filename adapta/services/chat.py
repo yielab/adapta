@@ -793,7 +793,7 @@ async def chat_stream(
             }
             yield f"data: {json.dumps(chunk)}\n\n"
 
-        engine_usage = getattr(handle, "usage", None)
+        engine_usage = handle.usage
         if engine_usage:  # engine-reported exact counts (Ollama) beat our own
             prompt_tokens, completion_tokens = engine_usage
         prompt_tokens += cond_pt  # the condensation call (E5.3) is metered too

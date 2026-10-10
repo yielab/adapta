@@ -21,6 +21,7 @@ from adapta.db.models import (
     Endpoint,
     FileStatus,
     Project,
+    ProjectChunk,
     ProjectFile,
     UsageEvent,
 )
@@ -99,17 +100,22 @@ async def compute_summaries(db: AsyncSession, project_ids: List[str]) -> Dict[st
             func.sum(case((ProjectFile.status == FileStatus.indexed.value, 1), else_=0)).label(
                 "indexed"
             ),
-            func.coalesce(func.sum(ProjectFile.num_chunks), 0).label("chunks"),
         )
         .where(ProjectFile.project_id.in_(pid_set))
         .group_by(ProjectFile.project_id)
     )
+    chunk_rows = await db.execute(
+        select(ProjectChunk.project_id, func.count().label("chunks"))
+        .where(ProjectChunk.project_id.in_(pid_set))
+        .group_by(ProjectChunk.project_id)
+    )
+    chunk_map = {row.project_id: row.chunks for row in chunk_rows}
     file_map: Dict[str, FileSummary] = {}
     for row in file_rows:
         file_map[row.project_id] = FileSummary(
             total=row.total or 0,
             indexed=row.indexed or 0,
-            chunks=row.chunks or 0,
+            chunks=chunk_map.get(row.project_id, 0),
         )
 
     # ── datasets ────────────────────────────────────────────────────────────

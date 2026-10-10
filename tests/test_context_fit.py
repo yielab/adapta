@@ -212,6 +212,8 @@ async def test_chat_counts_condensation_tokens_and_retrieves_on_both(monkeypatch
             return [{"index": 1}]
 
     class Handle:
+        usage = None
+
         def count_prompt_tokens(self, msgs, sp):
             return 10
 

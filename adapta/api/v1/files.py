@@ -78,12 +78,26 @@ async def _pages_needing_review(db: AsyncSession, file_ids: List[str]) -> dict[s
     return {fid: n for fid, n in rows.all()}
 
 
-def _file_resp(f: ProjectFile, pages_needing_review: int = 0) -> FileResponse:
+async def _chunk_counts(db: AsyncSession, file_ids: List[str]) -> dict[str, int]:
+    """Chunk rows per file, in one aggregate query (the count is never stored)."""
+    if not file_ids:
+        return {}
+    rows = await db.execute(
+        select(ProjectChunk.file_id, func.count())
+        .where(ProjectChunk.file_id.in_(file_ids))
+        .group_by(ProjectChunk.file_id)
+    )
+    return {fid: n for fid, n in rows.all()}
+
+
+def _file_resp(
+    f: ProjectFile, pages_needing_review: int = 0, num_chunks: int | None = None
+) -> FileResponse:
     return FileResponse(
         id=f.id,
         filename=f.filename,
         status=f.status.value,
-        num_chunks=f.num_chunks,
+        num_chunks=num_chunks if f.status == FileStatus.indexed else None,
         size_bytes=f.size_bytes,
         uploaded_at=f.uploaded_at.isoformat(),
         pages_needing_review=pages_needing_review,
@@ -262,18 +276,7 @@ async def _index_file(
             count = await asyncio.to_thread(_do_index)
             vectors_written = True
 
-            # Atomic counter bump (no read-modify-write): concurrent tasks don't lose updates.
-            await db.execute(
-                update(Collection)
-                .where(Collection.project_id == project_id)
-                .values(
-                    num_documents=Collection.num_documents + 1,
-                    num_chunks=Collection.num_chunks + count,
-                )
-            )
-
             pfile.status = FileStatus.indexed
-            pfile.num_chunks = count
             await db.commit()
             pages = len({c.page for c in parsed if getattr(c, "page", None) is not None}) or 1
             get_metrics_collector().index_seconds_per_page.observe(
@@ -485,7 +488,8 @@ async def list_files(
     result = await db.execute(select(ProjectFile).where(ProjectFile.project_id == project_id))
     files = result.scalars().all()
     flagged = await _pages_needing_review(db, [f.id for f in files])
-    return [_file_resp(f, flagged.get(f.id, 0)) for f in files]
+    counts = await _chunk_counts(db, [f.id for f in files])
+    return [_file_resp(f, flagged.get(f.id, 0), counts.get(f.id, 0)) for f in files]
 
 
 @router.delete("/{file_id}", status_code=204)
@@ -517,15 +521,6 @@ async def delete_file(
         Path(pfile.storage_path).unlink(missing_ok=True)
     except Exception:
         pass
-
-    # Decrement the collection's counters so `has_knowledge` (chat.py) goes
-    # false once the last file is gone, instead of staying true against an
-    # empty collection. Floored at 0 — num_chunks was captured on this file
-    # at index time (pfile.num_chunks), so it can't itself go negative, but
-    # floor defensively against any drift.
-    if collection:
-        collection.num_documents = max(0, collection.num_documents - 1)
-        collection.num_chunks = max(0, collection.num_chunks - (pfile.num_chunks or 0))
 
     await db.delete(pfile)
     await db.commit()  # durable before response so an immediate re-list reflects the deletion

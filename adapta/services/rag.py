@@ -169,21 +169,6 @@ async def persist_chunks(
     return len(rows)
 
 
-async def all_chunks_known(db: "AsyncSession", project_id: str, chunks: list) -> bool:
-    """True when every chunk's hash already exists in the project (duplicate document)."""
-    from sqlalchemy import func, select
-
-    hashes = {content_hash(c.text) for c in chunks}
-    if not hashes:
-        return False
-    found = await db.scalar(
-        select(func.count(func.distinct(ProjectChunk.content_hash))).where(
-            ProjectChunk.project_id == project_id, ProjectChunk.content_hash.in_(hashes)
-        )
-    )
-    return (found or 0) == len(hashes)
-
-
 async def count_project_chunks(db: "AsyncSession", project_id: str) -> int:
     """Chunk count for a project, read from Postgres (the source of truth)."""
     from sqlalchemy import func, select
@@ -650,7 +635,8 @@ class RAGService:
         client = self._client()
         try:
             collection = client.get_collection(name)
-        except Exception:
+        except Exception as exc:
+            logger.warning("retrieve: no usable Chroma collection %s (%r); returning no hits", name, exc)
             return []
 
         # Config-drift guard: the collection's Chroma metadata records the

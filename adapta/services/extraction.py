@@ -205,7 +205,7 @@ async def extract_file(file_id: str, *, all_pages: bool = False) -> dict:
 
     from sqlalchemy import delete, select, update
 
-    from adapta.db.models import Collection, Project, ProjectChunk, ProjectFile
+    from adapta.db.models import Project, ProjectChunk, ProjectFile
     from adapta.db.session import AsyncSessionLocal
     from adapta.domain.errors import InferenceFailed, NotFound, Timeout
     from adapta.services.documents import Chunk, chunk_text
@@ -303,21 +303,11 @@ async def extract_file(file_id: str, *, all_pages: bool = False) -> dict:
                 for r in new_rows:
                     r.fields = fields
                 db.add_all(new_rows)
-                delta = len(new_rows) - len(old)
                 rag = get_rag_service()
                 await asyncio.to_thread(rag.index_chunks, project_id, file_id, new_chunks)
                 surplus = [i for i in ids_old if i not in {r.id for r in new_rows}]
                 if surplus:
                     await asyncio.to_thread(rag.delete_chunk_ids, project_id, surplus)
-                if delta:
-                    await db.execute(
-                        update(ProjectFile).where(ProjectFile.id == file_id)
-                        .values(num_chunks=ProjectFile.num_chunks + delta)
-                    )
-                    await db.execute(
-                        update(Collection).where(Collection.project_id == project_id)
-                        .values(num_chunks=Collection.num_chunks + delta)
-                    )
                 reread += 1
             elif fields:
                 await db.execute(

@@ -55,18 +55,18 @@ async def _seed_rag_endpoint_project(org_id: str, user_id: str, tag: str) -> str
         )
         await conn.execute(
             "INSERT INTO collections (id, project_id, chroma_collection_name, "
-            "embedding_model, num_documents, num_chunks) VALUES ($1, $2, $3, $4, 1, 5)",
+            "embedding_model) VALUES ($1, $2, $3, $4)",
             str(uuid.uuid4()),
             project_id,
             f"col_{project_id}",
             settings.embedding_model,
         )
-        # Chunk counts are read from the chunks table (E3.1), not collections.num_chunks.
+        # Chunk counts are read from the chunks table (E3.1).
         file_id = str(uuid.uuid4())
         await conn.execute(
             "INSERT INTO project_files (id, project_id, filename, content_type, size_bytes, "
-            "storage_path, status, num_chunks) VALUES ($1, $2, 'seed.txt', 'text/plain', 1, '', "
-            "'indexed', 1)",
+            "storage_path, status) VALUES ($1, $2, 'seed.txt', 'text/plain', 1, '', "
+            "'indexed')",
             file_id,
             project_id,
         )

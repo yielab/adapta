@@ -148,11 +148,9 @@ async def test_rag_upload_index_serve_cited(client, admin):
     assert "pebble" in answer.lower(), f"expected the planted mascot fact in the answer: {answer!r}"
     assert body.get("citations"), "expected non-empty citations from the indexed document"
 
-    # 7. Delete the only file. `Collection.num_documents/num_chunks` must be
-    #    decremented (floored at 0) in the same transaction as the delete — the
-    #    origin bug left them untouched, so `has_knowledge` stayed true against an
-    #    empty Chroma collection. Prove it from the outside: chat must still work,
-    #    but without a citations-bearing retrieval pass.
+    # 7. Delete the only file. Its chunk rows go with it (ON DELETE CASCADE), so
+    #    `has_knowledge` (counted from `chunks`) turns false. Prove it from the
+    #    outside: chat must still work, but without a citations-bearing retrieval pass.
     delete_resp = await client.delete(f"/v1/projects/{pid}/files/{fid}", headers=h)
     assert delete_resp.status_code == 204, delete_resp.text
 
@@ -178,7 +176,7 @@ async def test_rag_upload_index_serve_cited(client, admin):
         "chat must keep answering once the collection is empty, not error out"
     )
     assert not after_body.get("citations"), (
-        "num_chunks should be floored at 0 after deleting the only file, so "
+        "no chunk rows remain after deleting the only file, so "
         "has_knowledge is false and chat runs without a retrieval pass"
     )
 

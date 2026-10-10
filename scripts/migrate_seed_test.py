@@ -100,7 +100,6 @@ async def _seed(tag: str) -> None:
                 size_bytes=123,
                 storage_path="/tmp/seed.pdf",
                 status=m.FileStatus.indexed,
-                num_chunks=3,
             )
         )
         db.add(
@@ -108,8 +107,6 @@ async def _seed(tag: str) -> None:
                 project_id=project.id,
                 chroma_collection_name=f"proj_{project.id}",
                 embedding_model="all-MiniLM-L6-v2",
-                num_documents=1,
-                num_chunks=3,
             )
         )
         db.add(
