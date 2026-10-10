@@ -137,8 +137,8 @@ classes are defined in [`.claude/context/gates.md`](.claude/context/gates.md) ("
 | E4.6 | 4 | sonnet | live | E4.4 | E4.5, E4.8, E4.9 | done 2026-10-10 |
 | E5.3 | 4 | sonnet | live | E3.2, E3.5, E3.8 | E4.9/E3.5 | in progress (worker-e5.3) |
 | E5.4 | 4 | sonnet | live | E3.3b, E3.4, E3.5, E3.7 | E5.1/E5.2, E3.4 | open |
-| E4.7 | 5 | sonnet | offline | E4.4, E4.5, E4.6 | E2.3 (README) | ready-for-live (e4.7) |
-| E2.3 | 6 | haiku | offline | E1.11, E4.7 | E3.2, E3.3b, E4.7 (README) | open |
+| E4.7 | 5 | sonnet | offline | E4.4, E4.5, E4.6 | E2.3 (README) | done 2026-10-10 |
+| E2.3 | 6 | haiku | offline | E1.11, E4.7 | E3.2, E3.3b, E4.7 (README) | in progress (worker-e2.3) |
 
 ### E1. P0 — corrections that change the publishable evidence (weeks 1–2)
 
@@ -216,33 +216,6 @@ E1.1–E1.9 shipped 2026-09-17 → [CHANGELOG.md](CHANGELOG.md). E1.14 closed 20
 > **One image, all CPU.** After E4.1 the worker runs the `app` image and consumes queued job kinds
 > (`adapter` E4.4, `index` E3.7, `extract` E5.4); no service reserves a GPU. Optional llama.cpp GPU offload
 > for serving (`ADAPTA_N_GPU_LAYERS`) is unaffected.
-
-### E4.7 `[DOCS]` Import guide and pitch: "bring your own adapter" wherever training was claimed (P1)
-- [ ] **Context.** README, PRODUCT_DEFINITION, BRAND, COMPETITIVE_LANDSCAPE, knowledge-and-behavior,
-  learning-the-system and concepts still describe in-product QLoRA; E4.1 deleted the training-only pages.
-- **Depends.** E4.4, E4.5, E4.6. **Unblocks.** E2.3.
-- **Agent.** sonnet · gate class **offline** (`make docs-build`) · serialize with: E2.3 (README) ·
-  **Handoff.** must name the new page path.
-- **Scope.** One new page `docs/user-guide/bring-your-own-adapter.md`: what Adapta expects (catalog base and
-  accepted aliases, the base's own chat template — ChatML for Qwen2.5 — response-only loss recommended,
-  accepted formats), the eval-set format and how to pick the task, how the gate decides, one worked command
-  sequence each for Unsloth and TRL (commands in the page, no scripts in the repo). Then rewrite the pitch
-  surfaces. Out: any claim E4.4's e2e did not prove.
-- **Steps.** (1) The page + `mkdocs.yml` nav. (2) README pitch + "change how it behaves" bullet;
-  PRODUCT_DEFINITION Service B; CLAUDE.md "What this project is"; BRAND; COMPETITIVE_LANDSCAPE (Unsloth
-  and Axolotl move from competitors to upstream tools); knowledge-and-behavior "when to use which" (prompt
-  → JSON mode → adapter); learning-the-system; concepts.
-- **Files.** `docs/user-guide/bring-your-own-adapter.md` (new), `mkdocs.yml`, `README.md`, `CLAUDE.md`,
-  `docs/reference/{PRODUCT_DEFINITION,BRAND,COMPETITIVE_LANDSCAPE}.md`,
-  `docs/user-guide/{index,knowledge-and-behavior}.md`, `docs/developer-guide/learning-the-system.md`,
-  `docs/concepts/{index,stack}.md`, `docs/index.md`.
-- **Contract impact.** None.
-- **Gate.** `make docs-build` (host, `--strict`).
-- **Acceptance.** `grep -rniE 'qlora|train(s|ing)? (a|the|your) (model|adapter)|training job' README.md CLAUDE.md docs/`
-  hits only the guide's "train it elsewhere" section; the guide is in nav.
-- **Close.** Self-contained; Status snapshot.
-- **Done (2026-10-10, branch e4.7).** New `docs/user-guide/bring-your-own-adapter.md` (in nav): expectations, eval-set format and task choice, gate rule, measured numbers, API sequence, "train it elsewhere" section. Pitch rewritten in README, CLAUDE.md, PRODUCT_DEFINITION, BRAND, COMPETITIVE_LANDSCAPE (trainers are upstream; Adapta column current), plus links from user-guide, concepts, developer guide; console link "Import guide →" in `AdapterFlow.svelte`. `make docs-build` ✓ `--strict`; svelte-check 0 errors. Skipped: per-tool Unsloth/TRL command sequences (unverified, so the guide stays generic); the E2.3 launch kit.
-- **Handoff.** Page path `docs/user-guide/bring-your-own-adapter.md`; the README pitch is E2.3's starting point.
 
 ### E5. Differentiation (weeks 10–13)
 

@@ -984,6 +984,41 @@ bind mount, so uvicorn reloaded on every worker edit — reload now watches `/ap
   if `prepare()` succeeds and generation never runs. (5) What deadlocked Chroma originally was not reproduced; with the
   leak gone it may not recur.
 
+### E4.7 `[DOCS]` Import guide and pitch: "bring your own adapter" wherever training was claimed (P1)
+- [x] **Context.** README, PRODUCT_DEFINITION, BRAND, COMPETITIVE_LANDSCAPE, knowledge-and-behavior,
+  learning-the-system and concepts still describe in-product QLoRA; E4.1 deleted the training-only pages.
+- **Depends.** E4.4, E4.5, E4.6. **Unblocks.** E2.3.
+- **Agent.** sonnet · gate class **offline** (`make docs-build`) · serialize with: E2.3 (README) ·
+  **Handoff.** must name the new page path.
+- **Scope.** One new page `docs/user-guide/bring-your-own-adapter.md`: what Adapta expects (catalog base and
+  accepted aliases, the base's own chat template — ChatML for Qwen2.5 — response-only loss recommended,
+  accepted formats), the eval-set format and how to pick the task, how the gate decides, one worked command
+  sequence each for Unsloth and TRL (commands in the page, no scripts in the repo). Then rewrite the pitch
+  surfaces. Out: any claim E4.4's e2e did not prove.
+- **Steps.** (1) The page + `mkdocs.yml` nav. (2) README pitch + "change how it behaves" bullet;
+  PRODUCT_DEFINITION Service B; CLAUDE.md "What this project is"; BRAND; COMPETITIVE_LANDSCAPE (Unsloth
+  and Axolotl move from competitors to upstream tools); knowledge-and-behavior "when to use which" (prompt
+  → JSON mode → adapter); learning-the-system; concepts.
+- **Files.** `docs/user-guide/bring-your-own-adapter.md` (new), `mkdocs.yml`, `README.md`, `CLAUDE.md`,
+  `docs/reference/{PRODUCT_DEFINITION,BRAND,COMPETITIVE_LANDSCAPE}.md`,
+  `docs/user-guide/{index,knowledge-and-behavior}.md`, `docs/developer-guide/learning-the-system.md`,
+  `docs/concepts/{index,stack}.md`, `docs/index.md`.
+- **Contract impact.** None.
+- **Gate.** `make docs-build` (host, `--strict`).
+- **Acceptance.** `grep -rniE 'qlora|train(s|ing)? (a|the|your) (model|adapter)|training job' README.md CLAUDE.md docs/`
+  hits only the guide's "train it elsewhere" section; the guide is in nav.
+- **Close.** Self-contained; Status snapshot.
+- **Done (2026-10-10, branch e4.7).** New `docs/user-guide/bring-your-own-adapter.md` (in nav): expectations, eval-set format and task choice, gate rule, measured numbers, API sequence, "train it elsewhere" section. Pitch rewritten in README, CLAUDE.md, PRODUCT_DEFINITION, BRAND, COMPETITIVE_LANDSCAPE (trainers are upstream; Adapta column current), plus links from user-guide, concepts, developer guide; console link "Import guide →" in `AdapterFlow.svelte`. `make docs-build` ✓ `--strict`; svelte-check 0 errors. Skipped: per-tool Unsloth/TRL command sequences (unverified, so the guide stays generic); the E2.3 launch kit.
+- **Handoff.** Page path `docs/user-guide/bring-your-own-adapter.md`; the README pitch is E2.3's starting point.
+- **Closed 2026-10-10 (lead).** Merged `6f8c061`; `make docs-build --strict` ✓; svelte-check 0 errors. New page
+  `docs/user-guide/bring-your-own-adapter.md` (flow, accepted formats, eval-set tasks with the freeform warning, the
+  gate rule with the measured 0.700/0.333 and 0.333/0.333, curl sequence, failure table); README/CLAUDE.md/
+  PRODUCT_DEFINITION/BRAND/COMPETITIVE_LANDSCAPE re-pitched: "Adapta verifies and serves adapters; it does not train
+  them" — trainers (Unsloth, Axolotl, …) are upstream. Worked Unsloth/TRL command sequences were deliberately left out
+  (unverified here); the guide points to the trainers' own docs. Console "Import guide →" link. **Follow-up for
+  E2.3:** `docs/screenshots/hero.gif` (README first screen) predates the training removal — regenerate it
+  (`e2e/hero-gif.spec.ts`, uses `seedDemoData`).
+
 ---
 
 ## 2026-10-08 — §E wave 0: the gates every other block is verified by
