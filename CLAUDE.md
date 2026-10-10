@@ -93,6 +93,8 @@ go. Never hand-write generated docs (API reference from the spec, code reference
 ## Where things stand
 
 Phases 0–5, console, image fine-tunes, brand and positioning shipped (history in `CHANGELOG.md`). Open work is
-the 2026-09-03 audit, roadmap §E: wave 0 restores the gates (`make lint` E1.14, dependency pins E1.10, contract
-gate E1.11), then real hybrid retrieval on Postgres, Docling + OCR ingestion, task metrics in the eval gate,
-adapter promotion. Pick a block by its id; read the block and its Files line only.
+the 2026-09-03 audit, roadmap §E: wave 0 restores the gates (dependency pins E1.10, contract gate E1.11).
+**Decided 2026-10-09:** in-product training goes — §E4 removes it (E4.1) and replaces it with *bring your own
+adapter*: import a GGUF/PEFT LoRA, gate it on CPU against the base, serve it with RAG. Do not extend
+`adapta/training/`, the CUDA worker or the GPU gates. Alongside: real hybrid retrieval on Postgres, Docling + OCR
+ingestion. Pick a block by its id; read the block and its Files line only.

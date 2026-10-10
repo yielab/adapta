@@ -22,7 +22,7 @@ Every open task is written so a developer or AI agent can execute it without pri
 - **Steps** — the concrete sequence of changes.
 - **Files** — where the work lands.
 - **Contract impact** — which SDD pillar(s) fire ([SDD_WORKFLOW.md](docs/reference/SDD_WORKFLOW.md)); change the contract **first**.
-- **Gate** — the one `make` target (or GPU suite) that proves it; escalate only if that gate cannot see the change.
+- **Gate** — the one `make` target (or opt-in integration suite) that proves it; escalate only if that gate cannot see the change.
 - **Acceptance** — the observable, testable condition that closes it.
 - **Close** — the doc surfaces to update, then the closure note.
 
@@ -47,7 +47,7 @@ procedure. Rules that keep parallel work from colliding:
 - **A worker edits only** the files its Files line names, its own block, and its own board row. The Status
   snapshot and other blocks' Files lines belong to the lead, who applies them from the worker's **Handoff.**
 - **Gate classes decide where work runs.** `offline` gates run from a git worktree against the built
-  `adapta-app` image (command in gates.md). `live`, `gpu` and `rebuild` gates run on the main checkout, one at
+  `adapta-app` image (command in gates.md). `live` and `rebuild` gates run on the main checkout, one at
   a time, with no other edit landing there meanwhile — hot reload kills live tests and `make up` restarts
   every container. Worktrees are not bind-mounted, so editing there is always safe.
 - **Closing writes two notes, then moves the block.** **Done.** (≤ 8 lines) and **Handoff.** (what downstream
@@ -58,21 +58,22 @@ procedure. Rules that keep parallel work from colliding:
 
 ---
 
-## Status snapshot (updated 2026-10-08)
+## Status snapshot (updated 2026-10-09)
 
 | Area | State |
 |---|---|
 | Product build (phases 0–5), operator console, image fine-tunes, brand, positioning | ✅ complete — history in [CHANGELOG.md](CHANGELOG.md) |
-| SDD gates | Pillar 2 ✅ `make migrate-test` · Pillar 3 ✅ eval gate validated on GPU (`test_eval_gate`, `test_lora_e2e`) · **Pillar 1 🟥 red** since the 2026-09-17 rebuild (schemathesis 4.x, 9–11 failures — E1.11) |
+| Fine-tuning direction | **Decided 2026-10-09: bring your own adapter (§E4).** Adapta stops training; it imports a GGUF or PEFT LoRA, gates it on CPU against the base on the project's eval set, and serves it with RAG. Until E4.1 lands the training code still exists; after it no service needs a GPU. |
+| SDD gates | Pillar 2 ✅ `make migrate-test` · Pillar 3: the GPU perplexity gate is replaced by the CPU task-metric gate on imported adapters (E4.3/E4.4) · **Pillar 1 🟥 red** since the 2026-09-17 rebuild (schemathesis 4.x, 9–11 failures — E1.11) |
 | CI fast gate (`make ci`) | ✅ green again 2026-10-08 — E1.14 closed the 4 mypy errors (ruff + mypy clean, 269 unit tests pass); last run in the pre-E1.10 image, re-run after the pinned rebuild |
-| **Audit 2026-09-03 (§E)** | 🟥 **open** — 10/35 done (E1.1–E1.9 shipped 2026-09-17, E1.14 on 2026-10-08). Wave 0 in flight: E1.10 merged, waiting on the rebuild + GPU gate (board: ready-for-live), then E1.11; then E1.12/E1.13, E2 (Ollama + launch kit), E3 (Postgres chunks → real hybrid FTS, Docling + RapidOCR, citations with page/OCR provenance, system prompt + threshold + filters, multilingual, queued indexing, golden set), E4 (task metrics in the gate, adapter promotion/rollback, synthesis re-aimed, JSON mode, multi-turn), E5 (contextual retrieval, RAG gate, history-aware retrieval, VLM extraction). Scheduling: the §E board. |
+| **Audit 2026-09-03 (§E)** | 🟥 **open** — 10/37 done (E1.1–E1.9 shipped 2026-09-17, E1.14 on 2026-10-08). Wave 0: E1.10 merged, waiting on an app-image rebuild (board: ready-for-live), then E1.11. Then E4.1 removes training and the GPU from the stack, alongside E2 (Ollama + launch kit) and E3 (Postgres chunks → real hybrid FTS, Docling + RapidOCR, citations with page/OCR provenance, system prompt + threshold + filters, multilingual, queued indexing, golden set); E4 (adapter import, CPU eval gate, adapter job, promotion/rollback, console flow, import guide, synthesis for eval sets, JSON mode); E5 (contextual retrieval, RAG gate, history-aware retrieval, visual extraction with the vision base). Scheduling: the §E board. |
 
 ---
 
 ## E. Audit 2026-09-03 — correctness, real hybrid RAG, scanned documents, governed adapters (opened 2026-09-03)
 
 > **Source.** Product audit of 2026-09-03: code read with `file:line` evidence, GitHub API and a
-> verified ecosystem scan. Headline: the product thesis (RAG + gated fine-tune composed on one
+> verified ecosystem scan. Headline: the product thesis (RAG + a gated adapter composed on one
 > self-hosted OpenAI-compatible endpoint, Apache-2.0, orgs/keys in the box) is still unclaimed by any
 > open-source project — but the shipped product is below what the README claims in five places:
 > (1) "hybrid" retrieval only re-ranks the vector candidates (`adapta/services/rag.py:239`);
@@ -85,10 +86,9 @@ procedure. Rules that keep parallel work from colliding:
 >
 > **Scope guard (anti-over-engineering — a standing rule for this section).** A task is admitted only
 > if it (a) fixes something that is false or broken today, (b) reuses what already exists (Redis queue,
-> Postgres, the loaded VLM, the eval-gate machinery), or (c) is a differentiator nobody ships. One
+> Postgres, the loaded VLM, the eval-gate rule), or (c) is a differentiator nobody ships. One
 > dependency that replaces several beats wiring four. **Deferred until a real user asks:** guardrails,
-> connectors (folder/S3 sync at most), Helm, OIDC, GraphRAG/RAPTOR, ColPali, DPO in the console,
-> continued training, Grafana dashboards. **Not built:** human-review queue UI, bounding-box editor,
+> connectors (folder/S3 sync at most), Helm, OIDC, GraphRAG/RAPTOR, ColPali, Grafana dashboards. **Not built:** human-review queue UI, bounding-box editor,
 > 50 connectors, a second vector store, multi-tenant SaaS.
 >
 > **Read budget.** Pick a block with `grep -n '^### E' TODO.md`; read that block and the files its
@@ -110,37 +110,39 @@ classes are defined in [`.claude/context/gates.md`](.claude/context/gates.md) ("
 
 | Block | Wave | Tier | Gate class | Depends on | Serialize with | Status |
 |---|---|---|---|---|---|---|
-| E1.14 | 0 | haiku | offline | none | E1.13, E3.2/E3.5 (`chat.py`) | done 2026-10-08 |
-| E1.10 | 0 | sonnet | rebuild + gpu | none | E3.3b | ready-for-live (develop `411c5d3`; rebuild pending) |
+| E1.14 | 0 | haiku | offline | none | E3.2/E3.5 (`chat.py`) | done 2026-10-08 |
+| E1.10 | 0 | sonnet | rebuild (app image only) | none | E3.3b, E4.1 | ready-for-live (develop `411c5d3`; app rebuild pending) |
 | E1.11 | 0 | sonnet | live | E1.10 | any in-flight `specs/openapi.yaml` edit | open |
-| E1.12 | 1 | haiku | gpu | none | E1.13 | open |
-| E2.1 | 1 | sonnet | live | none | E4.4 | open |
-| E2.3 | 1 | haiku | offline | E1.11 (no claim about a red gate) | E3.2, E3.3b (README bullets, text merge) | open |
+| E2.1 | 1 | sonnet | live | none | E4.1, E4.9 (`core/backends/`) | open |
 | E3.1 | 1 | sonnet | live | none | E3.7, E3.2 | open |
 | E3.3a | 1 | sonnet + human decision | offline | none | — | open |
 | E3.8 | 1 | sonnet | live | none — must land before E3.2 | — | open |
-| E1.13 | 2 | sonnet | gpu | E1.12 | E1.12 | open |
-| E2.2 | 2 | sonnet | live | E2.1, E1.11 | E4.2 (`endpoints.py`, `EndpointPanel.svelte`, spec endpoint section) | open |
+| E4.1 | 1 | sonnet | rebuild + live (exclusive) | E1.11 | E2.1, E3.3b, E3.7 | open |
 | E3.2 | 2 | sonnet | live | E3.1, E3.8 (baseline recorded before this lands) | E3.7, E3.5 | open |
-| E3.3b | 2 | sonnet | rebuild + live | E3.3a (commit), E3.1 | E1.10, E3.7, E3.4 | open |
-| E3.7 | 2 | sonnet | live | E3.1 | E3.1/E3.3b, E4.1/E4.5 | open |
-| E4.2 | 2 | sonnet | live | E1.11 | E2.2 (same files) | open |
-| E4.4 | 2 | sonnet | live | E1.11 | E3.5/E5.3, E2.1, E4.1 | open |
+| E3.3b | 2 | sonnet | rebuild + live | E3.3a (commit), E3.1 | E4.1, E4.2, E4.4 (`pyproject.toml`, `Dockerfile`), E3.7, E3.4 | open |
+| E3.7 | 2 | sonnet | live | E3.1, E4.1 | E3.1/E3.3b, E4.4 (`worker/main.py`) | open |
+| E4.2 | 2 | sonnet | rebuild + live | E4.1 | E4.3 (spec, migrations), E4.5, E2.2 | open |
+| E4.3 | 2 | sonnet | live | E4.1 | E4.2 (spec, migrations) | open |
+| E4.8 | 2 | sonnet | live | E3.8, E4.1 | E4.6, E5.1 | open |
+| E4.9 | 2 | sonnet | live | E1.11 | E2.1, E3.5/E5.3, E4.6 | open |
 | E3.4 | 3 | sonnet | live | E3.1, E3.3b, E1.11 | E3.5 (spec, `Playground.svelte`), E3.3b | open |
-| E3.5 | 3 | sonnet | live | E3.2, E1.11 | E3.4 (spec, `Playground.svelte`), E4.4 and E5.3 | open |
+| E3.5 | 3 | sonnet | live | E3.2, E1.11 | E3.4 (spec, `Playground.svelte`), E4.9 and E5.3 | open |
 | E3.6 | 3 | sonnet + human decision | live | E3.1, E3.2, E3.8 | E3.2 | open |
-| E4.1 | 3 | sonnet | gpu | E1.12, E1.11 | E4.5 | open |
-| E4.3 | 3 | sonnet | live | E3.8, E1.11 | E4.1/E4.5, E5.1 (`synthesis.py` helper) | open |
-| E4.5 | 3 | sonnet | gpu | E1.12 | E4.1 (same files) | open |
-| E5.1 | 4 | sonnet | live | E3.1, E3.7, E3.8 | E5.2, E4.3 | open |
-| E5.2 | 4 | sonnet | live | E3.8, E3.7, E4.3 | E5.1, E4.2 | open |
-| E5.3 | 4 | sonnet | live | E3.2, E3.5, E3.8 | E4.4/E3.5 | open |
-| E5.4 | 4 | sonnet | gpu | E3.3b, E3.4, E3.5, E3.7 | E5.1/E5.2, E3.4 | open |
+| E4.4 | 3 | sonnet | rebuild + live | E4.2, E4.3 | E3.7, E3.3b | open |
+| E5.1 | 3 | sonnet | live | E3.1, E3.7, E3.8 | E5.2, E4.8 | open |
+| E5.2 | 3 | sonnet | live | E3.8, E3.7, E4.8 | E5.1, E4.5 | open |
+| E2.2 | 4 | sonnet | live | E2.1, E4.4 | E4.5 (`endpoints.py`, `EndpointPanel.svelte`) | open |
+| E4.5 | 4 | sonnet | live | E4.4 | E2.2, E4.6, E5.2 | open |
+| E4.6 | 4 | sonnet | live | E4.4 | E4.5, E4.8, E4.9 | open |
+| E5.3 | 4 | sonnet | live | E3.2, E3.5, E3.8 | E4.9/E3.5 | open |
+| E5.4 | 4 | sonnet | live | E3.3b, E3.4, E3.5, E3.7 | E5.1/E5.2, E3.4 | open |
+| E4.7 | 5 | sonnet | offline | E4.4, E4.5, E4.6 | E2.3 (README) | open |
+| E2.3 | 6 | haiku | offline | E1.11, E4.7 | E3.2, E3.3b, E4.7 (README) | open |
 
 ### E1. P0 — corrections that change the publishable evidence (weeks 1–2)
 
 E1.1–E1.9 shipped 2026-09-17 → [CHANGELOG.md](CHANGELOG.md). E1.14 closed 2026-10-08. Open: E1.10 (ready-for-live) → E1.11 (wave 0 — every other
-block's gate depends on them), E1.12, E1.13.
+block's gate depends on them).
 
 
 ### E1.10 `[INFRA]` Pin the heavy dependencies — an unbounded floor lets any rebuild move the product (P0)
@@ -149,9 +151,9 @@ block's gate depends on them), E1.12, E1.13.
   training job — E1.9) and schemathesis **4.27.3** (broke `make test-contracts` — E1.11). Neither
   was a code change; both were a floor that moved. The repo's own claim that the contract gate is
   green (CLAUDE.md, Status snapshot) dates from 2026-06-22 and is no longer true.
-- **Depends.** none. **Unblocks.** E1.11 and every later rebuild (E3.3b).
-- **Agent.** sonnet · gate class **rebuild + gpu (exclusive: nothing else runs)** · serialize with:
-  E3.3b (`pyproject.toml`) · **Handoff.** must name the resolved-version table and each bound added.
+- **Depends.** none. **Unblocks.** E1.11 and every later rebuild (E3.3b, E4.1).
+- **Agent.** sonnet · gate class **rebuild (app image only)** · serialize with: E3.3b, E4.1
+  (`pyproject.toml`) · **Handoff.** must name the resolved-version table and each bound added.
 - **Scope.** Upper bounds on the dependencies whose major versions change behaviour — torch,
   triton (transitively), transformers, peft, trl, schemathesis, chromadb. Out: a full lockfile
   (`uv.lock`/`pip-tools`) — propose it as its own block if bounds prove insufficient.
@@ -164,13 +166,13 @@ block's gate depends on them), E1.12, E1.13.
   fastapi `<1`, pydantic `<3`, redis `<9`; chromadb stays `==1.5.9`; policy in CONTRIBUTING. First rebuild **proved the
   thesis on an unnamed package**: SQLAlchemy 2.0.54 → 2.1.4 dropped `greenlet`, app + worker died at
   `import sqlalchemy.ext.asyncio` → fixed by `sqlalchemy[asyncio]`. Second rebuild aborted (PyPI at ~270 KB/s, multi-GB
-  CUDA wheels). **Remaining, on the main checkout:** `make up` → `pip freeze` in app + worker shows `greenlet` and
-  only minor moves vs the table in the Handoff draft (torch 2.14.1, transformers 5.19.0, peft 0.21.2, trl 1.14.2,
-  schemathesis 4.29.4) → `make ci` → `ADAPTA_RUN_LORA_E2E=1` e2e → close (Done/Handoff → CHANGELOG, OPERATIONS §3 note).
+  CUDA wheels). **Remaining, on the main checkout:** the CUDA worker and the `[training]` bounds are deleted by E4.1,
+  so only the app image is rebuilt: `docker compose up -d --build app postgres redis chroma` (never the worker) →
+  `pip freeze` in app shows `greenlet` and only minor moves vs the Handoff draft (schemathesis 4.29.4) → `make ci` →
+  close (Done/Handoff → CHANGELOG, OPERATIONS §3 note).
 - **Files.** `pyproject.toml:50-90`, `CONTRIBUTING.md` (dependency section).
 - **Contract impact.** None.
-- **Gate.** `make up` → `make ci` → one real training job (`ADAPTA_RUN_LORA_E2E=1
-  tests/integration/test_lora_e2e.py`), because that is the only gate that exercises torch/triton.
+- **Gate.** App-image rebuild (command in Status) → `make ci`.
 - **Acceptance.** A clean `make up` on another machine resolves the same major versions; raising a
   bound is a deliberate, reviewed edit rather than a silent rebuild.
 - **Close.** CONTRIBUTING dependency policy; OPERATIONS upgrade section; Status snapshot.
@@ -183,8 +185,8 @@ block's gate depends on them), E1.12, E1.13.
   unicode/oversized emails (the auth pair is randomised per run). Verified 2026-09-17 across four
   separate runs during §E1: none touch `/v1/chat/completions`, `Citation` or `BaseModelInfo`, so
   §E did not cause them — but Pillar 1 is no longer enforced, which several docs still assert.
-- **Depends.** E1.10. **Unblocks.** every block whose gate runs `make test-contracts` (E2.2, E3.4,
-  E3.5, E4.1–E4.4, E5.2, E5.3).
+- **Depends.** E1.10. **Unblocks.** every block whose gate runs `make test-contracts` (E3.4, E3.5,
+  E4.1, E4.2, E4.5, E4.8, E5.2, E5.3).
 - **Agent.** sonnet · gate class **live** · serialize with: any in-flight `specs/openapi.yaml` edit
   — land this first · **Handoff.** must name which side was fixed per failure class and the final
   operation count.
@@ -205,98 +207,46 @@ block's gate depends on them), E1.12, E1.13.
   operation count and date.
 - **Close.** CLAUDE.md Workflow table (Pillar-1 line); Status snapshot.
 
-### E1.12 `[TEST]` The LoRA e2e must fail when the training job fails (P0)
-- [ ] **Context.** `tests/integration/test_lora_e2e.py:180` asserts `body["status"] in ("succeeded",
-  "failed")` and then branches: on `failed` it only checks that the endpoint is refused (`:291-293`).
-  So on 2026-09-17, with **every** training job crashing on a missing C compiler (E1.9), the suite
-  printed `status=failed eval_score=None` and still reported **1 passed**. A gate that cannot tell
-  “the gate correctly blocked a bad adapter” from “the trainer crashed” is not a gate. The
-  use-case matrix did fail, which is what surfaced the problem — the e2e should have too.
-- **Depends.** none. **Unblocks.** E1.13, E4.1, E4.5, E5.4 (their GPU gates rely on an honest e2e).
-- **Agent.** haiku · gate class **gpu (the negative check breaks + restarts the worker)** ·
-  serialize with: E1.13 (`test_lora_e2e.py`) · **Handoff.** must name the shared terminal-state
-  helper name used by both suites.
-- **Scope.** The two integration suites' terminal-state assertions. Do not change the eval gate.
-- **Steps.** (1) `test_lora_e2e.py`: a job whose `error_message` is set, or whose `eval_score` is
-  `None`, is an **infrastructure failure** → `pytest.fail` with the worker error, never the blocked
-  branch. Keep a blocked-adapter branch only for `status == "succeeded" and eval_passed is False`.
-  (2) Apply the same distinction in `test_lora_use_cases.py`'s waiter so a crashed job reports the
-  worker's error rather than a gate verdict. (3) Assert the negative control is blocked **because**
-  it succeeded and lost to base, not because it crashed.
-- **Files.** `tests/integration/test_lora_e2e.py:160-200, 285-295`,
-  `tests/integration/test_lora_use_cases.py` (the job waiter + garbage scenario assertions).
-- **Contract impact.** None.
-- **Gate.** `ADAPTA_RUN_LORA_E2E=1 tests/integration/test_lora_e2e.py` on GPU; plus a negative check
-  — temporarily break the worker (e.g. `CC=/nonexistent`) and confirm the suite now **fails**.
-- **Acceptance.** A crashed training job fails the e2e with the worker's error in the message; a
-  genuinely blocked adapter still passes the blocked branch.
-- **Close.** Status snapshot; the §E1.12 line in the Pillar-3 row if it claims e2e coverage.
-
-### E1.13 `[BE]` Prove training progress reaches Redis during the run, not after it (P1)
-- [ ] **Context.** E1.5 replaced the SFT/DPO progress callback's bare `asyncio.create_task` (fired
-  from inside the blocking HF `trainer.train()` call) with `asyncio.run_coroutine_threadsafe`. Six
-  real GPU runs on 2026-09-17 produced **no** `no running event loop` / `coroutine was never awaited`
-  errors, so the regression is gone — but progress publishing emits no log line, so there is no
-  evidence that records reach Redis *during* training rather than in a burst once it returns. The
-  console's live progress bar depends on the answer.
-- **Depends.** E1.12. **Unblocks.** none.
-- **Agent.** sonnet · gate class **gpu** · serialize with: E1.12 (`test_lora_e2e.py`) · **Handoff.**
-  must name whether step 3 (`asyncio.to_thread`) was needed.
-- **Scope.** Observability + one assertion. No change to the training loop.
-- **Steps.** (1) Log one line per published progress record (step, epoch, percent) at DEBUG in the
-  worker. (2) In the GPU e2e, poll `GET /jobs/{id}` while the job is `running` and assert `progress`
-  strictly increases at least twice **before** the terminal state. (3) If it does not, the real bug
-  is that the blocking call never yields to the loop — then move the HF call to `asyncio.to_thread`
-  (it is a call site change, not a rewrite of the loop — hard constraint #1 still holds).
-- **Files.** `adapta/training/trainer.py:212-234` (both `ProgressCallback` classes),
-  `adapta/services/jobs.py`, `tests/integration/test_lora_e2e.py`.
-- **Contract impact.** None.
-- **Gate.** `make test` → `ADAPTA_RUN_LORA_E2E=1 tests/integration/test_lora_e2e.py` on GPU.
-- **Acceptance.** The e2e observes progress advancing mid-run; the console's progress bar is
-  demonstrably live rather than a post-hoc jump to 100 %.
-- **Close.** operator-console fine-tune flow (progress bar claim); Status snapshot.
-
 ### E2. Distribution + launch kit (weeks 2–3)
 
 ### E2.1 `[BE+INFRA]` Ollama as an inference backend for base-model and RAG-only endpoints (P1)
 - [ ] **Context.** `adapta/core/backends/` already abstracts serving (`ServingBackend` ABC; llama-cpp
-  default; vLLM sidecar for text LoRA). Ollama (180k★, MIT) is the substrate the local-AI ecosystem
+  default). Ollama (180k★, MIT) is the substrate the local-AI ecosystem
   builds on — Open WebUI grew by attaching to it, and every "works with Ollama" integration is a free
   acquisition channel. RAG-only and base endpoints don't need an in-process llama-cpp when an Ollama
   host exists.
 - **Depends.** none. **Unblocks.** E2.2.
-- **Agent.** sonnet · gate class **live (`--profile ollama`)** · serialize with: E4.4
+- **Agent.** sonnet · gate class **live (`--profile ollama`)** · serialize with: E4.1, E4.9
   (`core/backends/*.py`) · **Handoff.** must name `ollama_model_map` keys and the routing rule.
 - **Scope.** Read-only client for adapter-less text requests via Ollama's OpenAI-compatible
-  `/v1/chat/completions`. Out: serving Adapta-trained adapters through Ollama at runtime (E2.2 exports
+  `/v1/chat/completions`. Out: serving imported adapters through Ollama at runtime (E2.2 exports
   them), vision.
 - **Steps.** (1) `core/backends/ollama_backend.py`: `OllamaBackend(ServingBackend)` with httpx (already
-  a dep), mirroring `vllm_backend.py` — `prepare()`, non-streaming + streaming, usage from Ollama's
-  `prompt_eval_count`/`eval_count` (exact, unlike vLLM's `len//4`). (2) Routing in
+  a dep), implementing the same interface as `llamacpp.py` — `prepare()`, non-streaming + streaming, usage from Ollama's
+  `prompt_eval_count`/`eval_count` (exact token counts). (2) Routing in
   `core/backends/__init__.py`: `ADAPTA_SERVING_BACKEND=ollama` sends adapter-less text requests to
   Ollama; adapters and vision stay on llama-cpp. (3) `config.py`: `ollama_base_url`,
   `ollama_model_map` (catalog name → Ollama tag; default map for the Apache entries of E1.2).
-  (4) `docker-compose.yml`: optional `ollama` service under `profiles: [ollama]` (official image, GPU
-  via CDI like `vllm-server`). (5) `tests/test_backend_ollama.py`: mocked httpx transport — routing,
+  (4) `docker-compose.yml`: optional `ollama` service under `profiles: [ollama]` (official image,
+  CPU; an operator with a GPU adds `devices` in their own override). (5) `tests/test_backend_ollama.py`: mocked httpx transport — routing,
   usage mapping, streaming frames. (6) OPERATIONS §9-style runbook "Serve RAG through Ollama".
-- **Files.** `adapta/core/backends/base.py`, `adapta/core/backends/vllm_backend.py` (pattern),
-  `adapta/core/backends/__init__.py:44-64`, `adapta/config.py` (`grep -n vllm_`),
-  `docker-compose.yml` (`vllm-server` block as template), `docs/reference/OPERATIONS.md` §9.
+- **Files.** `adapta/core/backends/base.py`, `adapta/core/backends/llamacpp.py` (interface),
+  `adapta/core/backends/__init__.py` (routing), `adapta/config.py`, `docker-compose.yml`,
+  `docs/reference/OPERATIONS.md` §9.
 - **Contract impact.** None (env config).
 - **Gate.** `make test` → live: `docker compose --profile ollama up -d` + one RAG chat in the playground.
 - **Acceptance.** With the profile on, a RAG project's endpoint answers through Ollama with exact token
-  counts and citations; llama-cpp untouched for adapters/vision; `make ci` green.
+  counts and citations; llama-cpp still serves adapters and vision; `make ci` green.
 - **Close.** OPERATIONS §9 sibling section; README "Using the API" one line; Status snapshot.
 
 ### E2.2 `[BE]` Export a gated adapter as an Ollama Modelfile bundle (P2)
 - [ ] **Context.** Ollama imports LoRA adapters with a `Modelfile` (`FROM <base>` + `ADAPTER <path>`).
-  Adapta already produces a GGUF LoRA per passing job (`adapter_conversion.py`); exporting it lets any
-  Ollama user run an Adapta-trained, gate-passed adapter — the adapter travels to 180k★ of users.
-- **Depends.** E2.1, E1.11. **Unblocks.** none.
-- **Agent.** sonnet · gate class **live** · serialize with: E4.2 (`endpoints.py`,
+  Every `passed` adapter has a GGUF LoRA (E4.4); exporting it with the base tag, template and gate line
+  lets any Ollama user run a gate-verified adapter — the adapter travels to 180k★ of users.
+- **Depends.** E2.1, E4.4. **Unblocks.** none.
+- **Agent.** sonnet · gate class **live** · serialize with: E4.5 (`endpoints.py`,
   `EndpointPanel.svelte`, spec endpoint section) · **Handoff.** must name the route and zip layout.
-- **Scope.** A zip `{adapter.gguf, Modelfile, README.txt}` for endpoints whose adapter passed the gate;
-  text adapters only (Ollama's LoRA import doesn't cover mmproj VLM adapters). Out: pushing to
+- **Scope.** A zip `{adapter.gguf, Modelfile, README.txt}` for endpoints serving a `passed` adapter. Out: pushing to
   ollama.com.
 - **Steps.** (1) Spec `GET /v1/projects/{id}/endpoint/export?format=ollama` → `application/zip`,
   writer role, 404 without a gated adapter. (2) Handler builds the zip in a temp dir: the GGUF LoRA, a
@@ -306,12 +256,12 @@ block's gate depends on them), E1.12, E1.13.
   contents + Modelfile text; 404 path.
 - **Files.** `specs/openapi.yaml` (endpoint section), `adapta/api/v1/endpoints.py`,
   `adapta/core/chat_templates.py`, `adapta/services/adapters.py`,
-  `adapta/console/src/views/EndpointPanel.svelte`, `tests/test_adapter_serving.py`.
+  `adapta/console/src/views/EndpointPanel.svelte`, `tests/test_adapter_upload.py`.
 - **Contract impact.** API (new route).
 - **Gate.** `make validate-spec` → `make generate` → `make check-models` → `make test` →
   `make test-contracts`.
 - **Acceptance.** `ollama create adapta-demo -f Modelfile` on a host with the base tag yields a model
-  that answers in the trained shape (manual check, recorded in the Done note).
+  that answers in the adapter's shape (manual check, recorded in the Done note).
 - **Close.** consuming-the-api "Export to Ollama"; Status snapshot.
 
 ### E2.3 `[DOCS]` Launch kit: README first screen, migration guides, honest status (P1)
@@ -320,18 +270,17 @@ block's gate depends on them), E1.12, E1.13.
   EE) lives only in COMPETITIVE_LANDSCAPE. Flowise (55k★, Apache-2.0) archived 2026-08-13; Cognita and
   Verba archived; R2R stale since 2025-11 — their users are looking for a home now. The README status
   note ("working prototype — not production-hardened") is honest but reads as self-sabotage.
-- **Depends.** E1.11 (no claim about a red gate). **Unblocks.** none.
-- **Agent.** haiku · gate class **offline (`make docs-build`)** · serialize with: E3.2, E3.3b
-  (README bullets — text merge) · **Handoff.** must name none (self-contained).
-- **Scope.** Copy + one new user-guide page. Do it **after** E1.3/E1.4's re-measure so every number
-  quoted is current; claim nothing E1 hasn't made true.
+- **Depends.** E1.11 (no claim about a red gate), E4.7 (the pitch it builds on). **Unblocks.** none.
+- **Agent.** haiku · gate class **offline (`make docs-build`)** · serialize with: E3.2, E3.3b, E4.7
+  (README — text merge) · **Handoff.** must name none (self-contained).
+- **Scope.** Copy + one new user-guide page. Claim nothing a closed block hasn't made true.
 - **Steps.** (1) README: a 6-row "what you get under Apache-2.0" table (feature · Adapta · the
   restriction elsewhere, each cell linking the other project's license page) above the fold; status
   note → "beta: works end to end; audit the auth and eval-gate paths before sensitive data".
   (2) `docs/user-guide/migrating.md`: from Flowise / Cognita / R2R — concept mapping (flow → project,
   document store → files, chain → endpoint), what has no equivalent (the canvas), a 10-line curl path.
-  (3) COMPETITIVE_LANDSCAPE: license-restriction column with citations; rows for Unsloth Desktop,
-  Kiln, BISHENG (verified 2026-09-03). (4) `mkdocs.yml` nav + hub links.
+  (3) COMPETITIVE_LANDSCAPE: license-restriction column with citations; rows for Kiln and BISHENG
+  (verified 2026-09-03). (4) `mkdocs.yml` nav + hub links.
 - **Files.** `README.md`, `docs/user-guide/migrating.md` (new), `docs/user-guide/index.md`,
   `docs/reference/COMPETITIVE_LANDSCAPE.md`, `mkdocs.yml`.
 - **Contract impact.** None.
@@ -434,8 +383,8 @@ block's gate depends on them), E1.12, E1.13.
   DOCX tables are dropped (`:49`); HTML is stripped by regex (`:60`); scanned PDFs are rejected
   (`:134-135`); images are not accepted (`files.py:34`). E3.3a measured the replacement.
 - **Depends.** E3.3a (commit), E3.1. **Unblocks.** E3.4, E5.4.
-- **Agent.** sonnet · gate class **rebuild + live** · serialize with: E1.10 (`pyproject.toml`), E3.7
-  (`documents.py`), E3.4 (`RagFlow.svelte`) · **Handoff.** must name the `Chunk` fields, accepted
+- **Agent.** sonnet · gate class **rebuild + live** · serialize with: E4.1, E4.2, E4.4
+  (`pyproject.toml`, `Dockerfile`), E3.7 (`documents.py`), E3.4 (`RagFlow.svelte`) · **Handoff.** must name the `Chunk` fields, accepted
   extensions, `ocr_review_threshold`, image-size delta and s/page.
 - **Scope.** Parser + chunker + accepted types + OCR metadata. Out: VLM extraction (E5.4), review UI.
 - **Steps.** (1) `pyproject.toml`: `docling[rapidocr]`; drop `pypdf`, `python-docx`, `markdown` if
@@ -497,7 +446,7 @@ block's gate depends on them), E1.12, E1.13.
   the model gets no system prompt at all (`chat.py:190-191`). `collection.query` has no `where`
   (`rag.py:226-230`); the request has no filter field.
 - **Depends.** E3.2, E1.11. **Unblocks.** E5.3, E5.4.
-- **Agent.** sonnet · gate class **live** · serialize with: E3.4 (spec, `Playground.svelte`), E4.4
+- **Agent.** sonnet · gate class **live** · serialize with: E3.4 (spec, `Playground.svelte`), E4.9
   and E5.3 (`chat.py`) · **Handoff.** must name the `adapta.*` request namespace shape, the
   `_build_system` order, the migration revision.
 - **Scope.** Three small, related knobs. Out: ACL (open a block when a user asks), multi-query.
@@ -560,24 +509,23 @@ block's gate depends on them), E1.12, E1.13.
 
 ### E3.7 `[BE]` Indexing as a queued job with retry + per-request retrieval metrics (P1)
 - [ ] **Context.** Indexing runs in a FastAPI `BackgroundTasks` closure (`files.py:182`): no retry, no
-  visibility, rows stuck in `processing` after a restart (the §A4.10 sweeper covers training jobs
-  only). `core/metrics.py:177-221` has no retrieval metrics.
-- **Depends.** E3.1. **Unblocks.** E5.1, E5.2, E5.4 (job kinds).
+  visibility, rows stuck in `processing` after a restart (the sweeper does not cover index rows). `core/metrics.py:177-221` has no retrieval metrics.
+- **Depends.** E3.1, E4.1 (the worker's `kind` dispatch table). **Unblocks.** E5.1, E5.2, E5.4.
 - **Agent.** sonnet · gate class **live (`docker compose restart worker` + rag e2e + sweep test)** ·
-  serialize with: E3.1/E3.3b (`files.py`, `documents.py`), E4.1/E4.5 (`worker/main.py`) ·
+  serialize with: E3.1/E3.3b (`files.py`, `documents.py`), E4.4 (`worker/main.py`,
+  `services/jobs.py`, `services/maintenance.py`) ·
   **Handoff.** must name the job payload shape (`kind`), `_run_index_job`, the metric names, the
   gates.md trap added.
-- **Scope.** Reuse the existing Redis BLPOP queue with a job `kind`; the worker runs CPU index jobs
-  too (no GPU gate for that kind). Out: a second worker process, priorities.
-- **Steps.** (1) `services/jobs.py`: payload gains `kind: "train" | "index"`; `worker/main.py`
-  dispatches by kind **before** the GPU guard — the training path is untouched. (2) `files.py`
-  enqueues `{kind: index, file_id}`; the worker writes `pending → processing → indexed/failed`; one
+- **Scope.** Reuse the Redis BLPOP queue and E4.1's `kind` dispatch table. Out: a second worker
+  process, priorities.
+- **Steps.** (1) Register `_run_index_job` under `kind: "index"` in the worker's dispatch table.
+  (2) `files.py` enqueues `{kind: "index", id: file_id}`; the worker writes `pending → processing → indexed/failed`; one
   retry on transient failure; the sweeper learns the `index` kind. (3) Hot-reload trap: changes to
   `adapta/services/documents.py` now need `docker compose restart worker` — add to gates.md.
   (4) Metrics: `adapta_rag_retrieval_seconds` (histogram), `adapta_rag_chunks_returned`,
   `adapta_rag_reranker_seconds`, `adapta_index_seconds_per_page`. (5) Tests: `test_jobs.py` kind
   dispatch; `test_observability.py` metric names; `test_stuck_task_sweep.py` covers index rows.
-- **Files.** `adapta/services/jobs.py`, `adapta/worker/main.py:440-485` (+ `_run_index_job`),
+- **Files.** `adapta/services/jobs.py`, `adapta/worker/main.py` (dispatch table + `_run_index_job`),
   `adapta/api/v1/files.py:80-135`, `adapta/services/maintenance.py`, `adapta/core/metrics.py:177-221`,
   `adapta/services/rag.py`, `.claude/context/gates.md`, `tests/test_jobs.py`,
   `tests/test_observability.py`, `tests/integration/test_stuck_task_sweep.py`.
@@ -593,7 +541,7 @@ block's gate depends on them), E1.12, E1.13.
 - [ ] **Context.** There is no retrieval-quality test: `test_rag_hybrid.py` is synthetic ordering and
   `test_rag_e2e.py` asserts an answer exists. E3.2, E3.6, E5.1 and E5.2 all claim improvements that
   need one number.
-- **Depends.** none — must land **before E3.2**. **Unblocks.** E3.2, E3.6, E4.3, E5.1, E5.2, E5.3.
+- **Depends.** none — must land **before E3.2**. **Unblocks.** E3.2, E3.6, E4.8, E5.1, E5.2, E5.3.
 - **Agent.** sonnet · gate class **live (`make golden`)** · serialize with: none (new files + one
   Makefile target) · **Handoff.** must name the `questions.jsonl` schema, the floor file path, the
   baseline numbers.
@@ -614,156 +562,299 @@ block's gate depends on them), E1.12, E1.13.
   the harness runs in under 5 minutes on CPU.
 - **Close.** workflow.md; gates.md row; Status snapshot.
 
-### E4. P2 — fine-tuning as a governed feature (weeks 7–10)
+### E4. Bring your own adapter — Adapta verifies and serves adapters; it does not train them (weeks 3–9)
 
-### E4.1 `[BE]` Task metrics in the eval gate, chosen by use-case template (P2)
-- [ ] **Context.** The gate is `score = exp(−loss)` only; `EvaluationMetrics.accuracy / exact_match /
-  token_accuracy / bleu …` are hard-coded `None` (`evaluator.py:314-326`). For extraction, "does the
-  JSON parse and match the fields?" is trivial and far more convincing than 0.33.
-- **Depends.** E1.12, E1.11. **Unblocks.** none.
-- **Agent.** sonnet · gate class **gpu (use-case matrix)** · serialize with: E4.5 (`evaluator.py`,
-  `worker/main.py`, `FinetuneFlow.svelte`) — run E4.1 first; E4.4 (`FinetuneFlow.svelte`); E3.7
-  (`worker/main.py`) · **Handoff.** must name the `task_metrics` shape and the template-floor rule.
-- **Scope.** Three templates — `classify` (label accuracy after strip/lower), `extract` (JSON-parse
-  rate + per-key exact match), `format` (adherence regex shipped with the dataset, or none) — computed
-  by greedy generation on the held-out rows for adapter **and** base. The perplexity rule
-  (`passes_eval_gate`) stays and gains an optional template floor when a template is set (e.g.
-  `classify`: accuracy ≥ base + 0.10 or ≥ 0.8). Out: LLM-as-judge, human approval.
-- **Steps.** (1) Model contract: `training_dataset.schema.json` optional `metadata.task` enum;
-  `JobCreateRequest.task_template` optional. (2) `evaluator.py`: after loss scoring, generate on all
-  held-out rows (cap 200; the 5-sample path already exists) and compute the template metrics for both
-  models. (3) `training/models.py`: `EvaluationResult.task_metrics` for both; `passes_eval_gate`
-  gains the template floor. (4) Worker persists them in `eval_metrics`; `FinetuneFlow.svelte` gate
-  panel shows "JSON valid 96 % (base 41 %)". (5) `test_eval_gate.py`: metric functions + rule cases.
-  (6) `test_lora_use_cases.py`: assert the template metrics for scenarios A/B/C.
-- **Files.** `specs/schemas/training_dataset.schema.json`, `specs/openapi.yaml`
-  (`grep -n JobCreateRequest`), `adapta/training/evaluator.py:139-330`,
-  `adapta/training/models.py:15-72`, `adapta/worker/main.py:300-330`, `adapta/services/training.py`
-  (validation), `adapta/console/src/views/FinetuneFlow.svelte:308-326`, `tests/test_eval_gate.py`,
-  `tests/integration/test_lora_use_cases.py`.
-- **Contract impact.** Model + API.
-- **Gate.** `make validate-spec` → `make generate` → `make check-models` → `make test` → GPU use-case
-  matrix.
-- **Acceptance.** The extraction run reports JSON-valid rate and per-field match vs base;
-  classification reports accuracy; the garbage control fails both the loss gate and the template floor;
-  the console shows the metrics.
-- **Close.** PRODUCT_DEFINITION eval-gate paragraph, learning-the-system, fine-tuning-use-cases (new
-  columns), CLAUDE.md gate one-liner; Status snapshot.
+> **Decision (2026-10-09).** In-product QLoRA training is removed. It needed a CUDA host, a 7.4 GB worker
+> image and a torch/triton/bitsandbytes/peft/trl set whose drift broke every training job on one rebuild
+> (E1.9), and its GPU-only gates serialized the roadmap — for a capability whose real use is narrow
+> (classification, output format, extraction on small bases; knowledge belongs in RAG). What stays is the
+> differentiator: an adapter serves only after it beats the base on the project's own eval set, and it
+> composes with RAG on one OpenAI-compatible endpoint. Operators train where they already do (Unsloth,
+> Axolotl, TRL, Colab) and import the result.
+>
+> **Fixed choices.** Accepted: a GGUF LoRA, or a PEFT adapter (`adapter_model.safetensors` +
+> `adapter_config.json`) converted on CPU — never pickle (`.bin`, `.pt`). An eval set is mandatory: no eval
+> set, no gate, no serving. Text adapters only (vision adapters: §E6). No training code ships in the repo;
+> the import guide (E4.7) states what an external run must match.
+>
+> **One image, all CPU.** After E4.1 the worker runs the `app` image and consumes queued job kinds
+> (`adapter` E4.4, `index` E3.7, `extract` E5.4); no service reserves a GPU. Optional llama.cpp GPU offload
+> for serving (`ADAPTA_N_GPU_LAYERS`) is unaffected.
 
-### E4.2 `[BE+FE]` Adapter promotion, rollback and an audit trail (P2)
-- [ ] **Context.** `Endpoint.adapter_path` is written once at creation (`endpoints.py:156-184`) and no
-  route updates it; the registry keeps every adapter (`adapters.py:104-105`) but nothing lists,
-  compares or promotes them; nobody records who promoted what. The pitch is *governed* fine-tuning.
-- **Depends.** E1.11. **Unblocks.** none.
-- **Agent.** sonnet · gate class **live** · serialize with: E2.2 (same files) — run E2.2 first; E5.2
-  (`EndpointPanel.svelte`) · **Handoff.** must name the migration revision, the promote route, the
-  eviction wrapper name.
-- **Scope.** List gated adapters; promote one; rollback = promote the previous; every change logged.
-  Out: A/B traffic split, shadow mode.
-- **Steps.** (1) Migration `0013_adapter_events`: `adapter_events(id, endpoint_id, job_id,
-  adapter_path, action promote|rollback, actor_user_id, eval_score, base_score, delta, created_at)`.
-  (2) Spec: `GET /v1/projects/{id}/adapters` (gated jobs + scores), `POST
-  /v1/projects/{id}/endpoint/promote {job_id}` (writer; job must be `succeeded ∧ eval_passed`),
-  `GET /v1/projects/{id}/endpoint/history`. (3) `endpoints.py`: promote updates `adapter_path`, evicts
-  the cache entry for the old `(base, adapter)` key, writes the event; rollback = promote with the
-  previous event's job. (4) Registry: the `adapter_events` + jobs tables become the source of truth —
-  delete the JSON file I/O in `services/adapters.py`, keep the gate function. (5) Console
-  `EndpointPanel.svelte`: adapters table (score, Δ, date, Promote), history list, current-adapter badge.
-  (6) Tests: promote/rollback state machine; viewer 403; eviction called.
-- **Files.** `migrations/versions/0013_adapter_events.py`, `adapta/db/models.py`, `specs/openapi.yaml`
-  (endpoint section), `adapta/api/v1/endpoints.py:100-190`, `adapta/services/adapters.py`,
-  `adapta/core/model_manager.py` (an `evict(key)` wrapper if absent — wrap, never rewrite),
-  `adapta/console/src/views/EndpointPanel.svelte`, `tests/test_adapter_serving.py`,
+### E4.1 `[INFRA+BE+FE]` Remove in-product training: CUDA worker, GPU reservation, trainer, `/jobs`, vLLM (P1)
+- [ ] **Context.** Training is the only reason the stack needs CUDA: `Dockerfile:98-145` (worker-builder +
+  worker stages), `docker-compose.yml:72-111` (`devices: nvidia.com/gpu=all`), `docker-compose.cpu.yml`,
+  `Makefile:21-26, 65-75` (GPU detection, `up-cpu`), `pyproject.toml` `[training]`. The vLLM sidecar
+  (`core/backends/vllm_backend.py`, compose `vllm-server`) exists only to pack trained LoRAs on a GPU.
+- **Depends.** E1.11. **Unblocks.** E3.7, E4.2, E4.3, E4.8.
+- **Agent.** sonnet · gate class **rebuild + live (exclusive)** · serialize with: E2.1 (`core/backends/`),
+  E3.3b (`pyproject.toml`, `Dockerfile`), E3.7 (`worker/main.py`) · **Handoff.** must name the migration
+  revision, the worker dispatch-table name, the fixture paths, the app image size.
+- **Scope.** Delete outright — no shim, no "training disabled" message, no compatibility path. Out: the
+  import path (E4.2–E4.4), the new console flow (E4.6), the pitch docs (E4.7 rewrites them once).
+- **Steps.** (1) **First**, copy two 0.5B fixtures out of `data/adapters/` into `tests/fixtures/adapters/`:
+  the use-case matrix's passing classification adapter and its gate-failing control — `adapter_config.json`,
+  `adapter_model.safetensors`, `adapter.gguf` when present, the held-out `dataset_eval.jsonl` (identify by
+  `training_metadata.json`). They cannot be re-trained after this block. (2) Delete `adapta/training/`,
+  `services/adapters.py` (JSON registry), `api/v1/jobs.py`, `core/backends/vllm_backend.py`,
+  `core/gpu.py` `torch_cuda_status`, `catalog.train_vram_gb`, the vllm settings. Keep the SFT-row validator
+  from `services/training.py` as `services/datasets.py`; drop its DPO, vision-bundle, enqueue and recovery
+  code. (3) Spec: delete `/jobs*`, `JobCreateRequest`, `JobResponse`, `JobSummary`, `TrainingConfigInput`,
+  `AdapterProvenance`, `BaseModelInfo.train_vram_gb`. Migration `drop_training`: `training_jobs`,
+  `datasets.modality`, `datasets.num_images`; `ProjectStatus.training` goes. `create_endpoint` on a
+  `finetune` project raises `InvalidRequest("Import an adapter first")`. Schema
+  `training_dataset.schema.json` → `eval_dataset.schema.json`, SFT row only. (4) `worker/main.py`: keep
+  loop, heartbeat, healthcheck, SIGTERM requeue; dispatch on `meta["kind"]` through an empty handler table;
+  an unknown kind fails the job with a typed error. (5) Infra: delete both worker stages,
+  `docker-compose.cpu.yml`, `vllm-server`, GPU detection + `up-cpu`; worker = `target: app` + its command;
+  same in `docker-compose.prod.yml`. `pyproject.toml`: delete `[training]`; move the `torch<3` and
+  `transformers<6` bounds into main deps (sentence-transformers needs both). (6) Tests + console: delete
+  what trains or imports `adapta.training` (`grep -rlE 'adapta\.training|/jobs|ADAPTA_RUN_(LORA|VLM)'
+  tests/`); console keeps dataset upload/review, loses the train step, gate panel and VRAM column.
+- **Files.** `Dockerfile`, `docker-compose.yml`, `docker-compose.cpu.yml`, `docker-compose.prod.yml`,
+  `Makefile`, `pyproject.toml`, `adapta/training/`, `adapta/worker/main.py`, `adapta/services/{training,adapters,jobs,maintenance}.py`,
+  `adapta/api/v1/{jobs,endpoints,datasets,synthesis}.py`, `adapta/api/app.py:330-360`, `adapta/core/{gpu,model_catalog,adapter_conversion}.py`,
+  `adapta/core/backends/`, `adapta/config.py`, `adapta/db/models.py`, `migrations/versions/`, `specs/openapi.yaml`,
+  `specs/schemas/training_dataset.schema.json`, `adapta/console/src/views/{FinetuneFlow,Models,EndpointPanel}.svelte`,
+  `adapta/console/src/lib/types.ts`, `tests/`.
+- **Contract impact.** API + DB + model (schema rename).
+- **Gate.** `make up` (no CUDA wheel downloaded) → `make migrate-test` → `make validate-spec` →
+  `make generate` → `make check-models` → `make ci` → `make test-contracts` → `make console-build` →
+  `tests/integration/test_rag_e2e.py`.
+- **Acceptance.** One Adapta image; `make up` succeeds on a host without the NVIDIA toolkit and with no
+  override file; `grep -rnE 'peft|trl|bitsandbytes|vllm|torch\.cuda' adapta/ pyproject.toml Dockerfile docker-compose*.yml`
+  is empty; RAG e2e and the contract gate green; the fixtures are committed.
+- **Close.** CLAUDE.md (Stack, hard constraint #1 list, Workflow pillar 3, API surface); `gates.md` (drop
+  the `gpu` class and training rows); `repo-map.md`; `stack` skill; OPERATIONS (sizing, GPU sections);
+  architecture.md; README run instructions; delete `fine-tuning-walkthrough.md`, `fine-tuning-use-cases.md`,
+  `vlm-fine-tuning.md`, `ocr-vision-walkthrough.md` + their `mkdocs.yml` nav and inbound links; Status snapshot.
+
+### E4.2 `[BE]` Adapter contract: `adapters` table, upload route, endpoint bound to an adapter (P1)
+- [ ] **Context.** After E4.1 a `finetune` project has no way to obtain a servable adapter, and
+  `Endpoint.adapter_path` (`db/models.py:428-430`) is a bare path with no provenance that
+  `api/v1/chat.py:135` serves as-is.
+- **Depends.** E4.1. **Unblocks.** E4.4.
+- **Agent.** sonnet · gate class **rebuild + live** (new pip dependency) · serialize with: E4.3 (spec,
+  migrations), E4.5 and E2.2 (`endpoints.py`) · **Handoff.** must name the table columns, routes, status
+  enum, error classes and migration revision.
+- **Scope.** Contract, upload, static validation, storage; an accepted adapter lands `uploaded`. Out:
+  conversion, load probe and scoring (E4.4), promotion (E4.5).
+- **Steps.** (1) Migration `adapters`: `adapters(id, project_id FK CASCADE, name, base_model, format
+  gguf|peft, peft_dir NULL, gguf_path NULL, sha256, size_bytes, eval_dataset_id FK datasets, status
+  uploaded|processing|passed|failed, failure_reason NULL, eval_metrics JSONB NULL, created_by FK users,
+  created_at)`; `endpoints.adapter_path` → `endpoints.adapter_id` (FK, nullable). (2) Spec:
+  `POST /v1/projects/{id}/adapters` (multipart: one `.gguf`, or a `.zip` holding exactly
+  `adapter_model.safetensors` + `adapter_config.json`; `eval_dataset_id` required; writer) → 202
+  `AdapterResponse`; `GET …/adapters`, `GET …/adapters/{aid}`, `DELETE …/adapters/{aid}` (409 while bound);
+  `EndpointResponse.adapter: AdapterResponse`. (3) `services/adapters.py` validation, each failure a typed
+  `DomainError` naming the expected value: extension + magic bytes; zip members exact (no dirs, no `..`,
+  nothing else); `settings.adapter_max_upload_mb` (512); PEFT `peft_type == "LORA"` and
+  `base_model_name_or_path` ∈ the catalog entry's `hf_repo_id` + new `adapter_base_aliases` (Unsloth repos);
+  GGUF `general.type == "adapter"`, `adapter.type == "lora"`, architecture = the base's (read with `gguf`,
+  added to `pyproject.toml`). Stored under `adapters_dir/{id}/`. (4) `create_endpoint` on `finetune`: latest
+  `passed` adapter, else `InvalidRequest`; chat resolves the GGUF through `adapter_id`. (5) Tests: every
+  rejection, zip traversal, endpoint refuses a non-passed adapter.
+- **Files.** `migrations/versions/` (new), `adapta/db/models.py` (`Endpoint`, new `Adapter`),
+  `specs/openapi.yaml` (endpoint section + new paths), `adapta/services/adapters.py` (new),
+  `adapta/api/v1/adapters.py` (new), `adapta/api/app.py` (router), `adapta/api/v1/endpoints.py:126-190`,
+  `adapta/api/v1/chat.py:130-160`, `adapta/core/model_catalog.py`, `adapta/domain/errors.py`,
+  `adapta/config.py`, `pyproject.toml`, `tests/test_adapter_upload.py` (new).
+- **Contract impact.** API + DB.
+- **Gate.** `make up` → `make migrate-test` → `make validate-spec` → `make generate` → `make check-models` →
+  `make test` → `make test-contracts`.
+- **Acceptance.** The E4.1 fixture zip returns 202 `uploaded` with its sha256; a `.bin`, a zip with an
+  extra member, a mismatched base and an oversized file each return a typed 4xx naming the problem; a
+  `finetune` endpoint cannot be created while no adapter is `passed`.
+- **Close.** CLAUDE.md API surface; consuming-the-api; Status snapshot.
+
+### E4.3 `[BE]` CPU eval gate: task metrics through the serving path, adapter vs base (P1)
+- [ ] **Context.** E4.1 deleted the GPU gate (response-only perplexity on a 4-bit bitsandbytes load, CUDA
+  only). Perplexity never said whether the task improved — every task metric was `None` (audit finding 3).
+  An externally trained adapter can also use a prompt format the endpoint never serves; only generating
+  through the serving path measures that.
+- **Depends.** E4.1. **Unblocks.** E4.4.
+- **Agent.** sonnet · gate class **live** (opt-in slow test needs the 0.5B GGUF under `data/`) · serialize
+  with: E4.2 (spec, migrations) · **Handoff.** must name the scorer signature, the `eval_metrics` shape,
+  the rule's settings and the measured CPU seconds per row.
+- **Scope.** A pure scoring module plus the eval-set contract. Out: running it in the worker (E4.4),
+  LLM-as-judge, perplexity, multi-turn rows (§E6).
+- **Steps.** (1) Contract: `Dataset.task` (`classify | extract | freeform`, required on upload — migration +
+  spec); an eval set has 20–200 rows (typed error outside). (2) `services/eval_gate.py`:
+  `score(base_model, gguf_lora_path | None, rows, task) -> TaskScore`, greedy, through the same
+  chat-template render and `model_manager` load the endpoint uses (wrap only). Metrics: `classify` = label
+  accuracy after strip/lower; `extract` = JSON-parse rate × mean per-key exact match; `freeform` = token F1
+  vs the reference. (3) `passes(adapter, base)`: adapter ≥ base + `eval_min_improvement` (0.05) **or**
+  (adapter ≥ `eval_absolute_floor` (0.8) **and** adapter ≥ base); persist both scores, the delta, the rule
+  that decided and 5 sample predictions. (4) Tests: metric math and rule cases (unit); opt-in
+  `tests/test_eval_gate_cpu.py` scores the E4.1 fixtures — the classification adapter passes, the control fails.
+- **Files.** `specs/schemas/eval_dataset.schema.json`, `specs/openapi.yaml` (dataset upload + response),
+  `migrations/versions/` (new), `adapta/db/models.py` (`Dataset`), `adapta/services/datasets.py`,
+  `adapta/services/eval_gate.py` (new), `adapta/core/chat_templates.py`, `adapta/core/model_manager.py`
+  (wrap only), `adapta/config.py`, `tests/test_eval_gate.py` (new), `tests/test_eval_gate_cpu.py` (new).
+- **Contract impact.** Model + API + DB.
+- **Gate.** `make migrate-test` → `make validate-spec` → `make generate` → `make check-models` → `make test`
+  → `ADAPTA_RUN_EVAL_CPU=1 tests/test_eval_gate_cpu.py`.
+- **Acceptance.** On CPU the fixture adapter passes with its accuracy and the base's both recorded; the
+  control fails; an eval set of 10 rows or with no `task` is rejected with a typed error.
+- **Close.** PRODUCT_DEFINITION eval-gate paragraph; learning-the-system gate section; CLAUDE.md gate
+  one-liner and Workflow pillar 3 (adapter + eval set → gate); SDD_WORKFLOW pillar 3; Status snapshot.
+
+### E4.4 `[BE+INFRA]` Adapter job on the CPU worker: convert, probe, score, decide (P1)
+- [ ] **Context.** `core/adapter_conversion.py` wraps llama.cpp's official `convert_lora_to_gguf.py`, but the
+  converter was vendored only into the deleted worker stage, and `--base-model-id` fetches the base config
+  from the Hub, which fails air-gapped. A wrong-shape adapter surfaces only when the endpoint loads it.
+- **Depends.** E4.2, E4.3. **Unblocks.** E4.5, E4.6, E2.2.
+- **Agent.** sonnet · gate class **rebuild + live** · serialize with: E3.7 (`worker/main.py`,
+  `services/jobs.py`, `services/maintenance.py`), E3.3b (`Dockerfile`) · **Handoff.** must name the handler,
+  where base configs live, seconds per stage for the fixture.
+- **Scope.** `uploaded → processing → passed | failed`, text adapters. Out: promotion (E4.5).
+- **Steps.** (1) `Dockerfile` `app` stage vendors the two converter scripts at the pinned llama.cpp tag
+  (torch CPU, `gguf`, `safetensors` are already in the image). (2) Pulling a catalog base also stores its
+  `config.json` under `models_dir/<gguf_subdir>/hf_config/`; the converter always runs with `--base <dir>`;
+  delete the `--base-model-id` and vision-staging branches. (3) Upload enqueues `{kind: "adapter", id}`;
+  the handler converts (PEFT), probe-loads base + LoRA through `model_manager` with a 1-token generation
+  (failure → `AdapterIncompatible`), runs E4.3's scorer for base and adapter, writes `eval_metrics` +
+  status. (4) The sweeper fails adapters left `processing` by a restart. (5) Opt-in
+  `tests/integration/test_adapter_import_e2e.py`: fixture zip → `passed` → endpoint → chat answers with the
+  trained label; control → `failed`, endpoint refused; same project with an indexed file → citations plus
+  the adapter's output shape.
+- **Files.** `Dockerfile` (`app` stage), `adapta/core/adapter_conversion.py`, `adapta/core/model_manager.py`
+  (wrap only), `adapta/worker/main.py`, `adapta/services/{adapters,jobs,maintenance}.py`,
+  `adapta/api/v1/adapters.py`, `adapta/domain/errors.py`, `tests/integration/test_adapter_import_e2e.py` (new).
+- **Contract impact.** None (statuses defined in E4.2).
+- **Gate.** `make up` → `make test` → `docker compose restart worker` →
+  `ADAPTA_RUN_ADAPTER_E2E=1 HF_HUB_OFFLINE=1 tests/integration/test_adapter_import_e2e.py`.
+- **Acceptance.** A PEFT upload reaches `passed` with no GPU and no Hub access; the control fails with
+  both scores in `eval_metrics`; killing the worker mid-job leaves no adapter `processing` after the sweep.
+- **Close.** OPERATIONS (import timing, air-gapped base configs, worker restarts); architecture.md
+  (adapter job); `gates.md` row (adapter import → this e2e); Status snapshot.
+
+### E4.5 `[BE+FE]` Adapter promotion, rollback and an audit trail (P2)
+- [ ] **Context.** E4.2 binds `Endpoint.adapter_id` at creation and nothing changes it; a project can hold
+  several `passed` adapters but none can be compared or swapped, and nobody records who did what.
+- **Depends.** E4.4. **Unblocks.** E4.7.
+- **Agent.** sonnet · gate class **live** · serialize with: E2.2 (`endpoints.py`, `EndpointPanel.svelte`),
+  E4.6 and E5.2 (`EndpointPanel.svelte`) · **Handoff.** must name the migration revision, the promote route,
+  the eviction wrapper.
+- **Scope.** List passed adapters with scores; promote one; rollback = promote the previous; every change
+  logged. Out: A/B traffic split, shadow mode.
+- **Steps.** (1) Migration `adapter_events(id, endpoint_id, adapter_id, action promote|rollback,
+  actor_user_id, created_at)`. (2) Spec: `POST /v1/projects/{id}/endpoint/promote {adapter_id}` (writer;
+  adapter must be `passed`), `GET /v1/projects/{id}/endpoint/history`. (3) `endpoints.py`: promote swaps
+  `adapter_id`, evicts the old `(base, adapter)` cache entry, writes the event. (4) Console
+  `EndpointPanel.svelte`: adapters table (task metric vs base, date, Promote), history, current badge.
+  (5) Tests: promote/rollback state machine; viewer 403; eviction called.
+- **Files.** `migrations/versions/` (new), `adapta/db/models.py`, `specs/openapi.yaml` (endpoint section),
+  `adapta/api/v1/endpoints.py`, `adapta/core/model_manager.py` (an `evict(key)` wrapper if absent),
+  `adapta/console/src/views/EndpointPanel.svelte`, `tests/test_adapter_upload.py`,
   `tests/integration/test_c_phase_rbac.py`.
 - **Contract impact.** API + DB.
-- **Gate.** `make migrate` → `make migrate-test` → `make validate-spec` → `make generate` →
-  `make check-models` → `make test` → `make test-contracts` → `make console-build`.
-- **Acceptance.** Retrain → promote changes the served adapter without a restart; rollback restores the
-  previous; history shows actor + scores; a non-gated job cannot be promoted (400).
-- **Close.** operator-console endpoint section, consuming-the-api, PRODUCT_DEFINITION serving
-  paragraph, CLAUDE.md API surface block; Status snapshot.
+- **Gate.** `make migrate-test` → `make validate-spec` → `make generate` → `make check-models` → `make test`
+  → `make test-contracts` → `make console-build`.
+- **Acceptance.** Promoting a second passed adapter changes what the endpoint serves without a restart;
+  rollback restores the first; history shows actor and scores; a failed adapter cannot be promoted (400).
+- **Close.** operator-console endpoint section, consuming-the-api, PRODUCT_DEFINITION serving paragraph,
+  CLAUDE.md API surface; Status snapshot.
 
-### E4.3 `[BE+FE]` Synthesis re-aimed: RAG eval sets and behaviour pairs, optional teacher (P2)
+### E4.6 `[FE]` Console: "change how it behaves" becomes eval set → import → verify → serve (P1)
+- [ ] **Context.** After E4.1 `FinetuneFlow.svelte` only uploads and reviews datasets; nothing imports an
+  adapter or shows why one passed or failed.
+- **Depends.** E4.4. **Unblocks.** E4.7.
+- **Agent.** sonnet · gate class **live** (+ `make console-build`) · serialize with: E4.5
+  (`EndpointPanel.svelte`), E4.8 and E4.9 (the same view) · **Handoff.** must name the view and the
+  refreshed screenshot paths.
+- **Scope.** Four steps in the existing project view: (1) eval set — upload or synthesize, pick the task;
+  (2) adapter — drop a `.gguf` or `.zip`; (3) verification — live status, then the task metric vs base, the
+  deciding rule and sample predictions, or the typed failure reason; (4) create the endpoint. A short "where
+  do I train it?" box links the E4.7 guide. Out: anything that trains.
+- **Steps.** Rename the view `AdapterFlow.svelte` and rebuild it on the E4.2/E4.3 types; poll
+  `GET …/adapters/{aid}` while `processing`; the Models page shows the accepted base ids and aliases per
+  catalog entry; `make screenshots` refreshes the console captures.
+- **Files.** `adapta/console/src/views/FinetuneFlow.svelte` → `AdapterFlow.svelte`,
+  `adapta/console/src/views/{Project,Models}.svelte`, `adapta/console/src/lib/{api,types}.ts`,
+  `docs/screenshots/`.
+- **Contract impact.** None.
+- **Gate.** `make console-build` → live walk-through importing the E4.1 fixture.
+- **Acceptance.** An operator imports the fixture and serves it without leaving the console; the control
+  shows its failure reason with both measured scores.
+- **Close.** operator-console (behaviour section rewritten); Status snapshot.
+
+### E4.7 `[DOCS]` Import guide and pitch: "bring your own adapter" wherever training was claimed (P1)
+- [ ] **Context.** README, PRODUCT_DEFINITION, BRAND, COMPETITIVE_LANDSCAPE, knowledge-and-behavior,
+  learning-the-system and concepts still describe in-product QLoRA; E4.1 deleted the training-only pages.
+- **Depends.** E4.4, E4.5, E4.6. **Unblocks.** E2.3.
+- **Agent.** sonnet · gate class **offline** (`make docs-build`) · serialize with: E2.3 (README) ·
+  **Handoff.** must name the new page path.
+- **Scope.** One new page `docs/user-guide/bring-your-own-adapter.md`: what Adapta expects (catalog base and
+  accepted aliases, the base's own chat template — ChatML for Qwen2.5 — response-only loss recommended,
+  accepted formats), the eval-set format and how to pick the task, how the gate decides, one worked command
+  sequence each for Unsloth and TRL (commands in the page, no scripts in the repo). Then rewrite the pitch
+  surfaces. Out: any claim E4.4's e2e did not prove.
+- **Steps.** (1) The page + `mkdocs.yml` nav. (2) README pitch + "change how it behaves" bullet;
+  PRODUCT_DEFINITION Service B; CLAUDE.md "What this project is"; BRAND; COMPETITIVE_LANDSCAPE (Unsloth
+  and Axolotl move from competitors to upstream tools); knowledge-and-behavior "when to use which" (prompt
+  → JSON mode → adapter); learning-the-system; concepts.
+- **Files.** `docs/user-guide/bring-your-own-adapter.md` (new), `mkdocs.yml`, `README.md`, `CLAUDE.md`,
+  `docs/reference/{PRODUCT_DEFINITION,BRAND,COMPETITIVE_LANDSCAPE}.md`,
+  `docs/user-guide/{index,knowledge-and-behavior}.md`, `docs/developer-guide/learning-the-system.md`,
+  `docs/concepts/{index,stack}.md`, `docs/index.md`.
+- **Contract impact.** None.
+- **Gate.** `make docs-build` (host, `--strict`).
+- **Acceptance.** `grep -rniE 'qlora|train(s|ing)? (a|the|your) (model|adapter)|training job' README.md CLAUDE.md docs/`
+  hits only the guide's "train it elsewhere" section; the guide is in nav.
+- **Close.** Self-contained; Status snapshot.
+
+### E4.8 `[BE+FE]` Synthesis re-aimed: RAG eval sets and adapter eval sets, optional teacher (P2)
 - [ ] **Context.** The synthesis prompt asks for "comprehension" Q/A "based solely on the passage"
-  (`synthesis.py:34-48`) — fact pairs, the one thing `knowledge-and-behavior.md:27-33` says not to
-  fine-tune on; the generator is the same small model; dedup is exact-string (`:154-157`). The
-  console's happy path leads users straight into it.
-- **Depends.** E3.8, E1.11. **Unblocks.** E5.2.
-- **Agent.** sonnet · gate class **live** · serialize with: E4.1/E4.5 (`FinetuneFlow.svelte`), E5.1
-  (`synthesis.py` helper) · **Handoff.** must name the `Dataset.kind` values and that `rag_eval`
-  rows equal E3.8's format.
-- **Scope.** Two modes + an optional stronger generator. Out: quality scoring beyond parse + dedup.
+  (`synthesis.py:34-48`) — fact pairs; the generator is the same small model; dedup is exact-string
+  (`:154-157`). After E4.1 its output can no longer train anything, but both gates need eval sets.
+- **Depends.** E3.8, E4.1. **Unblocks.** E5.2.
+- **Agent.** sonnet · gate class **live** · serialize with: E4.6 (console view), E5.1 (`synthesis.py`
+  helper) · **Handoff.** must name the `Dataset.kind` values and that `rag_eval` rows equal E3.8's format.
+- **Scope.** Two modes plus an optional stronger generator. Out: quality scoring beyond parse + dedup.
 - **Steps.** (1) Spec `SynthesizeRequest.mode: "rag_eval" | "behavior"` (default `rag_eval`),
   `style_instructions` (for `behavior`), optional `teacher_base_url` / `teacher_model` (any
-  OpenAI-compatible endpoint — a bigger local model or Ollama). (2) `rag_eval` produces
-  `{question, answer, source_chunk_id}` rows in the E3.8/E5.2 golden format, stored as a dataset with
-  `kind = eval` (new `Dataset.kind`, migration `0014_dataset_kind`). (3) `behavior` produces
-  `{prompt, response}` where the *shape* varies and facts are quoted from the chunk — the
-  training-appropriate signal. (4) Near-duplicate filter with the existing embedding service
-  (cosine > 0.92 dropped). (5) Console: mode radio with one guidance line each; the "Synthesize from
-  documents" button defaults to `rag_eval`. (6) Tests: parsing per mode; dedup.
-- **Files.** `specs/openapi.yaml` (`SynthesizeRequest`, `DatasetResponse.kind`),
-  `migrations/versions/0014_dataset_kind.py`, `adapta/services/synthesis.py`,
-  `adapta/api/v1/synthesis.py`, `adapta/db/models.py`,
-  `adapta/console/src/views/FinetuneFlow.svelte:729-780`, `tests/test_synthesis_helpers.py`.
+  OpenAI-compatible endpoint). (2) `rag_eval` writes `{question, answer, source_chunk_id}` rows in the
+  E3.8/E5.2 golden format, `Dataset.kind = rag_eval` (migration `dataset_kind`). (3) `behavior` writes
+  `{prompt, response}` rows whose *shape* varies while facts are quoted from the chunk — usable as an E4.3
+  eval set, or downloaded (`GET …/datasets/{did}/download`, JSONL) to train an adapter elsewhere.
+  (4) Near-duplicate filter with the embedding service (cosine > 0.92 dropped). (5) Console: mode radio with
+  one guidance line each. (6) Tests: parsing per mode; dedup; download.
+- **Files.** `specs/openapi.yaml` (`SynthesizeRequest`, `DatasetResponse.kind`, download path),
+  `migrations/versions/` (new), `adapta/services/synthesis.py`, `adapta/api/v1/{synthesis,datasets}.py`,
+  `adapta/db/models.py`, `adapta/console/src/views/FinetuneFlow.svelte` (synthesis section),
+  `tests/test_synthesis_helpers.py`.
 - **Contract impact.** API + DB.
 - **Gate.** `make migrate-test` → `make validate-spec` → `make generate` → `make check-models` →
   `make test` → `make test-contracts`.
-- **Acceptance.** `rag_eval` output loads into the E3.8 harness unchanged; `behavior` rows vary in form,
-  not fact; the console default is `rag_eval`; the docs warning and the console copy agree.
-- **Close.** knowledge-and-behavior, fine-tuning-walkthrough synthesis step, operator-console; Status
-  snapshot.
+- **Acceptance.** `rag_eval` output loads into the E3.8 harness unchanged; a `behavior` set uploads as an
+  E4.3 eval set and downloads as JSONL; the console default is `rag_eval`.
+- **Close.** knowledge-and-behavior, operator-console; Status snapshot.
 
-### E4.4 `[BE]` JSON mode on the endpoint — the cheaper alternative to an extraction fine-tune (P2)
-- [ ] **Context.** Extraction is the most-used fine-tune template, yet llama.cpp's grammar-constrained
-  decoding (`response_format` `json_object` / `json_schema`) is not exposed. The console should be
-  able to say "try JSON mode first".
+### E4.9 `[BE]` JSON mode on the endpoint — try it before importing an extraction adapter (P2)
+- [ ] **Context.** Extraction is the most common adapter task, yet llama.cpp's grammar-constrained decoding
+  (`response_format` `json_object` / `json_schema`) is not exposed. The console should say "try JSON mode
+  first".
 - **Depends.** E1.11. **Unblocks.** none.
-- **Agent.** sonnet · gate class **live (`test_inference_slow` needs the GGUF under `data/` on the
-  main checkout)** · serialize with: E3.5/E5.3 (`chat.py`), E2.1 (`core/backends/`), E4.1
-  (`FinetuneFlow.svelte`) · **Handoff.** must name the kwarg forwarded and which backends honour it.
-- **Scope.** Pass-through of `response_format` to `create_chat_completion` (a call argument, not an
-  engine change); vLLM/Ollama forward the same field. Out: validating the output beyond the grammar.
+- **Agent.** sonnet · gate class **live** (`test_inference_slow` needs the GGUF under `data/`) · serialize
+  with: E3.5/E5.3 (`chat.py`), E2.1 (`core/backends/`), E4.6 (console view) · **Handoff.** must name the
+  kwarg forwarded and which backends honour it.
+- **Scope.** Pass-through of `response_format` to `create_chat_completion` (a call argument, not an engine
+  change); Ollama (E2.1) forwards the same field. Out: validating output beyond the grammar.
 - **Steps.** (1) Spec `ChatCompletionRequest.response_format` (OpenAI shape). (2) `inference.py`
-  `generate_chat`: forward it in kwargs (verify the signature accepts kwargs; wrap only).
-  (3) Backends forward as-is. (4) Playground "JSON" toggle; `FinetuneFlow.svelte` extraction template
-  copy: "Try JSON mode on the base model first — fine-tune if the fields are still wrong". (5) Tests:
-  request model accepts it; `test_inference_slow.py` asserts parseable JSON.
-- **Files.** `specs/openapi.yaml` (`ChatCompletionRequest`), `adapta/services/chat.py:300-330, 500-520`,
+  `generate_chat`: forward it in kwargs (wrap only). (3) Backends forward as-is. (4) Playground "JSON"
+  toggle; the console's extraction task copy: "Try JSON mode on the base model first — import an adapter
+  if the fields are still wrong". (5) Tests: request model accepts it; `test_inference_slow.py` asserts
+  parseable JSON.
+- **Files.** `specs/openapi.yaml` (`ChatCompletionRequest`), `adapta/services/chat.py`,
   `adapta/core/inference.py:183-230` (kwargs only), `adapta/core/backends/*.py`,
-  `adapta/console/src/views/Playground.svelte`, `adapta/console/src/views/FinetuneFlow.svelte:686-724`,
-  `tests/test_inference_slow.py`.
+  `adapta/console/src/views/Playground.svelte`, the console adapter view, `tests/test_inference_slow.py`.
 - **Contract impact.** API.
 - **Gate.** `make validate-spec` → `make generate` → `make check-models` → `make test` →
   `tests/test_inference_slow.py` (local GGUF).
 - **Acceptance.** `response_format: {type: json_object}` yields parseable JSON on the base model; the
-  console copy points extraction users to it first.
-- **Close.** consuming-the-api; knowledge-and-behavior "when to use which" extraction row; Status
-  snapshot.
-
-### E4.5 `[BE]` Multi-turn rows in the training dataset contract (P2)
-- [ ] **Context.** Rows are `{prompt, response}` (`training_dataset.schema.json:7-79`); the worker
-  synthesises a fixed 2–3 message list (`worker/main.py:169-177`) although `preprocess_function`
-  already walks a `messages` list (`trainer.py:111-126`). Support-assistant datasets are conversations.
-- **Depends.** E1.12. **Unblocks.** none.
-- **Agent.** sonnet · gate class **gpu** · serialize with: E4.1 (same files) — run after E4.1 ·
-  **Handoff.** must name the schema branch name and the eval-target rule.
-- **Scope.** `MessagesRow = {messages: [{role, content}…]}` as a third `oneOf` branch (text only; last
-  message `assistant`; alternating roles validated). Eval target = the last assistant turn (document
-  it). Out: vision and DPO multi-turn.
-- **Steps.** (1) Schema branch + `$comment`. (2) `services/training.py` `_validate_row` + the
-  mixed-format rejection rule. (3) Worker passes `messages` through; E1.3's renderer handles
-  multi-turn. (4) Evaluator: target = last assistant turn. (5) D6 review panel renders messages rows
-  read-only. (6) Tests: validation cases; render/mask on a 4-turn row.
-- **Files.** `specs/schemas/training_dataset.schema.json`, `adapta/services/training.py:250-300`,
-  `adapta/worker/main.py:160-200`, `adapta/training/evaluator.py:51-112`,
-  `adapta/console/src/views/FinetuneFlow.svelte` (review panel), `tests/test_dataset_review.py`,
-  `tests/test_eval_gate.py`.
-- **Contract impact.** Model.
-- **Gate.** `make test` → one GPU SFT run on a small multi-turn dataset (a `test_lora_e2e.py` variant).
-- **Acceptance.** A multi-turn JSONL uploads, validates, trains, gates and serves; a mixed-format file
-  is rejected with a typed error naming the row.
-- **Close.** fine-tuning-walkthrough dataset section; Status snapshot.
+  console points extraction users to it first.
+- **Close.** consuming-the-api; knowledge-and-behavior "when to use which" extraction row; Status snapshot.
 
 ### E5. Differentiation (weeks 10–13)
 
@@ -774,9 +865,9 @@ block's gate depends on them), E1.12, E1.13.
   costs minutes, not API dollars.
 - **Depends.** E3.1, E3.7, E3.8. **Unblocks.** none.
 - **Agent.** sonnet · gate class **live (`make golden` before/after)** · serialize with: E5.2
-  (`worker/main.py`), E4.3 (`synthesis.py`) · **Handoff.** must name the recall@5 delta and the flag
+  (`worker/main.py`), E4.8 (`synthesis.py`) · **Handoff.** must name the recall@5 delta and the flag
   name.
-- **Scope.** Per-project flag; the sentence is generated by the project's base model (or the E4.3
+- **Scope.** Per-project flag; the sentence is generated by the project's base model (or the E4.8
   teacher) and stored in `chunks.context`; embeddings and `tsv` cover `context + text`; citations still
   show the raw `text`. Out: on by default (CPU latency), late chunking.
 - **Steps.** (1) Migration `0015_chunk_context`: `chunks.context TEXT NULL`; `tsv` regenerated over
@@ -798,16 +889,16 @@ block's gate depends on them), E1.12, E1.13.
 
 ### E5.2 `[BE+FE]` RAG gate: per-project golden set, recall@k on the endpoint dashboard, regression warning (P2)
 - [ ] **Context.** The eval gate is the brand ("nothing unverified serves"); RAG has no equivalent — a
-  config or model change can silently degrade retrieval. E3.8 gives the harness and E4.3 `rag_eval`
+  config or model change can silently degrade retrieval. E3.8 gives the harness and E4.8 `rag_eval`
   generates a per-project set.
-- **Depends.** E3.8, E3.7, E4.3. **Unblocks.** none.
-- **Agent.** sonnet · gate class **live** · serialize with: E5.1 (`worker/main.py`), E4.2
+- **Depends.** E3.8, E3.7, E4.8. **Unblocks.** none.
+- **Agent.** sonnet · gate class **live** · serialize with: E5.1 (`worker/main.py`), E4.5
   (`EndpointPanel.svelte`) · **Handoff.** must name the `rag_eval` job kind and the summary fields.
 - **Scope.** Store a golden set per project; compute recall@5/MRR on demand and after every re-index;
   show it on the endpoint Overview; **warn** on regression (blocking is a later decision once users
   ask). Out: LLM-judge faithfulness.
 - **Steps.** (1) Spec: `POST /v1/projects/{id}/golden` (JSONL upload or an `eval` dataset id),
-  `POST /v1/projects/{id}/golden/run` (202 → worker job `kind: rag_eval`),
+  `POST /v1/projects/{id}/golden/run` (202 → worker job `kind: "rag_eval"`),
   `GET /v1/projects/{id}/golden/results`. Migration `0016_rag_eval_runs`. (2) The job runs
   `retrieve()` per question and stores metrics + per-question hits. (3) `RetrievalSummary` += latest
   recall@5, MRR, run date, delta vs previous; Overview shows a "Retrieval quality" tile with a warning
@@ -830,7 +921,7 @@ block's gate depends on them), E1.12, E1.13.
   one?" retrieves on that string. Multi-query/HyDE were deliberately deferred; condensation is the
   cheap half.
 - **Depends.** E3.2, E3.5, E3.8. **Unblocks.** none.
-- **Agent.** sonnet · gate class **live (`make golden`)** · serialize with: E4.4/E3.5 (`chat.py`) ·
+- **Agent.** sonnet · gate class **live (`make golden`)** · serialize with: E4.9/E3.5 (`chat.py`) ·
   **Handoff.** must name the `retrieve(queries)` signature.
 - **Scope.** With ≥ 2 user turns and RAG active, ask the served model for a one-line standalone
   question (≤ 40 tokens, greedy) and retrieve on it **and** the original — both go into RRF; never
@@ -848,48 +939,48 @@ block's gate depends on them), E1.12, E1.13.
   counts the condensation tokens.
 - **Close.** consuming-the-api; knowledge-and-behavior retrieval box; Status snapshot.
 
-### E5.4 `[BE+FE]` Visual extraction in ingestion: the project's VLM adapter fills structured metadata and re-reads low-confidence pages (P2)
-- [ ] **Context.** After E3.3b scanned invoices index with page text and confidence; after E3.4 the
-  operator sees `needs_review` pages. The product already trains a VLM extractor for exactly these
-  documents (§V, `ocr-vision-walkthrough.md`) and never uses it in ingestion. On CPU the VLM takes
-  ≈ 40 s per image (llama.cpp issue #17801) — worker/GPU only.
+### E5.4 `[BE+FE]` Visual extraction in ingestion: the vision base fills structured metadata and re-reads low-confidence pages (P2)
+- [ ] **Context.** After E3.3b scanned invoices index with page text and OCR confidence; after E3.4 the
+  operator sees `needs_review` pages. The catalog's vision base already reads images through the serving
+  path (`services/chat.py` `_chat_vision`), and ingestion never uses it. On CPU it takes ≈ 40 s per image
+  (llama.cpp issue #17801), so it runs only on the pages that need it, as a queued job.
 - **Depends.** E3.3b, E3.4, E3.5, E3.7. **Unblocks.** none.
-- **Agent.** sonnet · gate class **gpu** · serialize with: E5.1/E5.2 (`worker/main.py`), E3.4
-  (`RagFlow.svelte`) · **Handoff.** must name the `fields` header format.
-- **Scope.** A queued `kind: extract` job on the GPU worker: for each page image of a file (or only
-  `needs_review` pages) run the project's gated VLM adapter (fallback: the Apache base VLM from E1.2)
-  with a project-defined JSON-schema prompt → `chunks.fields JSONB`; replace the page text when OCR
-  confidence was below threshold and the VLM output is non-empty; clear `needs_review`. Fields are
-  filterable through E3.5's `adapta.filters` and injected as a one-line structured header in the
-  chunk. Out: bbox UI, human approval queue, aggregations (say so in the UI; offer a CSV of `fields`).
-- **Steps.** (1) Migration `0017_chunk_fields`: `chunks.fields JSONB NULL`,
-  `projects.extraction_schema JSONB NULL`. Spec: the project field,
-  `POST /v1/projects/{id}/files/{fid}/extract` (202), `GET /v1/projects/{id}/fields.csv`.
-  (2) Worker `_run_extract_job` reuses the vision evaluator's loader (`evaluator.py:399-420`) with the
-  adapter; prompt = schema + "return JSON only"; parse with the synthesis helper. (3) `rag.py`: header
-  injection `"Invoice · {vendor} · {date} · {total}"` when `fields` is present; filters on
-  `fields ->> key`. (4) Console: file-row action "Extract fields" (disabled without GPU, tooltip),
-  fields drawer, CSV download. (5) Tests: parser + header; dispatch; RBAC.
-- **Files.** `migrations/versions/0017_chunk_fields.py`, `specs/openapi.yaml`,
-  `adapta/worker/main.py`, `adapta/training/evaluator.py:369-420` (import the loader; do not modify),
+- **Agent.** sonnet · gate class **live** · serialize with: E5.1/E5.2 (`worker/main.py`), E3.4
+  (`RagFlow.svelte`) · **Handoff.** must name the `fields` header format and the measured s/page.
+- **Scope.** A queued `kind: "extract"` job: for a file's `needs_review` pages (all pages on request), run
+  the Apache vision base with a project-defined JSON-schema prompt → `chunks.fields JSONB`; replace the page
+  text when OCR confidence was below threshold and the output is non-empty; clear `needs_review`. Fields
+  are filterable through E3.5's `adapta.filters` and injected as a one-line header in the chunk. Out:
+  vision adapters (§E6), bbox UI, human approval queue, aggregations (offer a CSV of `fields`).
+- **Steps.** (1) Migration `chunk_fields`: `chunks.fields JSONB NULL`, `projects.extraction_schema JSONB
+  NULL`. Spec: the project field, `POST /v1/projects/{id}/files/{fid}/extract` (202),
+  `GET /v1/projects/{id}/fields.csv`. (2) Worker handler `extract` in the dispatch table: loads the vision
+  base through `model_manager` (wrap only) and the same image content-part path as `_chat_vision`; prompt =
+  schema + "return JSON only"; parse with the synthesis helper. (3) `rag.py`: header
+  `"Invoice · {vendor} · {date} · {total}"` when `fields` is present; filters on `fields ->> key`.
+  (4) Console: file-row action "Extract fields" with the per-page time estimate, fields drawer, CSV
+  download. (5) Tests: parser + header; dispatch; RBAC.
+- **Files.** `migrations/versions/` (new), `specs/openapi.yaml`, `adapta/worker/main.py`,
+  `adapta/services/chat.py` (`_chat_vision`, reuse), `adapta/core/model_manager.py` (wrap only),
   `adapta/services/rag.py`, `adapta/api/v1/files.py`, `adapta/console/src/views/RagFlow.svelte`,
-  `tests/test_rag_hybrid.py`, `tests/integration/test_vlm_lora_e2e.py` (one extraction call).
+  `tests/test_rag_hybrid.py`, `tests/integration/test_rag_e2e.py` (one opt-in extraction on the scanned fixture).
 - **Contract impact.** API + DB.
 - **Gate.** `make migrate-test` → `make validate-spec` → `make generate` → `make check-models` →
-  `make test` → GPU: `test_vlm_lora_e2e.py` extended.
-- **Acceptance.** An invoice PNG indexed with low OCR confidence gets `fields = {vendor, total, …}`
-  from the project's own adapter, `needs_review` clears, a filtered question ("Qorvex invoices") cites
-  only those files, and the CSV lists them.
-- **Close.** ocr-vision-walkthrough (final section "Use it in ingestion"), knowledge-and-behavior,
-  PRODUCT_DEFINITION Service A (bounded: extraction, not analytics), CLAUDE.md API surface; Status
-  snapshot.
+  `make test` → `ADAPTA_RUN_EXTRACT=1 tests/integration/test_rag_e2e.py`.
+- **Acceptance.** An invoice PNG indexed with low OCR confidence gets `fields = {vendor, total, …}`,
+  `needs_review` clears, a filtered question ("Qorvex invoices") cites only those files, the CSV lists
+  them, and s/page is recorded in OPERATIONS.
+- **Close.** knowledge-and-behavior (scanned documents), PRODUCT_DEFINITION Service A (bounded:
+  extraction, not analytics), OPERATIONS timing, CLAUDE.md API surface; Status snapshot.
 
 ### E6. Deferred — recorded, not promised (open a block only when a user asks)
 - Guardrails (LLM Guard) · connectors beyond folder/S3 sync · Helm · OIDC · GraphRAG/RAPTOR · ColPali ·
-  DPO and hyperparameters in the console (F5) · continued training from an adapter and job
-  cancellation (F7) · Grafana dashboards (G4) · rate limiting on `/v1/chat/completions` (G3) · audit
+  Grafana dashboards (G4) · rate limiting on `/v1/chat/completions` (G3) · audit
   log/soft-delete (§7.5) · document-level ACL (needs E3.1: `chunks.principals` + a mandatory filter) ·
   Qwen3 family onboarding (new conversion spike).
+- Adapter import, later scope (§E4 shipped text-only): vision (VLM) adapters — conversion with the
+  mmproj and image eval sets · multi-turn eval rows · LLM-as-judge for `freeform` eval sets · in-product
+  training, only if a paying user cannot train elsewhere.
 
 
 Carried over when the shipped sections moved to the changelog (2026-10-08):
