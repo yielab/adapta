@@ -115,7 +115,7 @@ classes are defined in [`.claude/context/gates.md`](.claude/context/gates.md) ("
 | E1.11 | 0 | sonnet | live | E1.10 | any in-flight `specs/openapi.yaml` edit | done 2026-10-09 |
 | E2.1 | 1 | sonnet | live | none | E4.1, E4.9 (`core/backends/`) | open |
 | E3.1 | 1 | sonnet | live | none | E3.7, E3.2 | done 2026-10-09 |
-| E3.3a | 1 | sonnet + human decision | offline | none | — | in progress (worker-e3.3a) |
+| E3.3a | 1 | sonnet + human decision | offline | none | — | ready-for-live (e3.3a) |
 | E3.8 | 1 | sonnet | live | none — must land before E3.2 | — | done 2026-10-09 |
 | E4.1 | 1 | sonnet | rebuild + live (exclusive) | E1.11 | E2.1, E3.3b, E3.7 | ready-for-live (e4.1) |
 | E3.2 | 2 | sonnet | live | E3.1, E3.8 (baseline recorded before this lands) | E3.7, E3.5 | ready-for-live (e3.2) |
