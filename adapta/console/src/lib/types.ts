@@ -129,6 +129,21 @@ export interface RetrievalSummary {
   indexed_chunks: number;
 }
 
+export interface Adapter {
+  id: string;
+  project_id: string;
+  name: string;
+  base_model: string;
+  format: 'gguf' | 'peft';
+  sha256: string;
+  size_bytes: number;
+  eval_dataset_id: string | null;
+  status: 'uploaded' | 'processing' | 'passed' | 'failed';
+  failure_reason: string | null;
+  eval_metrics: Record<string, unknown> | null;
+  created_at: string;
+}
+
 export interface Endpoint {
   id: string;
   slug: string;
@@ -138,7 +153,7 @@ export interface Endpoint {
   project_type: ProjectType;
   created_at: string;
   retrieval: RetrievalSummary | null;
-  adapter_path: string | null;
+  adapter: Adapter | null;
 }
 
 export interface ApiKey {

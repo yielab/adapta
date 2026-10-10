@@ -213,9 +213,9 @@
     <!-- Composition explainer -->
     <div class="composition">
       <span class="comp-base mono">{endpoint.base_model}</span>
-      {#if endpoint.adapter_path}
+      {#if endpoint.adapter}
         <span class="comp-sep">+</span>
-        <span class="comp-adapter">LoRA adapter</span>
+        <span class="comp-adapter">LoRA adapter: {endpoint.adapter.name} ({endpoint.adapter.status})</span>
       {/if}
       {#if endpoint.retrieval}
         <span class="comp-sep">+</span>
