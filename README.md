@@ -32,9 +32,9 @@ infrastructure** — there is no telemetry and no callback to any external servi
 It answers two needs that have no good *private* solution today:
 
 - 📚 **Give it knowledge (RAG)** — answer from *your* documents, with citations. Retrieval is
-  **hybrid**: semantic vector search *and* Postgres full-text keyword search over the whole corpus, fused and re-scored by a
-  cross-encoder reranker, so exact terms (product codes, names) survive alongside meaning. The
-  model's weights never change. **CPU-only.**
+  **hybrid**: multilingual semantic vector search *and* Postgres full-text keyword search over the whole corpus,
+  fused, so exact terms (product codes, names) survive alongside meaning. **Spanish and English out of the box** — a
+  question in one language finds documents in the other. The model's weights never change. **CPU-only.**
 - 🎛️ **Change how it behaves (bring your own adapter)** — import a GGUF/PEFT LoRA, gate it on CPU against the base on your eval set, then serve it (import flow: roadmap E4.2–E4.4, not built yet). In-product training was removed on 2026-10-10; no service needs a GPU.
 
 And knowledge and behavior **compose on a single endpoint**: facts retrieved from your documents

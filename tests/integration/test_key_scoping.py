@@ -59,7 +59,7 @@ async def _seed_rag_endpoint_project(org_id: str, user_id: str, tag: str) -> str
             str(uuid.uuid4()),
             project_id,
             f"col_{project_id}",
-            "all-MiniLM-L6-v2",
+            settings.embedding_model,
         )
         # Chunk counts are read from the chunks table (E3.1), not collections.num_chunks.
         file_id = str(uuid.uuid4())

@@ -220,8 +220,10 @@ document indexing and query embedding happens locally.
 
 **Why sentence-transformers over building a custom embedding layer?** It is a
 well-validated library with multiple pre-trained models for different languages
-and use cases. The default model (`all-MiniLM-L6-v2`) is small, fast, and
-performs well on general-domain text. Replacing it later is one config line.
+and use cases. The default model (`paraphrase-multilingual-MiniLM-L12-v2`, 384 dimensions) is
+multilingual: a Spanish question finds an English document and vice versa (recall@5 0.978 on the
+bilingual golden set vs 0.844 for the English-only `all-MiniLM-L6-v2`). Replacing it is one config
+line plus a one-off `scripts/reembed.py` run for already-indexed projects.
 
 Key file: `adapta/services/embeddings.py`
 
@@ -298,11 +300,12 @@ term. Dials: `ADAPTA_RAG_SPARSE_FETCH_MULTIPLIER` (FTS list size) and
 `chunks.tsv` is regenerated with that config). If Postgres is unreachable the
 request degrades to vector-only and logs a warning.
 
-**Cost and how to turn it off.** The reranker is a second small model
-(~90 MB, `cross-encoder/ms-marco-MiniLM-L-6-v2`), lazily loaded on first use in
-the `app` container. Setting `ADAPTA_RAG_RERANKER_MODEL=""` disables stage 4
-and falls back to the RRF-fused order — lower latency and RAM, slightly lower
-accuracy. The whole path is bounded by `ADAPTA_RAG_TIMEOUT_SECONDS`.
+**Off by default, opt-in.** The reranker is a second small model
+(~90 MB, e.g. `cross-encoder/ms-marco-MiniLM-L-6-v2`), lazily loaded on first use in
+the `app` container. That model is English-only: on the bilingual golden set it
+lowered recall@5 from 0.978 to 0.889 and tripled latency, so since E3.6 stage 4 is
+skipped unless `ADAPTA_RAG_RERANKER_MODEL` names a model — enable it for
+English-only corpora. The whole path is bounded by `ADAPTA_RAG_TIMEOUT_SECONDS`.
 
 Key file: `adapta/services/rag.py` (`_fts_search`, `_rrf_fuse`,
 `RAGService.retrieve`)

@@ -1,4 +1,4 @@
 {
-  "comment": "Ratchet: recall@5 must stay >= this. Set 2026-10-09 from the baseline (0.844 recall@5, 0.815 MRR, ~83 ms p50, 45 questions, all-MiniLM-L6-v2). Raise it deliberately when a change measurably improves recall; never lower it silently.",
-  "recall_at_5": 0.84
+  "comment": "Ratchet: recall@5 must stay >= this. Raised 2026-10-10 (E3.6) from 0.84 to 0.97: paraphrase-multilingual-MiniLM-L12-v2, reranker off, hybrid → 0.978 recall@5, 0.840 MRR, ~36 ms p50 on 45 es/en questions. Raise it deliberately when a change measurably improves recall; never lower it silently.",
+  "recall_at_5": 0.97
 }

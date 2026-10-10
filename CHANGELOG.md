@@ -264,6 +264,59 @@ bind mount, so uvicorn reloaded on every worker edit — reload now watches `/ap
   Playwright scripts and `docs/screenshots/*proof*` still show training. (3) `COMPETITIVE_LANDSCAPE.md` carries a
   "predates 2026-10-10" banner until E4.7 rewrites the pitch. (4) `GET /gpu` remains as hardware reporting only.
 
+### E3.6 `[BE]` Multilingual defaults + safe embedding-model migration (P1)
+- [x] **Context.** `all-MiniLM-L6-v2` (`config.py:80`) and `cross-encoder/ms-marco-MiniLM-L-6-v2`
+  (`config.py:89`) are English models; the FTS config from E3.2 defaults to `simple`. The author
+  documents in Spanish and the ecosystem is English-first — a cheap, verifiable differentiator. E1.8
+  made a model swap a typed 409; there is still no re-embed tool.
+- **Depends.** E3.1, E3.2, E3.8. **Unblocks.** none.
+- **Agent.** sonnet + **human decision** · gate class **live (rag e2e + `make golden`)** · serialize
+  with: E3.2 (`config.py`) · **Handoff.** must name the measured table (recall@5, latency, RAM per
+  candidate) — the lead shows it to the user before `config.py` defaults change.
+- **Scope.** New defaults chosen by measurement + a re-embed script. Candidates on the E3.8 golden set:
+  embeddings `intfloat/multilingual-e5-small` (384d, drop-in dimension) vs `BAAI/bge-m3` (1024d,
+  heavier); reranker `BAAI/bge-reranker-v2-m3`. Pick by recall@5 (es+en) and CPU latency; record both.
+  Out: per-project embedding models.
+- **Steps.** (1) `scripts/reembed.py`: per project, read chunks from Postgres (E3.1), re-embed with
+  `settings.embedding_model`, rebuild the Chroma collection, update `Collection.embedding_model`;
+  idempotent, resumable per project. (2) Measure the candidates with `make golden`; set `config.py`
+  defaults; `rag_fts_config` default from `ADAPTA_LANG` (`spanish` | `english`, fallback `simple`).
+  (3) `embeddings.py`: assert the dimension on load and persist it on `Collection` (nullable column
+  via `0012_collection_dim` if `db/models.py:311` has none). (4) OPERATIONS: "Changing the embedding
+  model" = set env → `scripts/reembed.py` → restart; RAM/latency table for both candidates.
+- **Files.** `adapta/config.py:78-95`, `adapta/services/embeddings.py:40-91, 145-156`, new
+  `scripts/reembed.py`, `docs/reference/OPERATIONS.md`, `.env.example`, `tests/test_rag_hybrid.py`
+  (dimension guard).
+
+- **Contract impact.** DB only if the dimension column is new.
+- **Gate.** `make test` → `tests/integration/test_rag_e2e.py` (add one Spanish and one English query
+  over a bilingual fixture) → `make golden`.
+- **Acceptance.** Bilingual e2e green; the chosen defaults with measured recall/latency are in
+  OPERATIONS; `scripts/reembed.py` migrates a project end to end on the live stack.
+- **Close.** OPERATIONS, README ("Spanish and English out of the box"), knowledge-and-behavior; Status
+  snapshot.
+- **Done.** 2026-10-10. Machinery (`33ff1c0`): `collections.embedding_dim` (migration `0012_collection_dim`) + typed
+  409 `EmbeddingModelMismatch` on dimension drift; e5 `query:`/`passage:` prefixes by model name; `scripts/reembed.py`
+  (side collection from Postgres `chunks`, swap when complete, idempotent, `--project/--dry-run/--force`);
+  `scripts/compare_embedders.py`. **Measured (45 es/en golden questions, 16-core CPU):**
+  | Model | Download | RAM | Dense R@5 | Hybrid + ms-marco rerank R@5 / MRR / p50 | Hybrid, no rerank |
+  |---|---|---|---|---|---|
+  | all-MiniLM-L6-v2 | 92 MB | 412 MB | 0.844 | 0.844 / 0.810 / 102 ms | 0.844 / 0.779 / 33 ms |
+  | paraphrase-multilingual-MiniLM-L12-v2 | 480 MB | 1021 MB | 1.000 | 0.889 / 0.826 / 110 ms | **0.978 / 0.840 / 36 ms** |
+  | intfloat/multilingual-e5-small | 493 MB | 794 MB | 0.978 | 0.867 / 0.819 / 104 ms | not run |
+  The English-only reranker was the bottleneck on cross-lingual questions. **User decision 2026-10-10: default
+  `paraphrase-multilingual-MiniLM-L12-v2`, reranker off (opt-in).** Confirmed on the shipped defaults: golden 0.978 /
+  0.840 / 32 ms; floor raised 0.84 → **0.97**; e2e + seed tests 6 passed; `make test` 227 passed.
+- **Handoff.** Defaults: `ADAPTA_EMBEDDING_MODEL=paraphrase-multilingual-MiniLM-L12-v2` (384d — same dimension as before,
+  but `Collection.embedding_model` differs, so **existing projects must run `scripts/reembed.py`** or new uploads 409);
+  `ADAPTA_RAG_RERANKER_MODEL=""`. `embed(texts, kind="passage")` / `embed_one(query)` is the query side. Floor
+  `tests/fixtures/golden/floor.json` 0.97. E3.3b's HybridChunker tokenizer follows the embedding model
+  (`sentence-transformers/<name>`). **Unblocks** E5.1, E5.3 measurements on the new baseline.
+- **Follow-up.** (1) Measure a multilingual reranker (`BAAI/bge-reranker-v2-m3`, ~2.3 GB — user's download) against
+  0.978. (2) Language-aware FTS (`rag_fts_config` from a language setting + regenerate `chunks.tsv`) — optional; the FTS
+  leg is language-agnostic. (3) Console: `EmbeddingModelMismatch` could hint "run reembed". (4) The one remaining miss
+  is es→en (`en-password-policy.md`).
+
 ---
 
 ## 2026-10-08 — §E wave 0: the gates every other block is verified by

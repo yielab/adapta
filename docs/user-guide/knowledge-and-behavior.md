@@ -74,7 +74,7 @@ before.) Bonus: those same indexed documents are what
     | `ADAPTA_RAG_HYBRID_FETCH_MULTIPLIER` | `4` | Vector candidates = `top_k × N` |
     | `ADAPTA_RAG_SPARSE_FETCH_MULTIPLIER` | `4` | Full-text candidates = `top_k × N` |
     | `ADAPTA_RAG_SPARSE_MAX_DF` | `0.5` | A query word found in more than this share of the project's chunks is ignored by the full-text search |
-    | `ADAPTA_RAG_RERANKER_MODEL` | `cross-encoder/ms-marco-MiniLM-L-6-v2` | Set to `""` to disable reranking (lower latency and RAM, slightly lower accuracy) |
+    | `ADAPTA_RAG_RERANKER_MODEL` | `""` (off) | Opt-in cross-encoder reranker, e.g. `cross-encoder/ms-marco-MiniLM-L-6-v2` — English-only, so enable it only for English-only documents |
     | `ADAPTA_RAG_TIMEOUT_SECONDS` | `10` | Whole retrieval path; exceeding it returns a typed `504` |
 
 ## Realistic expectations

@@ -78,7 +78,10 @@ class Settings(BaseSettings):
     max_loaded_models: int = 2
 
     # RAG / embeddings
-    embedding_model: str = "all-MiniLM-L6-v2"
+    # Multilingual by default (E3.6, user decision 2026-10-10): on the bilingual golden set it
+    # scores recall@5 0.978 vs 0.844 for the English-only all-MiniLM-L6-v2. Changing it on a
+    # deployment with indexed projects needs `scripts/reembed.py` first (OPERATIONS 6.5).
+    embedding_model: str = "paraphrase-multilingual-MiniLM-L12-v2"
     chroma_host: str = "chroma"
     chroma_port: int = 8000
     rag_top_k: int = 5
@@ -93,9 +96,11 @@ class Settings(BaseSettings):
     # Text-search config for the query side: simple | english | spanish. chunks.tsv is
     # generated with 'simple' (E3.1), so anything else only matches after E3.6 regenerates it.
     rag_fts_config: Literal["simple", "english", "spanish"] = "simple"
-    # Cross-encoder reranker model (D5). Set to "" to disable; rag_timeout_seconds
-    # guards the whole retrieval path including reranking.
-    rag_reranker_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+    # Cross-encoder reranker model (D5) — OFF by default since E3.6: the only small one,
+    # ms-marco-MiniLM, is English-only and cut bilingual recall@5 from 0.978 to 0.889 (and
+    # tripled latency). Opt in with e.g. "cross-encoder/ms-marco-MiniLM-L-6-v2" for an
+    # English-only corpus; rag_timeout_seconds guards the whole path including reranking.
+    rag_reranker_model: str = ""
     # Cap RAG retrieval so a hung/slow Chroma degrades to a typed 504 instead of
     # blocking every chat request indefinitely.
     rag_timeout_seconds: int = 10

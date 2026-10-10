@@ -173,8 +173,8 @@ models are lazily loaded into the `app` process on first use and stay resident:
 | Variable | Default | Operational effect |
 |---|---|---|
 | `ADAPTA_RAG_TOP_K` | `5` | Chunks injected per request. Raising it grows the prompt and the per-request inference cost |
-| `ADAPTA_RAG_HYBRID_FETCH_MULTIPLIER` | `4` | Candidate pool = `top_k × N`. Higher = better recall, more BM25 and rerank work per request |
-| `ADAPTA_RAG_RERANKER_MODEL` | `cross-encoder/ms-marco-MiniLM-L-6-v2` | ~90 MB resident + CPU per request. Set to `""` to disable on a RAM- or latency-constrained host; retrieval falls back to the RRF-fused order |
+| `ADAPTA_RAG_HYBRID_FETCH_MULTIPLIER` | `4` | Candidate pool = `top_k × N`. Higher = better recall, more fusion and rerank work per request |
+| `ADAPTA_RAG_RERANKER_MODEL` | `""` (off) | Opt-in cross-encoder, e.g. `cross-encoder/ms-marco-MiniLM-L-6-v2` (~90 MB resident + CPU per request). It is English-only: on the bilingual golden set it lowered recall@5 from 0.978 to 0.889 and tripled latency, so enable it only for English-only corpora |
 | `ADAPTA_RAG_TIMEOUT_SECONDS` | `10` | Bounds the whole retrieval path; on expiry the request returns a typed `504` rather than hanging |
 
 Both models are downloaded from Hugging Face on first use. The embedding model
@@ -284,7 +284,7 @@ Measured 2026-10-09 with `docling[rapidocr]` 2.137 / RapidOCR 3.10 (`latin_PP-OC
 
 ### 6.5 Changing the embedding model (§E1.8)
 
-`ADAPTA_EMBEDDING_MODEL` (default `all-MiniLM-L6-v2`) is recorded once per
+`ADAPTA_EMBEDDING_MODEL` (default `paraphrase-multilingual-MiniLM-L12-v2`) is recorded once per
 project — in `Collection.embedding_model` (Postgres) and again in the Chroma
 collection's own metadata — the moment its first document is indexed. Both
 records are set at creation and never rewritten.
@@ -337,12 +337,16 @@ columns from `make golden` with the model set on the app **and** the test proces
 
 | Model | Dim | Download | RAM (RSS delta) | Dense R@5 | Hybrid R@5 | MRR | p50 ms |
 |---|---|---|---|---|---|---|---|
-| `all-MiniLM-L6-v2` (default) | 384 | TBD | TBD | TBD | 0.844 | 0.810 | ~102 |
-| `paraphrase-multilingual-MiniLM-L12-v2` | 384 | TBD | TBD | TBD | TBD | TBD | TBD |
-| `intfloat/multilingual-e5-small` | 384 | TBD | TBD | TBD | TBD | TBD | TBD |
-| `BAAI/bge-m3` (heavy) | 1024 | TBD | TBD | TBD | TBD | TBD | TBD |
+| `all-MiniLM-L6-v2` (English-only) | 384 | 92 MB | 412 MB | 0.844 | 0.844 | 0.810 | ~102 |
+| `paraphrase-multilingual-MiniLM-L12-v2` | 384 | 480 MB | 1021 MB | 1.000 | 0.889 | 0.826 | ~110 |
+| `intfloat/multilingual-e5-small` | 384 | 493 MB | 794 MB | 0.978 | 0.867 | 0.819 | ~104 |
+| `BAAI/bge-m3` (heavy) | 1024 | ~2.3 GB | not measured | — | — | — | — |
 
-The default stays `all-MiniLM-L6-v2` until the table is reviewed.
+Hybrid columns above ran **with** the English-only `ms-marco-MiniLM` reranker. Without it:
+`paraphrase-multilingual-MiniLM-L12-v2` → recall@5 **0.978**, MRR **0.840**, p50 **~36 ms**;
+`all-MiniLM-L6-v2` → 0.844 / 0.779 / ~33 ms. The reranker was the bottleneck on cross-lingual
+questions. **Default since 2026-10-10 (E3.6): `paraphrase-multilingual-MiniLM-L12-v2`, reranker off.**
+Measured on the 45-question bilingual golden set (`make golden`), 16-core CPU.
 
 ---
 
