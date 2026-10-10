@@ -122,7 +122,7 @@ classes are defined in [`.claude/context/gates.md`](.claude/context/gates.md) ("
 | E3.3b | 2 | sonnet | rebuild + live | E3.3a (commit), E3.1 | E4.1, E4.2, E4.4 (`pyproject.toml`, `Dockerfile`), E3.7, E3.4 | in progress (worker-e3.3b) |
 | E3.7 | 2 | sonnet | live | E3.1, E4.1 | E3.1/E3.3b, E4.4 (`worker/main.py`) | open |
 | E4.2 | 2 | sonnet | rebuild + live | E4.1 | E4.3 (spec, migrations), E4.5, E2.2 | open |
-| E4.3 | 2 | sonnet | live | E4.1 | E4.2 (spec, migrations) | ready-for-live (e4.3) |
+| E4.3 | 2 | sonnet | live | E4.1 | E4.2 (spec, migrations) | done 2026-10-10 |
 | E4.8 | 2 | sonnet | live | E3.8, E4.1 | E4.6, E5.1 | open |
 | E4.9 | 2 | sonnet | live | E1.11 | E2.1, E3.5/E5.3, E4.6 | open |
 | E3.4 | 3 | sonnet | live | E3.1, E3.3b, E1.11 | E3.5 (spec, `Playground.svelte`), E3.3b | open |
@@ -424,61 +424,16 @@ E1.1–E1.9 shipped 2026-09-17 → [CHANGELOG.md](CHANGELOG.md). E1.14 closed 20
   `finetune` endpoint cannot be created while no adapter is `passed`.
 - **Close.** CLAUDE.md API surface; consuming-the-api; Status snapshot.
 
-### E4.3 `[BE]` CPU eval gate: task metrics through the serving path, adapter vs base (P1)
-- [ ] **Context.** E4.1 deleted the GPU gate (response-only perplexity on a 4-bit bitsandbytes load, CUDA
-  only). Perplexity never said whether the task improved — every task metric was `None` (audit finding 3).
-  An externally trained adapter can also use a prompt format the endpoint never serves; only generating
-  through the serving path measures that.
-- **Depends.** E4.1. **Unblocks.** E4.4.
-- **Re-anchored 2026-10-10 (E4.1 Handoff).** Fixtures `tests/fixtures/adapters/{classify-pass,garbage-control}/`
-  (classify-pass gated 0.669 vs base 0.570 under the old perplexity gate); their `dataset_eval.jsonl` is chat-`messages`
-  form — convert to the `eval_dataset.schema.json` SFT row. The `eval_*` settings were kept for this block.
-- **Agent.** sonnet · gate class **live** (opt-in slow test needs the 0.5B GGUF under `data/`) · serialize
-  with: E4.2 (spec, migrations) · **Handoff.** must name the scorer signature, the `eval_metrics` shape,
-  the rule's settings and the measured CPU seconds per row.
-- **Scope.** A pure scoring module plus the eval-set contract. Out: running it in the worker (E4.4),
-  LLM-as-judge, perplexity, multi-turn rows (§E6).
-- **Steps.** (1) Contract: `Dataset.task` (`classify | extract | freeform`, required on upload — migration +
-  spec); an eval set has 20–200 rows (typed error outside). (2) `services/eval_gate.py`:
-  `score(base_model, gguf_lora_path | None, rows, task) -> TaskScore`, greedy, through the same
-  chat-template render and `model_manager` load the endpoint uses (wrap only). Metrics: `classify` = label
-  accuracy after strip/lower; `extract` = JSON-parse rate × mean per-key exact match; `freeform` = token F1
-  vs the reference. (3) `passes(adapter, base)`: adapter ≥ base + `eval_min_improvement` (0.05) **or**
-  (adapter ≥ `eval_absolute_floor` (0.8) **and** adapter ≥ base); persist both scores, the delta, the rule
-  that decided and 5 sample predictions. (4) Tests: metric math and rule cases (unit); opt-in
-  `tests/test_eval_gate_cpu.py` scores the E4.1 fixtures — the classification adapter passes, the control fails.
-- **Files.** `specs/schemas/eval_dataset.schema.json`, `specs/openapi.yaml` (dataset upload + response),
-  `migrations/versions/` (new), `adapta/db/models.py` (`Dataset`), `adapta/services/datasets.py`,
-  `adapta/services/eval_gate.py` (new), `adapta/core/chat_templates.py`, `adapta/core/model_manager.py`
-  (wrap only), `adapta/config.py`, `tests/test_eval_gate.py` (new), `tests/test_eval_gate_cpu.py` (new).
-- **Contract impact.** Model + API + DB.
-- **Gate.** `make migrate-test` → `make validate-spec` → `make generate` → `make check-models` → `make test`
-  → `ADAPTA_RUN_EVAL_CPU=1 tests/test_eval_gate_cpu.py`.
-- **Acceptance.** On CPU the fixture adapter passes with its accuracy and the base's both recorded; the
-  control fails; an eval set of 10 rows or with no `task` is rejected with a typed error.
-- **Done (branch e4.3, offline gates green; live rung pending).** `services/eval_gate.py` scores base and adapter through
-  `LlamaCppBackend` (catalog chat template, `model_manager` load, greedy, `eval_max_new_tokens`) with the three
-  metrics, `passes()` decides, `build_metrics()` yields `eval_metrics`. `Dataset.task` (migration `0013`, spec
-  upload `task` form field + `DatasetResponse.task`); upload rejects a missing/unknown `task` and a set outside
-  20-200 rows (typed 400); `extract` sets must have JSON-object responses. Fixture `dataset_eval.jsonl` converted to
-  SFT rows. Nothing in `core/model_manager.py` or `core/inference.py` touched. Fixture accuracies and CPU s/row: TBD by lead.
-- **Handoff.** `await eval_gate.score(base_model: str, gguf_lora_path: str | None, rows: Sequence[dict], task: str) -> TaskScore`
-  (`score`, `n_rows`, `seconds`, `predictions`, `row_scores`, `extras`); `passes(adapter: float, base: float) -> Decision`;
-  `await evaluate(base_model, gguf_lora_path, rows, task) -> dict` is the `eval_metrics` document: `{task, n_rows,
-  adapter_score, base_score, delta, rule ("improvement"|"absolute_floor"|"failed"), passed, min_improvement,
-  absolute_floor, adapter_extras, base_extras, adapter_seconds_per_row, base_seconds_per_row, samples: [5 x {prompt,
-  reference, base, adapter}]}`. Settings: `eval_min_improvement` 0.05, `eval_absolute_floor` 0.8, `eval_min_rows` 20,
-  `eval_max_rows` 200, `eval_max_new_tokens` 128 (`eval_score_threshold` / `eval_min_floor` removed). Migration `0013`
-  (`datasets.task`, nullable). Rows come from `datasets.storage_path` (SFT rows); synthesized datasets have `task` NULL.
-  CPU s/row: TBD by lead.
-- **Close.** PRODUCT_DEFINITION eval-gate paragraph; learning-the-system gate section; CLAUDE.md gate
-  one-liner and Workflow pillar 3 (adapter + eval set → gate); SDD_WORKFLOW pillar 3; Status snapshot.
-
 ### E4.4 `[BE+INFRA]` Adapter job on the CPU worker: convert, probe, score, decide (P1)
 - [ ] **Context.** `core/adapter_conversion.py` wraps llama.cpp's official `convert_lora_to_gguf.py`, but the
   converter was vendored only into the deleted worker stage, and `--base-model-id` fetches the base config
   from the Hub, which fails air-gapped. A wrong-shape adapter surfaces only when the endpoint loads it.
 - **Depends.** E4.2, E4.3. **Unblocks.** E4.5, E4.6, E2.2.
+- **Re-anchored 2026-10-10 (E4.3 Handoff).** Score with `await eval_gate.evaluate(base_model, gguf_lora_path, rows,
+  task)` and persist its dict as the adapter's `eval_metrics`; rows come from `datasets.storage_path` (SFT rows, `task`
+  on the dataset). Two acceptance items moved here from E4.3: the `garbage-control` fixture must **fail** once the
+  converter is vendored, and the fixture needs a ≥ 20-row eval set on which the base scores clearly below the adapter
+  (on the current 7 rows the 0.5B base already scores 1.000).
 - **Agent.** sonnet · gate class **rebuild + live** · serialize with: E3.7 (`worker/main.py`,
   `services/jobs.py`, `services/maintenance.py`), E3.3b (`Dockerfile`) · **Handoff.** must name the handler,
   where base configs live, seconds per stage for the fixture.

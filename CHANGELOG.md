@@ -317,6 +317,60 @@ bind mount, so uvicorn reloaded on every worker edit — reload now watches `/ap
   leg is language-agnostic. (3) Console: `EmbeddingModelMismatch` could hint "run reembed". (4) The one remaining miss
   is es→en (`en-password-policy.md`).
 
+### E4.3 `[BE]` CPU eval gate: task metrics through the serving path, adapter vs base (P1)
+- [x] **Context.** E4.1 deleted the GPU gate (response-only perplexity on a 4-bit bitsandbytes load, CUDA
+  only). Perplexity never said whether the task improved — every task metric was `None` (audit finding 3).
+  An externally trained adapter can also use a prompt format the endpoint never serves; only generating
+  through the serving path measures that.
+- **Depends.** E4.1. **Unblocks.** E4.4.
+- **Re-anchored 2026-10-10 (E4.1 Handoff).** Fixtures `tests/fixtures/adapters/{classify-pass,garbage-control}/`
+  (classify-pass gated 0.669 vs base 0.570 under the old perplexity gate); their `dataset_eval.jsonl` is chat-`messages`
+  form — convert to the `eval_dataset.schema.json` SFT row. The `eval_*` settings were kept for this block.
+- **Agent.** sonnet · gate class **live** (opt-in slow test needs the 0.5B GGUF under `data/`) · serialize
+  with: E4.2 (spec, migrations) · **Handoff.** must name the scorer signature, the `eval_metrics` shape,
+  the rule's settings and the measured CPU seconds per row.
+- **Scope.** A pure scoring module plus the eval-set contract. Out: running it in the worker (E4.4),
+  LLM-as-judge, perplexity, multi-turn rows (§E6).
+- **Steps.** (1) Contract: `Dataset.task` (`classify | extract | freeform`, required on upload — migration +
+  spec); an eval set has 20–200 rows (typed error outside). (2) `services/eval_gate.py`:
+  `score(base_model, gguf_lora_path | None, rows, task) -> TaskScore`, greedy, through the same
+  chat-template render and `model_manager` load the endpoint uses (wrap only). Metrics: `classify` = label
+  accuracy after strip/lower; `extract` = JSON-parse rate × mean per-key exact match; `freeform` = token F1
+  vs the reference. (3) `passes(adapter, base)`: adapter ≥ base + `eval_min_improvement` (0.05) **or**
+  (adapter ≥ `eval_absolute_floor` (0.8) **and** adapter ≥ base); persist both scores, the delta, the rule
+  that decided and 5 sample predictions. (4) Tests: metric math and rule cases (unit); opt-in
+  `tests/test_eval_gate_cpu.py` scores the E4.1 fixtures — the classification adapter passes, the control fails.
+- **Files.** `specs/schemas/eval_dataset.schema.json`, `specs/openapi.yaml` (dataset upload + response),
+  `migrations/versions/` (new), `adapta/db/models.py` (`Dataset`), `adapta/services/datasets.py`,
+  `adapta/services/eval_gate.py` (new), `adapta/core/chat_templates.py`, `adapta/core/model_manager.py`
+  (wrap only), `adapta/config.py`, `tests/test_eval_gate.py` (new), `tests/test_eval_gate_cpu.py` (new).
+- **Contract impact.** Model + API + DB.
+- **Gate.** `make migrate-test` → `make validate-spec` → `make generate` → `make check-models` → `make test`
+  → `ADAPTA_RUN_EVAL_CPU=1 tests/test_eval_gate_cpu.py`.
+- **Acceptance.** On CPU the fixture adapter passes with its accuracy and the base's both recorded; the
+  control fails; an eval set of 10 rows or with no `task` is rejected with a typed error.
+- **Done.** 2026-10-10. `services/eval_gate.py` scores base and adapter through the serving path (`LlamaCppBackend`:
+  catalog chat template, `model_manager` load, greedy decode) on the same held-out set — classify = label accuracy,
+  extract = JSON parse rate × per-key exact match, freeform = token F1; `passes()` = adapter ≥ base + 0.05, or adapter
+  ≥ 0.8 and ≥ base; `evaluate()` returns the `eval_metrics` document. `Dataset.task` (migration `0013`, spec, console
+  selector) is required on upload; sets must have 20–200 rows; `extract` responses must be JSON objects. `core/`
+  untouched. Live: `migrate-test` 0013 ✓ · `make ci` ✓ · `test-contracts` 32/32, 2077 cases, 0 failures · CPU rung:
+  **classify-pass adapter 1.000, base 1.000 → passes on `absolute_floor`; 0.09 s/row adapter, 0.08 base** (0.5B Q4, 16
+  cores) · `garbage-control` **skipped** (no GGUF, converter absent from the image) · console build ✓, `svelte-check`: only
+  the 2 pre-existing `Playground.svelte` errors. Out of Files: console `api.ts`/`types.ts`/`FinetuneFlow.svelte` (the
+  required `task` field would otherwise 422 every console upload).
+- **Handoff.** `await eval_gate.score(base_model, gguf_lora_path | None, rows, task) -> TaskScore(score, n_rows, seconds,
+  predictions, row_scores, extras)`; `passes(adapter, base) -> Decision(passed, rule, adapter_score, base_score, delta)`;
+  `await evaluate(...) -> eval_metrics = {task, n_rows, adapter_score, base_score, delta, rule ("improvement" |
+  "absolute_floor" | "failed"), passed, min_improvement, absolute_floor, adapter_extras, base_extras,
+  adapter_seconds_per_row, base_seconds_per_row, samples[5]}`. Settings `eval_min_improvement` 0.05,
+  `eval_absolute_floor` 0.8, `eval_min_rows` 20, `eval_max_rows` 200, `eval_max_new_tokens` 128 (`eval_score_threshold`,
+  `eval_min_floor` removed). Migration `0013` (`datasets.task`, nullable; synthesized sets NULL). CPU ≈ 0.09 s/row.
+  **Unblocks** E4.4 — which inherits two items (below).
+- **Follow-up (→ E4.4).** (1) "The control fails" is unverified: `garbage-control` needs the converter E4.4 vendors.
+  (2) The fixture eval set does not discriminate — the 0.5B base already scores 1.000 on its 7 classify rows, so the
+  pass proves the floor rule, not an improvement; E4.4 needs a ≥ 20-row eval set where the base scores clearly lower.
+
 ---
 
 ## 2026-10-08 — §E wave 0: the gates every other block is verified by

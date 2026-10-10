@@ -329,7 +329,8 @@ and deployment is refused if it fails. That is the role of the evaluation gate.
 
 !!! note "Status"
     The gate that shipped with in-product training was removed on 2026-10-10
-    (E4.1) and is being rebuilt to run on CPU against imported adapters (E4.3).
+    (E4.1). Its CPU replacement scores adapter and base with a task metric (E4.3,
+    `services/eval_gate.py`); imports run it once E4.4 lands.
     Until then no endpoint can serve an adapter. The design below is the
     contract the rebuilt gate keeps.
 

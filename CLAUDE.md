@@ -46,7 +46,7 @@ service needs a GPU) · MkDocs Material docs.
 |---|---|---|---|
 | API | `specs/openapi.yaml` | `make generate` → routers consume the generated DTOs (guard: `tests/test_generated_models_wired.py`) | `make test-contracts` (schemathesis, live server, authenticated) — green 2026-10-10: 32 operations, ~1,800 cases, 0 failures |
 | DB schema | `migrations/versions/*` | `make migrate` | `make migrate-test` (up → down → up) |
-| Model / eval set | `specs/schemas/eval_dataset.schema.json` (SFT row) | adapter import → registered adapter | CPU eval gate on imported adapters (E4.3/E4.4, not built yet) |
+| Model / eval set | `specs/schemas/eval_dataset.schema.json` (SFT row) | adapter import → registered adapter | CPU eval gate `services/eval_gate.py` (E4.3: task metric, adapter vs base); wired to imports by E4.4 |
 
 Full doc: [docs/reference/SDD_WORKFLOW.md](docs/reference/SDD_WORKFLOW.md). `make ci` runs check-leaks,
 check-chroma, lint, lint-imports, coverage, validate-spec and check-models; `make ci-full` adds migrate-test and

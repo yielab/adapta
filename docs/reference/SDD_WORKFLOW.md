@@ -65,7 +65,7 @@ Postgres holds users, teams, projects, files, datasets, endpoints, and API keys.
 
 ## Pillar 3 — Model / eval-set contract (dataset schema + eval gate)
 
-The adapter lifecycle is the product's moat, so its inputs and outputs are governed. In-product training was removed on 2026-10-10 (E4.1); adapters are imported. The import flow and CPU gate (roadmap E4.2–E4.4) are not built yet, so this describes the contract they implement.
+The adapter lifecycle is the product's moat, so its inputs and outputs are governed. In-product training was removed on 2026-10-10 (E4.1); adapters are imported. The CPU scorer exists (`adapta/services/eval_gate.py`, E4.3: task metric for adapter and base on the same eval set, pass = +0.05 over base or ≥ 0.8 and ≥ base); the import flow that runs it (E4.2, E4.4) is not built yet.
 
 ### The rule
 
@@ -76,7 +76,7 @@ The adapter lifecycle is the product's moat, so its inputs and outputs are gover
 ```
 
 - **SSOT (input):** `specs/schemas/eval_dataset.schema.json` — the instruction-pair format every eval set must validate against (validator: `adapta/services/datasets.py`).
-- **Merge/promotion gate:** an **evaluation** runs against the held-out set; the adapter is marked `servable` only if it clears the configured threshold. An unverified or failing adapter **cannot** be bound to an endpoint (today `create_endpoint` on a finetune project answers "Import an adapter first").
+- **Merge/promotion gate:** an **evaluation** runs against the held-out set; the adapter is marked `servable` only if it clears the rule (`eval_min_improvement` 0.05, `eval_absolute_floor` 0.8); every eval set declares its `task` (classify / extract / freeform) and has 20–200 rows. An unverified or failing adapter **cannot** be bound to an endpoint (today `create_endpoint` on a finetune project answers "Import an adapter first").
 - Fixtures for the gate live in `tests/fixtures/adapters/` (`classify-pass`, `garbage-control`).
 - This is the SDD philosophy applied to ML: the *spec* is the eval-set schema; the *contract test* is the eval gate.
 

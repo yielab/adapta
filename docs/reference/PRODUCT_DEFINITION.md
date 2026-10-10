@@ -55,7 +55,7 @@ A **single-tenant, self-hosted** application. A company runs it on their own inf
 - **Serving:** base model + adapter, OpenAI-compatible.
 - **Cost:** CPU only; no service in the stack needs a GPU.
 - **Updates:** import a new adapter.
-- **Eval gate (design contract):** an adapter must clear the held-out eval gate to back an endpoint — either an absolute score ≥ 0.6, **or** a clear improvement over the base model on the same held-out split (a small base can't reach 0.6 perplexity even on an ideal task, so "beats base by a margin" is the meaningful signal). An adapter that does neither cannot serve. Gate and serving share one prompt renderer (`adapta/core/chat_templates.py`), so the gate always scores an adapter on the exact conditioning the endpoint will send.
+- **Eval gate (design contract):** an adapter must clear the held-out eval gate to back an endpoint — scored on CPU through the serving path with a **task metric** (classify = label accuracy, extract = JSON validity × per-key match, freeform = token F1), adapter and base on the same held-out eval set; it passes when it beats the base by ≥ 0.05, **or** scores ≥ 0.8 without falling below the base (`adapta/services/eval_gate.py`, E4.3). An adapter that does neither cannot serve. Gate and serving share one prompt renderer (`adapta/core/chat_templates.py`), so the gate always scores an adapter on the exact conditioning the endpoint will send.
 
 ### Combining A + B — knowledge and behavior on one endpoint
 
