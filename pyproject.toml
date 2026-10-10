@@ -61,9 +61,10 @@ dependencies = [
     "chromadb==1.5.9",
     # Document parsing + image decoding for vision chat
     "pillow>=10.0.0",
-    "pypdf>=4.0.0",
-    "python-docx>=1.1.0",
-    "markdown>=3.5.0",
+    # One document parser (E3.3b): PDF/DOCX/HTML/images, layout + tables, RapidOCR for scans.
+    # torchvision comes from the +cpu index in the Dockerfile's torch layer (PyPI's wheel
+    # does not match the CPU-only torch).
+    "docling[rapidocr]>=2.137,<3",
     # General
     "httpx>=0.26.0",
     "pyyaml>=6.0.1",

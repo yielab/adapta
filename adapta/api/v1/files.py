@@ -39,7 +39,12 @@ router = APIRouter(prefix="/projects/{project_id}/files", tags=["files"])
 # Extension-based guard (§7.3): Content-Type is client-controlled and browsers
 # routinely send application/octet-stream for .md/.txt files, making CT an
 # unreliable signal. Real type safety comes from the parser in documents.py.
-_ALLOWED_EXTENSIONS = frozenset({".pdf", ".docx", ".txt", ".md", ".html", ".htm"})
+_ALLOWED_EXTENSIONS = frozenset(
+    {
+        ".pdf", ".docx", ".txt", ".md", ".markdown", ".html", ".htm",
+        ".png", ".jpg", ".jpeg", ".tif", ".tiff",
+    }
+)
 
 
 def _file_resp(f: ProjectFile) -> FileResponse:

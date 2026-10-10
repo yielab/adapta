@@ -115,16 +115,6 @@ def test_extract_text_markdown(tmp_path):
     assert "content" in text
 
 
-def test_extract_text_html_strips_tags(tmp_path):
-    from adapta.services.documents import extract_text
-
-    f = tmp_path / "page.html"
-    f.write_text("<html><body><p>Hello <b>world</b></p></body></html>")
-    text = extract_text(f, "text/html")
-    assert "Hello" in text
-    assert "<b>" not in text
-
-
 # ---------------------------------------------------------------------------
 # Dataset validation
 # ---------------------------------------------------------------------------

@@ -95,17 +95,22 @@ async def test_upload_handler_rejects_unsupported_extension(client):
 
 
 def test_parser_dispatches_pdf_by_extension(tmp_path):
-    """extract_text falls back to PDF parser by path suffix when CT is octet-stream."""
+    """parse_and_chunk routes a .pdf to the Docling path by suffix even when CT is octet-stream."""
     from unittest.mock import patch
 
-    from adapta.services.documents import extract_text
+    from adapta.services.documents import Chunk, parse_and_chunk
 
     pdf_path = tmp_path / "report.pdf"
     pdf_path.write_bytes(b"dummy")
-    with patch("adapta.services.documents._extract_text_pdf", return_value="pdf text") as m:
-        result = extract_text(pdf_path, "application/octet-stream")
-    m.assert_called_once_with(pdf_path)
-    assert result == "pdf text"
+    sentinel = [Chunk("pdf text", "report.pdf", 0, page=1)]
+    with (
+        patch("adapta.services.documents.parse", return_value="parsed") as p,
+        patch("adapta.services.documents.chunk", return_value=sentinel) as c,
+    ):
+        result = parse_and_chunk(pdf_path, "application/octet-stream", "report.pdf")
+    p.assert_called_once_with(pdf_path)
+    assert c.call_args.args[0] == "parsed"
+    assert result == sentinel
 
 
 # ---------------------------------------------------------------------------

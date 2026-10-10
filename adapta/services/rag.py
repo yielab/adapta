@@ -51,6 +51,13 @@ def content_hash(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
+def _needs_review(c: object) -> bool:
+    """OCR text whose mean line confidence is under ``ocr_review_threshold`` (E3.3b)."""
+    conf = getattr(c, "ocr_confidence", None)
+    ocr = bool(getattr(c, "ocr", False))
+    return ocr and conf is not None and conf < settings.ocr_review_threshold
+
+
 def build_chunk_rows(project_id: str, file_id: str, chunks: list) -> List[ProjectChunk]:
     """ORM rows for a file's chunks; ids match the Chroma ids (``{file_id}_{index}``)."""
     return [
@@ -61,6 +68,11 @@ def build_chunk_rows(project_id: str, file_id: str, chunks: list) -> List[Projec
             chunk_index=c.index,
             text=c.text,
             content_hash=content_hash(c.text),
+            page=getattr(c, "page", None),
+            section=getattr(c, "section", None),
+            ocr=bool(getattr(c, "ocr", False)),
+            ocr_confidence=getattr(c, "ocr_confidence", None),
+            needs_review=_needs_review(c),
         )
         for c in chunks
     ]

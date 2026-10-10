@@ -187,8 +187,8 @@
 
       <h4>Accepted files</h4>
       <ul>
-        <li><strong>PDF, DOCX, Markdown, TXT, HTML.</strong> Text must be selectable —
-          scanned image-only PDFs extract nothing, so OCR them first.</li>
+        <li><strong>PDF, DOCX, Markdown, TXT, HTML, and images (PNG, JPG, TIFF).</strong>
+          Scanned PDFs and images are read with OCR automatically — no pre-processing needed.</li>
         <li>Good fits: manuals, FAQs, policies, wikis, specs, support transcripts.</li>
       </ul>
 
@@ -224,13 +224,13 @@
       <span class="row" style="gap: 8px; justify-content: center;"><span class="spinner"></span><span>Uploading…</span></span>
     {:else}
       <div>Drag &amp; drop files here, or <span class="link">browse</span></div>
-      <small class="muted">PDF, DOCX, Markdown, TXT or HTML</small>
+      <small class="muted">PDF, DOCX, Markdown, TXT, HTML or images</small>
     {/if}
     <input
       bind:this={fileInput}
       type="file"
       multiple
-      accept=".pdf,.docx,.md,.markdown,.txt,.html,.htm"
+      accept=".pdf,.docx,.md,.markdown,.txt,.html,.htm,.png,.jpg,.jpeg,.tif,.tiff"
       style="display: none;"
       onchange={onPick}
     />

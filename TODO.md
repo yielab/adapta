@@ -119,7 +119,7 @@ classes are defined in [`.claude/context/gates.md`](.claude/context/gates.md) ("
 | E3.8 | 1 | sonnet | live | none — must land before E3.2 | — | done 2026-10-09 |
 | E4.1 | 1 | sonnet | rebuild + live (exclusive) | E1.11 | E2.1, E3.3b, E3.7 | done 2026-10-10 |
 | E3.2 | 2 | sonnet | live | E3.1, E3.8 (baseline recorded before this lands) | E3.7, E3.5 | done 2026-10-10 |
-| E3.3b | 2 | sonnet | rebuild + live | E3.3a (commit), E3.1 | E4.1, E4.2, E4.4 (`pyproject.toml`, `Dockerfile`), E3.7, E3.4 | in progress (worker-e3.3b) |
+| E3.3b | 2 | sonnet | rebuild + live | E3.3a (commit), E3.1 | E4.1, E4.2, E4.4 (`pyproject.toml`, `Dockerfile`), E3.7, E3.4 | ready-for-live (e3.3b) |
 | E3.7 | 2 | sonnet | live | E3.1, E4.1 | E3.1/E3.3b, E4.4 (`worker/main.py`) | open |
 | E4.2 | 2 | sonnet | live | E4.1 | E4.3 (spec, migrations), E4.5, E2.2 | done 2026-10-10 |
 | E4.3 | 2 | sonnet | live | E4.1 | E4.2 (spec, migrations) | done 2026-10-10 |
@@ -265,6 +265,18 @@ E1.1–E1.9 shipped 2026-09-17 → [CHANGELOG.md](CHANGELOG.md). E1.14 closed 20
 - **Close.** knowledge-and-behavior (supported inputs), operator-console files table, OPERATIONS
   sizing, README bullet ("scanned PDFs and images included"), CLAUDE.md "Knowledge (RAG)" line; Status
   snapshot.
+- **Done.** (offline rungs only; live gate pending) PDF/DOCX/HTML/images now parse through one Docling
+  converter (`RapidOcrOptions(lang=["latin"])`, `generate_parsed_pages=True`) and chunk with `HybridChunker`
+  (tokenizer = the embedding model, budget `chunk_size // 4` tokens, tables as markdown). `.txt/.md/.markdown`
+  keep the sentence chunker (golden floor untouched). `build_chunk_rows` writes page/section/ocr/ocr_confidence
+  and `needs_review`; `files.py` accepts `.markdown .png .jpg .jpeg .tif .tiff`; console copy and `accept` aligned;
+  `pypdf`/`python-docx`/`markdown` dropped. Dockerfile: torchvision `+cpu` in the torch layer, models baked
+  (`docling-tools` + warm-up). Gates: lint, test, lint-imports, check-leaks green; 6 Docling tests skip offline.
+- **Handoff.** `Chunk(text, source, index, page, section, ocr, ocr_confidence)`; `page` = first page of the
+  chunk's first element (an item can span pages), `ocr` = page had OCR cells and no native cells,
+  `ocr_confidence` = mean OCR line score of that page. Accepted: `.pdf .docx .txt .md .markdown .html .htm
+  .png .jpg .jpeg .tif .tiff`. `ocr_review_threshold` = 0.90 (`ADAPTA_OCR_REVIEW_THRESHOLD`). The Docling path
+  has no overlap (`chunk_overlap` applies to text/Markdown only). Image-size delta, s/page: TBD by lead.
 
 ### E3.4 `[BE+FE]` Citations with text, page and OCR provenance; review flags in the files table (P1)
 - [ ] **Context.** Citations are `{index, source, score}` (`rag.py:294-298`, spec `Citation`); the

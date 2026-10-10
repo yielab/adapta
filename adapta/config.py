@@ -106,6 +106,8 @@ class Settings(BaseSettings):
     rag_timeout_seconds: int = 10
     chunk_size: int = 512
     chunk_overlap: int = 64
+    # OCR'd chunks whose mean line confidence is below this are flagged needs_review (E3.3b).
+    ocr_review_threshold: float = 0.90
     # Dataset synthesis: fail the run if more than this fraction of chunks errored,
     # rather than silently shipping a sparse/degraded dataset.
     synthesis_max_error_rate: float = 0.5

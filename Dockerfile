@@ -55,13 +55,35 @@ RUN python -m venv /opt/venv
 # transitively by sentence-transformers. Everything here runs on CPU, so install
 # CPU torch up front; the later `pip install -e .` then sees torch as satisfied
 # and never fetches the CUDA build.
-RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
+# torchvision rides the same layer: Docling needs it, and PyPI's torchvision does not match
+# the CPU-only torch (`operator torchvision::nms does not exist`) — the +cpu wheel does.
+RUN pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu
 
 # Runtime deps + the full [dev] toolchain — cached until pyproject.toml changes.
 # editable_mode=compat puts /app on sys.path, so the source is importable whether
 # it is baked in (standalone) or bind-mounted at runtime (compose) — no re-running pip.
 COPY pyproject.toml ./
 RUN pip install --no-cache-dir -e ".[dev]" --config-settings editable_mode=compat
+
+# Bake the Docling layout/table models and the RapidOCR (latin) models into the image so
+# first use needs no network. docling-tools fetches layout + tableformer into
+# DOCLING_ARTIFACTS_PATH (outside HF_HOME, which prod compose remaps); the warm-up then
+# converts one generated PNG with the exact pipeline options adapta uses, which makes
+# RapidOCR fetch its ONNX models into the venv (site-packages) and proves the path works.
+ENV DOCLING_ARTIFACTS_PATH=/opt/docling-models
+RUN docling-tools models download layout tableformer -o /opt/docling-models \
+    && python -c "\
+from PIL import Image, ImageDraw, ImageFont; \
+from docling.datamodel.base_models import InputFormat; \
+from docling.datamodel.pipeline_options import PdfPipelineOptions, RapidOcrOptions; \
+from docling.document_converter import DocumentConverter, ImageFormatOption; \
+im = Image.new('RGB', (800, 200), 'white'); \
+ImageDraw.Draw(im).text((20, 60), 'Warm up 123', fill='black', font=ImageFont.load_default(size=40)); \
+im.save('/tmp/warm.png'); \
+o = PdfPipelineOptions(do_ocr=True, ocr_options=RapidOcrOptions(lang=['latin'])); \
+r = DocumentConverter(format_options={InputFormat.IMAGE: ImageFormatOption(pipeline_options=o)}).convert('/tmp/warm.png'); \
+print('docling warm-up ok:', len(r.document.export_to_markdown()), 'chars')" \
+    && chmod -R a+rX /opt/docling-models
 
 # ===== console-builder (thin operator console — Vite + Svelte) ================
 # Builds the static SPA to dist/, baked into the app image below. With the repo
@@ -79,6 +101,8 @@ RUN npm run build:fast
 # the repo bind-mount shadows /app and uvicorn hot-reloads on edits.
 FROM base AS app
 COPY --from=builder /opt/venv /opt/venv
+COPY --from=builder /opt/docling-models /opt/docling-models
+ENV DOCLING_ARTIFACTS_PATH=/opt/docling-models
 COPY adapta/ ./adapta/
 COPY --from=console-builder /build/dist ./adapta/console/dist/
 COPY specs/ ./specs/
