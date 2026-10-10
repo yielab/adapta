@@ -1,10 +1,11 @@
 """Adapter import (E4.2): upload a LoRA, list it, read its gate status, delete it.
 
-Static validation only — the adapter lands ``uploaded``; scoring and the
-``processing -> passed | failed`` transitions belong to the adapter job (E4.4).
+Static validation only — the adapter lands ``uploaded`` and an ``adapter`` job is enqueued;
+the worker (E4.4) drives ``processing -> passed | failed``.
 """
 
 import asyncio
+import logging
 import uuid
 from typing import List
 
@@ -30,6 +31,9 @@ from adapta.models.generated import AdapterResponse
 from adapta.models.generated import AdapterStatus as ApiAdapterStatus
 from adapta.services import adapters as adapter_service
 from adapta.services.auth import get_current_user, require_team_member, require_team_writer
+from adapta.services.jobs import get_job_queue
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/projects/{project_id}/adapters", tags=["adapters"])
 
@@ -141,6 +145,17 @@ async def upload_adapter(
         adapter_service.remove_adapter_files(adapter_id)
         raise
     await db.refresh(adapter)
+    # Enqueue after the commit so the worker never reads a row that is not there yet.
+    try:
+        await get_job_queue().enqueue(
+            adapter_id, adapter_service.ADAPTER_JOB_KIND, {"id": adapter_id}
+        )
+    except Exception:
+        logger.exception("Could not enqueue the adapter job for %s", adapter_id)
+        adapter.status = AdapterStatus.failed
+        adapter.failure_reason = "The job queue is unavailable; upload the adapter again."
+        await db.commit()
+        await db.refresh(adapter)
     return adapter_response(adapter)
 
 

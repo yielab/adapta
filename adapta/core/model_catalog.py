@@ -65,6 +65,10 @@ class CatalogEntry:
     def gguf_path(self) -> Path:
         return settings.models_dir / self.gguf_subdir / self.gguf_filename
 
+    def hf_config_dir(self) -> Path:
+        """Where the base's HF ``config.json`` lives: the PEFT->GGUF converter's ``--base``."""
+        return settings.models_dir / self.gguf_subdir / "hf_config"
+
     def mmproj_path(self) -> Optional[Path]:
         if self.mmproj_filename is None:
             return None

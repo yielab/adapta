@@ -63,7 +63,7 @@ async def test_garbage_control_fails(tmp_path):
     work = tmp_path / "garbage-control"
     shutil.copytree(FIXTURES / "garbage-control", work)
     gguf = await adapter_conversion.convert_peft_to_gguf(
-        work, base_model_id="Qwen/Qwen2.5-0.5B-Instruct"
+        work, base_config_dir=resolve(BASE).hf_config_dir()
     )
     metrics = await _report("garbage-control", str(gguf), "freeform")
     assert not metrics["passed"], metrics

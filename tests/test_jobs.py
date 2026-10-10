@@ -177,5 +177,27 @@ async def test_run_job_dispatches_to_registered_handler(monkeypatch):
     assert seen == ["j-1"]
 
 
-def test_handler_table_is_empty():
-    assert worker.HANDLERS == {}
+def test_handler_table_holds_the_adapter_job():
+    assert set(worker.HANDLERS) == {"adapter"}
+
+
+async def test_adapter_handler_passes_the_payload_id_and_marks_the_job(monkeypatch):
+    from adapta.services import adapters
+
+    calls = []
+
+    class Q:
+        async def update_status(self, job_id, **kw):
+            calls.append(("status", job_id, kw["status"]))
+
+    async def fake_process(adapter_id):
+        calls.append(("process", adapter_id))
+
+    monkeypatch.setattr(worker, "get_job_queue", lambda: Q())
+    monkeypatch.setattr(adapters, "process_adapter", fake_process)
+    await worker._run_job({"job_id": "ad-1", "kind": "adapter", "payload": {"id": "ad-1"}})
+    assert calls == [
+        ("status", "ad-1", "running"),
+        ("process", "ad-1"),
+        ("status", "ad-1", "succeeded"),
+    ]

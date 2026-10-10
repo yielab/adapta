@@ -1,7 +1,30 @@
-{"prompt": "How do I transfer ownership?", "response": "account", "system": "Classify the support message into exactly one of: billing, technical, account. Reply with only the label."}
-{"prompt": "Please merge my two accounts.", "response": "account", "system": "Classify the support message into exactly one of: billing, technical, account. Reply with only the label."}
-{"prompt": "How do I enable two-factor auth?", "response": "account", "system": "Classify the support message into exactly one of: billing, technical, account. Reply with only the label."}
-{"prompt": "I want to leave this organization.", "response": "account", "system": "Classify the support message into exactly one of: billing, technical, account. Reply with only the label."}
-{"prompt": "How do I change my email address?", "response": "account", "system": "Classify the support message into exactly one of: billing, technical, account. Reply with only the label."}
-{"prompt": "Can I rename my team?", "response": "account", "system": "Classify the support message into exactly one of: billing, technical, account. Reply with only the label."}
-{"prompt": "How do I see who has access?", "response": "account", "system": "Classify the support message into exactly one of: billing, technical, account. Reply with only the label."}
+{"system": "Classify the support message into exactly one of: billing, technical, account. Reply with only the label.", "prompt": "My card was declined at renewal.", "response": "billing"}
+{"system": "Classify the support message into exactly one of: billing, technical, account. Reply with only the label.", "prompt": "The site returns a timeout on every page.", "response": "technical"}
+{"system": "Classify the support message into exactly one of: billing, technical, account. Reply with only the label.", "prompt": "How can I change the owner of my workspace?", "response": "account"}
+{"system": "Classify the support message into exactly one of: billing, technical, account. Reply with only the label.", "prompt": "Can you send me last quarter's invoices?", "response": "billing"}
+{"system": "Classify the support message into exactly one of: billing, technical, account. Reply with only the label.", "prompt": "Webhooks stopped firing yesterday.", "response": "technical"}
+{"system": "Classify the support message into exactly one of: billing, technical, account. Reply with only the label.", "prompt": "I would like to close my account permanently.", "response": "account"}
+{"system": "Classify the support message into exactly one of: billing, technical, account. Reply with only the label.", "prompt": "I was overcharged for extra seats.", "response": "billing"}
+{"system": "Classify the support message into exactly one of: billing, technical, account. Reply with only the label.", "prompt": "Importing a CSV fails halfway through.", "response": "technical"}
+{"system": "Classify the support message into exactly one of: billing, technical, account. Reply with only the label.", "prompt": "Can I switch my username to something else?", "response": "account"}
+{"system": "Classify the support message into exactly one of: billing, technical, account. Reply with only the label.", "prompt": "How do I cancel auto-renew on my subscription?", "response": "billing"}
+{"system": "Classify the support message into exactly one of: billing, technical, account. Reply with only the label.", "prompt": "The dashboard charts are blank in Firefox.", "response": "technical"}
+{"system": "Classify the support message into exactly one of: billing, technical, account. Reply with only the label.", "prompt": "How do I add a second admin to my organization?", "response": "account"}
+{"system": "Classify the support message into exactly one of: billing, technical, account. Reply with only the label.", "prompt": "The coupon code gave me no discount.", "response": "billing"}
+{"system": "Classify the support message into exactly one of: billing, technical, account. Reply with only the label.", "prompt": "The verification code screen hangs and never continues.", "response": "technical"}
+{"system": "Classify the support message into exactly one of: billing, technical, account. Reply with only the label.", "prompt": "I want to update the name shown on my profile.", "response": "account"}
+{"system": "Classify the support message into exactly one of: billing, technical, account. Reply with only the label.", "prompt": "I need to switch to annual billing.", "response": "billing"}
+{"system": "Classify the support message into exactly one of: billing, technical, account. Reply with only the label.", "prompt": "The sync client keeps crashing on launch.", "response": "technical"}
+{"system": "Classify the support message into exactly one of: billing, technical, account. Reply with only the label.", "prompt": "How do I remove a former employee from my team?", "response": "account"}
+{"system": "Classify the support message into exactly one of: billing, technical, account. Reply with only the label.", "prompt": "Why is there a tax line on my statement?", "response": "billing"}
+{"system": "Classify the support message into exactly one of: billing, technical, account. Reply with only the label.", "prompt": "I get a 403 error calling the REST API.", "response": "technical"}
+{"system": "Classify the support message into exactly one of: billing, technical, account. Reply with only the label.", "prompt": "Can I change the language of my account?", "response": "account"}
+{"system": "Classify the support message into exactly one of: billing, technical, account. Reply with only the label.", "prompt": "Please refund the duplicate payment.", "response": "billing"}
+{"system": "Classify the support message into exactly one of: billing, technical, account. Reply with only the label.", "prompt": "Reports take ten minutes to generate.", "response": "technical"}
+{"system": "Classify the support message into exactly one of: billing, technical, account. Reply with only the label.", "prompt": "How do I link my account to single sign-on?", "response": "account"}
+{"system": "Classify the support message into exactly one of: billing, technical, account. Reply with only the label.", "prompt": "Where can I download my payment history?", "response": "billing"}
+{"system": "Classify the support message into exactly one of: billing, technical, account. Reply with only the label.", "prompt": "The login page spins forever after I enter my password.", "response": "technical"}
+{"system": "Classify the support message into exactly one of: billing, technical, account. Reply with only the label.", "prompt": "I need to change the phone number on my profile.", "response": "account"}
+{"system": "Classify the support message into exactly one of: billing, technical, account. Reply with only the label.", "prompt": "My plan price changed without notice.", "response": "billing"}
+{"system": "Classify the support message into exactly one of: billing, technical, account. Reply with only the label.", "prompt": "The desktop app will not update.", "response": "technical"}
+{"system": "Classify the support message into exactly one of: billing, technical, account. Reply with only the label.", "prompt": "Please transfer my projects to another account.", "response": "account"}

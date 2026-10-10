@@ -63,6 +63,14 @@ class InvalidAdapter(InvalidRequest):
 
 
 @dataclass
+class AdapterIncompatible(InvalidAdapter):
+    """The adapter converts but cannot be loaded or run on its base model (HTTP 400,
+    code ``adapter_incompatible``): wrong rank/shape/target modules for the project's base."""
+
+    code: str = field(default="adapter_incompatible", init=False)
+
+
+@dataclass
 class Unauthorized(DomainError):
     """The request is missing valid credentials (HTTP 401).
 

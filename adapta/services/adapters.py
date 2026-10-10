@@ -1,20 +1,25 @@
-"""Static validation + storage of an imported LoRA adapter (E4.2).
+"""Static validation + storage of an imported LoRA adapter (E4.2), and the adapter job (E4.4).
 
-An upload is either one GGUF LoRA or a ``.zip`` of a PEFT adapter. Nothing here loads a
-model or scores anything (the adapter job, E4.4, does): it proves the file *is* what it
-claims — extension, magic bytes, exact zip members, LoRA type, and a base model that
-matches the project's — and moves it under ``settings.adapters_dir/{id}/``. Every
-rejection is an :class:`InvalidAdapter` whose message names the expected value.
+An upload is either one GGUF LoRA or a ``.zip`` of a PEFT adapter. The upload path loads
+nothing and scores nothing: it proves the file *is* what it claims — extension, magic bytes,
+exact zip members, LoRA type, and a base model that matches the project's — and moves it
+under ``settings.adapters_dir/{id}/``. Every rejection is an :class:`InvalidAdapter` whose
+message names the expected value.
 
-Standard library plus the ``gguf`` package (already a main dependency) only.
+:func:`process_adapter` is the worker-side job (``uploaded -> processing -> passed | failed``):
+convert (PEFT), probe-load, score with ``eval_gate``, persist. Heavy imports stay inside it
+so the API process never pays for them.
 """
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
+import logging
 import shutil
 import struct
+import time
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -23,7 +28,15 @@ from typing import Optional
 from adapta.config import settings
 from adapta.core import model_catalog
 from adapta.db.models import AdapterFormat
-from adapta.domain.errors import InvalidAdapter, PayloadTooLarge
+from adapta.domain.errors import (
+    AdapterIncompatible,
+    DomainError,
+    InvalidAdapter,
+    ModelNotFound,
+    PayloadTooLarge,
+)
+
+logger = logging.getLogger(__name__)
 
 PEFT_WEIGHTS = "adapter_model.safetensors"
 PEFT_CONFIG = "adapter_config.json"
@@ -269,3 +282,145 @@ def validate_and_store(
     except BaseException:
         remove_adapter_files(adapter_id)
         raise
+
+
+# ---------------------------------------------------------------------------
+# The adapter job (E4.4) — runs in the worker
+# ---------------------------------------------------------------------------
+
+ADAPTER_JOB_KIND = "adapter"
+_FAIL_UNEXPECTED = "Adapter processing failed unexpectedly; see the worker log."
+
+
+def read_eval_rows(path: Path) -> list[dict]:
+    """The SFT rows of an eval set (``prompt``/``response``/optional ``system``)."""
+    with path.open(encoding="utf-8") as f:
+        return [json.loads(line) for line in f if line.strip()]
+
+
+async def probe_load(base_model: str, gguf_path: str) -> None:
+    """Load base + LoRA through ``model_manager`` and generate one token.
+
+    A wrong-shape adapter otherwise surfaces only when the endpoint loads it. Any failure to
+    apply or run the LoRA is :class:`AdapterIncompatible`; a base that will not load on its
+    own is the node's problem and stays :class:`ModelNotFound`."""
+    from adapta.core.backends.llamacpp import LlamaCppBackend
+    from adapta.core.inference import InferenceRequest, Message
+
+    backend = LlamaCppBackend()
+    await backend.prepare(base_model, None)  # raises ModelNotFound if the base itself is absent
+    try:
+        handle = await backend.prepare(base_model, gguf_path)
+        await backend.generate(
+            handle,
+            InferenceRequest(
+                messages=[Message(role="user", content="ping")],
+                model_name=base_model,
+                temperature=0.0,
+                top_p=1.0,
+                top_k=1,
+                max_tokens=1,
+                stream=False,
+                adapter_path=gguf_path,
+            ),
+        )
+    except Exception as exc:  # noqa: BLE001 - any load/run failure means "does not fit this base"
+        detail = exc.internal_detail if isinstance(exc, ModelNotFound) else repr(exc)
+        raise AdapterIncompatible(
+            message=f"The adapter could not be loaded on base model '{base_model}'; it was "
+            "probably trained for a different base, rank or target modules.",
+            internal_detail=f"probe failed for {gguf_path}: {detail}",
+        ) from exc
+
+
+async def process_adapter(adapter_id: str) -> None:
+    """Drive one adapter ``uploaded -> processing -> passed | failed``.
+
+    A failed gate is a normal outcome (status ``failed`` with both scores in ``eval_metrics``),
+    not an exception; a typed error (conversion, probe, missing eval set) also ends ``failed``
+    with its safe message as ``failure_reason``. Re-running an adapter already ``passed`` or
+    ``failed`` is a no-op, so a requeued job is safe. Seconds per stage are logged."""
+    from adapta.core import adapter_conversion
+    from adapta.db.models import Adapter, AdapterStatus, Dataset
+    from adapta.db.session import AsyncSessionLocal
+    from adapta.services import eval_gate
+
+    async with AsyncSessionLocal() as db:
+        adapter = await db.get(Adapter, adapter_id)
+        if adapter is None or adapter.status in (AdapterStatus.passed, AdapterStatus.failed):
+            logger.info("Adapter job %s: nothing to do", adapter_id)
+            return
+        adapter.status = AdapterStatus.processing
+        adapter.failure_reason = None
+        await db.commit()  # visible to the API before the slow work starts
+
+        async def fail(reason: str, metrics: Optional[dict] = None) -> None:
+            adapter.status = AdapterStatus.failed
+            adapter.failure_reason = reason[:1000]
+            if metrics is not None:
+                adapter.eval_metrics = metrics
+            await db.commit()
+
+        stages: dict[str, float] = {}
+        try:
+            entry = model_catalog.resolve(adapter.base_model)
+            dataset = (
+                await db.get(Dataset, adapter.eval_dataset_id) if adapter.eval_dataset_id else None
+            )
+            if entry is None:
+                raise AdapterIncompatible(
+                    message=f"Base model '{adapter.base_model}' is not in the catalog."
+                )
+            if dataset is None or not dataset.task:
+                raise InvalidAdapter(
+                    message="The adapter's eval dataset is gone or has no task; upload the "
+                    "adapter again with a valid eval dataset."
+                )
+
+            t = time.perf_counter()
+            if adapter.format == AdapterFormat.peft:
+                gguf = await adapter_conversion.convert_peft_to_gguf(
+                    Path(adapter.peft_dir or ""), base_config_dir=entry.hf_config_dir()
+                )
+                adapter.gguf_path = str(gguf)
+                await db.commit()
+            stages["convert"] = time.perf_counter() - t
+            gguf_path = adapter.gguf_path or ""
+
+            t = time.perf_counter()
+            await probe_load(entry.name, gguf_path)
+            stages["probe"] = time.perf_counter() - t
+
+            t = time.perf_counter()
+            rows = await asyncio.to_thread(read_eval_rows, Path(dataset.storage_path))
+            metrics = await eval_gate.evaluate(entry.name, gguf_path, rows, dataset.task)
+            stages["score"] = time.perf_counter() - t
+        except DomainError as exc:
+            logger.error("Adapter %s failed: %s", adapter_id, exc.internal_detail or exc.message)
+            await fail(exc.message)
+            return
+        except Exception:
+            logger.exception("Adapter %s crashed", adapter_id)
+            await fail(_FAIL_UNEXPECTED)
+            return
+
+        adapter.eval_metrics = metrics
+        if metrics["passed"]:
+            adapter.status = AdapterStatus.passed
+            await db.commit()
+        else:
+            await fail(
+                f"The adapter scored {metrics['adapter_score']:.3f} against the base model's "
+                f"{metrics['base_score']:.3f} on {metrics['n_rows']} rows; it needs "
+                f"+{metrics['min_improvement']:.2f} over the base or >= "
+                f"{metrics['absolute_floor']:.2f} without regressing.",
+                metrics,
+            )
+        logger.info(
+            "Adapter %s -> %s (adapter %.3f, base %.3f); seconds per stage: %s",
+            adapter_id,
+            adapter.status.value,
+            metrics["adapter_score"],
+            metrics["base_score"],
+            {k: round(v, 1) for k, v in stages.items()},
+        )

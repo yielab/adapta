@@ -108,6 +108,23 @@ COPY --from=builder /opt/venv /opt/venv
 COPY --from=builder /opt/docling-models /opt/docling-models
 COPY --from=builder /opt/hf /opt/hf
 ENV DOCLING_ARTIFACTS_PATH=/opt/docling-models HF_HOME=/opt/hf
+# Vendor llama.cpp's OFFICIAL PEFT->GGUF LoRA converter for the adapter job (E4.4); we never
+# reimplement the GGUF-LoRA format. Pinned tag, so builds are reproducible. convert_lora_to_gguf.py
+# imports convert_hf_to_gguf.py, and both need a `gguf` writer in lockstep with the tag (b5170
+# needs MODEL_ARCH.CLIP_VISION, which the pip release lacks), so the tag's own gguf-py replaces
+# the pip one (--no-deps: its other deps are already in the venv; sentencepiece is the one extra).
+ARG LLAMA_CPP_TAG=b5170
+RUN mkdir -p /opt/llamacpp /tmp/llamacpp \
+    && curl -fsSL "https://github.com/ggml-org/llama.cpp/archive/refs/tags/${LLAMA_CPP_TAG}.tar.gz" \
+       | tar -xz --strip-components=1 -C /tmp/llamacpp \
+           "llama.cpp-${LLAMA_CPP_TAG}/convert_lora_to_gguf.py" \
+           "llama.cpp-${LLAMA_CPP_TAG}/convert_hf_to_gguf.py" \
+           "llama.cpp-${LLAMA_CPP_TAG}/gguf-py" \
+    && cp /tmp/llamacpp/convert_lora_to_gguf.py /tmp/llamacpp/convert_hf_to_gguf.py /opt/llamacpp/ \
+    && cp -r /tmp/llamacpp/gguf-py /opt/llamacpp/gguf-py \
+    && pip install --no-cache-dir --no-deps /opt/llamacpp/gguf-py sentencepiece \
+    && rm -rf /tmp/llamacpp \
+    && chmod -R a+rX /opt/llamacpp
 COPY adapta/ ./adapta/
 COPY --from=console-builder /build/dist ./adapta/console/dist/
 COPY specs/ ./specs/

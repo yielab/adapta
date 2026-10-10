@@ -14,6 +14,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 _FILE_MSG = "Indexing was interrupted by a server restart — re-upload the file to retry."
+_ADAPTER_MSG = "Processing was interrupted by a restart — upload the adapter again to retry."
 _DATASET_MSG = "Validation was interrupted by a server restart — re-upload the dataset to retry."
 
 
@@ -21,7 +22,14 @@ async def sweep_stuck_tasks() -> tuple[int, int]:
     """Fail files/datasets left in a transient state by a crash. Returns (files, datasets)."""
     from sqlalchemy import select
 
-    from adapta.db.models import Dataset, DatasetStatus, FileStatus, ProjectFile
+    from adapta.db.models import (
+        Adapter,
+        AdapterStatus,
+        Dataset,
+        DatasetStatus,
+        FileStatus,
+        ProjectFile,
+    )
     from adapta.db.session import AsyncSessionLocal
 
     files = datasets = 0
@@ -52,9 +60,22 @@ async def sweep_stuck_tasks() -> tuple[int, int]:
             d.validation_error = _DATASET_MSG
             datasets += 1
 
-        if files or datasets:
+        # An adapter job killed mid-run (worker crash/restart) leaves the row `processing`.
+        stuck_adapters = (
+            (await db.execute(select(Adapter).where(Adapter.status == AdapterStatus.processing)))
+            .scalars()
+            .all()
+        )
+        for a in stuck_adapters:
+            a.status = AdapterStatus.failed
+            a.failure_reason = _ADAPTER_MSG
+
+        if files or datasets or stuck_adapters:
             await db.commit()
             logger.info(
-                "Startup sweep: failed %d stuck file(s) and %d stuck dataset(s)", files, datasets
+                "Startup sweep: failed %d stuck file(s), %d stuck dataset(s) and %d stuck adapter(s)",
+                files,
+                datasets,
+                len(stuck_adapters),
             )
     return files, datasets

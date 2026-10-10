@@ -60,7 +60,7 @@ def test_conversion_raises_typed_error_when_no_adapter(tmp_path: Path):
     empty = tmp_path / "adapter"
     empty.mkdir()
     with pytest.raises(AdapterConversionFailed):
-        asyncio.run(convert_peft_to_gguf(empty, base_model_id="Qwen/Qwen2.5-0.5B-Instruct"))
+        asyncio.run(convert_peft_to_gguf(empty, base_config_dir=tmp_path / "hf_config"))
 
 
 def test_conversion_is_idempotent_when_gguf_exists(tmp_path: Path):
@@ -71,6 +71,23 @@ def test_conversion_is_idempotent_when_gguf_exists(tmp_path: Path):
     (adapter / "adapter_config.json").write_text("{}")
     out = converted_gguf_path(adapter)
     out.write_text("preexisting")  # pretend a prior conversion succeeded
-    result = asyncio.run(convert_peft_to_gguf(adapter, base_model_id="Qwen/Qwen2.5-0.5B-Instruct"))
+    result = asyncio.run(convert_peft_to_gguf(adapter, base_config_dir=tmp_path / "hf_config"))
     assert result == out
     assert out.read_text() == "preexisting"  # not re-converted
+
+
+def test_conversion_names_missing_base_config(tmp_path: Path, monkeypatch):
+    from adapta.config import settings
+    from adapta.core.adapter_conversion import CONVERT_SCRIPT, convert_peft_to_gguf
+    from adapta.domain.errors import AdapterConversionFailed
+
+    scripts = tmp_path / "llamacpp"
+    scripts.mkdir()
+    (scripts / CONVERT_SCRIPT).write_text("")
+    monkeypatch.setattr(settings, "lora_convert_dir", scripts)
+    adapter = tmp_path / "adapter"
+    adapter.mkdir()
+    (adapter / "adapter_config.json").write_text("{}")
+    with pytest.raises(AdapterConversionFailed) as exc:
+        asyncio.run(convert_peft_to_gguf(adapter, base_config_dir=tmp_path / "hf_config"))
+    assert "hf_config" in exc.value.internal_detail  # names the missing file; never the Hub

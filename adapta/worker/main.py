@@ -5,8 +5,7 @@ Run as a separate process/container (same image as the app):
     python -m adapta.worker.main
 
 The loop owns liveness (heartbeat + ``--healthcheck``) and graceful shutdown (an
-in-flight job is requeued on SIGTERM). The handler table is empty until jobs are
-added; a job whose kind has no handler fails with :class:`UnknownJobKind`.
+in-flight job is requeued on SIGTERM). Handlers: ``adapter`` (E4.4). A job whose kind has no handler fails with :class:`UnknownJobKind`.
 """
 
 from __future__ import annotations
@@ -27,7 +26,18 @@ logger = logging.getLogger("adapta.worker")
 
 # kind -> async handler(meta). A handler records its own progress and terminal
 # status through the queue; an exception it raises fails the job.
-HANDLERS: dict[str, Callable[[dict], Awaitable[None]]] = {}
+async def _adapter_job(meta: dict) -> None:
+    """``adapter`` job (E4.4): convert, probe, score and decide one imported LoRA."""
+    from adapta.services import adapters
+
+    adapter_id = (meta.get("payload") or {}).get("id") or meta["job_id"]
+    queue = get_job_queue()
+    await queue.update_status(meta["job_id"], status="running")
+    await adapters.process_adapter(adapter_id)
+    await queue.update_status(meta["job_id"], status="succeeded", progress=1.0)
+
+
+HANDLERS: dict[str, Callable[[dict], Awaitable[None]]] = {"adapter": _adapter_job}
 
 
 async def _run_job(meta: dict) -> None:
