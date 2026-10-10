@@ -503,3 +503,19 @@ To use an Ollama already running on the host instead of the profile service, set
 
 See also: [README.md](https://github.com/yielab/adapta/blob/main/README.md) (run/operate), [PRODUCT_DEFINITION.md](PRODUCT_DEFINITION.md)
 (scope), [SDD_WORKFLOW.md](SDD_WORKFLOW.md) (the three contracts).
+
+### Export a gated adapter to Ollama (E2.2)
+
+`GET /v1/projects/{id}/endpoint/export?format=ollama` (writer role) returns a zip of the adapter the endpoint serves:
+`adapter.gguf`, a `Modelfile` (`FROM <ollama tag from ollama_model_map>`, `ADAPTER ./adapter.gguf`, ChatML stop
+tokens) and a `README.txt` with the gate verdict. Only a `passed` adapter exports; an unmapped base is a 400. The console
+has an **Export for Ollama** button on the served adapter. Then, on the Ollama host:
+
+```bash
+unzip bundle.zip -d bundle && cd bundle
+ollama pull qwen2.5:0.5b-instruct     # the FROM tag
+ollama create my-adapter -f Modelfile
+```
+
+Verified 2026-10-10: the `classify-pass` fixture exported, loaded with `ollama create`, and answered the bare labels.
+Ollama's tag is a different quantization from the GGUF the gate scored on — re-check quality on your own eval rows.

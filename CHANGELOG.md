@@ -1056,6 +1056,43 @@ bind mount, so uvicorn reloaded on every worker edit — reload now watches `/ap
   disappears after any migrate-test while test orgs remain — recreated by hand 2026-10-10; migrate-test should run
   against a scratch database.
 
+### E2.2 `[BE]` Export a gated adapter as an Ollama Modelfile bundle (P2)
+- [x] **Context.** Ollama imports LoRA adapters with a `Modelfile` (`FROM <base>` + `ADAPTER <path>`).
+  Every `passed` adapter has a GGUF LoRA (E4.4); exporting it with the base tag, template and gate line
+  lets any Ollama user run a gate-verified adapter — the adapter travels to 180k★ of users.
+- **Depends.** E2.1, E4.4. **Unblocks.** none.
+- **Agent.** sonnet · gate class **live** · serialize with: E4.5 (`endpoints.py`,
+  `EndpointPanel.svelte`, spec endpoint section) · **Handoff.** must name the route and zip layout.
+- **Scope.** A zip `{adapter.gguf, Modelfile, README.txt}` for endpoints serving a `passed` adapter. Out: pushing to
+  ollama.com.
+- **Steps.** (1) Spec `GET /v1/projects/{id}/endpoint/export?format=ollama` → `application/zip`,
+  writer role, 404 without a gated adapter. (2) Handler builds the zip in a temp dir: the GGUF LoRA, a
+  `Modelfile` (`FROM` = the catalog entry's Ollama tag from E2.1's map, `ADAPTER ./adapter.gguf`,
+  `TEMPLATE`/`PARAMETER stop` from `chat_templates.py`), and a README carrying the gate line (score,
+  base, delta, date). (3) Console `EndpointPanel.svelte`: "Export for Ollama". (4) Tests: zip
+  contents + Modelfile text; 404 path.
+- **Files.** `specs/openapi.yaml` (endpoint section), `adapta/api/v1/endpoints.py`,
+  `adapta/core/chat_templates.py`, `adapta/services/adapters.py`,
+  `adapta/console/src/views/EndpointPanel.svelte`, `tests/test_adapter_upload.py`.
+- **Contract impact.** API (new route).
+- **Gate.** `make validate-spec` → `make generate` → `make check-models` → `make test` →
+  `make test-contracts`.
+- **Acceptance.** `ollama create adapta-demo -f Modelfile` on a host with the base tag yields a model
+  that answers in the adapter's shape (manual check, recorded in the Done note).
+- **Close.** consuming-the-api "Export to Ollama"; Status snapshot.
+- **Done.** 2026-10-10. `GET /v1/projects/{id}/endpoint/export?format=ollama` (writer) streams a zip of the served
+  adapter: `adapter.gguf`, `Modelfile` (`FROM` from `ollama_model_map`, `ADAPTER ./adapter.gguf`, ChatML stops; no
+  `TEMPLATE` for ChatML — `ChatTemplate.ollama_template` carries one for future non-ChatML families), `README.txt` with
+  the gate verdict and an "Ollama's tag is a different quantization" note. 404 no endpoint/adapter, 400 not passed / GGUF
+  missing / unmapped base, 422 other formats. Console "Export for Ollama" on the served adapter row (auth-aware download).
+  Live: `make ci` ✓ · svelte-check 0 errors · `test-contracts` 41/41, 2371 cases, 0 failures (1 errored, no detail) ·
+  exported `classify-pass` (8.7 MB zip) → `ollama create` (tag `qwen2.5:0.5b-instruct`, pulled 397 MB) → `/api/chat` with
+  the classify system prompt answers `billing` / `technical` / `account` correctly (the base also gets these three easy
+  messages right; the gate's discrimination is the 30-row set). OPERATIONS §9 "Export a gated adapter to Ollama".
+- **Handoff.** Route `exportEndpointAdapter`; only the **served** adapter exports (promote first to export another).
+- **Follow-up.** Per-adapter export (`adapter_id` param); the README shows the import date (no gate-run timestamp is
+  stored); zipping is synchronous (fine at the 512 MB cap).
+
 ---
 
 ## 2026-10-08 — §E wave 0: the gates every other block is verified by
