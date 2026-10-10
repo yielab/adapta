@@ -135,11 +135,21 @@ class _FtsHit:
     chunk_index: int
 
 
+# OR semantics over the question's lexemes: websearch_to_tsquery ANDs every term, so a
+# natural-language question would match no single chunk. Each lexeme is quoted so
+# punctuation-bearing tokens (urls, paths, emails) cannot break the tsquery parser.
+# ts_rank_cd normalization 1 divides by 1 + log(length) so long chunks do not dominate.
 _FTS_SQL = """
+WITH q AS (
+  SELECT CASE WHEN cardinality(lex) = 0 THEN NULL ELSE CAST(
+    (SELECT string_agg('''' || replace(l, '''', '''''') || '''', ' | ') FROM unnest(lex) AS l)
+    AS tsquery) END AS tq
+  FROM (SELECT tsvector_to_array(to_tsvector(CAST(:cfg AS regconfig), :q)) AS lex) x
+)
 SELECT c.id, c.text, c.chunk_index, f.filename
-FROM chunks c JOIN project_files f ON f.id = c.file_id
-WHERE c.project_id = :p AND c.tsv @@ websearch_to_tsquery(CAST(:cfg AS regconfig), :q)
-ORDER BY ts_rank_cd(c.tsv, websearch_to_tsquery(CAST(:cfg AS regconfig), :q)) DESC, c.id
+FROM q, chunks c JOIN project_files f ON f.id = c.file_id
+WHERE q.tq IS NOT NULL AND c.project_id = :p AND c.tsv @@ q.tq
+ORDER BY ts_rank_cd(c.tsv, q.tq, 1) DESC, c.id
 LIMIT :n
 """
 

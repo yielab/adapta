@@ -510,3 +510,14 @@ async def test_fts_search_inside_running_loop_raises():
     """Calling the blocking sparse leg on the event loop must fail loudly, not degrade."""
     with pytest.raises(RuntimeError, match="to_thread"):
         _REAL_FTS_SEARCH("p", "q", 4)
+
+
+def test_fts_sql_uses_or_semantics_over_lexemes():
+    """A multi-word question must become an OR query (websearch_to_tsquery ANDs every
+    term, so a natural-language question matched no chunk), with an empty-lexeme guard."""
+    sql = rag_mod._FTS_SQL
+    assert "websearch_to_tsquery" not in sql
+    assert "string_agg" in sql and "' | '" in sql
+    assert "tsvector_to_array(to_tsvector(" in sql
+    assert "cardinality(lex) = 0 THEN NULL" in sql and "q.tq IS NOT NULL" in sql
+    assert "ts_rank_cd(c.tsv, q.tq, 1)" in sql
