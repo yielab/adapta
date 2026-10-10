@@ -10,7 +10,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from adapta.domain.errors import InvalidRequest
+from adapta.domain.errors import InvalidRequest, UnsafeTeacherUrl
 from adapta.services import synthesis as syn
 from adapta.services.datasets import validate_dataset
 
@@ -200,3 +200,73 @@ def test_download_dataset_returns_jsonl_file(tmp_path, monkeypatch):
     assert resp.path == str(f)
     assert resp.media_type == "application/x-ndjson"
     assert resp.filename == "synthesized_behavior_20261010.jsonl"
+
+
+# -- teacher URL destination guard (F1.5) ------------------------------------
+
+
+def _fake_getaddrinfo(table):
+    """Stub socket.getaddrinfo: ``table`` maps hostname -> list of IP strings."""
+
+    def fake(host, port, *args, **kwargs):
+        if host not in table:
+            raise OSError(f"no such host {host}")
+        return [(2, 1, 6, "", (ip, 0)) for ip in table[host]]
+
+    return fake
+
+
+@pytest.mark.parametrize(
+    "url, table",
+    [
+        ("http://169.254.169.254/", {}),
+        ("http://169.254.169.254/latest/meta-data", {}),
+        ("http://metadata.google.internal/computeMetadata/v1/", {}),
+        ("http://teacher.example.com/v1", {"teacher.example.com": ["169.254.169.254"]}),
+        ("http://mixed.example.com/v1", {"mixed.example.com": ["10.0.0.5", "169.254.10.10"]}),
+        ("http://v6.example.com/v1", {"v6.example.com": ["fe80::1"]}),
+        ("http://mapped.example.com/v1", {"mapped.example.com": ["::ffff:169.254.169.254"]}),
+        ("http://nowhere.example.com/v1", {}),
+    ],
+)
+def test_teacher_destination_blocks_link_local_and_metadata(monkeypatch, url, table):
+    monkeypatch.setattr(syn.socket, "getaddrinfo", _fake_getaddrinfo(table))
+    with pytest.raises(UnsafeTeacherUrl) as exc:
+        _run(syn.check_teacher_destination(url))
+    assert exc.value.status == 422
+    assert exc.value.code == "unsafe_teacher_url"
+
+
+def test_teacher_destination_allows_localhost_private_and_public(monkeypatch):
+    table = {
+        "localhost": ["127.0.0.1", "::1"],
+        "ollama.lan": ["192.168.1.20"],
+        "teacher.example.com": ["93.184.216.34"],
+        "10.0.0.7": ["10.0.0.7"],
+    }
+    monkeypatch.setattr(syn.socket, "getaddrinfo", _fake_getaddrinfo(table))
+    for url in [
+        "http://localhost:11434/v1",
+        "http://ollama.lan:8080/v1",
+        "https://teacher.example.com/v1",
+        "http://10.0.0.7:8000/v1",
+    ]:
+        _run(syn.check_teacher_destination(url))  # must not raise
+
+
+def test_teacher_destination_none_is_noop(monkeypatch):
+    def boom(*a, **k):
+        raise AssertionError("no DNS lookup expected")
+
+    monkeypatch.setattr(syn.socket, "getaddrinfo", boom)
+    _run(syn.check_teacher_destination(None))
+    _run(syn.check_teacher_destination(""))
+
+
+def test_teacher_destination_rejects_non_http_scheme_before_lookup(monkeypatch):
+    def boom(*a, **k):
+        raise AssertionError("scheme must be rejected before DNS")
+
+    monkeypatch.setattr(syn.socket, "getaddrinfo", boom)
+    with pytest.raises(InvalidRequest):
+        _run(syn.check_teacher_destination("gopher://169.254.169.254/"))

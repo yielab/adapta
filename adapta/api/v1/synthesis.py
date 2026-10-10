@@ -101,11 +101,12 @@ async def synthesize_dataset(
     if await count_project_chunks(db, project_id) == 0:
         raise InvalidRequest(message="No indexed documents found. Upload and index files first.")
 
-    from adapta.services.synthesis import check_synthesis_args
+    from adapta.services.synthesis import check_synthesis_args, check_teacher_destination
 
     check_synthesis_args(
         req.mode, req.task, req.n_pairs_per_chunk, req.teacher_base_url
     )
+    await check_teacher_destination(req.teacher_base_url)
 
     dataset_id = str(uuid.uuid4())
     is_behavior = req.mode == "behavior"

@@ -239,6 +239,16 @@ class EvalGateFailed(DomainError):
 
 
 @dataclass
+class UnsafeTeacherUrl(DomainError):
+    """A synthesis teacher URL points at a blocked destination (HTTP 422, code
+    ``unsafe_teacher_url``): link-local addresses (cloud metadata), the metadata hostname,
+    or a host that does not resolve. Loopback and private ranges are allowed."""
+
+    code: str = field(default="unsafe_teacher_url", init=False)
+    status: int = field(default=422, init=False)
+
+
+@dataclass
 class RateLimited(DomainError):
     """Too many requests from this client (HTTP 429)."""
 

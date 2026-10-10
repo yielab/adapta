@@ -21,16 +21,19 @@ layer) owns the DB record; chunk loading takes a session so it stays out of the 
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import json
 import logging
 import math
 import re
+import socket
 import uuid
 from pathlib import Path
 from typing import Any, List, Optional, Tuple
+from urllib.parse import urlsplit
 
 from adapta.config import settings
-from adapta.domain.errors import InternalError, InvalidRequest
+from adapta.domain.errors import InternalError, InvalidRequest, UnsafeTeacherUrl
 
 logger = logging.getLogger(__name__)
 
@@ -211,6 +214,48 @@ def check_teacher_url(url: Optional[str]) -> Optional[str]:
     if not re.match(r"^https?://\S+$", url):
         raise InvalidRequest(message="teacher_base_url must be an http(s) URL.")
     return url
+
+
+_BLOCKED_TEACHER_HOSTNAMES = frozenset({"metadata.google.internal"})
+
+
+def _is_blocked_address(address: str) -> bool:
+    """Link-local (incl. 169.254.0.0/16 and fe80::/10) or unparseable. Fails closed."""
+    try:
+        ip = ipaddress.ip_address(address.split("%", 1)[0])
+    except ValueError:
+        return True
+    if ip.version == 6 and ip.ipv4_mapped is not None:
+        ip = ip.ipv4_mapped
+    return ip.is_link_local
+
+
+async def check_teacher_destination(url: Optional[str]) -> None:
+    """Block teacher URLs that reach cloud metadata or link-local space.
+
+    Runs after the format check, against every address the hostname resolves to, so a
+    public-looking name that points at 169.254.169.254 is refused too. Self-hosted teachers
+    on localhost or the LAN stay allowed. Call from async code before queuing a job.
+    """
+    if not url:
+        return
+    check_teacher_url(url)
+    host = (urlsplit(url).hostname or "").rstrip(".").lower()
+    if not host or host in _BLOCKED_TEACHER_HOSTNAMES:
+        raise UnsafeTeacherUrl(message="teacher_base_url points at a blocked host.")
+    try:
+        infos = await asyncio.to_thread(socket.getaddrinfo, host, None)
+    except OSError as exc:
+        raise UnsafeTeacherUrl(
+            message="teacher_base_url host does not resolve.", internal_detail=f"{host}: {exc}"
+        ) from exc
+    for info in infos:
+        address = str(info[4][0])
+        if _is_blocked_address(address):
+            raise UnsafeTeacherUrl(
+                message="teacher_base_url points at a blocked address (link-local or cloud metadata).",
+                internal_detail=f"{host} resolved to {address}",
+            )
 
 
 # ---------------------------------------------------------------------------

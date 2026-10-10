@@ -98,6 +98,8 @@ does today:
       recommended — usable directly as an adapter eval set). Near-duplicates are
       dropped. It runs in the background (≈ 20–30 s for a dozen short documents
       on CPU); download the result as JSONL from the dataset row.
+      A teacher URL that resolves to a link-local or cloud-metadata address (for example
+      `169.254.169.254`) is refused with a 422 `unsafe_teacher_url`; localhost and LAN teachers are allowed.
 
     **Reviewing and curating a dataset** — once a dataset is `valid`, a
     **Review** button appears next to it. It opens a paginated row viewer where
