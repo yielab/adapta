@@ -65,5 +65,5 @@ async def test_garbage_control_fails(tmp_path):
     gguf = await adapter_conversion.convert_peft_to_gguf(
         work, base_config_dir=resolve(BASE).hf_config_dir()
     )
-    metrics = await _report("garbage-control", str(gguf), "freeform")
+    metrics = await _report("garbage-control", str(gguf), "classify")
     assert not metrics["passed"], metrics

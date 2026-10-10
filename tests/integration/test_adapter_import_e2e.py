@@ -168,7 +168,7 @@ async def test_classify_pass_reaches_passed_and_serves(client, admin):
 async def test_garbage_control_fails_the_gate_and_is_refused(client, admin):
     h, team_id = admin["headers"], admin["team_id"]
     pid = await _project(client, h, team_id, "adapter e2e control")
-    did = await _upload_eval_set(client, h, pid, "garbage-control", "freeform")
+    did = await _upload_eval_set(client, h, pid, "garbage-control", "classify")
     aid = await _upload_adapter(client, h, pid, "garbage-control", did)
 
     a = await _wait_terminal(client, h, pid, aid)
