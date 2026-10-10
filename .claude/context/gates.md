@@ -12,7 +12,7 @@ Never `pip install`; to change deps edit `pyproject.toml` then `make up` (host).
 | `specs/openapi.yaml` | `make validate-spec` → `make generate` → `make check-models` → `make test` → `make test-contracts` (needs the live server) |
 | ORM / migration | `make migrate` → `make migrate-test` (up→down→up) |
 | Eval / dataset schema | `make test` (`test_dataset_bundles`, `test_eval_gate`) |
-| Adapter import, gate or conversion (`services/adapters.py`, `services/eval_gate.py`, `core/adapter_conversion.py`, `worker/main.py`) | `make test` → `docker compose restart worker` → in the app container: `ADAPTA_RUN_ADAPTER_E2E=1 pytest -m integration tests/integration/test_adapter_import_e2e.py` and `ADAPTA_RUN_EVAL_CPU=1 pytest -o addopts="" tests/test_eval_gate_cpu.py` |
+| Adapter import, gate or conversion (`services/adapters.py`, `services/eval_gate.py`, `core/adapter_conversion.py`, `worker/main.py`, `api/v1/endpoints.py`) | `make test` → `docker compose restart worker` → in the app container: `ADAPTA_RUN_ADAPTER_E2E=1 pytest -m integration tests/integration/test_adapter_import_e2e.py` and `ADAPTA_RUN_EVAL_CPU=1 pytest -o addopts="" tests/test_eval_gate_cpu.py` |
 | Retrieval path (`services/rag.py`, `services/documents.py`, chunk metadata) | `make test` (`test_rag_hybrid`, `test_basic`) → `tests/integration/test_rag_e2e.py` (asserts the planted fact + citations) |
 | Retrieval quality (chunking, embeddings, fusion, rerank, thresholds) | `make test` → `make golden` (live; recall@5 / MRR / p50 vs `tests/fixtures/golden/floor.json`) |
 | Model catalog (`core/model_catalog.py`, defaults in `config.py`) | `make test` (`test_model_catalog`) → `make validate-spec` → `make check-models` → `make test-contracts` if `BaseModelInfo` changed |
