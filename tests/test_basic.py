@@ -16,15 +16,15 @@ def test_error_taxonomy():
         InferenceFailed,
         InvalidRequest,
         NotFound,
-        TrainingFailed,
         Unauthorized,
+        UnknownJobKind,
     )
 
     assert InvalidRequest(message="x").status == 400
     assert Unauthorized(message="x").status == 401
     assert Forbidden(message="x").status == 403
     assert NotFound(message="x").status == 404
-    assert TrainingFailed(message="x").status == 500
+    assert UnknownJobKind(message="x").status == 500
     assert EvalGateFailed(message="x").status == 422
     assert InferenceFailed(message="x").status == 500
 
@@ -131,7 +131,7 @@ def test_extract_text_html_strips_tags(tmp_path):
 
 
 def test_dataset_validation_valid(tmp_path):
-    from adapta.services.training import validate_dataset
+    from adapta.services.datasets import validate_dataset
 
     ds = tmp_path / "data.jsonl"
     ds.write_text(
@@ -140,14 +140,14 @@ def test_dataset_validation_valid(tmp_path):
         + json.dumps({"prompt": "What is 2+2?", "response": "4"})
         + "\n"
     )
-    valid, error, count, _imgs = validate_dataset(ds)
+    valid, error, count = validate_dataset(ds)
     assert valid
     assert error is None
     assert count == 2
 
 
 def test_dataset_validation_with_optional_fields(tmp_path):
-    from adapta.services.training import validate_dataset
+    from adapta.services.datasets import validate_dataset
 
     ds = tmp_path / "data.jsonl"
     ds.write_text(
@@ -161,15 +161,14 @@ def test_dataset_validation_with_optional_fields(tmp_path):
         )
         + "\n"
     )
-    valid, error, count, _imgs = validate_dataset(ds)
+    valid, error, count = validate_dataset(ds)
     assert valid
     assert count == 1
 
 
-def test_dataset_validation_image_rows_require_bundle(tmp_path):
-    """Image rows in a PLAIN .jsonl upload are rejected with a clear pointer to
-    the .zip bundle path (§V2.1) — images can't ride a bare manifest."""
-    from adapta.services.training import validate_dataset
+def test_dataset_validation_image_rows_rejected(tmp_path):
+    """Image rows are not part of the dataset contract (additionalProperties: false)."""
+    from adapta.services.datasets import validate_dataset
 
     ds = tmp_path / "data.jsonl"
     ds.write_text(
@@ -178,46 +177,46 @@ def test_dataset_validation_image_rows_require_bundle(tmp_path):
         )
         + "\n"
     )
-    valid, error, count, _imgs = validate_dataset(ds)
+    valid, error, count = validate_dataset(ds)
     assert not valid
-    assert "zip" in (error or "").lower()
+    assert "schema violation" in (error or "")
     assert count == 0
 
 
 def test_dataset_validation_missing_response(tmp_path):
-    from adapta.services.training import validate_dataset
+    from adapta.services.datasets import validate_dataset
 
     ds = tmp_path / "bad.jsonl"
     ds.write_text(json.dumps({"prompt": "Hello?"}) + "\n")
-    valid, error, count, _imgs = validate_dataset(ds)
+    valid, error, count = validate_dataset(ds)
     assert not valid
     assert "response" in error
 
 
 def test_dataset_validation_empty_prompt(tmp_path):
-    from adapta.services.training import validate_dataset
+    from adapta.services.datasets import validate_dataset
 
     ds = tmp_path / "bad.jsonl"
     ds.write_text(json.dumps({"prompt": "", "response": "A"}) + "\n")
-    valid, error, count, _imgs = validate_dataset(ds)
+    valid, error, count = validate_dataset(ds)
     assert not valid
 
 
 def test_dataset_validation_empty(tmp_path):
-    from adapta.services.training import validate_dataset
+    from adapta.services.datasets import validate_dataset
 
     ds = tmp_path / "empty.jsonl"
     ds.write_text("")
-    valid, error, count, _imgs = validate_dataset(ds)
+    valid, error, count = validate_dataset(ds)
     assert not valid
 
 
 def test_dataset_validation_bad_json(tmp_path):
-    from adapta.services.training import validate_dataset
+    from adapta.services.datasets import validate_dataset
 
     ds = tmp_path / "bad.jsonl"
     ds.write_text("not json\n")
-    valid, error, count, _imgs = validate_dataset(ds)
+    valid, error, count = validate_dataset(ds)
     assert not valid
     assert "invalid JSON" in error
 

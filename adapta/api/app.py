@@ -3,8 +3,8 @@
 Authoritative API surface: ``specs/openapi.yaml``.  The route list here
 is a navigational index only — the spec is the source of truth.
 
-Resource groups: health, GPU, auth, models, projects, files, datasets,
-jobs, endpoints, keys, serving (chat), synthesis, usage, settings, teams.
+Resource groups: health, GPU, auth, models, projects, files, datasets, endpoints,
+keys, serving (chat), synthesis, usage, settings, teams.
 
 Error handling: all exceptions are translated to a single ``ErrorResponse``
 envelope by the registered handlers below.  The catch-all handler never
@@ -35,7 +35,6 @@ from adapta.api.v1 import (
     datasets,
     endpoints,
     files,
-    jobs,
     keys,
     models,
     projects,
@@ -61,7 +60,7 @@ async def lifespan(app: FastAPI):
     settings.ensure_dirs()
 
     # Defense-in-depth against decompression-bomb images: cap how many pixels PIL will
-    # decode anywhere in the process (bundle validation, training, vision eval). A crafted
+    # decode anywhere in the process (vision chat). A crafted
     # image can declare modest dimensions yet expand to billions of pixels on .load().
     try:
         from PIL import Image
@@ -77,7 +76,7 @@ async def lifespan(app: FastAPI):
         await queue.connect()
         logger.info("Job queue connected")
     except Exception as exc:
-        logger.warning("Job queue connection failed (training jobs unavailable): %s", exc)
+        logger.warning("Job queue connection failed (background jobs unavailable): %s", exc)
 
     # Reconcile background-task orphans left transient by a prior crash (A4.10):
     # a file stuck at `processing` / a dataset at `validating` has no live task to
@@ -387,7 +386,6 @@ def create_app() -> FastAPI:
     app.include_router(projects.router, prefix=prefix)
     app.include_router(files.router, prefix=prefix)
     app.include_router(datasets.router, prefix=prefix)
-    app.include_router(jobs.router, prefix=prefix)
     app.include_router(endpoints.router, prefix=prefix)
     app.include_router(keys.router, prefix=prefix)
     app.include_router(chat.router, prefix=prefix)

@@ -27,13 +27,6 @@ export interface DatasetSummaryData {
   total: number;
   valid: number;
 }
-export interface JobSummaryData {
-  total: number;
-  running: number;
-  last_status: string | null;
-  last_eval_score: number | null;
-  gate_passed: boolean | null;
-}
 export interface EndpointSummaryData {
   exists: boolean;
   slug: string | null;
@@ -47,7 +40,6 @@ export interface ProjectSummary {
   stage: string;
   files: FileSummaryData;
   datasets: DatasetSummaryData;
-  jobs: JobSummaryData;
   endpoint: EndpointSummaryData;
   keys_active: number;
   usage_7d: UsageSummaryData;
@@ -102,7 +94,6 @@ export interface BaseModelInfo {
   use_case: string;
   best_for: BestFor[];
   available: boolean;
-  train_vram_gb: number | null;
   serve_ram_gb: number | null;
   hf_repo_id: string;
   notes: string;
@@ -123,8 +114,6 @@ export interface Dataset {
   num_samples: number | null;
   validation_error: string | null;
   created_at: string;
-  modality: Modality;
-  num_images: number | null;
   source_dataset_id: string | null;
 }
 
@@ -133,37 +122,6 @@ export interface DatasetRowsResponse {
   total: number;
   page: number;
   page_size: number;
-}
-
-export type JobStatus = "queued" | "running" | "succeeded" | "failed" | "cancelled";
-
-export interface EvalMetrics {
-  score: number;
-  base_score: number | null;
-  score_delta: number | null;
-  held_out: number | null;
-  metrics: Record<string, unknown> | null;
-}
-
-export interface TrainingJob {
-  id: string;
-  status: JobStatus;
-  progress: number;
-  logs: string | null;
-  adapter_path: string | null;
-  eval_score: number | null;
-  eval_passed: boolean | null;
-  eval_metrics: EvalMetrics | null;
-  error_message: string | null;
-  created_at: string;
-}
-
-export interface AdapterProvenance {
-  job_id: string;
-  eval_score: number;
-  base_score: number | null;
-  score_delta: number | null;
-  gate: "absolute" | "improvement";
 }
 
 export interface RetrievalSummary {
@@ -178,9 +136,8 @@ export interface Endpoint {
   modality: string;
   project_type: ProjectType;
   created_at: string;
-  adapter: AdapterProvenance | null;
   retrieval: RetrievalSummary | null;
-  adapter_path: string | null; // deprecated
+  adapter_path: string | null;
 }
 
 export interface ApiKey {

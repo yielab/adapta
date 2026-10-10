@@ -108,7 +108,7 @@ class Settings(BaseSettings):
     auth_rate_limit_max: int = 20  # allowed attempts per window per key
     auth_rate_limit_window_seconds: int = 60
 
-    # Training — eval gate. An adapter is promotable if EITHER it clears the absolute
+    # Eval gate. An adapter is promotable if EITHER it clears the absolute
     # score floor (a strong fine-tune), OR it clears a low sanity floor AND meaningfully
     # beats the base model on the same held-out split (it demonstrably helped). The
     # improvement path matters because the absolute score is exp(-held_out_perplexity):
@@ -117,45 +117,23 @@ class Settings(BaseSettings):
     eval_score_threshold: float = 0.6  # absolute "strong adapter" pass
     eval_min_improvement: float = 0.05  # min score gain over base for the improvement path
     eval_min_floor: float = 0.05  # sanity floor for the improvement path (not garbage)
-    # Minimum dataset size to start a training job. Below this the held-out
-    # eval split collapses (e.g. 1 row → 0 held out → the gate scores the training
-    # rows and only measures memorization), so we reject the job up front.
-    min_training_samples: int = 10
-    # Free-disk preflight for the worker: bail before training if the adapters
-    # volume has less than this much free, rather than dying deep in a run.
-    min_free_disk_gb: float = 5.0
 
-    # Image dataset bundles (§V2): caps applied while extracting/validating a
-    # .zip bundle (JSONL manifest + images). Outside these a bundle is rejected
-    # at validation, never accepted into a run that would die mid-train.
-    max_bundle_files: int = 2000
-    max_bundle_uncompressed_mb: int = 500
-    max_image_mb: int = 10
-    max_image_side_px: int = 8192
-    # Hard cap on a single dataset UPLOAD (the compressed .zip / .jsonl on the wire),
-    # enforced while streaming to disk so a hostile/oversized upload can't fill the disk
-    # before validation even runs. Distinct from max_bundle_uncompressed_mb (post-extract).
+    # Hard cap on a single dataset UPLOAD, enforced while streaming to disk so a
+    # hostile/oversized upload can't fill the disk before validation even runs.
     max_upload_mb: int = 1024
 
-    # Vision serving (§V4): caps on image content-parts per chat request.
-    # Decoded size/dimensions reuse max_image_mb / max_image_side_px above.
+    # Image limits for vision chat (§V4): decoded size/dimensions per image, and
+    # the number of image content-parts per request.
+    max_image_mb: int = 10
+    max_image_side_px: int = 8192
     max_images_per_request: int = 4
 
-    # Fine-tune serving (A3.1): PEFT adapters are converted to a GGUF LoRA so the
+    # Adapter serving (A3.1): PEFT adapters are converted to a GGUF LoRA so the
     # single llama-cpp runtime can serve them via `lora_path`. The converter is
-    # llama.cpp's official convert_lora_to_gguf.py, vendored into the worker image.
+    # llama.cpp's official convert_lora_to_gguf.py.
     lora_convert_dir: Path = Path("/opt/llamacpp")  # holds convert_lora_to_gguf.py
     lora_gguf_filename: str = "adapter.gguf"  # converted artifact, stored beside safetensors
     lora_outtype: str = "f16"  # GGUF LoRA quant for conversion (f16/f32/q8_0)
-
-    # Serving backend (D3): llama-cpp is the default and the only path for RAG/CPU
-    # and VLM mmproj serving. Set to "vllm" to route text LoRA endpoints through
-    # an external vLLM server (see OPERATIONS.md §9 and docker-compose.yml's
-    # ``profiles: [vllm]``). vLLM serves N adapters from one GPU process via
-    # continuous batching, closing the density gap confirmed in D0 Q3.
-    serving_backend: str = "llamacpp"  # "llamacpp" (default) | "vllm"
-    vllm_base_url: str = "http://vllm-server:8000"  # vllm-server service URL
-    vllm_max_loras: int = 8  # max simultaneously-loaded LoRA adapters in vLLM
 
     # CORS
     cors_origins: list[str] = []  # empty = no CORS; override in production via ADAPTA_CORS_ORIGINS

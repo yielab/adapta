@@ -20,10 +20,9 @@ from adapta.models.generated import (
     DatasetCurateRequest,
     DatasetResponse,
     DatasetRowsResponse,
-    Modality,
 )
 from adapta.services.auth import get_current_user, require_team_member, require_team_writer
-from adapta.services.training import validate_dataset
+from adapta.services.datasets import validate_dataset
 
 logger = logging.getLogger(__name__)
 
@@ -36,8 +35,6 @@ def _ds_resp(d: Dataset) -> DatasetResponse:
         name=d.name,
         status=d.status.value,
         num_samples=d.num_samples,
-        modality=Modality(d.modality),
-        num_images=d.num_images,
         validation_error=d.validation_error,
         created_at=d.created_at.isoformat(),
         source_dataset_id=d.source_dataset_id,
@@ -54,7 +51,7 @@ async def _get_finetune_project(db: AsyncSession, project_id: str) -> Project:
     return project
 
 
-async def _validate_in_background(dataset_id: str, path: Path, is_bundle: bool = False) -> None:
+async def _validate_in_background(dataset_id: str, path: Path) -> None:
     """Validate an uploaded dataset out-of-band and record the terminal status.
 
     Runs in its own DB session (the request's session is already closed). The row
@@ -85,40 +82,16 @@ async def _validate_in_background(dataset_id: str, path: Path, is_bundle: bool =
                 )
                 return
 
-            manifest, bundle_dir = path, None
-            if is_bundle:
-                # Extract the zip beside it (zip-slip/caps enforced) and validate
-                # the manifest against the extracted images (§V2.1).
-                from adapta.services.training import BundleError, extract_bundle
-
-                bundle_dir = path.parent / f"{dataset_id}_bundle"
-                try:
-                    manifest = extract_bundle(path, bundle_dir)
-                except BundleError as exc:
-                    dataset.status = DatasetStatus.invalid
-                    dataset.validation_error = str(exc)
-                    await db.commit()
-                    logger.info("Dataset bundle rejected: %s — %s", dataset_id, exc)
-                    return
-
-            is_valid, error, num_samples, num_images = validate_dataset(
-                manifest, bundle_dir=bundle_dir
-            )
+            is_valid, error, num_samples = validate_dataset(path)
             dataset.status = DatasetStatus.valid if is_valid else DatasetStatus.invalid
             dataset.validation_error = error
             dataset.num_samples = num_samples
-            dataset.num_images = num_images or None
-            dataset.modality = "vision" if num_images else "text"
-            if is_valid and is_bundle:
-                # Training (§V3) reads the manifest; images resolve relative to it.
-                dataset.storage_path = str(manifest)
             await db.commit()
             logger.info(
-                "Dataset validation task done: %s -> %s (%s samples, %s images)",
+                "Dataset validation task done: %s -> %s (%s samples)",
                 dataset_id,
                 dataset.status.value,
                 num_samples,
-                num_images,
             )
     except Exception:
         logger.exception("Dataset validation task crashed for %s", dataset_id)
@@ -148,12 +121,8 @@ async def upload_dataset(
     await require_team_writer(db, current_user.id, project.team_id)
 
     filename = file.filename or "dataset.jsonl"
-    is_bundle = filename.endswith(".zip")
-    if not filename.endswith(".jsonl") and not is_bundle:
-        raise InvalidRequest(
-            message="Dataset must be a .jsonl file, or a .zip bundle (one root "
-            ".jsonl manifest + the images it references) for image datasets."
-        )
+    if not filename.endswith(".jsonl"):
+        raise InvalidRequest(message="Dataset must be a .jsonl file.")
     # Truncate from the front (keeps the extension): the name is metadata, and an
     # over-long one would overflow datasets.name String(256) → 500.
     filename = filename[-200:]
@@ -181,7 +150,7 @@ async def upload_dataset(
     # committing here ensures the row is visible to that session immediately.
     dataset_id = dataset.id
     await db.commit()
-    background_tasks.add_task(_validate_in_background, dataset_id, dest, is_bundle)
+    background_tasks.add_task(_validate_in_background, dataset_id, dest)
 
     return {"id": dataset_id, "name": filename, "status": "validating"}
 
@@ -279,24 +248,22 @@ async def curate_dataset(
     if not body.rows:
         raise InvalidRequest(message="rows must not be empty")
 
-    # Write rows to a temp file and validate against the training dataset schema.
+    # Write rows to a temp file and validate against the dataset schema.
     # Use a temp path so we never leave a partial file in the datasets dir on error.
     ds_dir = settings.datasets_dir / project_id
     ds_dir.mkdir(parents=True, exist_ok=True)
 
-    def _write_and_validate() -> tuple[bool, str | None, int, int, Path]:
+    def _write_and_validate() -> tuple[bool, str | None, int, Path]:
         with tempfile.NamedTemporaryFile(
             mode="w", suffix=".jsonl", dir=ds_dir, delete=False, encoding="utf-8"
         ) as tmp:
             tmp_path = Path(tmp.name)
             for row in body.rows:
                 tmp.write(json.dumps(row) + "\n")
-        is_valid, error, num_samples, num_images = validate_dataset(tmp_path)
-        return is_valid, error, num_samples, num_images or 0, tmp_path
+        is_valid, error, num_samples = validate_dataset(tmp_path)
+        return is_valid, error, num_samples, tmp_path
 
-    is_valid, error, num_samples, num_images, tmp_path = await asyncio.to_thread(
-        _write_and_validate
-    )
+    is_valid, error, num_samples, tmp_path = await asyncio.to_thread(_write_and_validate)
 
     if not is_valid:
         tmp_path.unlink(missing_ok=True)
@@ -312,8 +279,6 @@ async def curate_dataset(
         storage_path="",  # filled after flush gives us the id
         status=DatasetStatus.valid,
         num_samples=num_samples,
-        num_images=num_images if num_images else None,
-        modality="vision" if num_images else "text",
         source_dataset_id=source.id,
     )
     db.add(curated)

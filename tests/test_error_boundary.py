@@ -20,8 +20,8 @@ from adapta.domain.errors import (
     ProjectNotFound,
     RateLimited,
     Timeout,
-    TrainingFailed,
     Unauthorized,
+    UnknownJobKind,
 )
 
 ALL_DOMAIN_ERRORS = [
@@ -32,7 +32,7 @@ ALL_DOMAIN_ERRORS = [
     (Conflict, 409, "conflict"),
     (ModelNotFound, 404, "model_not_found"),
     (ProjectNotFound, 404, "project_not_found"),
-    (TrainingFailed, 500, "training_failed"),
+    (UnknownJobKind, 500, "unknown_job_kind"),
     (InferenceFailed, 500, "inference_failed"),
     (EmbeddingFailed, 500, "embedding_failed"),
     (EvalGateFailed, 422, "eval_gate_failed"),

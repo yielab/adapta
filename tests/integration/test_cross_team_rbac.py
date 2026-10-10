@@ -81,12 +81,11 @@ async def test_cross_team_isolation(client, admin):
         await client.delete(f"/v1/projects/{a_pid}", headers=b_headers), "delete project"
     )
 
-    # Every sub-resource surface refuses too: files, datasets, jobs, endpoint,
+    # Every sub-resource surface refuses too: files, datasets, endpoint,
     # keys, usage — both reads and writes.
     for what, resp in [
         ("list files", await client.get(f"/v1/projects/{a_pid}/files", headers=b_headers)),
         ("list datasets", await client.get(f"/v1/projects/{a_pid}/datasets", headers=b_headers)),
-        ("list jobs", await client.get(f"/v1/projects/{a_pid}/jobs", headers=b_headers)),
         ("get endpoint", await client.get(f"/v1/projects/{a_pid}/endpoint", headers=b_headers)),
         ("list keys", await client.get(f"/v1/projects/{a_pid}/keys", headers=b_headers)),
         ("get usage", await client.get(f"/v1/projects/{a_pid}/usage", headers=b_headers)),
@@ -95,12 +94,6 @@ async def test_cross_team_isolation(client, admin):
             "create key",
             await client.post(
                 f"/v1/projects/{a_pid}/keys", headers=b_headers, json={"name": "stolen"}
-            ),
-        ),
-        (
-            "enqueue job",
-            await client.post(
-                f"/v1/projects/{a_pid}/jobs", headers=b_headers, json={"dataset_id": "x"}
             ),
         ),
         (

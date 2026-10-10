@@ -7,7 +7,6 @@ import type {
   ProjectFile,
   BaseModelInfo,
   Dataset,
-  TrainingJob,
   Endpoint,
   ApiKey,
   ApiKeyCreated,
@@ -123,12 +122,6 @@ export const api = {
     request<Dataset>(`${V1}/projects/${pid}/datasets/${did}/curate`, { method: "POST", body: { rows } }),
   synthesize: (pid: string, opts: { n_pairs_per_chunk?: number; max_chunks?: number; system_prompt?: string }) =>
     request<{ dataset_id: string; status: string; message: string }>(`${V1}/projects/${pid}/datasets/synthesize`, { method: "POST", body: opts }),
-
-  // Jobs
-  listJobs: (pid: string) => request<TrainingJob[]>(`${V1}/projects/${pid}/jobs`),
-  createJob: (pid: string, dataset_id: string, training_config?: Record<string, unknown>) =>
-    request<TrainingJob>(`${V1}/projects/${pid}/jobs`, { method: "POST", body: { dataset_id, training_config } }),
-  getJob: (pid: string, jid: string) => request<TrainingJob>(`${V1}/projects/${pid}/jobs/${jid}`),
 
   // Endpoint
   getEndpoint: (pid: string) => request<Endpoint>(`${V1}/projects/${pid}/endpoint`),

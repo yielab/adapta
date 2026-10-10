@@ -325,16 +325,12 @@ async def chat(
         Message(role=m["role"], content=flatten_text(m["content"])) for m in messages
     ]
 
-    # Backend selection (D3): llama-cpp default; vLLM when ADAPTA_SERVING_BACKEND=vllm
-    # and the request carries a text LoRA adapter. Vision path (_chat_vision) always
-    # uses llama-cpp directly — vLLM does not support VLM LoRA layers.
     backend = get_backend(model_name, adapter_path)
     handle = await backend.prepare(model_name, adapter_path)
 
     # Fit prompt + answer into the model's context window before dispatch.
-    # count_prompt_tokens / context_size are synchronous (llama-cpp: C call; vLLM:
-    # char//4 estimate); run the whole fit off the event loop so a large prompt
-    # never stalls other requests (e.g. /health).
+    # count_prompt_tokens / context_size are synchronous (llama-cpp: C call); run the whole fit off the event loop so a large
+    # prompt never stalls other requests (e.g. /health).
     def _fit():
         return _fit_context(
             count_fn=lambda sp: handle.count_prompt_tokens(inference_messages, sp),
@@ -536,7 +532,7 @@ async def chat_stream(
     chunk_id = f"chatcmpl-{uuid.uuid4().hex[:8]}"
     created = int(time.time())
 
-    # llama-cpp: exact tokenizer count.  vLLM: char//4 approximation (no tokenizer RPC).
+    # llama-cpp: exact tokenizer count.
     prompt_tokens = handle.count_prompt_tokens(inference_messages, full_system)
     # Each iteration is one generated token, so counting iterations is exact.
     completion_tokens = 0

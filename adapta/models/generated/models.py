@@ -25,23 +25,10 @@ class Modality(Enum):
     vision = "vision"
 
 
-class Gate(Enum):
-    absolute = "absolute"
-    improvement = "improvement"
-
-
 class InvitationStatus(Enum):
     pending = "pending"
     accepted = "accepted"
     revoked = "revoked"
-
-
-class JobStatus(Enum):
-    queued = "queued"
-    running = "running"
-    succeeded = "succeeded"
-    failed = "failed"
-    cancelled = "cancelled"
 
 
 class EndpointStatus(Enum):
@@ -151,14 +138,6 @@ class DatasetSummary(BaseModel):
     valid: int
 
 
-class JobSummary(BaseModel):
-    total: int
-    running: int
-    last_status: str | None = None
-    last_eval_score: float | None = None
-    gate_passed: bool | None = None
-
-
 class EndpointSummary(BaseModel):
     exists: bool
     slug: str | None = None
@@ -174,7 +153,6 @@ class ProjectSummary(BaseModel):
     stage: str
     files: FileSummary
     datasets: DatasetSummary
-    jobs: JobSummary
     endpoint: EndpointSummary
     keys_active: int
     usage_7d: UsageSummary
@@ -195,8 +173,6 @@ class DatasetResponse(BaseModel):
     name: str
     status: str
     num_samples: Annotated[int | None, Field(...)]
-    modality: Modality
-    num_images: Annotated[int | None, Field(...)]
     validation_error: Annotated[str | None, Field(...)]
     created_at: str
     source_dataset_id: Annotated[str | None, Field(...)]
@@ -213,50 +189,6 @@ class DatasetCurateRequest(BaseModel):
     rows: Annotated[list[dict[str, Any]], Field(min_length=1)]
 
 
-class TrainingConfigInput(BaseModel):
-    num_epochs: Annotated[int, Field(ge=1, le=100)] = 3
-    batch_size: Annotated[int, Field(ge=1, le=128)] = 4
-    learning_rate: Annotated[float, Field(ge=1e-06, le=0.1)] = 0.0002
-    lora_r: Annotated[int, Field(ge=1, le=256)] = 16
-    lora_alpha: Annotated[int, Field(ge=1, le=512)] = 32
-    lora_dropout: Annotated[float, Field(ge=0.0, le=0.9)] = 0.1
-    max_seq_length: Annotated[int, Field(ge=16, le=8192)] = 512
-    dpo_beta: Annotated[float, Field(ge=0.0, le=1.0)] = 0.1
-    seed: Annotated[int, Field(ge=0, le=2147483647)] = 42
-
-
-class Method(Enum):
-    sft = "sft"
-    dpo = "dpo"
-
-
-class JobCreateRequest(BaseModel):
-    dataset_id: str
-    method: Method | None = None
-    training_config: TrainingConfigInput | None = None
-
-
-class JobResponse(BaseModel):
-    id: str
-    status: JobStatus
-    progress: Annotated[float, Field(ge=0.0, le=1.0)]
-    logs: Annotated[str | None, Field(...)]
-    adapter_path: Annotated[str | None, Field(...)]
-    eval_score: Annotated[float | None, Field(...)]
-    eval_passed: Annotated[bool | None, Field(...)]
-    eval_metrics: Annotated[dict[str, Any] | None, Field(...)]
-    error_message: Annotated[str | None, Field(...)]
-    created_at: str
-
-
-class AdapterProvenance(BaseModel):
-    job_id: str
-    eval_score: float
-    base_score: float | None = None
-    score_delta: float | None = None
-    gate: Gate
-
-
 class RetrievalSummary(BaseModel):
     indexed_chunks: int
 
@@ -269,7 +201,6 @@ class EndpointResponse(BaseModel):
     modality: Modality
     project_type: ProjectType
     created_at: str
-    adapter: Annotated[AdapterProvenance | None, Field(...)]
     retrieval: Annotated[RetrievalSummary | None, Field(...)]
     adapter_path: Annotated[str | None, Field(deprecated=True)]
 
@@ -362,7 +293,6 @@ class BaseModelInfo(BaseModel):
     use_case: str
     best_for: list[str]
     available: bool
-    train_vram_gb: int | None = None
     serve_ram_gb: int | None = None
     hf_repo_id: str
     notes: str

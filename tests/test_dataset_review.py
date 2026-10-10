@@ -9,7 +9,7 @@ import json
 from pathlib import Path
 
 from adapta.api.v1.datasets import _read_jsonl
-from adapta.services.training import validate_dataset
+from adapta.services.datasets import validate_dataset
 
 # ── _read_jsonl ─────────────────────────────────────────────────────────────
 
@@ -76,25 +76,25 @@ def test_curate_valid_sft_rows_pass_validation(tmp_path):
     rows = [{"prompt": f"Q{i}?", "response": f"A{i}."} for i in range(12)]
     p = tmp_path / "curated.jsonl"
     _make_jsonl(p, rows)
-    is_valid, error, num_samples, _ = validate_dataset(p)
+    is_valid, error, num_samples = validate_dataset(p)
     assert is_valid, error
     assert num_samples == 12
 
 
-def test_curate_valid_dpo_rows_pass_validation(tmp_path):
+def test_curate_dpo_rows_are_rejected(tmp_path):
     rows = [{"prompt": f"Q{i}?", "chosen": f"C{i}.", "rejected": f"R{i}."} for i in range(15)]
     p = tmp_path / "curated_dpo.jsonl"
     _make_jsonl(p, rows)
-    is_valid, error, num_samples, _ = validate_dataset(p)
-    assert is_valid, error
-    assert num_samples == 15
+    is_valid, error, _ = validate_dataset(p)
+    assert not is_valid
+    assert "response" in error
 
 
 def test_curate_invalid_rows_fail_validation(tmp_path):
     rows = [{"prompt": "", "response": ""}]  # blank prompt/response
     p = tmp_path / "bad.jsonl"
     _make_jsonl(p, rows)
-    is_valid, error, _, _ = validate_dataset(p)
+    is_valid, error, _ = validate_dataset(p)
     assert not is_valid
     assert error
 
@@ -102,20 +102,8 @@ def test_curate_invalid_rows_fail_validation(tmp_path):
 def test_curate_empty_file_fails_validation(tmp_path):
     p = tmp_path / "empty.jsonl"
     p.write_text("\n")
-    is_valid, error, _, _ = validate_dataset(p)
+    is_valid, error, _ = validate_dataset(p)
     assert not is_valid
-
-
-def test_curate_mixed_sft_dpo_fails_validation(tmp_path):
-    rows = [
-        {"prompt": "Q1?", "response": "R1."},
-        {"prompt": "Q2?", "chosen": "C.", "rejected": "R."},
-    ]
-    p = tmp_path / "mixed.jsonl"
-    _make_jsonl(p, rows)
-    is_valid, error, _, _ = validate_dataset(p)
-    assert not is_valid
-    assert "mix" in error.lower()
 
 
 def test_curate_subset_of_rows_passes(tmp_path):
@@ -126,7 +114,7 @@ def test_curate_subset_of_rows_passes(tmp_path):
 
     p = tmp_path / "subset.jsonl"
     _make_jsonl(p, kept)
-    is_valid, error, num_samples, _ = validate_dataset(p)
+    is_valid, error, num_samples = validate_dataset(p)
     assert is_valid, error
     assert num_samples == 14
 
@@ -137,6 +125,6 @@ def test_curate_edited_rows_validated_correctly(tmp_path):
     rows = [edited, {"prompt": "Q2?", "response": "A2."}] * 6  # 12 rows total
     p = tmp_path / "edited.jsonl"
     _make_jsonl(p, rows)
-    is_valid, error, num_samples, _ = validate_dataset(p)
+    is_valid, error, num_samples = validate_dataset(p)
     assert is_valid, error
     assert num_samples == 12

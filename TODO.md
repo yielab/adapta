@@ -117,7 +117,7 @@ classes are defined in [`.claude/context/gates.md`](.claude/context/gates.md) ("
 | E3.1 | 1 | sonnet | live | none | E3.7, E3.2 | done 2026-10-09 |
 | E3.3a | 1 | sonnet + human decision | offline | none | — | in progress (worker-e3.3a) |
 | E3.8 | 1 | sonnet | live | none — must land before E3.2 | — | done 2026-10-09 |
-| E4.1 | 1 | sonnet | rebuild + live (exclusive) | E1.11 | E2.1, E3.3b, E3.7 | in progress (worker-e4.1) |
+| E4.1 | 1 | sonnet | rebuild + live (exclusive) | E1.11 | E2.1, E3.3b, E3.7 | ready-for-live (e4.1) |
 | E3.2 | 2 | sonnet | live | E3.1, E3.8 (baseline recorded before this lands) | E3.7, E3.5 | ready-for-live (e3.2) |
 | E3.3b | 2 | sonnet | rebuild + live | E3.3a (commit), E3.1 | E4.1, E4.2, E4.4 (`pyproject.toml`, `Dockerfile`), E3.7, E3.4 | open |
 | E3.7 | 2 | sonnet | live | E3.1, E4.1 | E3.1/E3.3b, E4.4 (`worker/main.py`) | open |
@@ -512,6 +512,12 @@ E1.1–E1.9 shipped 2026-09-17 → [CHANGELOG.md](CHANGELOG.md). E1.14 closed 20
   the `gpu` class and training rows); `repo-map.md`; `stack` skill; OPERATIONS (sizing, GPU sections);
   architecture.md; README run instructions; delete `fine-tuning-walkthrough.md`, `fine-tuning-use-cases.md`,
   `vlm-fine-tuning.md`, `ocr-vision-walkthrough.md` + their `mkdocs.yml` nav and inbound links; Status snapshot.
+- **Follow-up.** Code + fixtures landed on branch `e4.1` (offline gates green); live gates pending. Fixtures are
+  `tests/fixtures/adapters/{classify-pass,garbage-control}/` (the `.gguf` is gitignored, committed with `-f`);
+  their `dataset_eval.jsonl` is chat-`messages` form, not `prompt`/`response` — E4.3 converts it. The acceptance
+  grep still hits `convert_peft_to_gguf` (E4.4 keeps it) and `ctrl` in `Settings.svelte`. `e2e/*-proof.spec.ts`
+  (Playwright screenshot scripts) still describe training; `project_summary.py` and `Overview/Projects/Playground`
+  console views also changed (not in Files).
 
 ### E4.2 `[BE]` Adapter contract: `adapters` table, upload route, endpoint bound to an adapter (P1)
 - [ ] **Context.** After E4.1 a `finetune` project has no way to obtain a servable adapter, and

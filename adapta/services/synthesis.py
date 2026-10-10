@@ -76,7 +76,7 @@ def _extract_pairs(raw: str) -> List[dict]:
 
 
 def _to_instruction_pair(pair: dict, system: Optional[str] = None) -> dict:
-    """Convert a {question, answer} pair to the training dataset schema."""
+    """Convert a {question, answer} pair to the dataset schema."""
     record: dict = {"prompt": pair["question"], "response": pair["answer"]}
     if system:
         record["system"] = system

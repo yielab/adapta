@@ -1,9 +1,9 @@
-"""Redis-backed async training job queue.
+"""Redis-backed async job queue.
 
 Jobs are stored as JSON keyed by job_id in Redis; the queue list holds
-job_ids. The worker BLPOP-pops from the list and reads the metadata key.
-Progress updates overwrite the metadata key in-place so the API can poll
-live state without touching Postgres mid-run.
+job_ids. The worker BLPOP-pops from the list and reads the metadata key,
+dispatching on its ``kind``. Progress updates overwrite the metadata key
+in-place so the API can poll live state without touching Postgres mid-run.
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ from adapta.config import settings
 
 logger = logging.getLogger(__name__)
 
-QUEUE_KEY = "adapta:training_queue"
+QUEUE_KEY = "adapta:job_queue"
 JOB_KEY_PREFIX = "adapta:job:"
 HEARTBEAT_KEY = "adapta:worker:heartbeat"
 
@@ -30,7 +30,7 @@ def _now_iso() -> str:
 
 
 class JobQueue:
-    """Async Redis job queue for training jobs."""
+    """Async Redis job queue."""
 
     def __init__(self, redis_url: str):
         self._url = redis_url
@@ -49,10 +49,11 @@ class JobQueue:
             raise RuntimeError("JobQueue not connected — call connect() first")
         return self._redis
 
-    async def enqueue(self, job_id: str, payload: dict) -> None:
-        """Push job payload to the queue and store metadata."""
+    async def enqueue(self, job_id: str, kind: str, payload: dict) -> None:
+        """Push a job to the queue and store its metadata. ``kind`` picks the worker handler."""
         meta = {
             "job_id": job_id,
+            "kind": kind,
             "status": "queued",
             "progress": 0.0,
             "enqueued_at": _now_iso(),
@@ -81,15 +82,6 @@ class JobQueue:
             return None
         return json.loads(raw)  # type: ignore[no-any-return]
 
-    async def queued_job_ids(self) -> list[str]:
-        """All job_ids currently waiting in the queue list (not yet dequeued).
-
-        Used at worker startup to distinguish a legitimately-waiting ``queued`` job
-        from one that was lost (in Postgres as queued but absent from the Redis list
-        after a crash) — lost ones are failed rather than left stuck."""
-        vals = await self.redis.lrange(QUEUE_KEY, 0, -1)
-        return [v if isinstance(v, str) else v.decode() for v in vals]
-
     async def heartbeat(self, ttl: int = 90) -> None:
         """Refresh the worker liveness key (TTL-expiring). A dead/hung worker stops
         refreshing it, so `worker_alive()` (and the container healthcheck) go red."""
@@ -114,10 +106,6 @@ class JobQueue:
         status: str,
         progress: Optional[float] = None,
         logs: Optional[str] = None,
-        adapter_path: Optional[str] = None,
-        eval_score: Optional[float] = None,
-        eval_passed: Optional[bool] = None,
-        eval_metrics: Optional[str] = None,
         error: Optional[str] = None,
     ) -> None:
         raw = await self.redis.get(f"{JOB_KEY_PREFIX}{job_id}")
@@ -127,14 +115,6 @@ class JobQueue:
             meta["progress"] = progress
         if logs is not None:
             meta["logs"] = logs
-        if adapter_path is not None:
-            meta["adapter_path"] = adapter_path
-        if eval_score is not None:
-            meta["eval_score"] = eval_score
-        if eval_passed is not None:
-            meta["eval_passed"] = eval_passed
-        if eval_metrics is not None:
-            meta["eval_metrics"] = eval_metrics
         if error is not None:
             meta["error"] = error
         if status in ("succeeded", "failed", "cancelled"):

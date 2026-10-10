@@ -78,8 +78,6 @@
     switch (stage) {
       case "live":            return "Live";
       case "ready_to_serve":  return "Ready to serve";
-      case "training":        return "Training";
-      case "gate_blocked":    return "Gate blocked";
       case "indexing":        return "Indexing";
       case "awaiting_data":   return "Awaiting data";
       default:                return "Setting up";
@@ -94,19 +92,11 @@
         if (s?.usage_7d?.requests) return `${s.usage_7d.requests.toLocaleString()} requests this week`;
         return "Endpoint is active";
       case "ready_to_serve":  return "Create an endpoint to start serving";
-      case "training": {
-        const pct = p.status === "training" ? "" : "";
-        return `Training in progress${pct}`;
-      }
-      case "gate_blocked": {
-        const score = s?.jobs?.last_eval_score;
-        return score != null ? `Eval score ${score.toFixed(3)} — below gate threshold` : "Eval gate not passed";
-      }
       case "indexing":        return "Documents are being indexed";
       case "awaiting_data":
         if (p.type === "rag")      return "Upload documents to index";
-        if (s?.datasets?.valid ?? 0 > 0) return "Dataset ready — start training";
-        return "Upload a dataset to train";
+        if (s?.datasets?.valid ?? 0 > 0) return "Dataset ready — import an adapter to serve";
+        return "Upload a dataset";
       default:                return "";
     }
   }
@@ -115,8 +105,6 @@
     switch (stage) {
       case "live":            return "stage-live";
       case "ready_to_serve":  return "stage-ready";
-      case "training":        return "stage-training";
-      case "gate_blocked":    return "stage-blocked";
       case "indexing":        return "stage-indexing";
       default:                return "stage-waiting";
     }
@@ -341,16 +329,13 @@
                     {/each}
                   </span>
                 {/if}
-                {#if selectedModel.train_vram_gb}
-                  <span class="meta-item">~{selectedModel.train_vram_gb} GB VRAM to train</span>
-                {/if}
                 {#if selectedModel.serve_ram_gb}
                   <span class="meta-item">{selectedModel.serve_ram_gb} GB RAM to serve</span>
                 {/if}
               </div>
               {#if selectedModel.modality === "vision"}
                 <small class="muted">
-                  Vision base: fine-tune on image + text examples (zip bundle) and send images to the endpoint.
+                  Vision base: send images to the endpoint.
                   Image <em>understanding</em> only — never generation.
                 </small>
               {/if}
@@ -423,8 +408,6 @@
   .stage-label { font-size: 12px; font-weight: 600; }
   .stage-live      { color: var(--green); }
   .stage-ready     { color: var(--brand); }
-  .stage-training  { color: var(--behavior); }
-  .stage-blocked   { color: var(--red); }
   .stage-indexing  { color: var(--amber); }
   .stage-waiting   { color: var(--muted); }
 

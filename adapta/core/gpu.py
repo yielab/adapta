@@ -69,58 +69,7 @@ class GPUDetector:
 
     def _detect_cuda(self) -> GPUConfig:
         """Detect NVIDIA CUDA GPU"""
-        try:
-            # Try importing torch to check CUDA
-            import torch
-
-            if torch.cuda.is_available():
-                device_count = torch.cuda.device_count()
-                gpus = []
-
-                for i in range(device_count):
-                    props = torch.cuda.get_device_properties(i)
-                    total_memory = props.total_memory // (1024 * 1024)  # Convert to MB
-
-                    # Try to get free memory
-                    try:
-                        torch.cuda.set_device(i)
-                        free_memory = torch.cuda.mem_get_info()[0] // (1024 * 1024)
-                    except Exception:
-                        free_memory = total_memory  # Assume all free if we can't check
-
-                    gpu_info = GPUInfo(
-                        name=props.name,
-                        memory_total=total_memory,
-                        memory_free=free_memory,
-                        compute_capability=f"{props.major}.{props.minor}",
-                    )
-                    gpus.append(gpu_info)
-
-                # Calculate recommended layers based on VRAM
-                # Rough estimate: 3B model needs ~6GB, each layer ~200MB
-                total_vram = sum(g.memory_free for g in gpus)
-                if total_vram >= 16000:  # 16GB+
-                    recommended_layers = -1  # All layers
-                elif total_vram >= 8000:  # 8GB+
-                    recommended_layers = 35  # Most layers
-                elif total_vram >= 4000:  # 4GB+
-                    recommended_layers = 20  # Half layers
-                else:
-                    recommended_layers = 10  # Few layers
-
-                return GPUConfig(
-                    available=True,
-                    gpu_type="cuda",
-                    gpu_layers=recommended_layers,
-                    device_count=device_count,
-                    gpus=gpus,
-                    recommended_layers=recommended_layers,
-                )
-
-        except ImportError:
-            logger.debug("PyTorch not available, checking nvidia-smi")
-
-        # Fallback: try nvidia-smi
+        # nvidia-smi: the app image ships CPU-only torch, so torch cannot see the card.
         try:
             result = subprocess.run(
                 [
@@ -314,57 +263,3 @@ def get_gpu_config() -> GPUConfig:
 def get_model_kwargs(override_layers: Optional[int] = None) -> dict:
     """Get model loading kwargs with GPU settings"""
     return get_gpu_detector().get_model_kwargs(override_layers)
-
-
-@dataclass
-class TorchCudaStatus:
-    """Strict torch-level CUDA readiness — what QLoRA training actually requires."""
-
-    usable: bool
-    reason: str
-    torch_version: Optional[str] = None
-    cuda_version: Optional[str] = None
-    device_name: Optional[str] = None
-
-
-def torch_cuda_status() -> TorchCudaStatus:
-    """Report whether *torch* can train on a CUDA GPU.
-
-    This is stricter than ``get_gpu_config`` (which falls back to ``nvidia-smi``
-    and would greenlight a host card even when torch is a CPU-only build or the
-    GPU is not passed into the container). QLoRA needs torch + bitsandbytes on
-    CUDA, so the worker gates on this, not on the looser detector.
-    """
-    try:
-        import torch
-    except ImportError:
-        return TorchCudaStatus(usable=False, reason="PyTorch is not installed")
-
-    version = getattr(torch, "__version__", "unknown")
-    cuda_build = getattr(torch.version, "cuda", None)  # None for CPU-only wheels
-
-    if cuda_build is None:
-        return TorchCudaStatus(
-            usable=False,
-            reason="PyTorch is a CPU-only build (torch.version.cuda is None)",
-            torch_version=version,
-        )
-
-    if not torch.cuda.is_available():
-        return TorchCudaStatus(
-            usable=False,
-            reason=(
-                "torch.cuda.is_available() is False — no GPU passed into the "
-                "container (needs nvidia-container-toolkit + the compose `gpu` profile)"
-            ),
-            torch_version=version,
-            cuda_version=cuda_build,
-        )
-
-    return TorchCudaStatus(
-        usable=True,
-        reason="ok",
-        torch_version=version,
-        cuda_version=cuda_build,
-        device_name=torch.cuda.get_device_name(0),
-    )

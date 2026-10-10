@@ -6,7 +6,7 @@ key, bounded by the LRU cache in model_manager, serialized per-instance
 to prevent concurrent KV-cache mutations.
 
 This backend handles all request types: text base, text LoRA, vision base,
-vision LoRA.  The vLLM backend replaces this for TEXT LoRA only when opted in.
+vision LoRA.
 """
 
 from __future__ import annotations

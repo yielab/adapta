@@ -301,3 +301,45 @@ async def test_chat_completions_rejects_missing_and_bad_key(client):
         json={"model": "anything", "messages": [{"role": "user", "content": "hi"}]},
     )
     assert r2.status_code == 401
+
+
+async def test_finetune_endpoint_requires_an_imported_adapter(client, admin):
+    # In-product training is gone: a finetune project has no way to earn an endpoint
+    # until an adapter is imported (E4.2), so creation is refused with a clear hint.
+    h, team_id = admin["headers"], admin["team_id"]
+    proj = await client.post(
+        "/v1/projects",
+        headers=h,
+        json={
+            "name": "FT3",
+            "type": "finetune",
+            "base_model": "qwen2.5-3b-instruct",
+            "team_id": team_id,
+        },
+    )
+    pid = proj.json()["id"]
+
+    r = await client.post(f"/v1/projects/{pid}/endpoint", headers=h)
+    assert r.status_code == 400, r.text
+    assert "Import an adapter first" in r.text
+
+    # The training surface is gone entirely.
+    assert (await client.get(f"/v1/projects/{pid}/jobs", headers=h)).status_code == 404
+
+
+async def test_dataset_upload_rejects_zip_bundles(client, admin):
+    h, team_id = admin["headers"], admin["team_id"]
+    proj = await client.post(
+        "/v1/projects",
+        headers=h,
+        json={
+            "name": "FT4",
+            "type": "finetune",
+            "base_model": "qwen2.5-3b-instruct",
+            "team_id": team_id,
+        },
+    )
+    pid = proj.json()["id"]
+    files = {"file": ("bundle.zip", io.BytesIO(b"PK\x03\x04"), "application/zip")}
+    r = await client.post(f"/v1/projects/{pid}/datasets", headers=h, files=files)
+    assert r.status_code == 400, r.text

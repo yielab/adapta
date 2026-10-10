@@ -1,6 +1,5 @@
 """Project endpoint management (create, get, enable/disable)."""
 
-import json
 from typing import Optional
 
 from fastapi import APIRouter, Depends
@@ -11,18 +10,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from adapta.db.models import (
     Endpoint,
     EndpointStatus,
-    JobStatus,
     Project,
     ProjectStatus,
     ProjectType,
-    TrainingJob,
 )
 from adapta.db.session import get_db
 from adapta.domain.errors import Conflict, InvalidRequest, NotFound
 from adapta.models.generated import (
-    AdapterProvenance,
     EndpointResponse,
-    Gate,
     RetrievalSummary,
 )
 from adapta.models.generated import (
@@ -65,41 +60,8 @@ async def _build_response(
     ep: Endpoint,
     project: Project,
 ) -> EndpointResponse:
-    """Populate v2 provenance fields from the DB."""
-    adapter: Optional[AdapterProvenance] = None
+    """Build the endpoint response (retrieval summary from the vector store)."""
     retrieval: Optional[RetrievalSummary] = None
-
-    if ep.adapter_path:
-        job_result = await db.execute(
-            select(TrainingJob)
-            .where(
-                TrainingJob.project_id == project.id,
-                TrainingJob.status == JobStatus.succeeded,
-                TrainingJob.eval_passed.is_(True),
-            )
-            .order_by(TrainingJob.created_at.desc())
-        )
-        job = job_result.scalars().first()
-        if job:
-            base_score: Optional[float] = None
-            score_delta: Optional[float] = None
-            gate = "absolute"
-            if job.eval_metrics:
-                try:
-                    m = json.loads(job.eval_metrics)
-                    base_score = m.get("base_score")
-                    score_delta = m.get("score_delta")
-                    if base_score is not None and score_delta is not None:
-                        gate = "improvement"
-                except Exception:
-                    pass
-            adapter = AdapterProvenance(
-                job_id=job.id,
-                eval_score=job.eval_score or 0.0,
-                base_score=base_score,
-                score_delta=score_delta,
-                gate=Gate(gate),
-            )
 
     indexed_chunks = await count_project_chunks(db, project.id)
     if indexed_chunks > 0:
@@ -116,7 +78,6 @@ async def _build_response(
         modality=ApiModality(_modality_for(ep.base_model)),
         project_type=ApiProjectType(project_type),
         created_at=ep.created_at.isoformat(),
-        adapter=adapter,
         retrieval=retrieval,
         adapter_path=ep.adapter_path,
     )
@@ -131,7 +92,7 @@ async def create_endpoint(
     """
     Create the endpoint for this project.
     - RAG: project must have at least one indexed file.
-    - Fine-tune: project must have a succeeded training job with eval_passed=True.
+    - Fine-tune: needs an imported adapter that passed the gate (not yet available).
     """
     project = await _get_project(db, project_id)
     await require_team_writer(db, current_user.id, project.team_id)
@@ -141,8 +102,6 @@ async def create_endpoint(
     if existing:
         raise InvalidRequest(message="Endpoint already exists for this project")
 
-    adapter_path = None
-
     if project.type == ProjectType.rag:
         if await count_project_chunks(db, project_id) == 0:
             raise InvalidRequest(
@@ -150,21 +109,7 @@ async def create_endpoint(
             )
 
     elif project.type == ProjectType.finetune:
-        job_result = await db.execute(
-            select(TrainingJob)
-            .where(
-                TrainingJob.project_id == project_id,
-                TrainingJob.status == JobStatus.succeeded,
-                TrainingJob.eval_passed.is_(True),
-            )
-            .order_by(TrainingJob.created_at.desc())
-        )
-        job = job_result.scalars().first()
-        if not job:
-            raise InvalidRequest(
-                message="No successful training job found. Train a dataset first and ensure it passes the eval gate."
-            )
-        adapter_path = job.adapter_path
+        raise InvalidRequest(message="Import an adapter first")
 
     import re
 
@@ -177,7 +122,6 @@ async def create_endpoint(
         slug=slug,
         status=EndpointStatus.active,
         base_model=project.base_model,
-        adapter_path=adapter_path,
     )
     db.add(endpoint)
     project.status = ProjectStatus.ready

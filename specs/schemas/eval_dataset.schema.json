@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://adapta/schemas/eval_dataset",
+  "title": "Eval Dataset Row",
+  "description": "JSONL format for instruction datasets. Each line is one SFT row: a prompt and the response the model should give. Datasets are uploaded, validated and reviewed here; an imported adapter is scored against a held-out set of such rows by the eval gate.",
+  "type": "object",
+  "required": ["prompt", "response"],
+  "additionalProperties": false,
+  "properties": {
+    "prompt": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The instruction or question given to the model."
+    },
+    "response": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The ideal response the model should produce."
+    },
+    "system": {
+      "type": "string",
+      "description": "Optional system prompt context."
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Optional arbitrary metadata (source, quality score, etc.)",
+      "additionalProperties": true
+    }
+  }
+}

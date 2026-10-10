@@ -9,15 +9,13 @@
 #   app             base + copied venv + baked source + console dist. THE image —
 #                   compose bind-mounts the repo over /app for live code, so the
 #                   baked copy only matters when running the image standalone.
-#   worker-builder  + compilers; separate venv with [training] + CUDA torch
-#   worker          base + copied CUDA venv + baked source; runs the QLoRA worker
 #
 # There is no dev/production split: this stack runs locally, one way. The app
 # image ships the whole toolchain so `docker compose exec app make ci` always
 # works, and the entrypoint runs migrations then uvicorn with hot reload.
 #
 # Build one stage:    docker build --target <stage> .
-# Compose picks it:   build.target in docker-compose*.yml
+# Compose picks it:   build.target in docker-compose*.yml (app and worker both use `app`)
 #
 # Dependency rule: pyproject.toml is the ONLY source of deps. To change them,
 # edit pyproject.toml and rebuild (`docker compose build`). Never `pip install`
@@ -36,7 +34,7 @@ WORKDIR /app
 #   curl     — backs the container HEALTHCHECK
 #   libgomp1 — OpenMP runtime required by llama-cpp (and torch) at import time
 #   make     — the SDD build targets (`make ci` etc.) run inside the app container
-# These must be in EVERY runtime stage; the compilers in `builder` are dropped.
+# The compilers in `builder` are dropped.
 RUN apt-get update && apt-get install -y --no-install-recommends curl libgomp1 make \
     && rm -rf /var/lib/apt/lists/*
 
@@ -45,7 +43,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl libgomp1 m
 RUN adduser --uid 10001 --disabled-password --gecos "" adapta
 
 # ===== builder (app: CPU-only torch + full toolchain) ========================
-# Compilers live ONLY here. They never reach the app / worker images.
+# Compilers live ONLY here. They never reach the app image.
 FROM base AS builder
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential cmake gcc g++ git \
@@ -54,9 +52,9 @@ RUN python -m venv /opt/venv
 
 # CPU-ONLY torch first, from the PyTorch CPU wheel index. PyPI's default Linux
 # torch wheel bundles the full CUDA stack (~2 GB) and would be pulled in
-# transitively by sentence-transformers. The app does CPU-only RAG, so install
+# transitively by sentence-transformers. Everything here runs on CPU, so install
 # CPU torch up front; the later `pip install -e .` then sees torch as satisfied
-# and never fetches the CUDA build. (GPU torch lives only in the worker image.)
+# and never fetches the CUDA build.
 RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
 
 # Runtime deps + the full [dev] toolchain — cached until pyproject.toml changes.
@@ -94,52 +92,3 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 ENTRYPOINT ["/app/entrypoint.sh"]
-
-# ===== worker (training: full CUDA torch) =====================================
-# Separate venv with the [training] extras (torch / peft / trl / bitsandbytes).
-# Derives from `base` (NOT `builder`) so it does NOT inherit the CPU-only torch —
-# `[training]`'s torch resolves to PyPI's default CUDA wheel, keeping the worker
-# GPU-capable. For real GPU training, switch this stage's base to an
-# `nvidia/cuda:*-runtime` image with Python (tracked in TODO §4.5).
-FROM base AS worker-builder
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        build-essential cmake gcc g++ git \
-    && rm -rf /var/lib/apt/lists/*
-RUN python -m venv /opt/venv
-COPY pyproject.toml ./
-RUN pip install --no-cache-dir -e ".[training]" --config-settings editable_mode=compat
-# Vendor llama.cpp's OFFICIAL PEFT->GGUF LoRA converter (A3.1). We do NOT reimplement
-# the GGUF-LoRA format ourselves; we run the upstream script as a subprocess in the
-# worker after eval passes. Pinned to a known tag for reproducibility. We keep the
-# two convert scripts (convert_lora_to_gguf.py imports convert_hf_to_gguf.py) AND the
-# repo's own gguf-py package: the scripts require a gguf writer in lockstep with the
-# tag (at b5170 they need MODEL_ARCH.CLIP_VISION, which the pip `gguf` release lacks)
-# — installing the vendored gguf-py over the pip one keeps script + writer in sync.
-# b5170: adds Qwen2_5_VLForConditionalGeneration to the converter registry (§V0.3);
-# regression gate for this bump is the text LoRA e2e (test_lora_e2e.py).
-ARG LLAMA_CPP_TAG=b5170
-RUN git clone --depth 1 --branch ${LLAMA_CPP_TAG} https://github.com/ggerganov/llama.cpp /tmp/llamacpp \
-    && mkdir -p /opt/llamacpp \
-    && cp /tmp/llamacpp/convert_lora_to_gguf.py /tmp/llamacpp/convert_hf_to_gguf.py /opt/llamacpp/ \
-    && cp -r /tmp/llamacpp/gguf-py /opt/llamacpp/gguf-py \
-    # --no-deps: gguf-py's other deps (numpy/tqdm/pyyaml) are already pinned by
-    # [training]; sentencepiece is the one it needs that nothing else provides.
-    && pip install --no-cache-dir --no-deps /opt/llamacpp/gguf-py sentencepiece \
-    && rm -rf /tmp/llamacpp
-
-FROM base AS worker
-# Triton JIT-compiles its CUDA driver module at RUNTIME (this image resolves to
-# torch 2.14 + triton 3.8, which routes matmuls through triton kernels), so the worker
-# needs a C compiler and libc headers on the FINAL image, not just in worker-builder.
-# Without them every training job dies with "Failed to find C compiler" the moment a
-# kernel is first launched. The app image stays slim — it is CPU-only, never loads triton.
-RUN apt-get update && apt-get install -y --no-install-recommends gcc libc6-dev \
-    && rm -rf /var/lib/apt/lists/*
-COPY --from=worker-builder /opt/venv /opt/venv
-COPY --from=worker-builder /opt/llamacpp /opt/llamacpp
-COPY adapta/ ./adapta/
-COPY migrations/ ./migrations/
-COPY alembic.ini ./
-RUN mkdir -p /app/data/models /app/data/adapters /app/data/datasets \
-    && chown -R adapta:adapta /app/data
-CMD ["python", "-m", "adapta.worker.main"]

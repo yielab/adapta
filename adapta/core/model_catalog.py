@@ -2,18 +2,18 @@
 
 A ``Project.base_model`` has to satisfy two very different runtimes:
 
-* **training / eval** load it with ``AutoModelForCausalLM.from_pretrained(...)`` —
-  they need a **HuggingFace repo id** (e.g. ``Qwen/Qwen2.5-3B-Instruct``).
+* **adapter conversion** needs the base's **HuggingFace repo id**
+  (e.g. ``Qwen/Qwen2.5-3B-Instruct``).
 * **serving** loads a quantized **GGUF** through llama-cpp — keyed by a GGUF
   catalog name + an on-disk file
   (e.g. ``qwen2.5-3b-instruct`` → ``<models_dir>/qwen2.5-3b/qwen2.5-3b-instruct-q4_k_m.gguf``).
 
 Before A3.3 this was one free-text string validated against neither, so an
-operator could pick a value that trains but won't serve (or vice-versa),
+operator could pick a value that serves but can't be converted against (or vice-versa),
 discovered only as a runtime failure. This module unifies the two: a single
 entry, keyed by the operator-facing name, declares **both** the HF id and the
 GGUF location, so a project validated at creation is guaranteed to address both
-runtimes. The trainer/evaluator resolve the HF id from here; ``model_manager``
+runtimes. Adapter conversion resolves the HF id from here; ``model_manager``
 resolves the GGUF from the same entry. Keep in sync with OPERATIONS §6.3.
 """
 
@@ -29,10 +29,10 @@ from adapta.core.model_manager import ModelType
 
 @dataclass(frozen=True)
 class CatalogEntry:
-    """One base model, declared once for both training and serving."""
+    """One base model, declared once for both HF-id and GGUF addressing."""
 
     name: str  # operator-facing catalog name (the value stored on a Project)
-    hf_repo_id: str  # HuggingFace repo id for training/eval from_pretrained()
+    hf_repo_id: str  # HuggingFace repo id (adapter conversion)
     gguf_subdir: str  # subdir under settings.models_dir holding the GGUF
     gguf_filename: str  # preferred GGUF filename within that subdir
     model_type: ModelType
@@ -49,7 +49,6 @@ class CatalogEntry:
     # §C: console catalog display fields
     use_case: str = ""
     best_for: List[str] = field(default_factory=list)
-    train_vram_gb: Optional[int] = None
     serve_ram_gb: Optional[int] = None
     # §E1.2: model license, declared per entry so the console and GET /v1/models can
     # show it. `commercial_use=False` entries (Qwen Research License) are kept for
@@ -77,10 +76,9 @@ _ENTRIES: List[CatalogEntry] = [
         gguf_subdir="qwen2.5-0.5b",
         gguf_filename="qwen2.5-0.5b-instruct-q4_k_m.gguf",
         model_type=ModelType.CHAT,
-        notes="Smallest — low-resource hosts / fine-tune e2e base (~3 GB train).",
+        notes="Smallest — low-resource hosts / adapter e2e base.",
         use_case="Low-resource experimentation, quick fine-tune iteration.",
         best_for=["knowledge", "behavior"],
-        train_vram_gb=3,
         serve_ram_gb=1,
         license_url="https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct/blob/main/LICENSE",
     ),
@@ -90,10 +88,9 @@ _ENTRIES: List[CatalogEntry] = [
         gguf_subdir="qwen2.5-1.5b",
         gguf_filename="qwen2.5-1.5b-instruct-q4_k_m.gguf",
         model_type=ModelType.CHAT,
-        notes="Default — Apache-2.0; RAG + fine-tune on small GPUs (~6 GB train).",
+        notes="Default — Apache-2.0; RAG + adapters on any host.",
         use_case="RAG knowledge bases and behavior fine-tuning on any host.",
         best_for=["knowledge", "behavior"],
-        train_vram_gb=6,
         serve_ram_gb=2,
         license_url="https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct/blob/main/LICENSE",
     ),
@@ -103,10 +100,9 @@ _ENTRIES: List[CatalogEntry] = [
         gguf_subdir="qwen2.5-3b",
         gguf_filename="qwen2.5-3b-instruct-q4_k_m.gguf",
         model_type=ModelType.CHAT,
-        notes="Evaluation only — Qwen Research License (no commercial use). RAG + fine-tune (~8-10 GB train).",
+        notes="Evaluation only — Qwen Research License (no commercial use). RAG + adapters.",
         use_case="Evaluation of RAG knowledge bases and behavior fine-tuning.",
         best_for=["knowledge", "behavior"],
-        train_vram_gb=10,
         serve_ram_gb=2,
         license="qwen-research",
         license_url="https://huggingface.co/Qwen/Qwen2.5-3B-Instruct/blob/main/LICENSE",
@@ -118,10 +114,9 @@ _ENTRIES: List[CatalogEntry] = [
         gguf_subdir="qwen2.5-coder-3b",
         gguf_filename="qwen2.5-coder-3b-instruct-q4_k_m.gguf",
         model_type=ModelType.CODE,
-        notes="Evaluation only — Qwen Research License (no commercial use). Code (~8-10 GB train).",
+        notes="Evaluation only — Qwen Research License (no commercial use). Code.",
         use_case="Evaluation of code review, completion, explanation and documentation.",
         best_for=["code"],
-        train_vram_gb=10,
         serve_ram_gb=2,
         license="qwen-research",
         license_url="https://huggingface.co/Qwen/Qwen2.5-Coder-3B-Instruct/blob/main/LICENSE",
@@ -133,10 +128,9 @@ _ENTRIES: List[CatalogEntry] = [
         gguf_subdir="qwen2.5-7b",
         gguf_filename="qwen2.5-7b-instruct-q4_k_m.gguf",
         model_type=ModelType.REASONING,
-        notes="Higher quality, needs a bigger GPU (~12-16 GB train).",
+        notes="Higher quality, more RAM to serve.",
         use_case="High-quality RAG and complex reasoning tasks.",
         best_for=["knowledge"],
-        train_vram_gb=16,
         serve_ram_gb=4,
         license_url="https://huggingface.co/Qwen/Qwen2.5-7B-Instruct/blob/main/LICENSE",
     ),
@@ -148,10 +142,9 @@ _ENTRIES: List[CatalogEntry] = [
         model_type=ModelType.CHAT,
         modality="vision",
         mmproj_filename="mmproj-qwen2.5-vl-3b-f16.gguf",
-        notes="Evaluation only — Qwen Research License (no commercial use). Vision (~6 GB train, batch 1).",
+        notes="Evaluation only — Qwen Research License (no commercial use). Vision.",
         use_case="Evaluation of document AI, visual QA and OCR tasks.",
         best_for=["vision"],
-        train_vram_gb=6,
         serve_ram_gb=2,
         license="qwen-research",
         license_url="https://huggingface.co/Qwen/Qwen2.5-VL-3B-Instruct/blob/main/LICENSE",
@@ -165,17 +158,16 @@ _ENTRIES: List[CatalogEntry] = [
         model_type=ModelType.CHAT,
         modality="vision",
         mmproj_filename="mmproj-qwen2.5-vl-7b-f16.gguf",
-        notes="Vision, Apache-2.0 — same architecture as the 3B (conversion + serving shims apply); ~14 GB train, batch 1.",
+        notes="Vision, Apache-2.0 — same architecture as the 3B (conversion + serving shims apply).",
         use_case="Document AI, visual QA, image captioning, and OCR tasks — commercial use.",
         best_for=["vision"],
-        train_vram_gb=14,
         serve_ram_gb=5,
         license_url="https://huggingface.co/Qwen/Qwen2.5-VL-7B-Instruct/blob/main/LICENSE",
     ),
 ]
 
 _BY_NAME: Dict[str, CatalogEntry] = {e.name: e for e in _ENTRIES}
-# Secondary index by HF repo id so a project that recorded the trainer-facing
+# Secondary index by HF repo id so a project that recorded the HF
 # id (e.g. "Qwen/Qwen2.5-3B-Instruct") still resolves to the same entry.
 _BY_HF_ID: Dict[str, CatalogEntry] = {e.hf_repo_id: e for e in _ENTRIES}
 
@@ -206,11 +198,11 @@ def is_valid(base_model: str) -> bool:
 
 
 def resolve_hf_id(base_model: str) -> str:
-    """Return the HuggingFace repo id for training/eval.
+    """Return the HuggingFace repo id (adapter conversion).
 
     Pass-through for unrecognized values lets a direct HF id or local path
     work without a catalog entry — intended for development only.  In
-    production, always use a catalogued operator name to guarantee the training
+    production, always use a catalogued operator name to guarantee the conversion
     and serving runtimes agree on the model.
     """
     entry = resolve(base_model)

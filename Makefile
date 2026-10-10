@@ -1,7 +1,7 @@
 # Adapta – Extended SDD build targets (three contracts)
 #
 # Two kinds of target:
-#   • HOST targets (up / up-cpu / down) — run on the host; they bring the stack
+#   • HOST targets (up / down) — run on the host; they bring the stack
 #     up/down. There is ONE stack: toolchain + bind-mounted source + hot reload.
 #   • IN-CONTAINER targets (everything else) — run inside the app container, which
 #     ships the full toolchain (ruff, mypy, pytest, schemathesis, codegen) baked
@@ -14,26 +14,16 @@
 # Contracts:
 #   API      -> specs/openapi.yaml   (generate, validate-spec, test-contracts)
 #   DB schema-> Alembic migrations   (migrate, migration, migrate-test)
-#   Model    -> dataset schema + eval gate (training pipeline)
+#   Model    -> eval dataset schema + eval gate
 
-CPU_COMPOSE := docker compose -f docker-compose.yml -f docker-compose.cpu.yml
-
-# GPU auto-detection: the worker reserves the host GPU by default (QLoRA training).
-# On a host without a usable NVIDIA GPU / Container Toolkit, `make up` layers the
-# CPU opt-out automatically so the stack still starts (the worker then rejects
-# LoRA jobs fast with a clear message). `make up-cpu` forces the opt-out.
-GPU_AVAILABLE := $(shell command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi >/dev/null 2>&1 && echo 1)
-COMPOSE := $(if $(GPU_AVAILABLE),docker compose,$(CPU_COMPOSE))
-
-.PHONY: help up up-cpu status down generate validate-spec test-contracts migrate migration migrate-test \
+.PHONY: help up status down generate validate-spec test-contracts migrate migration migrate-test \
         test coverage lint fmt check-leaks check-chroma docs-install docs-build docs-serve ci ci-full \
         console-build screenshots gif golden
 
 help:
 	@echo "Available targets:"
 	@echo "  -- stack (run on the HOST) --"
-	@echo "  up              Build + bring up the stack (GPU auto-detected; live source, reload)"
-	@echo "  up-cpu          Force the CPU opt-out (no GPU reservation for the worker)"
+	@echo "  up              Build + bring up the stack (live source, reload)"
 	@echo "  status          Wait for health + print all service URLs/ports"
 	@echo "  down            Stop the stack"
 	@echo "  -- API contract --"
@@ -64,12 +54,7 @@ help:
 
 # ── HOST targets — bring the stack up/down (run these on the host, not in a container) ──
 up:
-	$(if $(GPU_AVAILABLE),,@echo "No usable NVIDIA GPU detected — starting with the CPU opt-out (training jobs will be rejected).")
-	$(COMPOSE) up -d --build
-	@$(MAKE) --no-print-directory status
-
-up-cpu:
-	$(CPU_COMPOSE) up -d --build
+	docker compose up -d --build
 	@$(MAKE) --no-print-directory status
 
 # Wait for the API to come up, then print where everything is. Safe to run any
@@ -133,8 +118,7 @@ test-contracts:
 	# the GET /datasets/{dataset_id} route (id="synthesize") and returns 404, not 405 —
 	# a literal-vs-parameter path overlap, not a contract defect.
 	# filter_too_much is suppressed: an intermittent hypothesis generation-health
-	# complaint (too many filtered examples on POST /jobs), not an API defect —
-	# observed flaking a run in which all generated cases passed.
+	# complaint (too many filtered examples), not an API defect.
 	# allow-x00=false: PostgreSQL cannot store NUL bytes in text, ever — the API
 	# answers them with a typed 422 (the DBAPIError net), which the positive-
 	# acceptance check would miscount as rejecting valid data.

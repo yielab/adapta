@@ -201,7 +201,7 @@
       <p>No endpoint yet.</p>
       <small class="muted">
         Create one from the <strong>Setup</strong> tab once your
-        {project.type === "rag" ? "documents are indexed" : "fine-tune passes the eval gate"}.
+        {project.type === "rag" ? "documents are indexed" : "an adapter is imported"}.
       </small>
     </div>
   {:else if endpointErr}
@@ -213,32 +213,15 @@
     <!-- Composition explainer -->
     <div class="composition">
       <span class="comp-base mono">{endpoint.base_model}</span>
-      {#if endpoint.adapter}
+      {#if endpoint.adapter_path}
         <span class="comp-sep">+</span>
-        <span class="comp-adapter">
-          fine-tuned adapter
-          <span class="comp-score">eval {endpoint.adapter.eval_score.toFixed(3)}</span>
-          {#if endpoint.adapter.score_delta != null}
-            <span class="comp-delta {endpoint.adapter.gate === 'improvement' ? 'green' : ''}">
-              {endpoint.adapter.gate === 'improvement'
-                ? `+${endpoint.adapter.score_delta.toFixed(3)} vs base — quality gate: beat the base model`
-                : `quality gate: scored above threshold`}
-            </span>
-          {/if}
-        </span>
+        <span class="comp-adapter">LoRA adapter</span>
       {/if}
       {#if endpoint.retrieval}
         <span class="comp-sep">+</span>
         <span class="comp-retrieval">retrieval over {endpoint.retrieval.indexed_chunks.toLocaleString()} chunks</span>
       {/if}
     </div>
-    {#if endpoint.adapter}
-      <p class="gate-note">
-        Quality gate: this adapter was automatically blocked from serving until it passed a
-        held-out evaluation. Adapters that neither score above the threshold nor improve over
-        the base model are <strong>never served</strong>.
-      </p>
-    {/if}
     <table>
       <tbody>
         <tr>
@@ -269,12 +252,6 @@
           <th>Created</th>
           <td>{fmtDate(endpoint.created_at)}</td>
         </tr>
-        {#if endpoint.adapter}
-          <tr>
-            <th>Adapter job</th>
-            <td class="mono" style="font-size: 12px;">{endpoint.adapter.job_id}</td>
-          </tr>
-        {/if}
       </tbody>
     </table>
   {/if}
@@ -418,27 +395,5 @@
   .comp-sep { color: var(--muted); font-weight: 600; }
   .comp-base { font-weight: 600; }
   .comp-adapter { color: var(--text); }
-  .comp-score {
-    display: inline-block;
-    background: var(--brand-weak);
-    color: var(--brand);
-    border-radius: 4px;
-    padding: 1px 6px;
-    font-size: 11px;
-    font-weight: 700;
-    margin-left: 4px;
-  }
-  .comp-delta {
-    font-size: 11px;
-    color: var(--muted);
-    margin-left: 4px;
-  }
-  .comp-delta.green { color: var(--green); }
   .comp-retrieval { color: var(--text); }
-  .gate-note {
-    margin: 8px 0 14px;
-    font-size: 12px;
-    color: var(--muted);
-    line-height: 1.5;
-  }
 </style>

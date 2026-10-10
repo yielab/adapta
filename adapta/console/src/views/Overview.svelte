@@ -74,35 +74,21 @@
       tab: "setup",
     },
     {
-      label: "2 · Train the model",
-      status: !s ? "pending"
-            : s.jobs.last_status === "succeeded" && s.jobs.gate_passed ? "done"
-            : s.jobs.running > 0 ? "partial"
-            : s.jobs.gate_passed === false ? "blocked"
-            : s.jobs.total > 0 ? "partial"
-            : "pending",
-      detail: !s ? "" : s.jobs.running > 0 ? "Training job running…"
-            : s.jobs.last_status === "succeeded" && s.jobs.gate_passed
-              ? `Passed eval gate — score ${s.jobs.last_eval_score?.toFixed(2) ?? "–"}`
-            : s.jobs.gate_passed === false
-              ? `Gate blocked — score ${s.jobs.last_eval_score?.toFixed(2) ?? "–"} (below threshold)`
-            : s.datasets.valid > 0 ? "Dataset ready — start a training job."
-            : "Upload a valid dataset first.",
-      action: s?.datasets.valid && s.jobs.running === 0 && s.jobs.last_status !== "succeeded"
-            ? "Start training →" : null,
+      label: "2 · Import an adapter",
+      status: !s ? "pending" : s.endpoint.exists ? "done" : "pending",
+      detail: !s ? "" : s.endpoint.exists
+            ? "Adapter imported."
+            : "Bring a trained LoRA adapter to serve on this base model.",
+      action: null,
       tab: "setup",
     },
     {
       label: "3 · Create endpoint",
-      status: !s ? "pending"
-            : s.endpoint.exists ? "done"
-            : s.jobs.gate_passed ? "partial"
-            : "pending",
+      status: !s ? "pending" : s.endpoint.exists ? "done" : "pending",
       detail: !s ? "" : s.endpoint.exists
             ? `Endpoint active — slug: ${s.endpoint.slug}`
-            : s.jobs.gate_passed ? "Training passed the eval gate — create an endpoint."
-            : "Training must pass the eval gate first.",
-      action: !s?.endpoint.exists && s?.jobs.gate_passed ? "Create endpoint →" : null,
+            : "Import an adapter first.",
+      action: null,
       tab: "endpoint",
     },
     {

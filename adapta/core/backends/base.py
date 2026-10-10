@@ -1,10 +1,6 @@
 """Abstract serving backend interface.
 
-llama-cpp is the default (always available, handles RAG/CPU and VLM mmproj).
-vLLM is an opt-in second backend for text LoRA density: many adapters share
-one GPU via continuous batching (ADAPTA_SERVING_BACKEND=vllm, requires the
-vllm-server compose service). Vision endpoints always use llama-cpp — vLLM
-does not support LoRA on vision layers.
+llama-cpp is the serving backend (RAG/CPU, LoRA adapters and VLM mmproj).
 """
 
 from __future__ import annotations

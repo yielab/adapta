@@ -210,7 +210,7 @@
       <p>No endpoint yet.</p>
       <small class="muted">
         Create one from the <strong>Setup</strong> tab once your
-        {project.type === "rag" ? "documents are indexed" : "fine-tune passes the eval gate"},
+        {project.type === "rag" ? "documents are indexed" : "an adapter is imported"},
         then come back here to test it.
       </small>
     </div>

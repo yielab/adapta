@@ -75,7 +75,6 @@ class ProjectStatus(str, enum.Enum):
     created = "created"
     indexing = "indexing"  # RAG: building collection
     ready = "ready"
-    training = "training"  # finetune: job running
     failed = "failed"
 
 
@@ -91,14 +90,6 @@ class DatasetStatus(str, enum.Enum):
     validating = "validating"
     valid = "valid"
     invalid = "invalid"
-
-
-class JobStatus(str, enum.Enum):
-    queued = "queued"
-    running = "running"
-    succeeded = "succeeded"
-    failed = "failed"
-    cancelled = "cancelled"
 
 
 class EndpointStatus(str, enum.Enum):
@@ -256,9 +247,6 @@ class Project(Base):
     datasets: Mapped[list[Dataset]] = relationship(
         "Dataset", back_populates="project", cascade="all, delete-orphan"
     )
-    jobs: Mapped[list[TrainingJob]] = relationship(
-        "TrainingJob", back_populates="project", cascade="all, delete-orphan"
-    )
     endpoint: Mapped[Optional[Endpoint]] = relationship(
         "Endpoint", back_populates="project", uselist=False, cascade="all, delete-orphan"
     )
@@ -366,16 +354,13 @@ class Collection(Base):
 
 
 # ---------------------------------------------------------------------------
-# Fine-tuning: Dataset / TrainingJob
+# Fine-tuning: Dataset
 # ---------------------------------------------------------------------------
 
 
 class Dataset(Base):
-    """A training dataset attached to a finetune project.
+    """An SFT dataset attached to a finetune project; ``storage_path`` is the JSONL file.
 
-    For text datasets, ``storage_path`` points to the JSONL file.  For vision
-    bundles (``modality="vision"``), it points to the extracted JSONL manifest
-    inside the unzipped bundle directory — not the original ``.zip``.
     ``source_dataset_id`` is set when this dataset was produced by
     ``POST .../curate`` from another dataset (D6 lineage).
     """
@@ -389,10 +374,6 @@ class Dataset(Base):
     name: Mapped[str] = mapped_column(String(256), nullable=False)
     storage_path: Mapped[str] = mapped_column(String(512), nullable=False)
     num_samples: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    modality: Mapped[str] = mapped_column(
-        String(16), nullable=False, default="text", server_default="text"
-    )
-    num_images: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     status: Mapped[DatasetStatus] = mapped_column(
         Enum(DatasetStatus, native_enum=False, length=16),
         nullable=False,
@@ -403,52 +384,6 @@ class Dataset(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     project: Mapped[Project] = relationship("Project", back_populates="datasets")
-    jobs: Mapped[list[TrainingJob]] = relationship("TrainingJob", back_populates="dataset")
-
-
-class TrainingJob(Base):
-    """A single QLoRA training run for a finetune project.
-
-    ``adapter_path`` is set to the GGUF LoRA path (not the PEFT directory)
-    once the job succeeds and the adapter passes the eval gate.  The PEFT
-    directory is preserved in the adapter registry under a separate ``path``
-    key; ``adapter_path`` here is what llama-cpp's ``lora_path`` argument
-    consumes.  NULL means the job has not yet produced a servable artifact.
-
-    ``attempts`` is incremented by crash-recovery on startup (A4.2) so that
-    a job stuck ``running`` after a worker crash is retried at most once.
-    """
-
-    __tablename__ = "training_jobs"
-
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
-    project_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
-    )
-    dataset_id: Mapped[str] = mapped_column(String(36), ForeignKey("datasets.id"), nullable=False)
-    status: Mapped[JobStatus] = mapped_column(
-        Enum(JobStatus, native_enum=False, length=16), nullable=False, default=JobStatus.queued
-    )
-    progress: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
-    logs: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    adapter_path: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
-    eval_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    eval_passed: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
-    # Full EvaluationResult.to_dict() as JSON (A4.6): score, base_score, score_delta,
-    # held_out, sample_predictions, metrics — so a gate verdict is auditable, not just
-    # a bare scalar. NULL until the job reaches evaluation.
-    eval_metrics: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # JSON
-    training_config: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # JSON
-    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    # Crash-recovery retry counter (A4.2): incremented when startup reconciliation
-    # re-picks a job left `running` by a dead worker; bounds automatic retries.
-    attempts: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0", default=0)
-    started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-
-    project: Mapped[Project] = relationship("Project", back_populates="jobs")
-    dataset: Mapped[Dataset] = relationship("Dataset", back_populates="jobs")
 
 
 # ---------------------------------------------------------------------------
@@ -471,8 +406,7 @@ class Endpoint(Base):
         nullable=False,
         default=EndpointStatus.pending,
     )
-    # null for RAG and base-only endpoints; points to the GGUF LoRA for
-    # served fine-tune endpoints (set when the endpoint is created).
+    # null for RAG and base-only endpoints; the GGUF LoRA path for adapter endpoints.
     adapter_path: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
     base_model: Mapped[str] = mapped_column(String(128), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

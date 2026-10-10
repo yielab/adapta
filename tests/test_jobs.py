@@ -1,5 +1,5 @@
 """
-Unit tests for the Redis-backed training job queue (adapta/services/jobs.py).
+Unit tests for the Redis-backed job queue (adapta/services/jobs.py).
 
 Infrastructure is mocked at the boundary with an in-memory fake Redis so these
 run in the offline gate. Notably covers the idle-poll path: an idle BLPOP that
@@ -12,9 +12,9 @@ import json
 import pytest
 from redis.exceptions import TimeoutError as RedisTimeoutError
 
+from adapta.domain.errors import UnknownJobKind
 from adapta.services.jobs import JOB_KEY_PREFIX, QUEUE_KEY, JobQueue
-from adapta.training.models import TrainingConfig
-from adapta.worker.main import _build_training_config
+from adapta.worker import main as worker
 
 
 class _FakePipeline:
@@ -81,7 +81,7 @@ def queue():
 
 
 async def test_enqueue_then_dequeue_roundtrip(queue):
-    await queue.enqueue("job-1", {"base_model": "x", "dataset_path": "/tmp/d.jsonl"})
+    await queue.enqueue("job-1", "probe", {"base_model": "x", "dataset_path": "/tmp/d.jsonl"})
     # metadata stored + id on the queue
     assert QUEUE_KEY in queue._redis.lists
     assert json.loads(queue._redis.store[f"{JOB_KEY_PREFIX}job-1"])["status"] == "queued"
@@ -89,6 +89,7 @@ async def test_enqueue_then_dequeue_roundtrip(queue):
     meta = await queue.dequeue(timeout=1)
     assert meta is not None
     assert meta["job_id"] == "job-1"
+    assert meta["kind"] == "probe"
     assert meta["payload"]["base_model"] == "x"
 
 
@@ -103,17 +104,14 @@ async def test_dequeue_timeout_is_empty_poll_not_error(queue):
 
 
 async def test_update_status_merges_fields(queue):
-    await queue.enqueue("job-2", {"base_model": "y"})
+    await queue.enqueue("job-2", "probe", {"base_model": "y"})
     await queue.dequeue(timeout=1)
     await queue.update_status("job-2", status="running", progress=0.5)
-    await queue.update_status(
-        "job-2", status="succeeded", eval_score=0.81, eval_passed=True, adapter_path="/a"
-    )
+    await queue.update_status("job-2", status="succeeded", logs="done")
     meta = await queue.get_status("job-2")
     assert meta["status"] == "succeeded"
     assert meta["progress"] == 0.5  # preserved across updates
-    assert meta["eval_score"] == 0.81
-    assert meta["eval_passed"] is True
+    assert meta["logs"] == "done"
     assert "finished_at" in meta  # terminal status stamps a finish time
 
 
@@ -122,7 +120,7 @@ async def test_get_status_missing_returns_none(queue):
 
 
 async def test_requeue_resets_status_and_fronts_the_queue(queue):
-    await queue.enqueue("job-3", {"base_model": "z"})
+    await queue.enqueue("job-3", "probe", {"base_model": "z"})
     await queue.dequeue(timeout=1)  # drains it off the queue
     await queue.update_status("job-3", status="running", progress=0.7)
     await queue.requeue("job-3")
@@ -133,7 +131,7 @@ async def test_requeue_resets_status_and_fronts_the_queue(queue):
 
 async def test_requeue_goes_to_front(queue):
     queue._redis.lists[QUEUE_KEY] = ["existing"]
-    await queue.enqueue("job-4", {})
+    await queue.enqueue("job-4", "probe", {})
     await queue.requeue("job-4")
     # requeued job is at the FRONT (picked up next), ahead of existing entries
     assert queue._redis.lists[QUEUE_KEY][0] == "job-4"
@@ -151,33 +149,33 @@ def test_queue_requires_connection():
         _ = q.redis
 
 
-# _build_training_config (adapta/worker/main.py) — §E1.5: the worker holds no
-# hyperparameter literals of its own; TrainingConfig's own dataclass defaults are
-# the single source of truth (mirrored, not duplicated, in specs/openapi.yaml).
+# Worker dispatch (adapta/worker/main.py): jobs run through the HANDLERS table,
+# keyed by meta["kind"]; a kind with no handler fails with a typed error.
 
 
-def test_build_training_config_empty_payload_uses_dataclass_defaults():
-    config = _build_training_config({}, "sft")
-    defaults = TrainingConfig()
-    assert config.lora_dropout == defaults.lora_dropout == 0.1
-    assert config.max_seq_length == defaults.max_seq_length == 512
-    assert config.seed == defaults.seed == 42
-    assert config.method == "sft"
+async def test_run_job_unknown_kind_raises_typed_error():
+    with pytest.raises(UnknownJobKind) as exc:
+        await worker._run_job({"job_id": "j", "kind": "nope", "payload": {}})
+    assert exc.value.code == "unknown_job_kind"
+    assert "nope" in (exc.value.internal_detail or "")
+    assert "nope" not in exc.value.message  # internal detail never reaches the client text
 
 
-def test_build_training_config_seed_round_trips():
-    config = _build_training_config({"seed": 12345}, "sft")
-    assert config.seed == 12345
+async def test_run_job_missing_kind_raises_typed_error():
+    with pytest.raises(UnknownJobKind):
+        await worker._run_job({"job_id": "j", "payload": {}})
 
 
-def test_build_training_config_method_comes_from_payload_not_training_config():
-    # `method` is a top-level job field, not part of training_config — a stray
-    # "method" key in the raw payload must never override the explicit argument.
-    config = _build_training_config({"method": "dpo"}, "sft")
-    assert config.method == "sft"
+async def test_run_job_dispatches_to_registered_handler(monkeypatch):
+    seen = []
+
+    async def handler(meta):
+        seen.append(meta["job_id"])
+
+    monkeypatch.setitem(worker.HANDLERS, "probe", handler)
+    await worker._run_job({"job_id": "j-1", "kind": "probe", "payload": {}})
+    assert seen == ["j-1"]
 
 
-def test_build_training_config_ignores_unknown_keys():
-    config = _build_training_config({"not_a_real_field": 1, "lora_r": 8}, "sft")
-    assert config.lora_r == 8
-    assert not hasattr(config, "not_a_real_field")
+def test_handler_table_is_empty():
+    assert worker.HANDLERS == {}

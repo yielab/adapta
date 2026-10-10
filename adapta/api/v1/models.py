@@ -18,7 +18,7 @@ router = APIRouter(prefix="/models", tags=["models"])
 
 @router.get("", response_model=List[BaseModelInfo])
 async def list_base_models(current_user=Depends(get_current_user)):
-    """One entry per servable+trainable base model with catalog metadata,
+    """One entry per servable base model with catalog metadata,
     including the weights license (§E1.2) and which entry is the platform default."""
     default_entry = resolve(settings.default_model)
     default_name = default_entry.name if default_entry else settings.default_model
@@ -31,7 +31,6 @@ async def list_base_models(current_user=Depends(get_current_user)):
             use_case=e.use_case,
             best_for=e.best_for,
             available=e.gguf_path().exists(),
-            train_vram_gb=e.train_vram_gb,
             serve_ram_gb=e.serve_ram_gb,
             hf_repo_id=e.hf_repo_id,
             notes=e.notes,

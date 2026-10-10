@@ -1,9 +1,8 @@
-"""Unit tests for fine-tune adapter serving wiring (A3.1).
+"""Unit tests for adapter serving wiring (A3.1).
 
 These do NOT load a real model or run a GPU — they verify the plumbing that makes
-a fine-tune endpoint apply its LoRA adapter: cache keying, name resolution, request
-threading, and the conversion module's typed-error behavior. The real base+LoRA
-inference is covered by the opt-in GPU e2e (tests/integration/test_lora_e2e.py).
+an adapter endpoint apply its LoRA: cache keying, name resolution, request threading,
+and the conversion module's typed-error behavior.
 """
 
 from __future__ import annotations

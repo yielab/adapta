@@ -162,21 +162,20 @@ class EmbeddingModelMismatch(DomainError):
 
 
 @dataclass
-class TrainingFailed(DomainError):
-    """A training job failed for a non-eval reason (HTTP 500).
+class UnknownJobKind(DomainError):
+    """A worker dequeued a job whose ``kind`` has no registered handler (HTTP 500).
 
-    Examples: OOM during QLoRA, broken dataset file on disk, adapter
-    conversion subprocess crash.  Distinct from EvalGateFailed (the job ran
-    to completion but the adapter did not clear the threshold).
+    Not client-facing today (the worker records it on the job); typed so the failure
+    is a stable code rather than a raw string.
     """
 
-    code: str = field(default="training_failed", init=False)
+    code: str = field(default="unknown_job_kind", init=False)
     status: int = field(default=500, init=False)
 
 
 @dataclass
 class InferenceFailed(DomainError):
-    """The llama-cpp or vLLM inference call raised an unexpected exception (HTTP 500)."""
+    """The llama-cpp inference call raised an unexpected exception (HTTP 500)."""
 
     code: str = field(default="inference_failed", init=False)
     status: int = field(default=500, init=False)
@@ -204,12 +203,10 @@ class EmbeddingFailed(DomainError):
 
 @dataclass
 class EvalGateFailed(DomainError):
-    """A trained adapter did not clear the eval threshold (HTTP 422).
+    """An adapter did not clear the eval gate (HTTP 422).
 
-    HTTP 422 signals a business-rule rejection, not a server error: the job
-    ran successfully, but the resulting adapter is not good enough to serve.
-    The caller may inspect eval_score / eval_metrics on the job, improve the
-    dataset, and re-train.
+    HTTP 422 signals a business-rule rejection, not a server error: the check
+    ran successfully, but the adapter is not good enough to serve.
     """
 
     code: str = field(default="eval_gate_failed", init=False)

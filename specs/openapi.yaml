@@ -11,12 +11,11 @@ info:
     **Give it knowledge (RAG)** — upload documents, embed them, and get answers grounded in
     your content, with citations. Weights never change. CPU-only.
 
-    **Change how it behaves (fine-tuning / LoRA)** — train a QLoRA adapter on instruction
-    data; the adapter only serves once it passes the eval gate (score ≥ 0.6 or a clear
-    improvement over the base model). Requires a GPU.
+    **Change how it behaves (LoRA adapters)** — serve a LoRA adapter on top of the base
+    model; held-out evaluation data is validated and reviewed here. Runs on CPU.
 
     **Composed endpoints** — a single project endpoint can serve both: retrieved context
-    with citations (RAG) and trained tone/format (the LoRA adapter) in one call.
+    with citations (RAG) and the adapter's tone/format in one call.
 
     ---
 
@@ -47,8 +46,6 @@ tags:
     description: Document upload + indexing (knowledge for RAG answers and/or dataset synthesis)
   - name: datasets
     description: JSONL dataset upload + validation (finetune projects)
-  - name: jobs
-    description: Training job lifecycle (finetune projects)
   - name: endpoints
     description: Create and retrieve the servable endpoint for a project
   - name: keys
@@ -207,7 +204,7 @@ paths:
       summary: List the base-model catalog
       description: >
         The single catalog (A3.3) every project's base_model validates against —
-        one entry per servable+trainable base, with its modality (text or
+        one entry per servable base, with its modality (text or
         vision). Feeds the console's base-model dropdown and modality-aware UI.
       security: [{BearerAuth: []}]
       responses:
@@ -346,13 +343,10 @@ paths:
     post:
       operationId: uploadDataset
       tags: [datasets]
-      summary: Upload a training dataset (finetune projects) — .jsonl, or a .zip image bundle
+      summary: Upload an SFT dataset (finetune projects) — .jsonl
       description: |
-        Plain `.jsonl` for text datasets. For image datasets (§V), a `.zip`
-        bundle holding exactly one root `.jsonl` manifest plus the images its
-        rows reference (`images` paths relative to the bundle; png/jpg/jpeg/webp).
+        Plain `.jsonl`, one SFT row per line (`prompt`/`response` or `messages`).
         Validation runs in the background; poll the dataset until `valid`/`invalid`.
-        Bundles are extracted with traversal protection and size/count caps.
       security: [{BearerAuth: []}]
       parameters: [{$ref: '#/components/parameters/ProjectId'}]
       requestBody:
@@ -409,7 +403,7 @@ paths:
       description: |
         Returns a page of the raw JSONL rows from a `valid` dataset so the
         console can render them for review. Rows are returned as opaque objects
-        (the exact shape depends on whether the dataset is SFT, DPO, or vision).
+        (the SFT row shape).
       security: [{BearerAuth: []}]
       parameters:
         - {$ref: '#/components/parameters/ProjectId'}
@@ -432,8 +426,7 @@ paths:
         Accepts a (possibly trimmed or edited) array of rows and saves them as a
         new `valid` dataset derived from `dataset_id`. The curated dataset passes
         through the same min-size and schema validation as any uploaded dataset, and
-        its `source_dataset_id` field points back to the original. It can then be
-        used immediately to enqueue a training job.
+        its `source_dataset_id` field points back to the original.
       security: [{BearerAuth: []}]
       parameters:
         - {$ref: '#/components/parameters/ProjectId'}
@@ -452,65 +445,13 @@ paths:
         '201': {description: Curated dataset, content: {application/json: {schema: {$ref: '#/components/schemas/DatasetResponse'}}}}
 
   # ──────────────────────────────────────────────────────────────────────────
-  # Training jobs
-  # ──────────────────────────────────────────────────────────────────────────
-  /projects/{project_id}/jobs:
-    post:
-      operationId: createJob
-      tags: [jobs]
-      summary: Enqueue a training job
-      security: [{BearerAuth: []}]
-      parameters: [{$ref: '#/components/parameters/ProjectId'}]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: {$ref: '#/components/schemas/JobCreateRequest'}
-      responses:
-        '400': {$ref: '#/components/responses/Error'}
-        '401': {$ref: '#/components/responses/Error'}
-        '403': {$ref: '#/components/responses/Error'}
-        '404': {$ref: '#/components/responses/Error'}
-        '422': {$ref: '#/components/responses/Error'}
-        '202': {description: Queued, content: {application/json: {schema: {$ref: '#/components/schemas/JobResponse'}}}}
-
-    get:
-      operationId: listJobs
-      tags: [jobs]
-      summary: List training jobs for a project
-      security: [{BearerAuth: []}]
-      parameters: [{$ref: '#/components/parameters/ProjectId'}]
-      responses:
-        '401': {$ref: '#/components/responses/Error'}
-        '403': {$ref: '#/components/responses/Error'}
-        '404': {$ref: '#/components/responses/Error'}
-        '422': {$ref: '#/components/responses/Error'}
-        '200': {description: Jobs, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/JobResponse'}}}}}
-
-  /projects/{project_id}/jobs/{job_id}:
-    get:
-      operationId: getJob
-      tags: [jobs]
-      summary: Get job status and live progress
-      security: [{BearerAuth: []}]
-      parameters:
-        - {$ref: '#/components/parameters/ProjectId'}
-        - {name: job_id, in: path, required: true, schema: {type: string}}
-      responses:
-        '401': {$ref: '#/components/responses/Error'}
-        '403': {$ref: '#/components/responses/Error'}
-        '404': {$ref: '#/components/responses/Error'}
-        '422': {$ref: '#/components/responses/Error'}
-        '200': {description: Job, content: {application/json: {schema: {$ref: '#/components/schemas/JobResponse'}}}}
-
-  # ──────────────────────────────────────────────────────────────────────────
   # Endpoint
   # ──────────────────────────────────────────────────────────────────────────
   /projects/{project_id}/endpoint:
     post:
       operationId: createEndpoint
       tags: [endpoints]
-      summary: Activate the project endpoint (RAG must have indexed docs; finetune must have passed eval gate)
+      summary: Activate the project endpoint (RAG must have indexed docs; finetune projects need an imported adapter)
       security: [{BearerAuth: []}]
       parameters: [{$ref: '#/components/parameters/ProjectId'}]
       responses:
@@ -700,7 +641,7 @@ paths:
         The `model` field is the endpoint slug.
         Serving composes the project's artifacts: if the project has indexed
         documents, retrieved context is injected and `citations` returned; if the
-        endpoint has a trained adapter (fine-tune), it is applied. A fine-tune
+        endpoint has an adapter (fine-tune), it is applied. A fine-tune
         project with indexed documents gets both — knowledge from its documents,
         behavior from its adapter.
 
@@ -768,7 +709,7 @@ components:
   schemas:
     # ──────────────────────────────────────────────────────────────────────
     # Named enums — extracted to components so the generated Pydantic models
-    # carry meaningful names (e.g. JobStatus, not Status1) instead of the
+    # carry meaningful names (e.g. EndpointStatus, not Status1) instead of the
     # auto-numbered junk datamodel-codegen emits for inline enums.
     # ──────────────────────────────────────────────────────────────────────
     Role:
@@ -780,15 +721,9 @@ components:
     Modality:
       type: string
       enum: [text, vision]
-    Gate:
-      type: string
-      enum: [absolute, improvement]
     InvitationStatus:
       type: string
       enum: [pending, accepted, revoked]
-    JobStatus:
-      type: string
-      enum: [queued, running, succeeded, failed, cancelled]
     EndpointStatus:
       type: string
       enum: [pending, active, disabled]
@@ -945,15 +880,6 @@ components:
       properties:
         total: {type: integer}
         valid: {type: integer}
-    JobSummary:
-      type: object
-      required: [total, running]
-      properties:
-        total: {type: integer}
-        running: {type: integer}
-        last_status: {type: string, nullable: true}
-        last_eval_score: {type: number, nullable: true}
-        gate_passed: {type: boolean, nullable: true}
     EndpointSummary:
       type: object
       required: [exists]
@@ -969,12 +895,11 @@ components:
         total_tokens: {type: integer}
     ProjectSummary:
       type: object
-      required: [stage, files, datasets, jobs, endpoint, keys_active, usage_7d]
+      required: [stage, files, datasets, endpoint, keys_active, usage_7d]
       properties:
         stage: {type: string}
         files: {$ref: '#/components/schemas/FileSummary'}
         datasets: {$ref: '#/components/schemas/DatasetSummary'}
-        jobs: {$ref: '#/components/schemas/JobSummary'}
         endpoint: {$ref: '#/components/schemas/EndpointSummary'}
         keys_active: {type: integer}
         usage_7d: {$ref: '#/components/schemas/UsageSummary'}
@@ -995,15 +920,12 @@ components:
     # Datasets
     DatasetResponse:
       type: object
-      required: [id, name, status, num_samples, modality, num_images, validation_error, created_at, source_dataset_id]
+      required: [id, name, status, num_samples, validation_error, created_at, source_dataset_id]
       properties:
         id: {type: string}
         name: {type: string}
         status: {type: string}
         num_samples: {type: integer, nullable: true}
-        # §V image datasets: "vision" once an image bundle validates; "text" otherwise.
-        modality: {$ref: '#/components/schemas/Modality'}
-        num_images: {type: integer, nullable: true}
         validation_error: {type: string, nullable: true}
         created_at: {type: string}
         # D6: set when this dataset was produced by POST .../curate from another dataset.
@@ -1034,73 +956,7 @@ components:
             type: object
             additionalProperties: true
 
-    # Jobs
-    TrainingConfigInput:
-      # Bounds mirror the server's enqueue-time validation (A4.12,
-      # adapta/services/training.py _HYPERPARAM_BOUNDS) — out-of-range
-      # values are rejected with 422 before a job is created. Defaults mirror
-      # adapta.training.models.TrainingConfig (§E1.5) — that dataclass is the
-      # single source of truth; the worker holds no hyperparameter literals.
-      type: object
-      properties:
-        num_epochs: {type: integer, default: 3, minimum: 1, maximum: 100}
-        batch_size: {type: integer, default: 4, minimum: 1, maximum: 128}
-        learning_rate: {type: number, default: 0.0002, minimum: 1.0e-6, maximum: 0.1}
-        lora_r: {type: integer, default: 16, minimum: 1, maximum: 256}
-        lora_alpha: {type: integer, default: 32, minimum: 1, maximum: 512}
-        lora_dropout: {type: number, default: 0.1, minimum: 0.0, maximum: 0.9}
-        max_seq_length: {type: integer, default: 512, minimum: 16, maximum: 8192}
-        # DPO-specific: KL-divergence regularisation coefficient (β). Higher β
-        # keeps the fine-tuned model closer to the reference (base) distribution;
-        # lower β allows stronger preference learning. Only used when method=dpo.
-        dpo_beta: {type: number, default: 0.1, minimum: 0.0, maximum: 1.0}
-        # Pinned seed — recorded into training provenance so a run is
-        # reproducible given the recorded seed + dataset hash + lib versions (A4.7).
-        seed: {type: integer, default: 42, minimum: 0, maximum: 2147483647}
-
-    JobCreateRequest:
-      type: object
-      required: [dataset_id]
-      properties:
-        dataset_id: {type: string}
-        # Training algorithm. Omit or pass null for the default (sft). Supported values:
-        #   "sft" — supervised instruction tuning (prompt/response rows)
-        #   "dpo" — Direct Preference Optimisation (prompt/chosen/rejected rows)
-        method:
-          type: string
-          enum: [sft, dpo]
-          nullable: true
-        training_config: {$ref: '#/components/schemas/TrainingConfigInput', nullable: true}
-
-    JobResponse:
-      type: object
-      required: [id, status, progress, logs, adapter_path, eval_score, eval_passed, eval_metrics, error_message, created_at]
-      properties:
-        id: {type: string}
-        status: {$ref: '#/components/schemas/JobStatus'}
-        progress: {type: number, minimum: 0, maximum: 1}
-        logs: {type: string, nullable: true}
-        adapter_path: {type: string, nullable: true}
-        eval_score: {type: number, nullable: true}
-        eval_passed: {type: boolean, nullable: true}
-        # Full eval result for an auditable gate verdict (A4.6): score, base_score,
-        # score_delta, held_out, metrics, sample_predictions. Null until evaluation.
-        eval_metrics: {type: object, nullable: true, additionalProperties: true}
-        error_message: {type: string, nullable: true}
-        created_at: {type: string}
-
     # Endpoint
-    AdapterProvenance:
-      type: object
-      description: Adapter eval evidence (null for RAG-only endpoints)
-      required: [job_id, eval_score, gate]
-      properties:
-        job_id: {type: string}
-        eval_score: {type: number, format: float}
-        base_score: {type: number, format: float, nullable: true}
-        score_delta: {type: number, format: float, nullable: true}
-        gate: {$ref: '#/components/schemas/Gate'}
-
     RetrievalSummary:
       type: object
       description: RAG retrieval layer (null when no documents are indexed)
@@ -1110,7 +966,7 @@ components:
 
     EndpointResponse:
       type: object
-      required: [id, slug, status, base_model, modality, project_type, created_at, adapter, retrieval, adapter_path]
+      required: [id, slug, status, base_model, modality, project_type, created_at, retrieval, adapter_path]
       properties:
         id: {type: string}
         slug: {type: string}
@@ -1119,7 +975,6 @@ components:
         modality: {$ref: '#/components/schemas/Modality'}
         project_type: {$ref: '#/components/schemas/ProjectType'}
         created_at: {type: string}
-        adapter: {$ref: '#/components/schemas/AdapterProvenance', nullable: true}
         retrieval: {$ref: '#/components/schemas/RetrievalSummary', nullable: true}
         adapter_path: {type: string, nullable: true, deprecated: true}
 
@@ -1233,7 +1088,6 @@ components:
         use_case: {type: string}
         best_for: {type: array, items: {type: string}}
         available: {type: boolean}
-        train_vram_gb: {type: integer, nullable: true}
         serve_ram_gb: {type: integer, nullable: true}
         hf_repo_id: {type: string}
         notes: {type: string}

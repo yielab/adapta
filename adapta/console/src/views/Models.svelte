@@ -43,8 +43,8 @@
   <header class="page-header">
     <h1>Model Catalog</h1>
     <p class="page-sub">
-      The base models available on this server for RAG and fine-tuning.
-      Models must be downloaded to disk before they can serve or train.
+      The base models available on this server for RAG and adapters.
+      Models must be downloaded to disk before they can serve.
     </p>
   </header>
 
@@ -56,8 +56,8 @@
     <div class="picker-guide">
       <strong>Which model should I pick?</strong>
       Use <em>0.5B</em> for quick local experiments.
-      <em>1.5B-Instruct</em> is the default for RAG + general fine-tuning (Apache-2.0, fits small GPUs).
-      <em>7B-Instruct</em> for the highest output quality (requires ≥16 GB VRAM to train).
+      <em>1.5B-Instruct</em> is the default for RAG + adapters (Apache-2.0, runs on any host).
+      <em>7B-Instruct</em> for the highest output quality (needs more RAM to serve).
       <em>VL-7B</em> for image + text understanding in production.
       Entries marked <em>evaluation only</em> (3B, Coder-3B, VL-3B) carry the Qwen Research License —
       not for commercial use.
@@ -100,12 +100,6 @@
           {/if}
 
           <div class="resources">
-            {#if m.train_vram_gb != null}
-              <span class="resource-item">
-                <span class="resource-label">Trains on</span>
-                <span class="resource-val">~{m.train_vram_gb} GB VRAM</span>
-              </span>
-            {/if}
             {#if m.serve_ram_gb != null}
               <span class="resource-item">
                 <span class="resource-label">Serves in</span>

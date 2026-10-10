@@ -3,8 +3,7 @@
 # live (uvicorn hot-reloads); the toolchain is baked into the app image, so
 # `docker compose exec app make ci` works with zero setup.
 #
-# GPU is the DEFAULT: the worker reserves the host GPU for QLoRA training. On a
-# host without the NVIDIA Container Toolkit, layer docker-compose.cpu.yml.
+# Everything runs on CPU; no GPU or NVIDIA Container Toolkit is needed.
 
 # Pin the compose project name so image/volume/network prefixes are stable
 # (`adapta_*`) regardless of the checkout directory name.
@@ -69,16 +68,16 @@ services:
       - adapta-network
 
   # ──────────────────────────────────────────────
-  # Training worker: consumes Redis queue, runs QLoRA on the GPU (the default).
-  # On a CPU-only host, layer docker-compose.cpu.yml to drop the reservation —
-  # the worker then starts but rejects LoRA jobs fast (GPU guard).
+  # Background worker: consumes the Redis job queue (same image as app).
+  # ENTRYPOINT is replaced so it skips the app's migrate-then-uvicorn script.
   # ──────────────────────────────────────────────
   worker:
     build:
       context: .
       dockerfile: Dockerfile
-      target: worker
+      target: app
     container_name: adapta-worker
+    entrypoint: ["python", "-m", "adapta.worker.main"]
     volumes:
       - .:/app  # live source for worker code too
     environment:
@@ -100,15 +99,6 @@ services:
       resources:
         limits:
           memory: 8g
-    # GPU is the default — the worker gets the host GPU for QLoRA training via CDI
-    # (Container Device Interface). Requires the NVIDIA Container Toolkit on the host
-    # (`nvidia-ctk` generates /etc/cdi or /var/run/cdi/nvidia.yaml; the enabled
-    # nvidia-cdi-refresh.service keeps it current). Docker 25+ resolves GPUs through
-    # CDI — the legacy `deploy.resources.reservations.devices: {driver: nvidia}`
-    # plugin path is NOT available on this host. On a CPU-only host, opt out with
-    # `-f docker-compose.cpu.yml` (which !resets the devices list).
-    devices:
-      - "nvidia.com/gpu=all"
     logging: *default-logging
     depends_on:
       postgres:
@@ -190,48 +180,6 @@ services:
     logging: *default-logging
 
   # ──────────────────────────────────────────────
-  # vLLM serving backend (optional, D3) — closes adapter-density gap (§D0 Q3).
-  # llama-cpp loads one GPU instance per (base, adapter) key; vLLM packs N text
-  # LoRA adapters into one GPU process via continuous batching (max_loras pool).
-  #
-  # Activate:  docker compose --profile vllm up -d
-  # Set on app: ADAPTA_SERVING_BACKEND=vllm in .env (or compose environment block)
-  #
-  # The ``data/`` volume is shared with app and worker so adapter paths written by
-  # the training worker resolve inside this container without extra copies.
-  # See OPERATIONS.md §9 for sizing, model download, and rollout guidance.
-  # ──────────────────────────────────────────────
-  vllm-server:
-    image: vllm/vllm-openai:latest
-    container_name: adapta-vllm
-    profiles: [vllm]
-    environment:
-      - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN:-}
-    volumes:
-      # Mount the same host data dir as app/worker so adapter paths (stored in DB
-      # as /app/data/adapters/...) resolve identically inside this container.
-      - ./data:/app/data:ro
-      - vllm-model-cache:/root/.cache/huggingface  # persist HF model downloads
-    ports:
-      - "8001:8000"   # host:container — avoids collision with app on 8000
-    networks:
-      - adapta-network
-    command: >
-      --model ${VLLM_BASE_MODEL:-Qwen/Qwen2.5-3B-Instruct}
-      --enable-lora
-      --max-loras ${ADAPTA_VLLM_MAX_LORAS:-8}
-      --max-model-len ${VLLM_MAX_MODEL_LEN:-32768}
-      --host 0.0.0.0
-      --port 8000
-    devices:
-      - "nvidia.com/gpu=all"
-    deploy:
-      resources:
-        limits:
-          memory: 16g
-    logging: *default-logging
-
-  # ──────────────────────────────────────────────
   # Observability (optional) — `docker compose --profile observability up -d`.
   # Off by default; scrapes the app's /metrics (§3.5).
   # ──────────────────────────────────────────────
@@ -276,4 +224,3 @@ volumes:
   chroma-data:
   prometheus-data:
   grafana-data:
-  vllm-model-cache:   # persists HF model downloads across vllm-server container restarts

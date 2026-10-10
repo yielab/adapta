@@ -49,18 +49,18 @@ def test_router_defines_no_local_pydantic_models(mod_name: str) -> None:
 
 def test_generated_package_reexports_models() -> None:
     """`from adapta.models.generated import X` must resolve (package re-export)."""
-    for name in ("ProjectResponse", "JobResponse", "ChatCompletionRequest", "BaseModelInfo"):
+    for name in ("ProjectResponse", "DatasetResponse", "ChatCompletionRequest", "BaseModelInfo"):
         assert hasattr(generated, name), f"adapta.models.generated does not export {name}"
 
 
 def test_routers_bind_the_generated_models_by_identity() -> None:
     """Spot-check that routers reference the generated classes, not look-alikes."""
-    from adapta.api.v1 import endpoints, jobs, projects, settings, usage
+    from adapta.api.v1 import datasets, endpoints, projects, settings, usage
 
     assert projects.ProjectResponse is generated.ProjectResponse
     assert projects.ProjectCreate is generated.ProjectCreate
-    assert jobs.JobResponse is generated.JobResponse
-    assert jobs.JobCreateRequest is generated.JobCreateRequest
+    assert datasets.DatasetResponse is generated.DatasetResponse
+    assert datasets.DatasetCurateRequest is generated.DatasetCurateRequest
     assert endpoints.EndpointResponse is generated.EndpointResponse
     assert usage.UsageResponse is generated.UsageResponse
     assert settings.SettingResponse is generated.SettingResponse

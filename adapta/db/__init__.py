@@ -10,7 +10,6 @@ from .models import (
     ProjectFile,
     Team,
     TeamMember,
-    TrainingJob,
     User,
 )
 from .session import AsyncSessionLocal, engine, get_db
@@ -28,7 +27,6 @@ __all__ = [
     "ProjectFile",
     "Collection",
     "Dataset",
-    "TrainingJob",
     "Endpoint",
     "ApiKey",
     "AppSetting",

@@ -1,17 +1,16 @@
 """PEFT (safetensors) -> GGUF LoRA conversion for serving.
 
-Training emits a HuggingFace PEFT adapter (``adapter_model.safetensors`` +
+An adapter arrives as a HuggingFace PEFT directory (``adapter_model.safetensors`` +
 ``adapter_config.json``). Serving is a single llama-cpp runtime that can only
 apply a **GGUF-format** LoRA (``Llama(..., lora_path=...)``). This module bridges
 the two by invoking llama.cpp's *official* ``convert_lora_to_gguf.py`` as a
 subprocess — we deliberately do NOT reimplement the GGUF-LoRA serialization
 format (hard constraint #1: don't rewrite engine internals).
 
-The converter is vendored into the worker image (see Dockerfile worker stage) at
-``settings.lora_convert_dir`` and needs the ``gguf``/``safetensors``/``torch``
-toolchain present in the ``[training]`` extras — so conversion runs in the
-**worker** after the eval gate passes, producing ``adapter.gguf`` beside the
-safetensors adapter. Serving then loads that GGUF.
+The converter script is expected at ``settings.lora_convert_dir`` and needs the
+``gguf``/``safetensors``/``torch`` toolchain from the main dependencies. It
+produces ``adapter.gguf`` beside the safetensors adapter; serving then loads that
+GGUF.
 """
 
 from __future__ import annotations

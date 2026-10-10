@@ -66,7 +66,7 @@ async def create_project(
 ):
     await require_team_writer(db, current_user.id, body.team_id)
     # Validate base_model against the single catalog (A3.3): the same entry must
-    # both train (HF id) and serve (GGUF), so an operator can't pick a value that
+    # address both the HF id and the GGUF, so an operator can't pick a value that
     # only works in one runtime — it would otherwise surface as a runtime failure.
     if not is_valid(body.base_model):
         allowed = ", ".join(allowed_names())

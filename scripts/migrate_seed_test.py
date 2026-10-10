@@ -72,17 +72,6 @@ async def _seed(tag: str) -> None:
         db.add(dataset)
         await db.flush()
 
-        db.add(
-            m.TrainingJob(
-                project_id=project.id,
-                dataset_id=dataset.id,
-                status=m.JobStatus.succeeded,
-                progress=1.0,
-                eval_score=0.71,
-                eval_passed=True,
-            )
-        )
-
         endpoint = m.Endpoint(
             project_id=project.id,
             slug=f"seed-{suffix}",

@@ -18,7 +18,7 @@ pytestmark = pytest.mark.integration
 
 _TABLES = (
     "orgs, teams, users, team_members, projects, project_files, "
-    "collections, datasets, training_jobs, endpoints, api_keys, usage_events, invitations"
+    "collections, datasets, endpoints, api_keys, usage_events, invitations"
 )
 
 
