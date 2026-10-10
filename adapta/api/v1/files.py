@@ -24,6 +24,7 @@ from adapta.models.generated import FileResponse
 from adapta.services.app_settings import resolve_setting
 from adapta.services.auth import get_current_user, require_team_member, require_team_writer
 from adapta.services.documents import parse_and_chunk
+from adapta.services.embeddings import get_embedding_service
 from adapta.services.rag import (
     all_chunks_known,
     collection_name_for,
@@ -129,6 +130,26 @@ async def _index_file(
                         f"but the server is now configured for '{settings.embedding_model}'. "
                         "Re-index the project's files, or restore "
                         f"ADAPTA_EMBEDDING_MODEL={collection.embedding_model}."
+                    )
+                )
+
+            # Dimension guard (E3.6): the first indexing records the vector size; afterwards a
+            # model that yields a different size under the same name (or a swapped model
+            # whose name collides) is a typed 409 instead of a Chroma dimension error.
+            dim = await asyncio.to_thread(lambda: get_embedding_service().dimension)
+            if collection.embedding_dim is None:
+                await db.execute(
+                    update(Collection)
+                    .where(Collection.project_id == project_id)
+                    .values(embedding_dim=dim)
+                )
+                await db.commit()
+            elif collection.embedding_dim != dim:
+                raise EmbeddingModelMismatch(
+                    message=(
+                        f"This project's vectors are {collection.embedding_dim}-dimensional but "
+                        f"'{settings.embedding_model}' produces {dim}. Run scripts/reembed.py "
+                        f"or restore ADAPTA_EMBEDDING_MODEL={collection.embedding_model}."
                     )
                 )
 

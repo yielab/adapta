@@ -343,6 +343,8 @@ class Collection(Base):
     )
     chroma_collection_name: Mapped[str] = mapped_column(String(256), nullable=False, unique=True)
     embedding_model: Mapped[str] = mapped_column(String(128), nullable=False)
+    # Vector size of `embedding_model`; NULL until first indexing/re-embed records it (E3.6).
+    embedding_dim: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     num_documents: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     num_chunks: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

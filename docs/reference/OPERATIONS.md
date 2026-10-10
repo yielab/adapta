@@ -299,17 +299,50 @@ raw Chroma dimension-mismatch error:
 - **Chatting against** a project indexed under the old model is rejected before
   the query is embedded and sent to Chroma.
 
-The error message names both models and the fix. To recover, either:
+The error message names both models and the fix. The vector size is recorded too
+(`Collection.embedding_dim`, set on first indexing): a model that yields a
+different size under the same name is the same typed `409`.
 
-1. **Re-index** — delete the project's files and re-upload them under the new
-   model (the collection is rebuilt from empty, so its recorded model updates
-   too); or
-2. **Roll back** — restore `ADAPTA_EMBEDDING_MODEL` to the value the message
-   names and restart the app.
+**Changing the model (E3.6)** — set env → re-embed → restart:
 
-A collection indexed before this guard existed (no `embedding_model` key in its
-Chroma metadata) is treated as unknown provenance, not a mismatch — it does not
-retroactively start 409ing.
+1. Pull the model into the app's cache and re-embed every project from the
+   Postgres `chunks` (the source of truth; no re-upload, no re-parse):
+
+   ```bash
+   docker compose exec -e ADAPTA_EMBEDDING_MODEL=<new-model> app python scripts/reembed.py
+   # --dry-run to preview · --project <id> (repeatable) · --force to rebuild anyway
+   ```
+
+   Each project is rebuilt into a side collection and swapped in only when
+   complete, then `Collection.embedding_model`/`embedding_dim` are updated, so an
+   interrupted run leaves the old index serving and re-running resumes (finished
+   projects are skipped). Projects mid-swap answer `409` until done.
+2. Set `ADAPTA_EMBEDDING_MODEL=<new-model>` in `.env` and restart `app`
+   (`docker compose restart app`). Models are cached per process, so the restart
+   is required.
+
+E5 models need `query: ` / `passage: ` prefixes; `embeddings.py` applies them by
+model name, nothing to configure. The reranker and the FTS leg are
+language-agnostic in this path and are not touched by a model change.
+
+**Roll back** — restore the previous `ADAPTA_EMBEDDING_MODEL` and re-run
+`scripts/reembed.py` (or, if the swap never started, just restart).
+
+A collection indexed before the guard existed (no `embedding_model` key in its
+Chroma metadata) is treated as unknown provenance, not a mismatch.
+
+**Candidates (E3.6, measured on the 45-question bilingual golden set).** Dense-only
+columns come from `scripts/compare_embedders.py` (no stack needed); hybrid
+columns from `make golden` with the model set on the app **and** the test process.
+
+| Model | Dim | Download | RAM (RSS delta) | Dense R@5 | Hybrid R@5 | MRR | p50 ms |
+|---|---|---|---|---|---|---|---|
+| `all-MiniLM-L6-v2` (default) | 384 | TBD | TBD | TBD | 0.844 | 0.810 | ~102 |
+| `paraphrase-multilingual-MiniLM-L12-v2` | 384 | TBD | TBD | TBD | TBD | TBD | TBD |
+| `intfloat/multilingual-e5-small` | 384 | TBD | TBD | TBD | TBD | TBD | TBD |
+| `BAAI/bge-m3` (heavy) | 1024 | TBD | TBD | TBD | TBD | TBD | TBD |
+
+The default stays `all-MiniLM-L6-v2` until the table is reviewed.
 
 ---
 

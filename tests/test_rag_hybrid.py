@@ -537,3 +537,62 @@ def test_fts_runtime_reuses_one_loop_and_engine(monkeypatch):
         assert loop.is_running()
     finally:
         loop.call_soon_threadsafe(loop.stop)
+
+
+# ---------------------------------------------------------------------------
+# E3.6 — per-model prefixes + re-embed skip rule
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "model,expected",
+    [
+        ("intfloat/multilingual-e5-small", ("query: ", "passage: ")),
+        ("intfloat/multilingual-e5-base", ("query: ", "passage: ")),
+        ("all-MiniLM-L6-v2", ("", "")),
+        ("paraphrase-multilingual-MiniLM-L12-v2", ("", "")),
+        ("BAAI/bge-m3", ("", "")),
+    ],
+)
+def test_embedding_prefixes_per_model(model, expected):
+    from adapta.services.embeddings import embedding_prefixes
+
+    assert embedding_prefixes(model) == expected
+
+
+def test_embed_applies_query_and_passage_prefixes():
+    from adapta.services.embeddings import EmbeddingService
+
+    seen: list[list[str]] = []
+
+    class _Model:
+        def encode(self, texts, show_progress_bar=False):
+            import numpy as np
+
+            seen.append(list(texts))
+            return np.zeros((len(texts), 4))
+
+    svc = EmbeddingService("intfloat/multilingual-e5-small")
+    svc._model = _Model()  # type: ignore[assignment]
+    svc.embed(["a", "b"])  # indexing side
+    svc.embed_one("q")  # retrieval side
+    assert seen == [["passage: a", "passage: b"], ["query: q"]]
+
+
+def test_needs_reembed_skip_rule():
+    import importlib.util
+    from pathlib import Path
+
+    spec = importlib.util.spec_from_file_location(
+        "reembed", Path(__file__).resolve().parent.parent / "scripts" / "reembed.py"
+    )
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)  # type: ignore[union-attr]
+    base = dict(
+        row_model="m", row_dim=384, target_model="m", target_dim=384, n_chunks=10, n_vectors=10
+    )
+    assert mod.needs_reembed(**base) is False
+    assert mod.needs_reembed(**{**base, "target_model": "n"}) is True
+    assert mod.needs_reembed(**{**base, "row_dim": None}) is True
+    assert mod.needs_reembed(**{**base, "n_vectors": 7}) is True  # interrupted rebuild
+    assert mod.needs_reembed(**{**base, "n_vectors": None}) is True  # collection missing

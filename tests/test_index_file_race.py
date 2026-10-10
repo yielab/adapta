@@ -44,7 +44,7 @@ class _Session:
         if sql.startswith("select") and "project_files" in sql:
             return _Result(self.state["pfile"])
         if sql.startswith("select") and "collections" in sql:
-            return _Result(SimpleNamespace(embedding_model=settings.embedding_model))
+            return _Result(SimpleNamespace(embedding_model=settings.embedding_model, embedding_dim=8))
         return _Result(None)
 
     def add_all(self, rows):
@@ -83,6 +83,9 @@ async def _run(monkeypatch, fail_on_commit):
 
     monkeypatch.setattr(session_mod, "AsyncSessionLocal", lambda: _Session(state))
     monkeypatch.setattr(files_mod, "get_rag_service", lambda: FakeRag())
+    monkeypatch.setattr(
+        files_mod, "get_embedding_service", lambda: SimpleNamespace(dimension=8)
+    )
     chunks = [Chunk(text="hello", source="a.md", index=0)]
     await files_mod._index_file("f1", None, "text/markdown", "a.md", "p1", "t1", chunks)
     return state, calls

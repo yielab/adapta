@@ -10,6 +10,7 @@ change requires a restart.
 from __future__ import annotations
 
 import logging
+import re
 from functools import lru_cache
 from typing import TYPE_CHECKING, List, Optional
 
@@ -20,6 +21,18 @@ if TYPE_CHECKING:
     from sentence_transformers import CrossEncoder, SentenceTransformer
 
 logger = logging.getLogger(__name__)
+
+
+def embedding_prefixes(model_name: str) -> tuple[str, str]:
+    """``(query_prefix, passage_prefix)`` the model was trained with (E3.6).
+
+    E5 models are asymmetric: they expect ``"query: "`` / ``"passage: "`` in front of the
+    text and degrade noticeably without them. Everything else takes the text as-is.
+    """
+    base = model_name.rsplit("/", 1)[-1].lower()
+    if re.search(r"(^|[-_])e5([-_]|$)", base):
+        return "query: ", "passage: "
+    return "", ""
 
 
 class EmbeddingService:
@@ -35,6 +48,7 @@ class EmbeddingService:
     def __init__(self, model_name: str):
         self._model_name = model_name
         self._model: Optional[SentenceTransformer] = None
+        self._query_prefix, self._passage_prefix = embedding_prefixes(model_name)
 
     def _load(self) -> None:
         if self._model is not None:
@@ -51,13 +65,20 @@ class EmbeddingService:
                 internal_detail=str(exc),
             ) from exc
 
-    def embed(self, texts: List[str]) -> List[List[float]]:
-        """Embed a batch of strings.  Returns one float vector per input."""
+    def embed(self, texts: List[str], *, kind: str = "passage") -> List[List[float]]:
+        """Embed a batch of strings.  Returns one float vector per input.
+
+        ``kind`` is ``"passage"`` (documents being indexed; the default) or ``"query"``;
+        it only matters for models that use prefixes (see ``embedding_prefixes``).
+        """
         if not texts:
             return []
         self._load()
         assert self._model is not None
+        prefix = self._query_prefix if kind == "query" else self._passage_prefix
         try:
+            if prefix:
+                texts = [prefix + t for t in texts]
             vectors = self._model.encode(texts, show_progress_bar=False)
             return [v.tolist() for v in vectors]
         except Exception as exc:
@@ -69,10 +90,10 @@ class EmbeddingService:
     def embed_one(self, text: str) -> List[float]:
         """Embed a single string.  Equivalent to ``embed([text])[0]``.
 
-        Not a separate model call — just a convenience wrapper around ``embed``.
+        This is the QUERY side (retrieval); indexing uses ``embed`` (passage side).
         Use ``embed`` directly for batches to avoid per-call overhead.
         """
-        return self.embed([text])[0]
+        return self.embed([text], kind="query")[0]
 
     @property
     def dimension(self) -> int:

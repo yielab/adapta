@@ -127,7 +127,7 @@ classes are defined in [`.claude/context/gates.md`](.claude/context/gates.md) ("
 | E4.9 | 2 | sonnet | live | E1.11 | E2.1, E3.5/E5.3, E4.6 | open |
 | E3.4 | 3 | sonnet | live | E3.1, E3.3b, E1.11 | E3.5 (spec, `Playground.svelte`), E3.3b | open |
 | E3.5 | 3 | sonnet | live | E3.2, E1.11 | E3.4 (spec, `Playground.svelte`), E4.9 and E5.3 | open |
-| E3.6 | 3 | sonnet + human decision | live | E3.1, E3.2, E3.8 | E3.2 | in progress (worker-e3.6) |
+| E3.6 | 3 | sonnet + human decision | live | E3.1, E3.2, E3.8 | E3.2 | ready-for-live (e3.6) |
 | E4.4 | 3 | sonnet | rebuild + live | E4.2, E4.3 | E3.7, E3.3b | open |
 | E5.1 | 3 | sonnet | live | E3.1, E3.7, E3.8 | E5.2, E4.8 | open |
 | E5.2 | 3 | sonnet | live | E3.8, E3.7, E4.8 | E5.1, E4.5 | open |
@@ -351,6 +351,12 @@ E1.1–E1.9 shipped 2026-09-17 → [CHANGELOG.md](CHANGELOG.md). E1.14 closed 20
 - **Files.** `adapta/config.py:78-95`, `adapta/services/embeddings.py:40-91, 145-156`, new
   `scripts/reembed.py`, `docs/reference/OPERATIONS.md`, `.env.example`, `tests/test_rag_hybrid.py`
   (dimension guard).
+- **State (ready-for-live, branch `e3.6`).** Machinery landed: `0012_collection_dim` +
+  `Collection.embedding_dim`, dimension guard in `_index_file`, per-model e5 prefixes in
+  `embeddings.py`, `scripts/reembed.py`, `scripts/compare_embedders.py` (dense-only table incl. RAM
+  and download size), OPERATIONS 6.5 + `.env.example`. **Still open:** run the live measurement
+  (procedure in OPERATIONS 6.5), fill the table, the user picks the default; only then change the
+  `config.py` defaults and `rag_fts_config` (needs `chunks.tsv` regenerated — not done here).
 - **Contract impact.** DB only if the dimension column is new.
 - **Gate.** `make test` → `tests/integration/test_rag_e2e.py` (add one Spanish and one English query
   over a bilingual fixture) → `make golden`.
