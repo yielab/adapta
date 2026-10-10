@@ -127,7 +127,7 @@ classes are defined in [`.claude/context/gates.md`](.claude/context/gates.md) ("
 | E4.8 | 2 | sonnet | live | E3.8, E4.1 | E4.6, E5.1 | in progress (worker-e4.8) |
 | E4.9 | 2 | sonnet | live | E1.11 | E2.1, E3.5/E5.3, E4.6 | done 2026-10-10 |
 | E3.4 | 3 | sonnet | live | E3.1, E3.3b, E1.11 | E3.5 (spec, `Playground.svelte`), E3.3b | done 2026-10-10 |
-| E3.5 | 3 | sonnet | live | E3.2, E1.11 | E3.4 (spec, `Playground.svelte`), E4.9 and E5.3 | ready-for-live (e3.5) |
+| E3.5 | 3 | sonnet | live | E3.2, E1.11 | E3.4 (spec, `Playground.svelte`), E4.9 and E5.3 | done 2026-10-10 |
 | E3.6 | 3 | sonnet + human decision | live | E3.1, E3.2, E3.8 | E3.2 | done 2026-10-10 |
 | E4.4 | 3 | sonnet | rebuild + live | E4.2, E4.3 | E3.7, E3.3b | done 2026-10-10 |
 | E5.1 | 3 | sonnet | live | E3.1, E3.7, E3.8 | E5.2, E4.8 | open |
@@ -152,6 +152,11 @@ E1.1–E1.9 shipped 2026-09-17 → [CHANGELOG.md](CHANGELOG.md). E1.14 closed 20
   refreshes during a job). `docker restart adapta-chroma` cleared it (52 indexed, 8 failed). An earlier ~20 min worker
   stall the same day (E3.7 follow-up 4) was very likely the same hang. `rag.py` builds `chromadb.HttpClient(host,
   port)` with no timeout (`_get_chroma_client`), and the Chroma 1.x image has no curl, so compose has no healthcheck.
+  **Root cause found the same day:** the worker had **1018 open sockets against a 1024 soft limit** — a new Chroma
+  `HttpClient` is built per call and never closed (`rag.py`: "A new ChromaDB HTTP client is created on every call"),
+  leaking ~3 sockets per index job; indexing then failed with `[Errno 24] Too many open files` (restart frees them;
+  29 fds after 3 jobs). A thousand idle client connections is a plausible trigger for the Chroma hang. **Fix this
+  first:** one long-lived client per process (or close each), then measure fds flat across 100 jobs.
 - **Depends.** none. **Unblocks.** nothing formally; every live gate that indexes depends on it in practice.
 - **Agent.** sonnet · gate class **live** · serialize with: E3.7 follow-ups (`worker/main.py`, `rag.py`) ·
   **Handoff.** must name the timeout settings, the job-level deadline, how a Chroma hang now surfaces (status,
@@ -166,7 +171,7 @@ E1.1–E1.9 shipped 2026-09-17 → [CHANGELOG.md](CHANGELOG.md). E1.14 closed 20
 - **Files.** `adapta/services/rag.py` (`_get_chroma_client`), `adapta/worker/main.py`, `adapta/config.py`,
   `docker-compose.yml` (chroma healthcheck), `adapta/core/health.py`, `docs/reference/OPERATIONS.md` (Chroma section),
   tests.
-- **Gate.** `make test` → live: `docker pause adapta-chroma` during an upload → the file ends `failed` with a Chroma
+- **Gate.** `make test` → live: worker fd count flat across 100 index jobs (`ls /proc/1/fd | wc -l` in the worker) → `docker pause adapta-chroma` during an upload → the file ends `failed` with a Chroma
   timeout message within the deadline, the worker keeps taking jobs, `docker unpause` → re-upload indexes; chat during
   the pause → typed 504; compose shows chroma `unhealthy` while paused.
 - **Acceptance.** No indexing job can hang longer than its deadline; a paused Chroma is visible in `docker compose ps`,
@@ -227,55 +232,6 @@ E1.1–E1.9 shipped 2026-09-17 → [CHANGELOG.md](CHANGELOG.md). E1.14 closed 20
 - **Close.** Self-contained; Status snapshot.
 
 ### E3. P1 — real hybrid RAG + scanned documents (weeks 3–7)
-
-### E3.5 `[BE+FE]` Per-project system prompt, retrieval threshold + abstention, request-level filters (P1)
-- [ ] **Context.** No project system-prompt column (`db/models.py:209-262`); `api/v1/chat.py:151-159`
-  never passes one; a client `system` message lands *after* the RAG block (`chat_templates.py:53-60`).
-  Retrieval always injects `top_k` chunks with no minimum score (`rag.py:277`), and with zero chunks
-  the model gets no system prompt at all (`chat.py:190-191`). `collection.query` has no `where`
-  (`rag.py:226-230`); the request has no filter field.
-- **Depends.** E3.2, E1.11. **Unblocks.** E5.3, E5.4.
-- **Agent.** sonnet · gate class **live** · serialize with: E3.4 (spec, `Playground.svelte`), E4.9
-  and E5.3 (`chat.py`) · **Handoff.** must name the `adapta.*` request namespace shape, the
-  `_build_system` order, the migration revision.
-- **Scope.** Three small, related knobs. Out: ACL (open a block when a user asks), multi-query.
-- **Steps.** (1) Migration `0016_project_system_prompt`: `projects.system_prompt TEXT NULL`. Spec:
-  `ProjectCreateRequest`/`ProjectResponse` += `system_prompt`; add `PATCH /v1/projects/{id}` if no
-  update route exists (check the spec first). (2) `_build_system` order: project prompt → RAG block →
-  abstention line ("If the answer is not in the context, say you can't find it in the documents") →
-  the client `system` merged as a paragraph, not a later turn. (3) `config.py` `rag_min_score`
-  (default 0.2 on the reranker scale; 0 disables): chunks below are dropped; zero chunks →
-  `citations: []` with the abstention line still present. (4) Spec `ChatCompletionRequest` += optional
-  `adapta: {filters: {file_ids?, page_min?, page_max?, needs_review?}, top_k?}` (namespaced so OpenAI
-  clients ignore it); `rag.py` applies it as Chroma `where` on `file_id` and SQL `WHERE` on the FTS
-  leg; `top_k` bounded. (5) Console: project Settings tab gets the system-prompt textarea; Playground a
-  file-filter multiselect. (6) Tests: `_build_system` ordering; threshold drops; filters reach both
-  legs (mocked).
-- **Files.** `migrations/versions/0016_project_system_prompt.py`, `adapta/db/models.py:209-262`,
-  `specs/openapi.yaml` (projects + chat request), `adapta/services/chat.py:187-198, 240-300`,
-  `adapta/services/rag.py:196-277`, `adapta/api/v1/chat.py:120-160`, `adapta/api/v1/projects.py`,
-  `adapta/console/src/views/Project.svelte`, `adapta/console/src/views/Playground.svelte`,
-  `tests/test_context_fit.py`, `tests/test_rag_hybrid.py`.
-- **Contract impact.** API + DB.
-- **Gate.** `make migrate` → `make migrate-test` → `make validate-spec` → `make generate` →
-  `make check-models` → `make test` → `make test-contracts` → `make console-build`.
-- **Acceptance.** An out-of-corpus question yields "I can't find that in the documents" with
-  `citations: []`; a request filtered to one file cites only it; the project prompt precedes the RAG
-  block in the rendered prompt (unit test).
-- **Close.** consuming-the-api (`adapta` extension), operator-console settings + playground,
-  PRODUCT_DEFINITION Service A; Status snapshot.
-- **Done.** (offline, branch `e3.5`) Migration `0016` adds `projects.system_prompt`; spec: `PATCH /projects/{id}`
-  (`ProjectUpdate`), `system_prompt` on create/response, `adapta: {top_k, filters}` on the chat request, `citations: []`
-  when nothing clears the threshold. `_build_system` = project prompt, RAG block, abstention line, client `system`
-  (merged by `split_client_system`). `rag_min_score` (0.2) is applied in `chat._retrieve`, not in `retrieve()`, on
-  `RetrievedChunk.score` (vector cosine; reranker sigmoid when on; keyword-only hits exempt). Console: Settings tab, file
-  multiselect. Gates: validate-spec, generate, check-models, lint, check-leaks, test (315 passed). NOT run: migrate,
-  migrate-test, test-contracts, console-build, `make golden`, live abstention check.
-- **Handoff.** Request namespace: `adapta: {top_k?: 1..20, filters?: {file_ids?: [<=50], page_min?, page_max?, needs_review?}}`.
-  `_build_system(base, rag, chunks, *, abstain, client_system)` order: project prompt, RAG block (or a no-match line),
-  `ABSTENTION_LINE`, client system. Migration revision `0016` (down `0015`). `file_ids` is a Chroma `where` plus SQL on
-  the FTS leg; page/review filters are SQL-only (Chroma has no such metadata): FTS leg in SQL, vector leg post-filtered
-  over a 4x over-fetch. Also touched `tests/test_contract_edges.py` (405 `Allow` now includes PATCH) and `config.py`.
 
 ### E4. Bring your own adapter — Adapta verifies and serves adapters; it does not train them (weeks 3–9)
 

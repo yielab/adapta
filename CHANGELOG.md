@@ -777,6 +777,65 @@ bind mount, so uvicorn reloaded on every worker edit — reload now watches `/ap
   the cause, Docker was also slow at that moment. (5) The first e2e right after an app hot-reload can time out on the
   cold model load.
 
+### E3.5 `[BE+FE]` Per-project system prompt, retrieval threshold + abstention, request-level filters (P1)
+- [x] **Context.** No project system-prompt column (`db/models.py:209-262`); `api/v1/chat.py:151-159`
+  never passes one; a client `system` message lands *after* the RAG block (`chat_templates.py:53-60`).
+  Retrieval always injects `top_k` chunks with no minimum score (`rag.py:277`), and with zero chunks
+  the model gets no system prompt at all (`chat.py:190-191`). `collection.query` has no `where`
+  (`rag.py:226-230`); the request has no filter field.
+- **Depends.** E3.2, E1.11. **Unblocks.** E5.3, E5.4.
+- **Agent.** sonnet · gate class **live** · serialize with: E3.4 (spec, `Playground.svelte`), E4.9
+  and E5.3 (`chat.py`) · **Handoff.** must name the `adapta.*` request namespace shape, the
+  `_build_system` order, the migration revision.
+- **Scope.** Three small, related knobs. Out: ACL (open a block when a user asks), multi-query.
+- **Steps.** (1) Migration `0016_project_system_prompt`: `projects.system_prompt TEXT NULL`. Spec:
+  `ProjectCreateRequest`/`ProjectResponse` += `system_prompt`; add `PATCH /v1/projects/{id}` if no
+  update route exists (check the spec first). (2) `_build_system` order: project prompt → RAG block →
+  abstention line ("If the answer is not in the context, say you can't find it in the documents") →
+  the client `system` merged as a paragraph, not a later turn. (3) `config.py` `rag_min_score`
+  (default 0.2 on the reranker scale; 0 disables): chunks below are dropped; zero chunks →
+  `citations: []` with the abstention line still present. (4) Spec `ChatCompletionRequest` += optional
+  `adapta: {filters: {file_ids?, page_min?, page_max?, needs_review?}, top_k?}` (namespaced so OpenAI
+  clients ignore it); `rag.py` applies it as Chroma `where` on `file_id` and SQL `WHERE` on the FTS
+  leg; `top_k` bounded. (5) Console: project Settings tab gets the system-prompt textarea; Playground a
+  file-filter multiselect. (6) Tests: `_build_system` ordering; threshold drops; filters reach both
+  legs (mocked).
+- **Files.** `migrations/versions/0016_project_system_prompt.py`, `adapta/db/models.py:209-262`,
+  `specs/openapi.yaml` (projects + chat request), `adapta/services/chat.py:187-198, 240-300`,
+  `adapta/services/rag.py:196-277`, `adapta/api/v1/chat.py:120-160`, `adapta/api/v1/projects.py`,
+  `adapta/console/src/views/Project.svelte`, `adapta/console/src/views/Playground.svelte`,
+  `tests/test_context_fit.py`, `tests/test_rag_hybrid.py`.
+- **Contract impact.** API + DB.
+- **Gate.** `make migrate` → `make migrate-test` → `make validate-spec` → `make generate` →
+  `make check-models` → `make test` → `make test-contracts` → `make console-build`.
+- **Acceptance.** An out-of-corpus question yields "I can't find that in the documents" with
+  `citations: []`; a request filtered to one file cites only it; the project prompt precedes the RAG
+  block in the rendered prompt (unit test).
+- **Close.** consuming-the-api (`adapta` extension), operator-console settings + playground,
+  PRODUCT_DEFINITION Service A; Status snapshot.
+- **Done.** 2026-10-10. Migration `0016` (`projects.system_prompt`) + `PATCH /v1/projects/{id}`; `_build_system` renders
+  project prompt → RAG block → abstention line → client `system` (merged, not a later turn); `rag_min_score` 0.2 applied
+  in `chat._retrieve` (golden unaffected) on `RetrievedChunk.score` = vector cosine (reranker off) or reranker sigmoid,
+  keyword-only hits exempt; request namespace `adapta: {top_k, filters: {file_ids, page_min, page_max, needs_review}}`;
+  console Settings tab (prompt) + Playground file filter. **Abstention is deterministic** (second iteration, after the
+  1.5B model answered "France"/"Canberra" with zero passages): no chunk over the threshold → the server returns
+  "I can't find that in the documents." itself, `citations: []`, usage 0/0, no model call (stream: one content frame +
+  final frame); a model answer that is the abstention also returns `citations: []`. Live on `develop`: migrate 0016 +
+  `migrate-test` ✓ · `make ci` ✓ · svelte-check 0 errors, console build ✓ · `test-contracts` 37/37 twice (first red:
+  PATCH 400 undocumented → spec) · golden 0.978/0.840/33 ms · 6 unsupported questions (en/es): **5 abstain with
+  `citations: []`**; "How do I bake sourdough bread?" answers from an oven manual it genuinely matches (cosine 0.456) ·
+  supported en/es answered and cited · file filter → only that file cited · PATCH system prompt 200 and applied.
+- **Handoff.** `adapta: {top_k?: 1..20, filters?: {file_ids?: [≤50], page_min?, page_max?, needs_review?}}`; `file_ids` →
+  Chroma `where $in` + SQL on the FTS leg; page/review filters are SQL-only (vector leg over-fetched ×4, post-filtered).
+  `ABSTENTION_ANSWER = "I can't find that in the documents."` (canonical English; the model is told to translate when it
+  abstains itself — a translated model abstention keeps its citations). Migration `0016`. **Unblocks** E5.3.
+- **Follow-up.** (1) Cosine overlap: supported es answers can score 0.45 while an out-of-corpus question matched 0.456 —
+  no single threshold separates them; per-project override or a multilingual reranker (E3.6 follow-up). (2) **Retrieval
+  varies run-to-run on identically built projects** (the same question's top cosine 0.45 in one run, 0.29 in another)
+  — likely RRF ties broken by per-run random chunk ids or HNSW build randomness; golden is stable at 0.978 but
+  individual questions are not. (3) Vision requests ignore the project prompt. (4) Page/review filters can return
+  fewer than `top_k` (×4 over-fetch heuristic).
+
 ---
 
 ## 2026-10-08 — §E wave 0: the gates every other block is verified by
