@@ -234,7 +234,7 @@ async def _load_model(model_name: str, adapter_path: Optional[str] = None):
 
 ABSTENTION_LINE = (
     'If the answer is not in the context, say "I can\'t find that in the documents." '
-    "and do not guess."
+    "translated into the language the user wrote in, and do not guess or use outside knowledge."
 )
 _NO_CONTEXT_LINE = "No passage in the project's documents matched this question."
 
