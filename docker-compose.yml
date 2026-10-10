@@ -25,6 +25,9 @@ services:
       context: .
       dockerfile: Dockerfile
       target: app
+    # One image for app and worker (E4.1): without an explicit name compose builds a
+    # second `adapta-worker` image, and `build app` alone leaves the worker stale.
+    image: adapta-app:latest
     container_name: adapta-app
     ports:
       - "8000:8000"
@@ -72,10 +75,8 @@ services:
   # ENTRYPOINT is replaced so it skips the app's migrate-then-uvicorn script.
   # ──────────────────────────────────────────────
   worker:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      target: app
+    image: adapta-app:latest  # the app image; `make up` builds it once via the app service
+    pull_policy: never
     container_name: adapta-worker
     entrypoint: ["python", "-m", "adapta.worker.main"]
     volumes:
