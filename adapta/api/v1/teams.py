@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from adapta.db.models import TeamMember, User
 from adapta.db.session import get_db
-from adapta.models.generated import MemberResponse
+from adapta.models.generated import MemberResponse, Role
 from adapta.services.auth import get_current_user, require_team_member
 
 router = APIRouter(prefix="/teams", tags=["auth"])
@@ -31,7 +31,7 @@ async def list_team_members(
         MemberResponse(
             user_id=tm.user_id,
             email=u.email,
-            role=tm.role.value,
+            role=Role(tm.role.value),
             joined_at=tm.joined_at.isoformat(),
         )
         for tm, u in result.all()

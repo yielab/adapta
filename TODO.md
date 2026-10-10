@@ -65,8 +65,8 @@ procedure. Rules that keep parallel work from colliding:
 | Product build (phases 0–5), operator console, image fine-tunes, brand, positioning | ✅ complete — history in [CHANGELOG.md](CHANGELOG.md) |
 | Fine-tuning direction | **Decided 2026-10-09: bring your own adapter (§E4).** Adapta stops training; it imports a GGUF or PEFT LoRA, gates it on CPU against the base on the project's eval set, and serves it with RAG. Until E4.1 lands the training code still exists; after it no service needs a GPU. |
 | SDD gates | Pillar 2 ✅ `make migrate-test` · Pillar 3: the GPU perplexity gate is replaced by the CPU task-metric gate on imported adapters (E4.3/E4.4) · **Pillar 1 🟥 red** since the 2026-09-17 rebuild (schemathesis 4.x, 9–11 failures — E1.11) |
-| CI fast gate (`make ci`) | ✅ green again 2026-10-08 — E1.14 closed the 4 mypy errors (ruff + mypy clean, 269 unit tests pass); last run in the pre-E1.10 image, re-run after the pinned rebuild |
-| **Audit 2026-09-03 (§E)** | 🟥 **open** — 10/37 done (E1.1–E1.9 shipped 2026-09-17, E1.14 on 2026-10-08). Wave 0: E1.10 merged, waiting on an app-image rebuild (board: ready-for-live), then E1.11. Then E4.1 removes training and the GPU from the stack, alongside E2 (Ollama + launch kit) and E3 (Postgres chunks → real hybrid FTS, Docling + RapidOCR, citations with page/OCR provenance, system prompt + threshold + filters, multilingual, queued indexing, golden set); E4 (adapter import, CPU eval gate, adapter job, promotion/rollback, console flow, import guide, synthesis for eval sets, JSON mode); E5 (contextual retrieval, RAG gate, history-aware retrieval, visual extraction with the vision base). Scheduling: the §E board. |
+| CI fast gate (`make ci`) | ✅ green 2026-10-09 in the pinned app image (E1.10): ruff + mypy clean, 269 unit tests pass |
+| **Audit 2026-09-03 (§E)** | 🟥 **open** — 11/37 done (E1.1–E1.9 shipped 2026-09-17, E1.14 on 2026-10-08, E1.10 on 2026-10-09). Wave 0: E1.11 left. Then E4.1 removes training and the GPU from the stack, alongside E2 (Ollama + launch kit) and E3 (Postgres chunks → real hybrid FTS, Docling + RapidOCR, citations with page/OCR provenance, system prompt + threshold + filters, multilingual, queued indexing, golden set); E4 (adapter import, CPU eval gate, adapter job, promotion/rollback, console flow, import guide, synthesis for eval sets, JSON mode); E5 (contextual retrieval, RAG gate, history-aware retrieval, visual extraction with the vision base). Scheduling: the §E board. |
 
 ---
 
@@ -111,8 +111,8 @@ classes are defined in [`.claude/context/gates.md`](.claude/context/gates.md) ("
 | Block | Wave | Tier | Gate class | Depends on | Serialize with | Status |
 |---|---|---|---|---|---|---|
 | E1.14 | 0 | haiku | offline | none | E3.2/E3.5 (`chat.py`) | done 2026-10-08 |
-| E1.10 | 0 | sonnet | rebuild (app image only) | none | E3.3b, E4.1 | ready-for-live (develop `411c5d3`; app rebuild pending) |
-| E1.11 | 0 | sonnet | live | E1.10 | any in-flight `specs/openapi.yaml` edit | open |
+| E1.10 | 0 | sonnet | rebuild (app image only) | none | E3.3b, E4.1 | done 2026-10-09 |
+| E1.11 | 0 | sonnet | live | E1.10 | any in-flight `specs/openapi.yaml` edit | in progress (worker-e1.11) |
 | E2.1 | 1 | sonnet | live | none | E4.1, E4.9 (`core/backends/`) | open |
 | E3.1 | 1 | sonnet | live | none | E3.7, E3.2 | in progress (worker-e3.1) |
 | E3.3a | 1 | sonnet + human decision | offline | none | — | open |
@@ -141,41 +141,9 @@ classes are defined in [`.claude/context/gates.md`](.claude/context/gates.md) ("
 
 ### E1. P0 — corrections that change the publishable evidence (weeks 1–2)
 
-E1.1–E1.9 shipped 2026-09-17 → [CHANGELOG.md](CHANGELOG.md). E1.14 closed 2026-10-08. Open: E1.10 (ready-for-live) → E1.11 (wave 0 — every other
-block's gate depends on them).
+E1.1–E1.9 shipped 2026-09-17 → [CHANGELOG.md](CHANGELOG.md). E1.14 closed 2026-10-08, E1.10 on 2026-10-09. Open: E1.11 (wave 0 — every other
+block's contract gate depends on it).
 
-
-### E1.10 `[INFRA]` Pin the heavy dependencies — an unbounded floor lets any rebuild move the product (P0)
-- [ ] **Context.** `pyproject.toml` declares `torch>=2.2.0` (:58) and `schemathesis>=3.28.0` (:83)
-  with no upper bound. A single image rebuild on 2026-09-17 resolved torch **2.14** (broke every
-  training job — E1.9) and schemathesis **4.27.3** (broke `make test-contracts` — E1.11). Neither
-  was a code change; both were a floor that moved. The repo's own claim that the contract gate is
-  green (CLAUDE.md, Status snapshot) dates from 2026-06-22 and is no longer true.
-- **Depends.** none. **Unblocks.** E1.11 and every later rebuild (E3.3b, E4.1).
-- **Agent.** sonnet · gate class **rebuild (app image only)** · serialize with: E3.3b, E4.1
-  (`pyproject.toml`) · **Handoff.** must name the resolved-version table and each bound added.
-- **Scope.** Upper bounds on the dependencies whose major versions change behaviour — torch,
-  triton (transitively), transformers, peft, trl, schemathesis, chromadb. Out: a full lockfile
-  (`uv.lock`/`pip-tools`) — propose it as its own block if bounds prove insufficient.
-- **Steps.** (1) Record the versions the current working image resolves (`pip freeze` in both `app`
-  and `worker`). (2) Add `<next-major` bounds in `pyproject.toml` for the list above, with a comment
-  per line saying what breaks if it moves. (3) `make up` and confirm the resolved set is unchanged.
-  (4) Note the policy in CONTRIBUTING (how to raise a bound deliberately).
-- **Status 2026-10-08.** Code merged on `develop` (`a66fa15`, `411c5d3`): bounds on torch `<3`, triton `<4`,
-  transformers `<6`, peft `<1`, trl `<2`, schemathesis `<5`, sqlalchemy `[asyncio]` `<3`, asyncpg `<1`, alembic `<2`,
-  fastapi `<1`, pydantic `<3`, redis `<9`; chromadb stays `==1.5.9`; policy in CONTRIBUTING. First rebuild **proved the
-  thesis on an unnamed package**: SQLAlchemy 2.0.54 → 2.1.4 dropped `greenlet`, app + worker died at
-  `import sqlalchemy.ext.asyncio` → fixed by `sqlalchemy[asyncio]`. Second rebuild aborted (PyPI at ~270 KB/s, multi-GB
-  CUDA wheels). **Remaining, on the main checkout:** the CUDA worker and the `[training]` bounds are deleted by E4.1,
-  so only the app image is rebuilt: `docker compose up -d --build app postgres redis chroma` (never the worker) →
-  `pip freeze` in app shows `greenlet` and only minor moves vs the Handoff draft (schemathesis 4.29.4) → `make ci` →
-  close (Done/Handoff → CHANGELOG, OPERATIONS §3 note).
-- **Files.** `pyproject.toml:50-90`, `CONTRIBUTING.md` (dependency section).
-- **Contract impact.** None.
-- **Gate.** App-image rebuild (command in Status) → `make ci`.
-- **Acceptance.** A clean `make up` on another machine resolves the same major versions; raising a
-  bound is a deliberate, reviewed edit rather than a silent rebuild.
-- **Close.** CONTRIBUTING dependency policy; OPERATIONS upgrade section; Status snapshot.
 
 ### E1.11 `[TEST]` Restore `make test-contracts` to green (P0)
 - [ ] **Context.** Schemathesis 4.27.3 reports **9–11 failures** on every run: 9 “Invalid Allow

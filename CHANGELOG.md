@@ -11,8 +11,52 @@
 ## 2026-10-08 — §E wave 0: the gates every other block is verified by
 
 Wave 0 = E1.14, E1.10, E1.11 (`make lint`, dependency bounds, `make test-contracts`), the first multi-agent wave:
-lead + one worktree worker per block, live/rebuild/GPU gates serialized on the main checkout. E1.10 and E1.11 join
-this section when their live gates close (E1.10 is merged and waiting on the rebuild — see TODO.md).
+lead + one worktree worker per block, live/rebuild/GPU gates serialized on the main checkout. E1.10 closed 2026-10-09;
+E1.11 joins this section when its live gate closes.
+
+### E1.10 `[INFRA]` Pin the heavy dependencies — an unbounded floor lets any rebuild move the product (P0)
+- [x] **Context.** `pyproject.toml` declares `torch>=2.2.0` (:58) and `schemathesis>=3.28.0` (:83)
+  with no upper bound. A single image rebuild on 2026-09-17 resolved torch **2.14** (broke every
+  training job — E1.9) and schemathesis **4.27.3** (broke `make test-contracts` — E1.11). Neither
+  was a code change; both were a floor that moved. The repo's own claim that the contract gate is
+  green (CLAUDE.md, Status snapshot) dates from 2026-06-22 and is no longer true.
+- **Depends.** none. **Unblocks.** E1.11 and every later rebuild (E3.3b, E4.1).
+- **Agent.** sonnet · gate class **rebuild (app image only)** · serialize with: E3.3b, E4.1
+  (`pyproject.toml`) · **Handoff.** must name the resolved-version table and each bound added.
+- **Scope.** Upper bounds on the dependencies whose major versions change behaviour — torch,
+  triton (transitively), transformers, peft, trl, schemathesis, chromadb. Out: a full lockfile
+  (`uv.lock`/`pip-tools`) — propose it as its own block if bounds prove insufficient.
+- **Steps.** (1) Record the versions the current working image resolves (`pip freeze` in both `app`
+  and `worker`). (2) Add `<next-major` bounds in `pyproject.toml` for the list above, with a comment
+  per line saying what breaks if it moves. (3) `make up` and confirm the resolved set is unchanged.
+  (4) Note the policy in CONTRIBUTING (how to raise a bound deliberately).
+- **Status 2026-10-08.** Code merged on `develop` (`a66fa15`, `411c5d3`): bounds on torch `<3`, triton `<4`,
+  transformers `<6`, peft `<1`, trl `<2`, schemathesis `<5`, sqlalchemy `[asyncio]` `<3`, asyncpg `<1`, alembic `<2`,
+  fastapi `<1`, pydantic `<3`, redis `<9`; chromadb stays `==1.5.9`; policy in CONTRIBUTING. First rebuild **proved the
+  thesis on an unnamed package**: SQLAlchemy 2.0.54 → 2.1.4 dropped `greenlet`, app + worker died at
+  `import sqlalchemy.ext.asyncio` → fixed by `sqlalchemy[asyncio]`. Second rebuild aborted (PyPI at ~270 KB/s, multi-GB
+  CUDA wheels). **Remaining, on the main checkout:** the CUDA worker and the `[training]` bounds are deleted by E4.1,
+  so only the app image is rebuilt: `docker compose up -d --build app postgres redis chroma` (never the worker) →
+  `pip freeze` in app shows `greenlet` and only minor moves vs the Handoff draft (schemathesis 4.29.4) → `make ci` →
+  close (Done/Handoff → CHANGELOG, OPERATIONS §3 note).
+- **Files.** `pyproject.toml:50-90`, `CONTRIBUTING.md` (dependency section).
+- **Contract impact.** None.
+- **Gate.** App-image rebuild (command in Status) → `make ci`.
+- **Acceptance.** A clean `make up` on another machine resolves the same major versions; raising a
+  bound is a deliberate, reviewed edit rather than a silent rebuild.
+- **Close.** CONTRIBUTING dependency policy; OPERATIONS upgrade section; Status snapshot.
+- **Done.** 2026-10-09. The app image built from `411c5d3` (2026-10-08 14:45) is the rebuild the block waited on —
+  no further download needed. `make ci` in it: ruff clean, mypy flagged **2 new errors from minor library moves**
+  (out of the Files line, fixed in the closing commit because they block the gate): `teams.py` passes
+  `Role(tm.role.value)` to the generated `MemberResponse` (pydantic 2.14 typing), `app.py` types the
+  `__cause__` walk as `BaseException | None` (SQLAlchemy 2.1 `DBAPIError.orig`). Then 269 passed / 1 skipped,
+  coverage 51.9 %, spec valid, models in sync. OPERATIONS §3 gained the "run `make ci` after every rebuild" note.
+  The worker image was **not** rebuilt — E4.1 deletes it with the `[training]` bounds.
+- **Handoff.** Resolved app set (bound): torch 2.14.1+cpu (`<3`), transformers 5.19.0 (`<6`), schemathesis 4.30.0
+  (`<5`; was 4.29.4 in the draft — a minor move), chromadb 1.5.9 (`==`), SQLAlchemy 2.1.4 (`[asyncio]`, `<3`) +
+  greenlet 3.5.6, asyncpg 0.32.0 (`<1`), alembic 1.20.0 (`<2`), fastapi 0.143.0 (`<1`, starlette 1.7.0),
+  pydantic 2.14.0 (`<3`), redis 8.1.0 (`<9`); mypy 2.4.0. triton/peft/trl are worker-only (`[training]`).
+  **Unblocks E1.11** (its gate runs against schemathesis 4.30.0, not the 4.27.3 the block describes).
 
 ### E1.14 `[TEST]` Restore `make lint` to green — every worker's offline gate is red today (P0)
 - [x] **Context.** Verified 2026-10-08 on a clean checkout of `develop` (`90ac7ac`): `ruff` reported one

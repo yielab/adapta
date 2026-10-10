@@ -246,7 +246,8 @@ def create_app() -> FastAPI:
         # raw 500 (found by the contract gate's fuzzing). Any other DB error
         # (deadlock, disconnect, unhandled integrity) stays a generic 500.
         cid = getattr(request.state, "cid", None)
-        sqlstate, node = None, exc.orig
+        sqlstate: str | None = None
+        node: BaseException | None = exc.orig
         while node is not None and sqlstate is None:
             sqlstate = getattr(node, "sqlstate", None)
             node = node.__cause__

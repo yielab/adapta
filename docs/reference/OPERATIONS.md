@@ -86,6 +86,10 @@ git pull && docker compose up -d --build
 - Run a single `app` instance through the migration, then scale out (§4): two
   instances racing `alembic upgrade head` is safe (Alembic takes a lock) but
   unnecessary.
+- **Dependency bounds.** The heavy and web/db stack carry `<next-major` bounds in `pyproject.toml`
+  (policy in [CONTRIBUTING](https://github.com/yielab/adapta/blob/main/CONTRIBUTING.md)), so a rebuild only moves
+  minor/patch versions. A minor move can still tighten library typings: run `make ci` after every rebuild,
+  before serving traffic from it.
 
 ---
 
