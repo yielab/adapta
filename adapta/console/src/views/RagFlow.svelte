@@ -141,6 +141,63 @@
     }
   }
 
+  // (E5.4) Visual extraction: opt-in via a schema, then a per-file queued job (CPU, ~40 s per page).
+  const SECONDS_PER_PAGE = 40;
+  const SCHEMA_EXAMPLE = JSON.stringify(
+    { title: "Invoice", properties: { vendor: { type: "string" }, date: { type: "string" }, total: { type: "string" } } },
+    null,
+    2,
+  );
+  let schemaDraft = $state(project.extraction_schema ? JSON.stringify(project.extraction_schema, null, 2) : "");
+  let savedSchema = $state(project.extraction_schema ? JSON.stringify(project.extraction_schema, null, 2) : "");
+  let savingSchema = $state(false);
+  let extracting = $state<string | null>(null);
+  const canExtract = $derived(savedSchema !== "");
+  const extractable = (f: ProjectFile) => /\.(pdf|png|jpe?g|tiff?)$/i.test(f.filename) && f.status === "indexed";
+
+  async function saveSchema() {
+    savingSchema = true;
+    try {
+      const text = schemaDraft.trim();
+      const updated = await api.updateProject(project.id, { extraction_schema: text ? JSON.parse(text) : null });
+      savedSchema = schemaDraft = updated.extraction_schema ? JSON.stringify(updated.extraction_schema, null, 2) : "";
+      toastSuccess(updated.extraction_schema ? "Extraction schema saved." : "Extraction turned off.");
+    } catch (e) {
+      if (e instanceof ApiError) toastError(e.message, e.correlationId);
+      else toastError("The schema is not valid JSON.");
+    } finally {
+      savingSchema = false;
+    }
+  }
+
+  async function extract(f: ProjectFile, allPages: boolean) {
+    extracting = f.id;
+    try {
+      const r = await api.extractFile(project.id, f.id, allPages);
+      toastSuccess(`Reading ${r.pages} page${r.pages === 1 ? "" : "s"} (about ${r.pages * SECONDS_PER_PAGE} s per vision call on CPU).`);
+    } catch (e) {
+      if (e instanceof ApiError) toastError(e.message, e.correlationId);
+      else toastError("Could not start the extraction.");
+    } finally {
+      extracting = null;
+    }
+  }
+
+  async function downloadCsv() {
+    try {
+      const { blob, filename } = await api.downloadFieldsCsv(project.id);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      if (e instanceof ApiError) toastError(e.message, e.correlationId);
+      else toastError("Could not download the fields.");
+    }
+  }
+
   async function createEndpoint() {
     if (!canCreateEndpoint || creatingEndpoint) return;
     creatingEndpoint = true;
@@ -264,7 +321,7 @@
                 <div class="mono">{f.filename}</div>
                 {#if (f.pages_needing_review ?? 0) > 0}
                   <small style="color: var(--amber, var(--red));">
-                    {f.pages_needing_review} page{f.pages_needing_review === 1 ? "" : "s"} low-confidence OCR — re-scan, or re-read with the visual extractor when available.
+                    {f.pages_needing_review} page{f.pages_needing_review === 1 ? "" : "s"} low-confidence OCR — re-scan, or re-read it with the vision model (Extract fields).
                   </small>
                 {/if}
                 {#if f.status === "failed"}
@@ -283,6 +340,14 @@
               </td>
               <td class="mono">{fmtSize(f.size_bytes)}</td>
               <td style="text-align: right;">
+                {#if canExtract && extractable(f)}
+                  <button
+                    class="ghost sm"
+                    disabled={extracting === f.id}
+                    title="Vision model on CPU: about {SECONDS_PER_PAGE} s per page per call. Reads the low-confidence pages."
+                    onclick={() => extract(f, (f.pages_needing_review ?? 0) === 0)}
+                  >{(f.pages_needing_review ?? 0) > 0 ? `Extract fields (${f.pages_needing_review} p, ~${(f.pages_needing_review ?? 0) * SECONDS_PER_PAGE} s)` : "Extract fields (all pages)"}</button>
+                {/if}
                 <button class="danger ghost sm" onclick={() => remove(f)}>Remove</button>
               </td>
             </tr>
@@ -291,6 +356,22 @@
       </table>
     {/if}
   </div>
+
+  <!-- (E5.4) Visual extraction schema: off until a schema is saved -->
+  <details style="margin-top: 16px;">
+    <summary>Visual extraction {canExtract ? "(on)" : "(off)"}</summary>
+    <p class="muted" style="margin: 8px 0;">
+      Optional. The vision model reads PDF/image pages into structured fields (vendor, date, total…) and
+      re-reads low-confidence OCR pages. It runs on CPU, one queued job per file.
+    </p>
+    <textarea rows="8" class="mono" style="width: 100%;" bind:value={schemaDraft} placeholder={SCHEMA_EXAMPLE}></textarea>
+    <div class="row" style="gap: 8px; margin-top: 8px;">
+      <button class="sm" onclick={saveSchema} disabled={savingSchema || schemaDraft.trim() === savedSchema}>
+        {schemaDraft.trim() === "" ? "Turn off" : "Save schema"}
+      </button>
+      {#if canExtract}<button class="ghost sm" onclick={downloadCsv}>Download fields (CSV)</button>{/if}
+    </div>
+  </details>
 </div>
 
 <!-- Endpoint creation -->

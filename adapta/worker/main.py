@@ -127,10 +127,22 @@ async def _rag_eval_job(meta: dict) -> None:
     await queue.update_status(meta["job_id"], status="succeeded", progress=1.0)
 
 
+async def _extract_job(meta: dict) -> None:
+    """``extract`` job (E5.4): vision-base field extraction + low-confidence page re-read."""
+    from adapta.services import extraction
+
+    payload = meta.get("payload") or {}
+    queue = get_job_queue()
+    await queue.update_status(meta["job_id"], status="running")
+    await extraction.extract_file(payload["id"], all_pages=bool(payload.get("all_pages")))
+    await queue.update_status(meta["job_id"], status="succeeded", progress=1.0)
+
+
 HANDLERS: dict[str, Callable[[dict], Awaitable[None]]] = {
     "adapter": _adapter_job,
     "index": _run_index_job,
     "rag_eval": _rag_eval_job,
+    "extract": _extract_job,
 }
 
 

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import logging
 import math
 import threading
@@ -54,6 +55,8 @@ class RetrievedChunk:
     # (E3.5) Keyword-only hit: the vector leg never returned it, so `score` is a 0.0
     # placeholder, not a cosine, and must not be compared to a relevance threshold.
     lexical_only: bool = False
+    # (E5.4) One-line header from the chunk's extracted fields ("Invoice · Acme · 2026-03-01 · 1,250").
+    fields_header: str = ""
 
 
 @dataclass(frozen=True)
@@ -64,12 +67,17 @@ class RetrievalFilters:
     page_min: Optional[int] = None
     page_max: Optional[int] = None
     needs_review: Optional[bool] = None
+    # (E5.4) Exact match on extracted fields (``chunks.fields ->> key``), AND-ed.
+    fields: Optional[dict] = None
 
     @property
     def sql_only(self) -> bool:
-        """Filters Chroma metadata cannot express (it carries no page / review flag)."""
+        """Filters Chroma metadata cannot express (it carries no page / review flag / fields)."""
         return (
-            self.page_min is not None or self.page_max is not None or self.needs_review is not None
+            self.page_min is not None
+            or self.page_max is not None
+            or self.needs_review is not None
+            or bool(self.fields)
         )
 
     def sql_clauses(self) -> tuple[str, dict]:
@@ -88,6 +96,10 @@ class RetrievalFilters:
         if self.needs_review is not None:
             parts.append("c.needs_review = :f_needs_review")
             params["f_needs_review"] = self.needs_review
+        for i, (key, value) in enumerate((self.fields or {}).items()):
+            parts.append(f"c.fields ->> :f_fk{i} = :f_fv{i}")
+            params[f"f_fk{i}"] = str(key)
+            params[f"f_fv{i}"] = str(value)
         return "".join(f" AND {p}" for p in parts), params
 
 
@@ -411,8 +423,22 @@ def _filter_vector_ids(ids: List[str], filters: "RetrievalFilters") -> set:
 
 
 _PROVENANCE_SQL = """
-SELECT id, file_id, page, ocr, ocr_confidence FROM chunks WHERE id = ANY(:ids)
+SELECT c.id, c.file_id, c.page, c.ocr, c.ocr_confidence, c.fields, p.extraction_schema
+FROM chunks c JOIN projects p ON p.id = c.project_id WHERE c.id = ANY(:ids)
 """
+
+
+def _header_of(row: object) -> str:
+    """(E5.4) Chunk header from a provenance row's ``fields`` + its project's schema."""
+    from adapta.services.extraction import fields_header
+
+    fields = getattr(row, "fields", None)
+    schema = getattr(row, "extraction_schema", None)
+    if isinstance(fields, str):  # raw SQL may hand JSON back undecoded
+        fields = json.loads(fields)
+    if isinstance(schema, str):
+        schema = json.loads(schema)
+    return fields_header(fields, schema)
 
 
 def _hydrate_provenance(chunks: List[RetrievedChunk]) -> List[RetrievedChunk]:
@@ -450,6 +476,7 @@ def _hydrate_provenance(chunks: List[RetrievedChunk]) -> List[RetrievedChunk]:
             page=r.page,
             ocr=bool(r.ocr),
             ocr_confidence=r.ocr_confidence,
+            fields_header=_header_of(r),
         )
         if (r := rows.get(c.chunk_id)) is not None
         else c
@@ -565,6 +592,13 @@ class RAGService:
                 message="Could not remove the file's vectors from the index; nothing was deleted.",
                 internal_detail=f"chroma delete failed for file {file_id}: {exc!r}",
             ) from exc
+
+    def delete_chunk_ids(self, project_id: str, ids: List[str]) -> None:
+        """(E5.4) Remove specific vectors (ids are ``{file_id}_{index}``); raises ``VectorStoreFailed``."""
+        if not ids:
+            return
+        with _vector_store("remove replaced chunk vectors"):
+            self._client().get_collection(collection_name_for(project_id)).delete(ids=ids)
 
     def retrieve(
         self,
@@ -756,7 +790,8 @@ class RAGService:
             return ""
         parts = []
         for i, c in enumerate(chunks, 1):
-            parts.append(f"[{i}] (source: {c.source})\n{c.text}")
+            head = f"{c.fields_header}\n" if c.fields_header else ""
+            parts.append(f"[{i}] (source: {c.source})\n{head}{c.text}")
         return "\n\n---\n\n".join(parts)
 
     def format_citations(self, chunks: List[RetrievedChunk]) -> list[dict]:

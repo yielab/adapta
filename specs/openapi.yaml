@@ -343,6 +343,55 @@ paths:
         '422': {$ref: '#/components/responses/Error'}
         '200': {description: Files, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/FileResponse'}}}}}
 
+  /projects/{project_id}/files/{file_id}/extract:
+    post:
+      operationId: extractFile
+      tags: [files]
+      summary: Queue visual extraction for an indexed PDF/image (E5.4)
+      description: |
+        Needs the project's `extraction_schema`. A queued `extract` job renders each selected page
+        and asks the vision base for the schema fields (stored on the page's chunks as
+        `chunks.fields`, filterable and shown as a one-line header in the retrieved context). A page
+        flagged `needs_review` is also transcribed by the vision base, and its text replaces the
+        low-confidence OCR text (re-embedded, flag cleared). CPU cost is roughly 40 s per vision
+        call; `all_pages` extends the job from the flagged pages to every page.
+      security: [{BearerAuth: []}]
+      parameters:
+        - {$ref: '#/components/parameters/ProjectId'}
+        - {name: file_id, in: path, required: true, schema: {type: string}}
+        - {name: all_pages, in: query, required: false, schema: {type: boolean, default: false}}
+      responses:
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Error'}
+        '422': {$ref: '#/components/responses/Error'}
+        '202':
+          description: Accepted — extraction queued
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, job_id, pages]
+                properties:
+                  id: {type: string}
+                  job_id: {type: string}
+                  pages: {type: integer, description: "Pages the job will read."}
+
+  /projects/{project_id}/fields.csv:
+    get:
+      operationId: exportFieldsCsv
+      tags: [files]
+      summary: Extracted fields as CSV, one row per extracted page (E5.4)
+      security: [{BearerAuth: []}]
+      parameters: [{$ref: '#/components/parameters/ProjectId'}]
+      responses:
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '422': {$ref: '#/components/responses/Error'}
+        '200': {description: "CSV: file, page, then one column per schema property", content: {text/csv: {schema: {type: string}}}}
+
   /projects/{project_id}/files/{file_id}:
     delete:
       operationId: deleteFile
@@ -1125,10 +1174,29 @@ components:
       properties:
         system_prompt: {type: string, nullable: true, maxLength: 8000}
         contextual_retrieval: {type: boolean, description: "See ProjectCreate (E5.1)."}
+        extraction_schema:
+          nullable: true
+          allOf: [{$ref: '#/components/schemas/ExtractionSchema'}]
+          description: "Turns on visual extraction (E5.4); null clears it, omitted leaves it."
+
+    ExtractionSchema:
+      type: object
+      required: [properties]
+      description: >
+        (E5.4) What the vision base reads from each page. `properties` order is the order of the
+        values in the one-line chunk header (`<title> · <v1> · <v2> ...`); each value is a
+        JSON-Schema property object (`type`, `description`). 1-20 properties.
+      properties:
+        title: {type: string, nullable: true, description: "Leads the chunk header, e.g. Invoice."}
+        properties:
+          type: object
+          minProperties: 1
+          maxProperties: 20
+          additionalProperties: {type: object}
 
     ProjectResponse:
       type: object
-      required: [id, name, type, status, base_model, description, system_prompt, contextual_retrieval, team_id, created_at, summary]
+      required: [id, name, type, status, base_model, description, system_prompt, contextual_retrieval, extraction_schema, team_id, created_at, summary]
       properties:
         id: {type: string}
         name: {type: string}
@@ -1138,6 +1206,9 @@ components:
         description: {type: string, nullable: true}
         system_prompt: {type: string, nullable: true}
         contextual_retrieval: {type: boolean}
+        extraction_schema:
+          nullable: true
+          allOf: [{$ref: '#/components/schemas/ExtractionSchema'}]
         team_id: {type: string}
         created_at: {type: string}
         # Dashboard read-model (§C2.1) — null on create, populated on list/get.
@@ -1578,6 +1649,11 @@ components:
           type: boolean
           nullable: true
           description: "true = only OCR chunks flagged for review; false = exclude them."
+        fields:
+          type: object
+          nullable: true
+          additionalProperties: {type: string}
+          description: "(E5.4) Exact match on extracted fields, AND-ed, e.g. {vendor: Acme SA}. SQL filter on chunks.fields; chunks never extracted do not match."
 
     ResponseFormatText:
       type: object

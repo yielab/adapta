@@ -27,6 +27,7 @@ from adapta.domain.errors import (
     DuplicateDocument,
     EmbeddingFailed,
     EmbeddingModelMismatch,
+    InternalError,
     InvalidRequest,
     NotFound,
     VectorStoreFailed,
@@ -414,6 +415,63 @@ async def upload_file(
         await db.commit()
 
     return {"id": file_id, "filename": filename, "status": status}
+
+
+@router.post("/{file_id}/extract", status_code=202)
+async def extract_file(
+    project_id: str,
+    file_id: str,
+    all_pages: bool = False,
+    current_user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """(E5.4) Queue visual extraction for one indexed PDF/image (needs ``extraction_schema``)."""
+    import uuid
+
+    from adapta.services.extraction import (
+        EXTRACT_JOB_KIND,
+        check_extractable,
+        select_pages,
+        validate_schema,
+    )
+
+    project = await _get_project(db, project_id)
+    await require_team_writer(db, current_user.id, project.team_id)
+    pfile = (
+        await db.execute(
+            select(ProjectFile).where(ProjectFile.id == file_id, ProjectFile.project_id == project_id)
+        )
+    ).scalar_one_or_none()
+    if pfile is None:
+        raise NotFound(message="File not found")
+    check_extractable(pfile.filename, pfile.status.value, project.extraction_schema)
+    validate_schema(project.extraction_schema)
+    chunk_rows = (
+        await db.execute(
+            select(ProjectChunk.page, ProjectChunk.needs_review).where(ProjectChunk.file_id == file_id)
+        )
+    ).all()
+    pages = select_pages(chunk_rows, all_pages=all_pages)
+    if not pages:
+        raise InvalidRequest(
+            message="No pages need review in this file; pass all_pages=true to read every page."
+        )
+    if len(pages) > settings.extract_max_pages:
+        raise InvalidRequest(
+            message=f"{len(pages)} pages exceed the {settings.extract_max_pages}-page limit per job."
+        )
+    job_id = f"{file_id}-x{uuid.uuid4().hex[:8]}"
+    try:
+        await get_job_queue().enqueue(
+            job_id, EXTRACT_JOB_KIND, {"id": file_id, "all_pages": all_pages}
+        )
+    except Exception as exc:
+        logger.exception("Could not enqueue the extract job for %s", file_id)
+        raise InternalError(
+            message="The job queue is unavailable; try again shortly.",
+            internal_detail=repr(exc),
+        ) from exc
+    return {"id": file_id, "job_id": job_id, "pages": len(pages)}
 
 
 @router.get("", response_model=List[FileResponse])

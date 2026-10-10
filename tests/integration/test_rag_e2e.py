@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import io
+import os
 
 import pytest
 
@@ -220,3 +221,44 @@ async def test_rag_exact_code_recalled_by_full_text_leg(client, admin):
 
     chunks = await asyncio.to_thread(get_rag_service().retrieve, pid, "ZX-90417-QQ", top_k=1)
     assert chunks and "ZX-90417-QQ" in chunks[0].text, [c.text[:80] for c in chunks]
+
+
+_VL_DIR = settings.models_dir / "qwen2.5-vl-7b"
+_RUN_EXTRACT = os.environ.get("ADAPTA_E2E_EXTRACT") == "1" and _VL_DIR.exists()
+
+
+@pytest.mark.skipif(not _RUN_EXTRACT, reason="opt-in: ADAPTA_E2E_EXTRACT=1 and the vision GGUF (CPU, minutes)")
+async def test_rag_visual_extraction_on_scanned_fixture(client, admin):
+    """E5.4: schema on -> extract the scanned fixture -> fields land in fields.csv."""
+    from pathlib import Path
+
+    h, team_id = admin["headers"], admin["team_id"]
+    pid = (
+        await client.post(
+            "/v1/projects",
+            headers=h,
+            json={"name": "scans", "type": "rag", "base_model": _MODEL_NAME, "team_id": team_id},
+        )
+    ).json()["id"]
+    schema = {"title": "Doc", "properties": {"title": {"type": "string"}, "date": {"type": "string"}}}
+    r = await client.patch(f"/v1/projects/{pid}", headers=h, json={"extraction_schema": schema})
+    assert r.status_code == 200 and r.json()["extraction_schema"] == schema
+    data = (Path(__file__).parents[1] / "fixtures" / "docs" / "scanned.pdf").read_bytes()
+    up = await client.post(
+        f"/v1/projects/{pid}/files", headers=h, files={"file": ("scanned.pdf", data, "application/pdf")}
+    )
+    fid = up.json()["id"]
+    await _poll(
+        lambda: client.get(f"/v1/projects/{pid}/files", headers=h),
+        lambda r: any(f["id"] == fid and f["status"] in ("indexed", "failed") for f in r.json()),
+    )
+    ex = await client.post(f"/v1/projects/{pid}/files/{fid}/extract?all_pages=true", headers=h)
+    assert ex.status_code == 202 and ex.json()["pages"] == 1, ex.text
+    got = await _poll(
+        lambda: client.get(f"/v1/projects/{pid}/fields.csv", headers=h),
+        lambda r: r.status_code == 200 and len(r.text.splitlines()) > 1,
+        tries=240,
+        delay=5.0,
+    )
+    assert got.text.splitlines()[0] == "file,page,title,date", got.text
+    assert len(got.text.splitlines()) == 2, got.text

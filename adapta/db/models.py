@@ -33,7 +33,7 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
-from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR
+from sqlalchemy.dialects.postgresql import JSON, JSONB, TSVECTOR
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -263,6 +263,9 @@ class Project(Base):
     # (E5.2) The rag_eval dataset the RAG gate scores. Deliberately not a FK (projects <->
     # datasets would be circular); a dangling id reads as "no golden set".
     golden_dataset_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    # (E5.4) Opt-in visual extraction: {"title", "properties"}; NULL = off. Plain JSON, not JSONB:
+    # property order is the chunk-header order and JSONB reorders keys.
+    extraction_schema: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     type: Mapped[ProjectType] = mapped_column(
         Enum(ProjectType, native_enum=False, length=16), nullable=False
     )
@@ -361,6 +364,8 @@ class ProjectChunk(Base):
     text: Mapped[str] = mapped_column(Text, nullable=False)
     # (E5.1) Situating sentence (contextual retrieval). Indexed (embedding + tsv) but never cited.
     context: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # (E5.4) Structured metadata read by the vision base ({key: scalar}); NULL unless extracted.
+    fields: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     ocr: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     ocr_confidence: Mapped[Optional[float]] = mapped_column(Float, nullable=True)

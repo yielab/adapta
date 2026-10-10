@@ -140,6 +140,14 @@ class Settings(BaseSettings):
     contextual_max_tokens: int = 80
     # Characters of surrounding document shown to the model per chunk (whole doc when it fits).
     contextual_window_chars: int = 12000
+    # (E5.4) Visual extraction (opt-in per project via ``extraction_schema``, queued ``extract`` job).
+    # Apache-2.0 vision base from the catalog; set to ``qwen2.5-vl-3b-instruct`` for a faster,
+    # non-commercial run. CPU cost is per page, so the page count of one job is capped.
+    extract_model: str = "qwen2.5-vl-7b-instruct"
+    extract_max_pages: int = 20
+    extract_max_tokens: int = 1024
+    # Longest side of the rendered page image sent to the vision model (bounds image tokens).
+    extract_image_side_px: int = 1344
     chunk_size: int = 512
     chunk_overlap: int = 64
     # OCR'd chunks whose mean line confidence is below this are flagged needs_review (E3.3b).

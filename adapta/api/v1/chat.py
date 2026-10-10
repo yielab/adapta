@@ -160,13 +160,14 @@ async def chat_completions(
         condense = request_body.adapta.condense is not False
         f = request_body.adapta.filters
         if f is not None and any(
-            v is not None for v in (f.file_ids, f.page_min, f.page_max, f.needs_review)
+            v is not None for v in (f.file_ids, f.page_min, f.page_max, f.needs_review, f.fields)
         ):
             rag_filters = RetrievalFilters(
                 file_ids=list(f.file_ids) if f.file_ids else None,
                 page_min=f.page_min,
                 page_max=f.page_max,
                 needs_review=f.needs_review,
+                fields=dict(f.fields) if f.fields else None,
             )
 
     if request_body.stream:

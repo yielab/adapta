@@ -46,6 +46,12 @@ export interface ProjectSummary {
   last_activity_at: string | null;
 }
 
+// E5.4: what the vision base reads per page; property order is the chunk-header order.
+export interface ExtractionSchema {
+  title?: string | null;
+  properties: Record<string, Record<string, unknown>>;
+}
+
 export interface Project {
   id: string;
   name: string;
@@ -54,6 +60,7 @@ export interface Project {
   base_model: string;
   description: string | null;
   system_prompt: string | null;
+  extraction_schema: ExtractionSchema | null;
   team_id: string;
   created_at: string;
   summary: ProjectSummary | null;

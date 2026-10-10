@@ -135,12 +135,12 @@ class ProjectCreate(BaseModel):
     """
 
 
-class ProjectUpdate(BaseModel):
-    system_prompt: Annotated[str | None, Field(max_length=8000)] = None
-    contextual_retrieval: bool | None = None
+class ExtractionSchema(BaseModel):
+    title: str | None = None
     """
-    See ProjectCreate (E5.1).
+    Leads the chunk header, e.g. Invoice.
     """
+    properties: Annotated[dict[str, dict[str, Any]], Field(max_length=20, min_length=1)]
 
 
 class FileSummary(BaseModel):
@@ -475,6 +475,10 @@ class RetrievalFilters(BaseModel):
     """
     true = only OCR chunks flagged for review; false = exclude them.
     """
+    fields: dict[str, str] | None = None
+    """
+    (E5.4) Exact match on extracted fields, AND-ed, e.g. {vendor: Acme SA}. SQL filter on chunks.fields; chunks never extracted do not match.
+    """
 
 
 class ResponseFormatText(BaseModel):
@@ -609,6 +613,18 @@ class UserResponse(BaseModel):
     """
 
 
+class ProjectUpdate(BaseModel):
+    system_prompt: Annotated[str | None, Field(max_length=8000)] = None
+    contextual_retrieval: bool | None = None
+    """
+    See ProjectCreate (E5.1).
+    """
+    extraction_schema: ExtractionSchema | None = None
+    """
+    Turns on visual extraction (E5.4); null clears it, omitted leaves it.
+    """
+
+
 class ProjectResponse(BaseModel):
     id: str
     name: str
@@ -618,6 +634,7 @@ class ProjectResponse(BaseModel):
     description: Annotated[str | None, Field(...)]
     system_prompt: Annotated[str | None, Field(...)]
     contextual_retrieval: bool
+    extraction_schema: Annotated[ExtractionSchema | None, Field(...)]
     team_id: str
     created_at: str
     summary: Annotated[ProjectSummary | None, Field(...)]

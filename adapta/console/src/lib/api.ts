@@ -3,6 +3,7 @@ import { navigate } from "./router";
 import type {
   User,
   Project,
+  ExtractionSchema,
   ProjectType,
   ProjectFile,
   BaseModelInfo,
@@ -88,7 +89,7 @@ async function request<T>(path: string, opts: ReqOpts = {}): Promise<T> {
 
 // Binary download behind the Bearer token (an <a href> can't send it): returns the bundle and
 // the server-suggested file name.
-async function download(path: string): Promise<{ blob: Blob; filename: string }> {
+async function download(path: string, fallbackName = "adapter-ollama.zip"): Promise<{ blob: Blob; filename: string }> {
   const t = getToken();
   const res = await fetch(path, { headers: t ? { Authorization: `Bearer ${t}` } : {} });
   if (res.status === 401) {
@@ -101,7 +102,7 @@ async function download(path: string): Promise<{ blob: Blob; filename: string }>
     throw new ApiError(res.status, err.code ?? "error", err.message ?? `Request failed (${res.status})`, err.correlation_id);
   }
   const m = /filename="?([^";]+)"?/.exec(res.headers.get("content-disposition") ?? "");
-  return { blob: await res.blob(), filename: m?.[1] ?? "adapter-ollama.zip" };
+  return { blob: await res.blob(), filename: m?.[1] ?? fallbackName };
 }
 
 function upload<T>(path: string, file: File, fields: Record<string, string> = {}): Promise<T> {
@@ -129,13 +130,20 @@ export const api = {
   createProject: (p: { name: string; type: ProjectType; base_model: string; description?: string; team_id: string }) =>
     request<Project>(`${V1}/projects`, { method: "POST", body: p }),
   getProject: (id: string) => request<Project>(`${V1}/projects/${id}`),
-  updateProject: (id: string, body: { system_prompt: string | null }) =>
+  updateProject: (id: string, body: { system_prompt?: string | null; extraction_schema?: ExtractionSchema | null }) =>
     request<Project>(`${V1}/projects/${id}`, { method: "PATCH", body }),
   deleteProject: (id: string) => request<void>(`${V1}/projects/${id}`, { method: "DELETE" }),
 
   // Files (RAG)
   listFiles: (pid: string) => request<ProjectFile[]>(`${V1}/projects/${pid}/files`),
   uploadFile: (pid: string, file: File) => upload<{ id: string; filename: string; status: string }>(`${V1}/projects/${pid}/files`, file),
+  // E5.4: queue the vision-base extraction; fields.csv is the export of what it read.
+  extractFile: (pid: string, fid: string, allPages = false) =>
+    request<{ id: string; job_id: string; pages: number }>(
+      `${V1}/projects/${pid}/files/${fid}/extract?all_pages=${allPages}`,
+      { method: "POST" },
+    ),
+  downloadFieldsCsv: (pid: string) => download(`${V1}/projects/${pid}/fields.csv`, "fields.csv"),
   deleteFile: (pid: string, fid: string) => request<void>(`${V1}/projects/${pid}/files/${fid}`, { method: "DELETE" }),
 
   // Datasets (fine-tune)

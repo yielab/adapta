@@ -539,7 +539,7 @@ def test_chunk_model_matches_migration_shape():
     t = ProjectChunk.__table__
     assert t.name == "chunks"
     assert t.c.tsv.computed is not None
-    assert {c.name for c in t.c} >= {"page", "section", "ocr", "ocr_confidence", "needs_review"}
+    assert {c.name for c in t.c} >= {"page", "section", "ocr", "ocr_confidence", "needs_review", "fields"}
 
 
 def test_programming_error_in_fts_leg_is_not_swallowed(monkeypatch):
@@ -780,3 +780,156 @@ def test_retrieve_multi_query_logs_one_line_and_single_query_unchanged(monkeypat
     lines = [r.getMessage() for r in caplog.records if r.getMessage().startswith("rag.retrieve")]
     assert len(lines) == 2
     assert [c.chunk_id for c in multi] == [c.chunk_id for c in single]
+
+
+# ---------------------------------------------------------------------------
+# E5.4 — visual extraction: schema, parser, header, filters, dispatch, RBAC
+# ---------------------------------------------------------------------------
+
+_INVOICE = {
+    "title": "Invoice",
+    "properties": {"vendor": {"type": "string"}, "date": {"type": "string"}, "total": {"type": "string"}},
+}
+
+
+def test_extraction_schema_validation():
+    from adapta.domain.errors import InvalidRequest
+    from adapta.services.extraction import validate_schema
+
+    assert validate_schema(_INVOICE) == _INVOICE
+    for bad in (None, {}, {"properties": {}}, {"properties": {"a": "x"}}, {"properties": {"a": {}}, "title": 3}):
+        with pytest.raises(InvalidRequest):
+            validate_schema(bad)
+    with pytest.raises(InvalidRequest):
+        validate_schema({"properties": {f"k{i}": {} for i in range(21)}})
+
+
+def test_parse_fields_tolerates_fences_prose_and_junk():
+    from adapta.services.extraction import parse_fields
+
+    raw = 'Sure!\n```json\n{"vendor": " Acme  SA ", "date": null, "total": 1250.5, "extra": "x"}\n```'
+    assert parse_fields(raw, _INVOICE) == {"vendor": "Acme SA", "total": 1250.5}
+    assert parse_fields('{"vendor": {"n": 1}}', _INVOICE) is None
+    assert parse_fields("no json here", _INVOICE) is None
+    assert parse_fields('{"vendor": ""}', _INVOICE) is None
+    assert parse_fields("{broken", _INVOICE) is None
+
+
+def test_fields_header_follows_schema_order_and_skips_missing():
+    from adapta.services.extraction import fields_header
+
+    fields = {"total": "1,250.00", "vendor": "Acme SA"}  # JSONB hands keys back reordered
+    assert fields_header(fields, _INVOICE) == "Invoice · Acme SA · 1,250.00"
+    assert fields_header(None, _INVOICE) == "" and fields_header({}, _INVOICE) == ""
+
+
+def test_context_block_carries_the_header_only_when_present():
+    chunks = [
+        RetrievedChunk(text="body", source="a.pdf", score=0.9, chunk_index=0, score_kind="vector",
+                       fields_header="Invoice · Acme SA"),
+        RetrievedChunk(text="plain", source="b.pdf", score=0.8, chunk_index=1, score_kind="vector"),
+    ]
+    block = RAGService().build_context_block(chunks)
+    assert "[1] (source: a.pdf)\nInvoice · Acme SA\nbody" in block
+    assert "[2] (source: b.pdf)\nplain" in block
+
+
+def test_fields_filter_sql_is_parametrised_and_sql_only():
+    from adapta.services.rag import RetrievalFilters
+
+    f = RetrievalFilters(fields={"vendor": "Acme'; DROP TABLE x;--", "date": "2026-03-01"})
+    assert f.sql_only
+    sql, params = f.sql_clauses()
+    assert "c.fields ->> :f_fk0 = :f_fv0" in sql and "c.fields ->> :f_fk1 = :f_fv1" in sql
+    assert "DROP" not in sql and params["f_fv0"].startswith("Acme") and params["f_fk1"] == "date"
+    assert not RetrievalFilters(fields={}).sql_only
+
+
+def test_select_pages_flagged_or_all():
+    from types import SimpleNamespace as R
+
+    from adapta.services.extraction import select_pages
+
+    rows = [R(page=1, needs_review=False), R(page=2, needs_review=True), R(page=2, needs_review=True),
+            R(page=3, needs_review=False), R(page=None, needs_review=True)]
+    assert select_pages(rows, all_pages=False) == [2]
+    assert select_pages(rows, all_pages=True) == [1, 2, 3]
+
+
+def test_check_extractable_guards():
+    from adapta.domain.errors import Conflict, InvalidRequest
+    from adapta.services.extraction import check_extractable
+
+    check_extractable("a.pdf", "indexed", _INVOICE)
+    with pytest.raises(InvalidRequest):
+        check_extractable("a.pdf", "indexed", None)
+    with pytest.raises(InvalidRequest):
+        check_extractable("a.docx", "indexed", _INVOICE)
+    with pytest.raises(Conflict):
+        check_extractable("a.pdf", "pending", _INVOICE)
+
+
+def test_fields_csv_columns_follow_schema_and_neutralise_formulas():
+    from types import SimpleNamespace as R
+
+    from adapta.services.extraction import fields_csv
+
+    out = fields_csv([R(filename="inv.pdf", page=1, fields={"vendor": "=HYPERLINK()", "total": 5})], _INVOICE)
+    assert out.splitlines() == ["file,page,vendor,date,total", "inv.pdf,1,'=HYPERLINK(),,5"]
+
+
+def test_render_page_png_from_fixtures_and_bad_input():
+    import io
+    from pathlib import Path
+
+    from PIL import Image
+
+    from adapta.domain.errors import InvalidRequest
+    from adapta.services.extraction import render_page
+
+    docs = Path(__file__).parent / "fixtures" / "docs"
+    for name in ("scanned.pdf", "scanned_lowconf.pdf", "invoice.png"):
+        assert Image.open(io.BytesIO(render_page(docs / name, 1))).format == "PNG"
+    with pytest.raises(InvalidRequest):
+        render_page(docs / "scanned.pdf", 9)
+    with pytest.raises(InvalidRequest):
+        render_page(docs / "table.docx", 1)
+
+
+def test_extract_job_is_dispatched_and_runs_extract_file(monkeypatch):
+    import asyncio
+
+    from adapta.services import extraction
+    from adapta.worker import main as worker
+
+    assert "extract" in worker.HANDLERS
+    calls = []
+
+    async def fake_extract(file_id, *, all_pages=False):
+        calls.append((file_id, all_pages))
+
+    class Q:
+        async def update_status(self, *a, **k):
+            calls.append(k.get("status"))
+
+    monkeypatch.setattr(extraction, "extract_file", fake_extract)
+    monkeypatch.setattr(worker, "get_job_queue", lambda: Q())
+    asyncio.run(worker._run_job({"job_id": "j", "kind": "extract", "payload": {"id": "f1", "all_pages": True}}))
+    assert calls == ["running", ("f1", True), "succeeded"]
+
+
+def test_extract_routes_exist_and_are_role_gated():
+    import inspect
+
+    from adapta.api.v1 import files, projects
+
+    paths = {
+        (m, r.path)
+        for router in (files.router, projects.router)
+        for r in router.routes
+        for m in r.methods
+    }
+    assert ("POST", "/projects/{project_id}/files/{file_id}/extract") in paths
+    assert ("GET", "/projects/{project_id}/fields.csv") in paths
+    assert "require_team_writer" in inspect.getsource(files.extract_file)
+    assert "require_team_member" in inspect.getsource(projects.export_fields_csv)

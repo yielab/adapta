@@ -177,8 +177,8 @@ async def test_run_job_dispatches_to_registered_handler(monkeypatch):
     assert seen == ["j-1"]
 
 
-def test_handler_table_holds_the_adapter_index_and_rag_eval_jobs():
-    assert set(worker.HANDLERS) == {"adapter", "index", "rag_eval"}
+def test_handler_table_holds_the_adapter_index_rag_eval_and_extract_jobs():
+    assert set(worker.HANDLERS) == {"adapter", "index", "rag_eval", "extract"}
     assert worker.HANDLERS["index"] is worker._run_index_job
 
 
