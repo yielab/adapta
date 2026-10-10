@@ -125,7 +125,7 @@ classes are defined in [`.claude/context/gates.md`](.claude/context/gates.md) ("
 | E4.3 | 2 | sonnet | live | E4.1 | E4.2 (spec, migrations) | done 2026-10-10 |
 | E4.8 | 2 | sonnet | live | E3.8, E4.1 | E4.6, E5.1 | open |
 | E4.9 | 2 | sonnet | live | E1.11 | E2.1, E3.5/E5.3, E4.6 | done 2026-10-10 |
-| E3.4 | 3 | sonnet | live | E3.1, E3.3b, E1.11 | E3.5 (spec, `Playground.svelte`), E3.3b | ready-for-live (e3.4) |
+| E3.4 | 3 | sonnet | live | E3.1, E3.3b, E1.11 | E3.5 (spec, `Playground.svelte`), E3.3b | done 2026-10-10 |
 | E3.5 | 3 | sonnet | live | E3.2, E1.11 | E3.4 (spec, `Playground.svelte`), E4.9 and E5.3 | open |
 | E3.6 | 3 | sonnet + human decision | live | E3.1, E3.2, E3.8 | E3.2 | done 2026-10-10 |
 | E4.4 | 3 | sonnet | rebuild + live | E4.2, E4.3 | E3.7, E3.3b | in progress (worker-e4.4) |
@@ -229,33 +229,6 @@ E1.1–E1.9 shipped 2026-09-17 → [CHANGELOG.md](CHANGELOG.md). E1.14 closed 20
 - **Close.** Self-contained; Status snapshot.
 
 ### E3. P1 — real hybrid RAG + scanned documents (weeks 3–7)
-
-### E3.4 `[BE+FE]` Citations with text, page and OCR provenance; review flags in the files table (P1)
-- [ ] **Context.** Citations are `{index, source, score}` (`rag.py:294-298`, spec `Citation`); the
-  console already tries to render `c.text` the server never sends (`Playground.svelte:283`). With
-  E3.1/E3.3b the data exists.
-- **Depends.** E3.1, E3.3b, E1.11. **Unblocks.** E5.4.
-- **Agent.** sonnet · gate class **live (+ `make console-build` on the main checkout)** · serialize
-  with: E3.5 (spec, `Playground.svelte`), E3.3b (`RagFlow.svelte`) · **Handoff.** must name the
-  final `Citation` fields.
-- **Scope.** API shape + console rendering. Out: bbox highlighting.
-- **Steps.** (1) Spec `Citation` += `text`, `page` (nullable), `file_id`, `ocr` (bool), `confidence`
-  (nullable); `FileResponse` += `pages_needing_review` (int). `make generate`. (2) `format_citations`
-  fills them from the hydrated rows. (3) `files.py` list/get compute `pages_needing_review` in one
-  aggregate query. (4) Console: Playground citation card shows `source · p.N · OCR conf 0.83` with the
-  text in a collapsible; RagFlow file table shows a warning chip "N pages low-confidence OCR" with the
-  guidance ("re-scan, or re-read with the visual extractor when available"). (5) Tests:
-  `format_citations` shape; contract gate.
-- **Files.** `specs/openapi.yaml` (`grep -n "Citation:"`, `FileResponse`), `adapta/services/rag.py:279-298`,
-  `adapta/api/v1/files.py:40-60`, `adapta/console/src/lib/types.ts` (`grep -n Citation`),
-  `adapta/console/src/views/Playground.svelte:270-295`, `adapta/console/src/views/RagFlow.svelte:251-287`,
-  `tests/test_rag_hybrid.py:271-291`, `docs/user-guide/consuming-the-api.md` (citations).
-- **Contract impact.** API.
-- **Gate.** `make validate-spec` → `make generate` → `make check-models` → `make test` →
-  `make test-contracts` → `make console-build`.
-- **Acceptance.** A chat response cites `factura.pdf · p.2 · OCR 0.83` with the chunk text; the files
-  table flags low-confidence pages; contract gate green.
-- **Close.** consuming-the-api citations; operator-console playground + files; Status snapshot.
 
 ### E3.5 `[BE+FE]` Per-project system prompt, retrieval threshold + abstention, request-level filters (P1)
 - [ ] **Context.** No project system-prompt column (`db/models.py:209-262`); `api/v1/chat.py:151-159`

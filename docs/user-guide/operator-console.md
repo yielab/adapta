@@ -127,7 +127,7 @@ working immediately.
 
 The **Playground** tab lets you test the endpoint from the browser using a
 console-held key — the exact same request path a customer app uses. For RAG
-projects it shows the **citations**; for all projects it shows **token usage**
+projects it shows the **citations** — each with its file, page and, for scanned pages, the OCR confidence; expand one to read the passage; for all projects it shows **token usage**
 (prompt / completion / total). It's a test tool, clearly labeled as such.
 
 ---

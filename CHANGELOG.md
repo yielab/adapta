@@ -533,6 +533,45 @@ bind mount, so uvicorn reloaded on every worker edit — reload now watches `/ap
   across pytest event loops; now a NullPool engine per call — 11/12 green since (the one failure, right after the edit,
   was not captured).
 
+### E3.4 `[BE+FE]` Citations with text, page and OCR provenance; review flags in the files table (P1)
+- [x] **Context.** Citations are `{index, source, score}` (`rag.py:294-298`, spec `Citation`); the
+  console already tries to render `c.text` the server never sends (`Playground.svelte:283`). With
+  E3.1/E3.3b the data exists.
+- **Depends.** E3.1, E3.3b, E1.11. **Unblocks.** E5.4.
+- **Agent.** sonnet · gate class **live (+ `make console-build` on the main checkout)** · serialize
+  with: E3.5 (spec, `Playground.svelte`), E3.3b (`RagFlow.svelte`) · **Handoff.** must name the
+  final `Citation` fields.
+- **Scope.** API shape + console rendering. Out: bbox highlighting.
+- **Steps.** (1) Spec `Citation` += `text`, `page` (nullable), `file_id`, `ocr` (bool), `confidence`
+  (nullable); `FileResponse` += `pages_needing_review` (int). `make generate`. (2) `format_citations`
+  fills them from the hydrated rows. (3) `files.py` list/get compute `pages_needing_review` in one
+  aggregate query. (4) Console: Playground citation card shows `source · p.N · OCR conf 0.83` with the
+  text in a collapsible; RagFlow file table shows a warning chip "N pages low-confidence OCR" with the
+  guidance ("re-scan, or re-read with the visual extractor when available"). (5) Tests:
+  `format_citations` shape; contract gate.
+- **Files.** `specs/openapi.yaml` (`grep -n "Citation:"`, `FileResponse`), `adapta/services/rag.py:279-298`,
+  `adapta/api/v1/files.py:40-60`, `adapta/console/src/lib/types.ts` (`grep -n Citation`),
+  `adapta/console/src/views/Playground.svelte:270-295`, `adapta/console/src/views/RagFlow.svelte:251-287`,
+  `tests/test_rag_hybrid.py:271-291`, `docs/user-guide/consuming-the-api.md` (citations).
+- **Contract impact.** API.
+- **Gate.** `make validate-spec` → `make generate` → `make check-models` → `make test` →
+  `make test-contracts` → `make console-build`.
+- **Acceptance.** A chat response cites `factura.pdf · p.2 · OCR 0.83` with the chunk text; the files
+  table flags low-confidence pages; contract gate green.
+- **Close.** consuming-the-api citations; operator-console playground + files; Status snapshot.
+- **Done.** 2026-10-10. `Citation` gains `text`, `file_id`, `page`, `ocr`, `confidence`, hydrated from Postgres `chunks` by
+  `chunk_id` for the final top_k only (`rag._hydrate_provenance`, one `= ANY(:ids)` query, best-effort); `FileResponse
+  .pages_needing_review` (distinct flagged pages, one aggregate). Playground shows `source · p.N · OCR conf x` with a
+  collapsible passage; RagFlow warns on low-confidence OCR pages; the 2 old `Playground.svelte` `svelte-check` errors are
+  fixed (now **0 errors**). Live on `develop`: `make ci` ✓ · `test-contracts` 36/36, 2040 cases, 0 failures (5
+  "errored" cases with no detail, no 5xx in the app log) · console build ✓ · live chat over a scanned PDF + native PDF +
+  markdown: scanned citation `page 1, ocr true, confidence 0.994`, native `page 1/2, ocr false`, markdown `page null`.
+- **Handoff.** `Citation{index, source, score, score_kind, text, file_id?, page? (1-based), ocr, confidence? (0–1)}`;
+  `FileResponse.pages_needing_review: int = 0`; `RetrievedChunk` gains `file_id, page, ocr, ocr_confidence`. Chroma
+  metadata unchanged. **Unblocks** E5.4 (and E3.5 can rely on the fields).
+- **Follow-up.** `section` is hydrated nowhere yet. Schemathesis "errored" cases rose 1 → 5 across runs without any
+  app-side error — run once with `--report` to see what fails to generate/send.
+
 ---
 
 ## 2026-10-08 — §E wave 0: the gates every other block is verified by
