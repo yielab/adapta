@@ -36,6 +36,11 @@ class CatalogEntry:
     gguf_subdir: str  # subdir under settings.models_dir holding the GGUF
     gguf_filename: str  # preferred GGUF filename within that subdir
     model_type: ModelType
+    # GGUF `general.architecture` of the base: an imported GGUF LoRA must carry the same one.
+    architecture: str = "qwen2"
+    # Other HF repos a PEFT adapter's `base_model_name_or_path` may name (same weights, e.g. the
+    # Unsloth mirrors / 4-bit variants people fine-tune from).
+    adapter_base_aliases: tuple[str, ...] = ()
     notes: str = ""  # human-readable VRAM / quality tradeoff
     # Serving prompt format: the key into adapta.core.chat_templates the engine
     # renders with. Default ChatML (all current Qwen2.5 bases). A model of a
@@ -73,6 +78,7 @@ _ENTRIES: List[CatalogEntry] = [
     CatalogEntry(
         name="qwen2.5-0.5b-instruct",
         hf_repo_id="Qwen/Qwen2.5-0.5B-Instruct",
+        adapter_base_aliases=("unsloth/Qwen2.5-0.5B-Instruct", "unsloth/Qwen2.5-0.5B-Instruct-bnb-4bit"),
         gguf_subdir="qwen2.5-0.5b",
         gguf_filename="qwen2.5-0.5b-instruct-q4_k_m.gguf",
         model_type=ModelType.CHAT,
@@ -85,6 +91,7 @@ _ENTRIES: List[CatalogEntry] = [
     CatalogEntry(
         name="qwen2.5-1.5b-instruct",
         hf_repo_id="Qwen/Qwen2.5-1.5B-Instruct",
+        adapter_base_aliases=("unsloth/Qwen2.5-1.5B-Instruct", "unsloth/Qwen2.5-1.5B-Instruct-bnb-4bit"),
         gguf_subdir="qwen2.5-1.5b",
         gguf_filename="qwen2.5-1.5b-instruct-q4_k_m.gguf",
         model_type=ModelType.CHAT,
@@ -97,6 +104,7 @@ _ENTRIES: List[CatalogEntry] = [
     CatalogEntry(
         name="qwen2.5-3b-instruct",
         hf_repo_id="Qwen/Qwen2.5-3B-Instruct",
+        adapter_base_aliases=("unsloth/Qwen2.5-3B-Instruct", "unsloth/Qwen2.5-3B-Instruct-bnb-4bit"),
         gguf_subdir="qwen2.5-3b",
         gguf_filename="qwen2.5-3b-instruct-q4_k_m.gguf",
         model_type=ModelType.CHAT,
@@ -111,6 +119,7 @@ _ENTRIES: List[CatalogEntry] = [
     CatalogEntry(
         name="qwen2.5-coder-3b",
         hf_repo_id="Qwen/Qwen2.5-Coder-3B-Instruct",
+        adapter_base_aliases=("unsloth/Qwen2.5-Coder-3B-Instruct", "unsloth/Qwen2.5-Coder-3B-Instruct-bnb-4bit"),
         gguf_subdir="qwen2.5-coder-3b",
         gguf_filename="qwen2.5-coder-3b-instruct-q4_k_m.gguf",
         model_type=ModelType.CODE,
@@ -125,6 +134,7 @@ _ENTRIES: List[CatalogEntry] = [
     CatalogEntry(
         name="qwen2.5-7b-instruct",
         hf_repo_id="Qwen/Qwen2.5-7B-Instruct",
+        adapter_base_aliases=("unsloth/Qwen2.5-7B-Instruct", "unsloth/Qwen2.5-7B-Instruct-bnb-4bit"),
         gguf_subdir="qwen2.5-7b",
         gguf_filename="qwen2.5-7b-instruct-q4_k_m.gguf",
         model_type=ModelType.REASONING,
@@ -137,6 +147,8 @@ _ENTRIES: List[CatalogEntry] = [
     CatalogEntry(
         name="qwen2.5-vl-3b-instruct",
         hf_repo_id="Qwen/Qwen2.5-VL-3B-Instruct",
+        adapter_base_aliases=("unsloth/Qwen2.5-VL-3B-Instruct", "unsloth/Qwen2.5-VL-3B-Instruct-bnb-4bit"),
+        architecture="qwen2vl",
         gguf_subdir="qwen2.5-vl-3b",
         gguf_filename="qwen2.5-vl-3b-instruct-q4_k_m.gguf",
         model_type=ModelType.CHAT,
@@ -153,6 +165,8 @@ _ENTRIES: List[CatalogEntry] = [
     CatalogEntry(
         name="qwen2.5-vl-7b-instruct",
         hf_repo_id="Qwen/Qwen2.5-VL-7B-Instruct",
+        adapter_base_aliases=("unsloth/Qwen2.5-VL-7B-Instruct", "unsloth/Qwen2.5-VL-7B-Instruct-bnb-4bit"),
+        architecture="qwen2vl",
         gguf_subdir="qwen2.5-vl-7b",
         gguf_filename="qwen2.5-vl-7b-instruct-q4_k_m.gguf",
         model_type=ModelType.CHAT,

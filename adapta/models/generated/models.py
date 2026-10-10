@@ -190,6 +190,36 @@ class DatasetCurateRequest(BaseModel):
     rows: Annotated[list[dict[str, Any]], Field(min_length=1)]
 
 
+class AdapterFormat(Enum):
+    gguf = "gguf"
+    peft = "peft"
+
+
+class AdapterStatus(Enum):
+    uploaded = "uploaded"
+    processing = "processing"
+    passed = "passed"
+    failed = "failed"
+
+
+class AdapterResponse(BaseModel):
+    id: str
+    project_id: str
+    name: str
+    base_model: str
+    format: AdapterFormat
+    sha256: str
+    """
+    SHA-256 of the uploaded file
+    """
+    size_bytes: int
+    eval_dataset_id: Annotated[str | None, Field(...)]
+    status: AdapterStatus
+    failure_reason: Annotated[str | None, Field(...)]
+    eval_metrics: Annotated[dict[str, Any] | None, Field(...)]
+    created_at: str
+
+
 class RetrievalSummary(BaseModel):
     indexed_chunks: int
 
@@ -203,7 +233,7 @@ class EndpointResponse(BaseModel):
     project_type: ProjectType
     created_at: str
     retrieval: Annotated[RetrievalSummary | None, Field(...)]
-    adapter_path: Annotated[str | None, Field(deprecated=True)]
+    adapter: Annotated[AdapterResponse | None, Field(...)]
 
 
 class UsageDay(BaseModel):

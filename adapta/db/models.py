@@ -18,6 +18,7 @@ from datetime import datetime
 from typing import Optional
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     Computed,
     Date,
@@ -32,7 +33,7 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
-from sqlalchemy.dialects.postgresql import TSVECTOR
+from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -90,6 +91,21 @@ class DatasetStatus(str, enum.Enum):
     validating = "validating"
     valid = "valid"
     invalid = "invalid"
+
+
+class AdapterFormat(str, enum.Enum):
+    gguf = "gguf"
+    peft = "peft"
+
+
+class AdapterStatus(str, enum.Enum):
+    """uploaded -> processing -> passed | failed. Upload (E4.2) writes `uploaded`; the
+    adapter job (E4.4) drives the rest. Only `passed` adapters can back an endpoint."""
+
+    uploaded = "uploaded"
+    processing = "processing"
+    passed = "passed"
+    failed = "failed"
 
 
 class EndpointStatus(str, enum.Enum):
@@ -247,6 +263,9 @@ class Project(Base):
     datasets: Mapped[list[Dataset]] = relationship(
         "Dataset", back_populates="project", cascade="all, delete-orphan"
     )
+    adapters: Mapped[list[Adapter]] = relationship(
+        "Adapter", back_populates="project", cascade="all, delete-orphan"
+    )
     endpoint: Mapped[Optional[Endpoint]] = relationship(
         "Endpoint", back_populates="project", uselist=False, cascade="all, delete-orphan"
     )
@@ -392,6 +411,54 @@ class Dataset(Base):
 
 
 # ---------------------------------------------------------------------------
+# Adapters (bring your own LoRA)
+# ---------------------------------------------------------------------------
+
+
+class Adapter(Base):
+    """An imported LoRA adapter of a finetune project (E4.2).
+
+    ``format`` gguf: ``gguf_path`` is the uploaded file. ``peft``: ``peft_dir`` holds
+    ``adapter_model.safetensors`` + ``adapter_config.json`` and ``gguf_path`` stays NULL until the
+    adapter job converts it (E4.4). ``sha256``/``size_bytes`` describe the uploaded file.
+    ``eval_dataset_id`` is the held-out set the gate scores it on; ``eval_metrics`` is the
+    ``services/eval_gate.evaluate`` dict. Files live under ``settings.adapters_dir/{id}/``.
+    """
+
+    __tablename__ = "adapters"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    project_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    base_model: Mapped[str] = mapped_column(String(128), nullable=False)
+    format: Mapped[AdapterFormat] = mapped_column(
+        Enum(AdapterFormat, native_enum=False, length=8), nullable=False
+    )
+    peft_dir: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    gguf_path: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    eval_dataset_id: Mapped[Optional[str]] = mapped_column(
+        String(36), ForeignKey("datasets.id", ondelete="SET NULL"), nullable=True
+    )
+    status: Mapped[AdapterStatus] = mapped_column(
+        Enum(AdapterStatus, native_enum=False, length=16),
+        nullable=False,
+        default=AdapterStatus.uploaded,
+    )
+    failure_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    eval_metrics: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    created_by: Mapped[Optional[str]] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    project: Mapped[Project] = relationship("Project", back_populates="adapters")
+
+
+# ---------------------------------------------------------------------------
 # Endpoint / ApiKey
 # ---------------------------------------------------------------------------
 
@@ -411,8 +478,11 @@ class Endpoint(Base):
         nullable=False,
         default=EndpointStatus.pending,
     )
-    # null for RAG and base-only endpoints; the GGUF LoRA path for adapter endpoints.
-    adapter_path: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    # null for RAG and base-only endpoints; the `passed` adapter the endpoint serves otherwise.
+    # No ON DELETE action: an adapter bound to an endpoint cannot be deleted (409 at the API).
+    adapter_id: Mapped[Optional[str]] = mapped_column(
+        String(36), ForeignKey("adapters.id"), nullable=True
+    )
     base_model: Mapped[str] = mapped_column(String(128), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
@@ -420,6 +490,9 @@ class Endpoint(Base):
     )
 
     project: Mapped[Project] = relationship("Project", back_populates="endpoint")
+    # selectin: the async session cannot lazy-load; this also orders the ORM's project-cascade
+    # delete (endpoint before adapter) now that endpoints.adapter_id references adapters.
+    adapter: Mapped[Optional[Adapter]] = relationship("Adapter", lazy="selectin")
     keys: Mapped[list[ApiKey]] = relationship(
         "ApiKey", back_populates="endpoint", cascade="all, delete-orphan"
     )

@@ -46,6 +46,8 @@ tags:
     description: Document upload + indexing (knowledge for RAG answers and/or dataset synthesis)
   - name: datasets
     description: JSONL dataset upload + validation (finetune projects)
+  - name: adapters
+    description: Bring-your-own LoRA adapters (finetune projects) — import, status, delete
   - name: endpoints
     description: Create and retrieve the servable endpoint for a project
   - name: keys
@@ -449,13 +451,98 @@ paths:
         '201': {description: Curated dataset, content: {application/json: {schema: {$ref: '#/components/schemas/DatasetResponse'}}}}
 
   # ──────────────────────────────────────────────────────────────────────────
+  # Adapters (finetune: bring your own LoRA)
+  # ──────────────────────────────────────────────────────────────────────────
+  /projects/{project_id}/adapters:
+    post:
+      operationId: uploadAdapter
+      tags: [adapters]
+      summary: Import a LoRA adapter (finetune projects) — one .gguf, or a .zip of a PEFT adapter
+      description: |
+        Either one GGUF LoRA (`.gguf`, `general.type=adapter`, `adapter.type=lora`, architecture of
+        the project's base model) or a `.zip` holding exactly `adapter_model.safetensors` and
+        `adapter_config.json` (`peft_type=LORA`, `base_model_name_or_path` = the project's base model
+        or a known mirror). `eval_dataset_id` names a `valid` dataset of the same project: the held-out
+        set the adapter is later scored on. Static validation only; an accepted adapter lands
+        `uploaded` (202). Each rejection is a 400 naming the expected value; over the size cap, 413.
+      security: [{BearerAuth: []}]
+      parameters: [{$ref: '#/components/parameters/ProjectId'}]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file: {type: string, format: binary}
+                name: {type: string, maxLength: 128, description: Display name; defaults to the file name}
+                eval_dataset_id: {type: string}
+              required: [file, eval_dataset_id]
+      responses:
+        '202': {description: Accepted (stored; status uploaded), content: {application/json: {schema: {$ref: '#/components/schemas/AdapterResponse'}}}}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '413': {$ref: '#/components/responses/Error'}
+        '422': {$ref: '#/components/responses/Error'}
+
+    get:
+      operationId: listAdapters
+      tags: [adapters]
+      summary: List a project's adapters
+      security: [{BearerAuth: []}]
+      parameters: [{$ref: '#/components/parameters/ProjectId'}]
+      responses:
+        '200': {description: Adapters, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/AdapterResponse'}}}}}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '422': {$ref: '#/components/responses/Error'}
+
+  /projects/{project_id}/adapters/{adapter_id}:
+    get:
+      operationId: getAdapter
+      tags: [adapters]
+      summary: Get an adapter and its gate status
+      security: [{BearerAuth: []}]
+      parameters:
+        - {$ref: '#/components/parameters/ProjectId'}
+        - {name: adapter_id, in: path, required: true, schema: {type: string}}
+      responses:
+        '200': {description: Adapter, content: {application/json: {schema: {$ref: '#/components/schemas/AdapterResponse'}}}}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '422': {$ref: '#/components/responses/Error'}
+
+    delete:
+      operationId: deleteAdapter
+      tags: [adapters]
+      summary: Delete an adapter and its stored files (409 while an endpoint is bound to it)
+      security: [{BearerAuth: []}]
+      parameters:
+        - {$ref: '#/components/parameters/ProjectId'}
+        - {name: adapter_id, in: path, required: true, schema: {type: string}}
+      responses:
+        '204': {description: Deleted}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Error'}
+        '422': {$ref: '#/components/responses/Error'}
+
+  # ──────────────────────────────────────────────────────────────────────────
   # Endpoint
   # ──────────────────────────────────────────────────────────────────────────
   /projects/{project_id}/endpoint:
     post:
       operationId: createEndpoint
       tags: [endpoints]
-      summary: Activate the project endpoint (RAG must have indexed docs; finetune projects need an imported adapter)
+      summary: Activate the project endpoint (RAG must have indexed docs; finetune projects serve their latest adapter that passed the gate)
       security: [{BearerAuth: []}]
       parameters: [{$ref: '#/components/parameters/ProjectId'}]
       responses:
@@ -962,6 +1049,34 @@ components:
             type: object
             additionalProperties: true
 
+    # Adapters
+    AdapterFormat:
+      type: string
+      enum: [gguf, peft]
+
+    # uploaded -> processing -> passed | failed (the transitions after `uploaded` belong to the adapter job).
+    AdapterStatus:
+      type: string
+      enum: [uploaded, processing, passed, failed]
+
+    AdapterResponse:
+      type: object
+      required: [id, project_id, name, base_model, format, sha256, size_bytes, eval_dataset_id, status, failure_reason, eval_metrics, created_at]
+      properties:
+        id: {type: string}
+        project_id: {type: string}
+        name: {type: string}
+        base_model: {type: string}
+        format: {$ref: '#/components/schemas/AdapterFormat'}
+        sha256: {type: string, description: SHA-256 of the uploaded file}
+        size_bytes: {type: integer}
+        eval_dataset_id: {type: string, nullable: true}
+        status: {$ref: '#/components/schemas/AdapterStatus'}
+        failure_reason: {type: string, nullable: true}
+        # The eval gate's verdict (adapta/services/eval_gate.py); null until scored.
+        eval_metrics: {type: object, nullable: true, additionalProperties: true}
+        created_at: {type: string}
+
     # Endpoint
     RetrievalSummary:
       type: object
@@ -972,7 +1087,7 @@ components:
 
     EndpointResponse:
       type: object
-      required: [id, slug, status, base_model, modality, project_type, created_at, retrieval, adapter_path]
+      required: [id, slug, status, base_model, modality, project_type, created_at, retrieval, adapter]
       properties:
         id: {type: string}
         slug: {type: string}
@@ -982,7 +1097,7 @@ components:
         project_type: {$ref: '#/components/schemas/ProjectType'}
         created_at: {type: string}
         retrieval: {$ref: '#/components/schemas/RetrievalSummary', nullable: true}
-        adapter_path: {type: string, nullable: true, deprecated: true}
+        adapter: {$ref: '#/components/schemas/AdapterResponse', nullable: true}
 
     # Usage
     UsageDay:

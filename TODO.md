@@ -121,7 +121,7 @@ classes are defined in [`.claude/context/gates.md`](.claude/context/gates.md) ("
 | E3.2 | 2 | sonnet | live | E3.1, E3.8 (baseline recorded before this lands) | E3.7, E3.5 | done 2026-10-10 |
 | E3.3b | 2 | sonnet | rebuild + live | E3.3a (commit), E3.1 | E4.1, E4.2, E4.4 (`pyproject.toml`, `Dockerfile`), E3.7, E3.4 | in progress (worker-e3.3b) |
 | E3.7 | 2 | sonnet | live | E3.1, E4.1 | E3.1/E3.3b, E4.4 (`worker/main.py`) | open |
-| E4.2 | 2 | sonnet | rebuild + live | E4.1 | E4.3 (spec, migrations), E4.5, E2.2 | in progress (worker-e4.2) |
+| E4.2 | 2 | sonnet | live | E4.1 | E4.3 (spec, migrations), E4.5, E2.2 | ready-for-live (e4.2) |
 | E4.3 | 2 | sonnet | live | E4.1 | E4.2 (spec, migrations) | done 2026-10-10 |
 | E4.8 | 2 | sonnet | live | E3.8, E4.1 | E4.6, E5.1 | open |
 | E4.9 | 2 | sonnet | live | E1.11 | E2.1, E3.5/E5.3, E4.6 | done 2026-10-10 |
@@ -425,6 +425,18 @@ E1.1–E1.9 shipped 2026-09-17 → [CHANGELOG.md](CHANGELOG.md). E1.14 closed 20
   extra member, a mismatched base and an oversized file each return a typed 4xx naming the problem; a
   `finetune` endpoint cannot be created while no adapter is `passed`.
 - **Close.** CLAUDE.md API surface; consuming-the-api; Status snapshot.
+- **Done (ready-for-live, branch `e4.2`, 2026-10-10).** Spec + generated DTOs, migration `0014`, `Adapter` model, `services/adapters.py`
+  (stdlib `zipfile`/`hashlib`/`struct` plus the existing `gguf` dep: **no new dependency**, so `pyproject.toml` is untouched and
+  the gate class drops to **live**), `api/v1/adapters.py`, endpoint binding and chat resolution through `adapter_id`; catalog gained
+  `architecture` + `adapter_base_aliases`. Offline: validate-spec, generate/check-models, lint, test (273 passed, 28 new in
+  `tests/test_adapter_upload.py`), check-leaks, lint-imports green. Pending live: `make migrate-test`, `make test-contracts`, fixture upload.
+  Console `types.ts`/`EndpointPanel.svelte` still read the removed `adapter_path` (not in this block's Files).
+- **Handoff (E4.2).** Table `adapters(id, project_id, name, base_model, format gguf|peft, peft_dir, gguf_path, sha256, size_bytes,
+  eval_dataset_id, status, failure_reason, eval_metrics JSONB, created_by, created_at)`; `endpoints.adapter_id` replaces `adapter_path`;
+  migration `0014` (down `0013`). Status enum `uploaded | processing | passed | failed` (`AdapterStatus`): upload writes `uploaded`;
+  E4.4 owns the rest and must fill `gguf_path` for `peft` rows (stored at `adapters_dir/{id}/peft/`; gguf at `adapters_dir/{id}/adapter.gguf`).
+  Routes `POST|GET /v1/projects/{id}/adapters`, `GET|DELETE …/adapters/{aid}`; `EndpointResponse.adapter`. Errors `InvalidAdapter`
+  (400 `invalid_adapter`), `AdapterInUse` (409 `adapter_in_use`), `PayloadTooLarge` (413). `settings.adapter_max_upload_mb`=512.
 
 ### E4.4 `[BE+INFRA]` Adapter job on the CPU worker: convert, probe, score, decide (P1)
 - [ ] **Context.** `core/adapter_conversion.py` wraps llama.cpp's official `convert_lora_to_gguf.py`, but the

@@ -53,6 +53,16 @@ class InvalidRequest(DomainError):
 
 
 @dataclass
+class InvalidAdapter(InvalidRequest):
+    """An imported adapter failed static validation (HTTP 400, code ``invalid_adapter``).
+
+    The message always names the expected value (extension, base model, member list, ...).
+    """
+
+    code: str = field(default="invalid_adapter", init=False)
+
+
+@dataclass
 class Unauthorized(DomainError):
     """The request is missing valid credentials (HTTP 401).
 
@@ -95,6 +105,13 @@ class Conflict(DomainError):
 
     code: str = field(default="conflict", init=False)
     status: int = field(default=409, init=False)
+
+
+@dataclass
+class AdapterInUse(Conflict):
+    """An adapter cannot be deleted while an endpoint is bound to it (HTTP 409)."""
+
+    code: str = field(default="adapter_in_use", init=False)
 
 
 @dataclass

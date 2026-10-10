@@ -132,6 +132,10 @@ class Settings(BaseSettings):
     # hostile/oversized upload can't fill the disk before validation even runs.
     max_upload_mb: int = 1024
 
+    # Cap on one adapter upload (a .gguf, or a .zip of a PEFT adapter) and on the size a zip
+    # may expand to — LoRA adapters are tens to hundreds of MB; this bounds a zip bomb.
+    adapter_max_upload_mb: int = 512
+
     # Image limits for vision chat (§V4): decoded size/dimensions per image, and
     # the number of image content-parts per request.
     max_image_mb: int = 10

@@ -30,6 +30,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from adapta import __version__
 from adapta.api.v1 import (
+    adapters,
     auth,
     chat,
     datasets,
@@ -386,6 +387,7 @@ def create_app() -> FastAPI:
     app.include_router(projects.router, prefix=prefix)
     app.include_router(files.router, prefix=prefix)
     app.include_router(datasets.router, prefix=prefix)
+    app.include_router(adapters.router, prefix=prefix)
     app.include_router(endpoints.router, prefix=prefix)
     app.include_router(keys.router, prefix=prefix)
     app.include_router(chat.router, prefix=prefix)

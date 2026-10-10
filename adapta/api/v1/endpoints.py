@@ -7,7 +7,10 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from adapta.api.v1.adapters import adapter_response
 from adapta.db.models import (
+    Adapter,
+    AdapterStatus,
     Endpoint,
     EndpointStatus,
     Project,
@@ -79,7 +82,7 @@ async def _build_response(
         project_type=ApiProjectType(project_type),
         created_at=ep.created_at.isoformat(),
         retrieval=retrieval,
-        adapter_path=ep.adapter_path,
+        adapter=adapter_response(ep.adapter) if ep.adapter is not None else None,
     )
 
 
@@ -92,7 +95,8 @@ async def create_endpoint(
     """
     Create the endpoint for this project.
     - RAG: project must have at least one indexed file.
-    - Fine-tune: needs an imported adapter that passed the gate (not yet available).
+    - Fine-tune: serves the project's latest adapter that passed the gate (E4.2); with none,
+      the request is refused.
     """
     project = await _get_project(db, project_id)
     await require_team_writer(db, current_user.id, project.team_id)
@@ -108,8 +112,21 @@ async def create_endpoint(
                 message="No indexed documents found. Upload and index files first."
             )
 
-    elif project.type == ProjectType.finetune:
-        raise InvalidRequest(message="Import an adapter first")
+    adapter_id: Optional[str] = None
+    if project.type == ProjectType.finetune:
+        passed = await db.execute(
+            select(Adapter)
+            .where(Adapter.project_id == project_id, Adapter.status == AdapterStatus.passed)
+            .order_by(Adapter.created_at.desc())
+            .limit(1)
+        )
+        adapter = passed.scalar_one_or_none()
+        if adapter is None:
+            raise InvalidRequest(
+                message="No adapter has passed the eval gate yet. Import an adapter "
+                "(POST /v1/projects/{id}/adapters) and wait for its status to be 'passed'."
+            )
+        adapter_id = adapter.id
 
     import re
 
@@ -122,6 +139,7 @@ async def create_endpoint(
         slug=slug,
         status=EndpointStatus.active,
         base_model=project.base_model,
+        adapter_id=adapter_id,
     )
     db.add(endpoint)
     project.status = ProjectStatus.ready

@@ -139,7 +139,17 @@ async def chat_completions(
     has_knowledge = await count_project_chunks(db, str(project.id)) > 0
     project_id_for_rag = str(project.id) if has_knowledge else None
 
-    adapter_path = endpoint.adapter_path
+    # The endpoint was bound to a `passed` adapter at creation; the stored GGUF is what llama.cpp
+    # loads (PEFT imports get theirs from the adapter job, E4.4). A bound adapter with no GGUF
+    # would otherwise serve the bare base silently.
+    adapter_path: Optional[str] = None
+    if endpoint.adapter is not None:
+        adapter_path = endpoint.adapter.gguf_path
+        if not adapter_path:
+            raise InvalidRequest(
+                message="This endpoint's adapter has no servable GGUF; re-import the adapter.",
+                internal_detail=f"adapter {endpoint.adapter.id} has gguf_path NULL",
+            )
 
     if request_body.stream:
         return StreamingResponse(
