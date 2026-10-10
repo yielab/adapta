@@ -131,7 +131,7 @@ classes are defined in [`.claude/context/gates.md`](.claude/context/gates.md) ("
 | E3.6 | 3 | sonnet + human decision | live | E3.1, E3.2, E3.8 | E3.2 | done 2026-10-10 |
 | E4.4 | 3 | sonnet | rebuild + live | E4.2, E4.3 | E3.7, E3.3b | done 2026-10-10 |
 | E5.1 | 3 | sonnet | live | E3.1, E3.7, E3.8 | E5.2, E4.8 | done 2026-10-10 |
-| E5.2 | 3 | sonnet | live | E3.8, E3.7, E4.8 | E5.1, E4.5 | ready-for-live (e5.2) |
+| E5.2 | 3 | sonnet | live | E3.8, E3.7, E4.8 | E5.1, E4.5 | done 2026-10-10 |
 | E2.2 | 4 | sonnet | live | E2.1, E4.4 | E4.5 (`endpoints.py`, `EndpointPanel.svelte`) | done 2026-10-10 |
 | E4.5 | 4 | sonnet | live | E4.4 | E2.2, E4.6, E5.2 | done 2026-10-10 |
 | E4.6 | 4 | sonnet | live | E4.4 | E4.5, E4.8, E4.9 | done 2026-10-10 |
@@ -168,35 +168,6 @@ E1.1–E1.9 shipped 2026-09-17 → [CHANGELOG.md](CHANGELOG.md). E1.14 closed 20
 > for serving (`ADAPTA_N_GPU_LAYERS`) is unaffected.
 
 ### E5. Differentiation (weeks 10–13)
-
-### E5.2 `[BE+FE]` RAG gate: per-project golden set, recall@k on the endpoint dashboard, regression warning (P2)
-- [ ] **Context.** The eval gate is the brand ("nothing unverified serves"); RAG has no equivalent — a
-  config or model change can silently degrade retrieval. E3.8 gives the harness and E4.8 `rag_eval`
-  generates a per-project set.
-- **Depends.** E3.8, E3.7, E4.8. **Unblocks.** none.
-- **Agent.** sonnet · gate class **live** · serialize with: E5.1 (`worker/main.py`), E4.5
-  (`EndpointPanel.svelte`) · **Handoff.** must name the `rag_eval` job kind and the summary fields.
-- **Scope.** Store a golden set per project; compute recall@5/MRR on demand and after every re-index;
-  show it on the endpoint Overview; **warn** on regression (blocking is a later decision once users
-  ask). Out: LLM-judge faithfulness.
-- **Steps.** (1) Spec: `POST /v1/projects/{id}/golden` (JSONL upload or an `eval` dataset id),
-  `POST /v1/projects/{id}/golden/run` (202 → worker job `kind: "rag_eval"`),
-  `GET /v1/projects/{id}/golden/results`. Migration `0020_rag_eval_runs`. (2) The job runs
-  `retrieve()` per question and stores metrics + per-question hits. (3) `RetrievalSummary` += latest
-  recall@5, MRR, run date, delta vs previous; Overview shows a "Retrieval quality" tile with a warning
-  chip when delta < −0.05. (4) Auto-run after any index job when a golden set exists. (5) Tests:
-  metric math; job dispatch; summary fields.
-- **Files.** `specs/openapi.yaml`, `migrations/versions/0020_rag_eval_runs.py`, `adapta/db/models.py`,
-  new `adapta/api/v1/golden.py` + `adapta/services/golden.py`, `adapta/worker/main.py`,
-  `adapta/api/v1/endpoints.py` (the summary lives on the endpoint response),
-  `adapta/console/src/views/EndpointPanel.svelte` (the tile), `tests/test_golden.py`.
-- **Contract impact.** API + DB.
-- **Gate.** `make migrate-test` → `make validate-spec` → `make generate` → `make check-models` →
-  `make test` → `make test-contracts` → `make console-build`.
-- **Acceptance.** Uploading a 20-question set and re-indexing produces a recall@5 tile; setting
-  `rag_top_k` to 1 triggers the regression chip on the next run.
-- **Close.** PRODUCT_DEFINITION (RAG-gate paragraph mirroring the fine-tune gate), operator-console
-  overview, CLAUDE.md API surface; Status snapshot.
 
 ### E5.4 `[BE+FE]` Visual extraction in ingestion: the vision base fills structured metadata and re-reads low-confidence pages (P2)
 - [ ] **Context.** After E3.3b scanned invoices index with page text and OCR confidence; after E3.4 the

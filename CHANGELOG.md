@@ -1179,6 +1179,50 @@ bind mount, so uvicorn reloaded on every worker edit — reload now watches `/ap
   `_retrieval_queries`) — the only way to measure the recall gain; until then reconsider default-on given the measured
   latency. (2) `docker logs --since` returned nothing after the host reboot (use `--tail`).
 
+### E5.2 `[BE+FE]` RAG gate: per-project golden set, recall@k on the endpoint dashboard, regression warning (P2)
+- [x] **Context.** The eval gate is the brand ("nothing unverified serves"); RAG has no equivalent — a
+  config or model change can silently degrade retrieval. E3.8 gives the harness and E4.8 `rag_eval`
+  generates a per-project set.
+- **Depends.** E3.8, E3.7, E4.8. **Unblocks.** none.
+- **Agent.** sonnet · gate class **live** · serialize with: E5.1 (`worker/main.py`), E4.5
+  (`EndpointPanel.svelte`) · **Handoff.** must name the `rag_eval` job kind and the summary fields.
+- **Scope.** Store a golden set per project; compute recall@5/MRR on demand and after every re-index;
+  show it on the endpoint Overview; **warn** on regression (blocking is a later decision once users
+  ask). Out: LLM-judge faithfulness.
+- **Steps.** (1) Spec: `POST /v1/projects/{id}/golden` (JSONL upload or an `eval` dataset id),
+  `POST /v1/projects/{id}/golden/run` (202 → worker job `kind: "rag_eval"`),
+  `GET /v1/projects/{id}/golden/results`. Migration `0020_rag_eval_runs`. (2) The job runs
+  `retrieve()` per question and stores metrics + per-question hits. (3) `RetrievalSummary` += latest
+  recall@5, MRR, run date, delta vs previous; Overview shows a "Retrieval quality" tile with a warning
+  chip when delta < −0.05. (4) Auto-run after any index job when a golden set exists. (5) Tests:
+  metric math; job dispatch; summary fields.
+- **Files.** `specs/openapi.yaml`, `migrations/versions/0020_rag_eval_runs.py`, `adapta/db/models.py`,
+  new `adapta/api/v1/golden.py` + `adapta/services/golden.py`, `adapta/worker/main.py`,
+  `adapta/api/v1/endpoints.py` (the summary lives on the endpoint response),
+  `adapta/console/src/views/EndpointPanel.svelte` (the tile), `tests/test_golden.py`.
+- **Contract impact.** API + DB.
+- **Gate.** `make migrate-test` → `make validate-spec` → `make generate` → `make check-models` →
+  `make test` → `make test-contracts` → `make console-build`.
+- **Acceptance.** Uploading a 20-question set and re-indexing produces a recall@5 tile; setting
+  `rag_top_k` to 1 triggers the regression chip on the next run.
+- **Close.** PRODUCT_DEFINITION (RAG-gate paragraph mirroring the fine-tune gate), operator-console
+  overview, CLAUDE.md API surface; Status snapshot.
+- **Done.** 2026-10-10. Per-project RAG gate: `POST /v1/projects/{id}/golden` (JSONL upload or a valid `rag_eval`
+  dataset id), `POST …/golden/run` (queues a `rag_eval` worker job; returns the active run if one exists), `GET
+  …/golden/results`; runs store recall@5, MRR, p50 and per-question ranks in `rag_eval_runs` (migration `0020`); the
+  index job enqueues one run after a successful index when a golden set exists; regression = recall drop >
+  max(0.05, 1/n) vs the median of the last 3 succeeded runs; `RetrievalSummary.quality` → "Retrieval quality" card +
+  "Retrieval got worse" chip in `EndpointPanel.svelte`; recall/MRR code shared with the offline harness
+  (`services/golden.py`). Live on `develop`: migrate 0019→0020 + `migrate-test` ✓ · `make ci` ✓ · svelte-check 0 errors ·
+  `test-contracts` 44/44, 2679 cases, 0 failures · golden corpus project: **3 manual runs 0.978 / 0.840, delta 0.0, no
+  warning** · after deleting 6 docs **0.756, delta −0.222, `regression: true`**, surfaced on `GET …/endpoint` · golden
+  set first, then 3 uploads → **exactly one** `trigger: index` run.
+- **Handoff.** Job kind `rag_eval` (`{"id": run_id}`) in `HANDLERS`; `_run_index_job` calls
+  `golden.enqueue_after_index(file_id)`. `RetrievalSummary.quality = {run_id, recall_at_5, mrr, n_questions, run_at,
+  baseline_recall, delta, regression, running}`. `projects.golden_dataset_id` (no FK; dangling = none).
+- **Follow-up.** Auto-run on delete/re-ingest; `rag_eval` synthesis for RAG-type projects (synthesize is finetune-only);
+  `expected_page` not scored; when should the warning block serving.
+
 ---
 
 ## 2026-10-08 — §E wave 0: the gates every other block is verified by

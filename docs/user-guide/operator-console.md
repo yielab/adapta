@@ -134,6 +134,12 @@ console-held key — the exact same request path a customer app uses. For RAG
 projects it shows the **citations** — each with its file, page and, for scanned pages, the OCR confidence; expand one to read the passage; for all projects it shows **token usage**
 (prompt / completion / total). It's a test tool, clearly labeled as such.
 
+**Retrieval quality.** On the Endpoint tab, a RAG project with a golden set (`POST /v1/projects/{id}/golden`: a JSONL of
+`{q, expected_file, lang}` rows, or a synthesized `rag_eval` dataset) shows its latest recall@5 and MRR. A run is queued
+after every successful indexing (one run per burst of uploads) or on demand; it is flagged **"Retrieval got worse"**
+when recall drops by more than max(0.05, 1/questions) against the median of the previous three runs, so a single
+flipped question never warns. It is a warning, not a block.
+
 ---
 
 ## 6. Usage
