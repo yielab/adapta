@@ -117,7 +117,7 @@ classes are defined in [`.claude/context/gates.md`](.claude/context/gates.md) ("
 | E3.1 | 1 | sonnet | live | none | E3.7, E3.2 | done 2026-10-09 |
 | E3.3a | 1 | sonnet + human decision | offline | none | — | done 2026-10-10 |
 | E3.8 | 1 | sonnet | live | none — must land before E3.2 | — | done 2026-10-09 |
-| E4.1 | 1 | sonnet | rebuild + live (exclusive) | E1.11 | E2.1, E3.3b, E3.7 | gate green 2026-10-10; Close docs in progress (worker-e4.1-docs) |
+| E4.1 | 1 | sonnet | rebuild + live (exclusive) | E1.11 | E2.1, E3.3b, E3.7 | done 2026-10-10 |
 | E3.2 | 2 | sonnet | live | E3.1, E3.8 (baseline recorded before this lands) | E3.7, E3.5 | done 2026-10-10 |
 | E3.3b | 2 | sonnet | rebuild + live | E3.3a (commit), E3.1 | E4.1, E4.2, E4.4 (`pyproject.toml`, `Dockerfile`), E3.7, E3.4 | open |
 | E3.7 | 2 | sonnet | live | E3.1, E4.1 | E3.1/E3.3b, E4.4 (`worker/main.py`) | open |
@@ -366,6 +366,9 @@ E1.1–E1.9 shipped 2026-09-17 → [CHANGELOG.md](CHANGELOG.md). E1.14 closed 20
   golden harness uploads in batches of 4 until this block bounds indexing concurrency. Since E3.1 the upload handler
   parses + chunks synchronously and passes `chunks` to `_index_file`; collection get-or-create and counters are race-free.
 - **Depends.** E3.1, E4.1 (the worker's `kind` dispatch table). **Unblocks.** E5.1, E5.2, E5.4.
+- **Re-anchored 2026-10-10 (E4.1 Handoff).** Dispatch table = `HANDLERS` in `adapta/worker/main.py` (empty, keyed
+  on `meta["kind"]`); enqueue with `JobQueue.enqueue(job_id, kind, payload)`; queue key `adapta:job_queue`; the
+  worker is the app image (`entrypoint: python -m adapta.worker.main`), so no rebuild is needed for worker code.
 - **Agent.** sonnet · gate class **live (`docker compose restart worker` + rag e2e + sweep test)** ·
   serialize with: E3.1/E3.3b (`files.py`, `documents.py`), E4.4 (`worker/main.py`,
   `services/jobs.py`, `services/maintenance.py`) ·
@@ -411,65 +414,14 @@ E1.1–E1.9 shipped 2026-09-17 → [CHANGELOG.md](CHANGELOG.md). E1.14 closed 20
 > (`adapter` E4.4, `index` E3.7, `extract` E5.4); no service reserves a GPU. Optional llama.cpp GPU offload
 > for serving (`ADAPTA_N_GPU_LAYERS`) is unaffected.
 
-### E4.1 `[INFRA+BE+FE]` Remove in-product training: CUDA worker, GPU reservation, trainer, `/jobs`, vLLM (P1)
-- [ ] **Context.** Training is the only reason the stack needs CUDA: `Dockerfile:98-145` (worker-builder +
-  worker stages), `docker-compose.yml:72-111` (`devices: nvidia.com/gpu=all`), `docker-compose.cpu.yml`,
-  `Makefile:21-26, 65-75` (GPU detection, `up-cpu`), `pyproject.toml` `[training]`. The vLLM sidecar
-  (`core/backends/vllm_backend.py`, compose `vllm-server`) exists only to pack trained LoRAs on a GPU.
-- **Depends.** E1.11. **Unblocks.** E3.7, E4.2, E4.3, E4.8.
-- **Agent.** sonnet · gate class **rebuild + live (exclusive)** · serialize with: E2.1 (`core/backends/`),
-  E3.3b (`pyproject.toml`, `Dockerfile`), E3.7 (`worker/main.py`) · **Handoff.** must name the migration
-  revision, the worker dispatch-table name, the fixture paths, the app image size.
-- **Scope.** Delete outright — no shim, no "training disabled" message, no compatibility path. Out: the
-  import path (E4.2–E4.4), the new console flow (E4.6), the pitch docs (E4.7 rewrites them once).
-- **Steps.** (1) **First**, copy two 0.5B fixtures out of `data/adapters/` into `tests/fixtures/adapters/`:
-  the use-case matrix's passing classification adapter and its gate-failing control — `adapter_config.json`,
-  `adapter_model.safetensors`, `adapter.gguf` when present, the held-out `dataset_eval.jsonl` (identify by
-  `training_metadata.json`). They cannot be re-trained after this block. (2) Delete `adapta/training/`,
-  `services/adapters.py` (JSON registry), `api/v1/jobs.py`, `core/backends/vllm_backend.py`,
-  `core/gpu.py` `torch_cuda_status`, `catalog.train_vram_gb`, the vllm settings. Keep the SFT-row validator
-  from `services/training.py` as `services/datasets.py`; drop its DPO, vision-bundle, enqueue and recovery
-  code. (3) Spec: delete `/jobs*`, `JobCreateRequest`, `JobResponse`, `JobSummary`, `TrainingConfigInput`,
-  `AdapterProvenance`, `BaseModelInfo.train_vram_gb`. Migration `drop_training`: `training_jobs`,
-  `datasets.modality`, `datasets.num_images`; `ProjectStatus.training` goes. `create_endpoint` on a
-  `finetune` project raises `InvalidRequest("Import an adapter first")`. Schema
-  `training_dataset.schema.json` → `eval_dataset.schema.json`, SFT row only. (4) `worker/main.py`: keep
-  loop, heartbeat, healthcheck, SIGTERM requeue; dispatch on `meta["kind"]` through an empty handler table;
-  an unknown kind fails the job with a typed error. (5) Infra: delete both worker stages,
-  `docker-compose.cpu.yml`, `vllm-server`, GPU detection + `up-cpu`; worker = `target: app` + its command;
-  same in `docker-compose.prod.yml`. `pyproject.toml`: delete `[training]`; move the `torch<3` and
-  `transformers<6` bounds into main deps (sentence-transformers needs both). (6) Tests + console: delete
-  what trains or imports `adapta.training` (`grep -rlE 'adapta\.training|/jobs|ADAPTA_RUN_(LORA|VLM)'
-  tests/`); console keeps dataset upload/review, loses the train step, gate panel and VRAM column.
-- **Files.** `Dockerfile`, `docker-compose.yml`, `docker-compose.cpu.yml`, `docker-compose.prod.yml`,
-  `Makefile`, `pyproject.toml`, `adapta/training/`, `adapta/worker/main.py`, `adapta/services/{training,adapters,jobs,maintenance}.py`,
-  `adapta/api/v1/{jobs,endpoints,datasets,synthesis}.py`, `adapta/api/app.py:330-360`, `adapta/core/{gpu,model_catalog,adapter_conversion}.py`,
-  `adapta/core/backends/`, `adapta/config.py`, `adapta/db/models.py`, `migrations/versions/`, `specs/openapi.yaml`,
-  `specs/schemas/training_dataset.schema.json`, `adapta/console/src/views/{FinetuneFlow,Models,EndpointPanel}.svelte`,
-  `adapta/console/src/lib/types.ts`, `tests/`.
-- **Contract impact.** API + DB + model (schema rename).
-- **Gate.** `make up` (no CUDA wheel downloaded) → `make migrate-test` → `make validate-spec` →
-  `make generate` → `make check-models` → `make ci` → `make test-contracts` → `make console-build` →
-  `tests/integration/test_rag_e2e.py`.
-- **Acceptance.** One Adapta image; `make up` succeeds on a host without the NVIDIA toolkit and with no
-  override file; `grep -rnE 'peft|trl|bitsandbytes|vllm|torch\.cuda' adapta/ pyproject.toml Dockerfile docker-compose*.yml`
-  is empty; RAG e2e and the contract gate green; the fixtures are committed.
-- **Close.** CLAUDE.md (Stack, hard constraint #1 list, Workflow pillar 3, API surface); `gates.md` (drop
-  the `gpu` class and training rows); `repo-map.md`; `stack` skill; OPERATIONS (sizing, GPU sections);
-  architecture.md; README run instructions; delete `fine-tuning-walkthrough.md`, `fine-tuning-use-cases.md`,
-  `vlm-fine-tuning.md`, `ocr-vision-walkthrough.md` + their `mkdocs.yml` nav and inbound links; Status snapshot.
-- **Follow-up.** Code + fixtures landed on branch `e4.1` (offline gates green); live gates pending. Fixtures are
-  `tests/fixtures/adapters/{classify-pass,garbage-control}/` (the `.gguf` is gitignored, committed with `-f`);
-  their `dataset_eval.jsonl` is chat-`messages` form, not `prompt`/`response` — E4.3 converts it. The acceptance
-  grep still hits `convert_peft_to_gguf` (E4.4 keeps it) and `ctrl` in `Settings.svelte`. `e2e/*-proof.spec.ts`
-  (Playwright screenshot scripts) still describe training; `project_summary.py` and `Overview/Projects/Playground`
-  console views also changed (not in Files).
-
 ### E4.2 `[BE]` Adapter contract: `adapters` table, upload route, endpoint bound to an adapter (P1)
 - [ ] **Context.** After E4.1 a `finetune` project has no way to obtain a servable adapter, and
   `Endpoint.adapter_path` (`db/models.py:428-430`) is a bare path with no provenance that
   `api/v1/chat.py:135` serves as-is.
 - **Depends.** E4.1. **Unblocks.** E4.4.
+- **Re-anchored 2026-10-10 (E4.1 Handoff).** Next migration revision is `0012` (head `0011_drop_training`). Fixtures:
+  `tests/fixtures/adapters/classify-pass/` (PEFT safetensors + `adapter.gguf`) and `garbage-control/` (PEFT only).
+  `gguf` + `safetensors` are already main deps; `create_endpoint` on a finetune project raises "Import an adapter first".
 - **Agent.** sonnet · gate class **rebuild + live** (new pip dependency) · serialize with: E4.3 (spec,
   migrations), E4.5 and E2.2 (`endpoints.py`) · **Handoff.** must name the table columns, routes, status
   enum, error classes and migration revision.
@@ -509,6 +461,9 @@ E1.1–E1.9 shipped 2026-09-17 → [CHANGELOG.md](CHANGELOG.md). E1.14 closed 20
   An externally trained adapter can also use a prompt format the endpoint never serves; only generating
   through the serving path measures that.
 - **Depends.** E4.1. **Unblocks.** E4.4.
+- **Re-anchored 2026-10-10 (E4.1 Handoff).** Fixtures `tests/fixtures/adapters/{classify-pass,garbage-control}/`
+  (classify-pass gated 0.669 vs base 0.570 under the old perplexity gate); their `dataset_eval.jsonl` is chat-`messages`
+  form — convert to the `eval_dataset.schema.json` SFT row. The `eval_*` settings were kept for this block.
 - **Agent.** sonnet · gate class **live** (opt-in slow test needs the 0.5B GGUF under `data/`) · serialize
   with: E4.2 (spec, migrations) · **Handoff.** must name the scorer signature, the `eval_metrics` shape,
   the rule's settings and the measured CPU seconds per row.

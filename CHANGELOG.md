@@ -192,6 +192,78 @@ bind mount, so uvicorn reloaded on every worker edit — reload now watches `/ap
   live runs (one right after a stack restart, one right after `make golden`); output was not captured and 10 consecutive
   runs passed — run it with `-rf` until it is caught. (3) Drop the stored count columns (E3.1 follow-up) now that E3.2 landed.
 
+### E4.1 `[INFRA+BE+FE]` Remove in-product training: CUDA worker, GPU reservation, trainer, `/jobs`, vLLM (P1)
+- [x] **Context.** Training is the only reason the stack needs CUDA: `Dockerfile:98-145` (worker-builder +
+  worker stages), `docker-compose.yml:72-111` (`devices: nvidia.com/gpu=all`), `docker-compose.cpu.yml`,
+  `Makefile:21-26, 65-75` (GPU detection, `up-cpu`), `pyproject.toml` `[training]`. The vLLM sidecar
+  (`core/backends/vllm_backend.py`, compose `vllm-server`) exists only to pack trained LoRAs on a GPU.
+- **Depends.** E1.11. **Unblocks.** E3.7, E4.2, E4.3, E4.8.
+- **Agent.** sonnet · gate class **rebuild + live (exclusive)** · serialize with: E2.1 (`core/backends/`),
+  E3.3b (`pyproject.toml`, `Dockerfile`), E3.7 (`worker/main.py`) · **Handoff.** must name the migration
+  revision, the worker dispatch-table name, the fixture paths, the app image size.
+- **Scope.** Delete outright — no shim, no "training disabled" message, no compatibility path. Out: the
+  import path (E4.2–E4.4), the new console flow (E4.6), the pitch docs (E4.7 rewrites them once).
+- **Steps.** (1) **First**, copy two 0.5B fixtures out of `data/adapters/` into `tests/fixtures/adapters/`:
+  the use-case matrix's passing classification adapter and its gate-failing control — `adapter_config.json`,
+  `adapter_model.safetensors`, `adapter.gguf` when present, the held-out `dataset_eval.jsonl` (identify by
+  `training_metadata.json`). They cannot be re-trained after this block. (2) Delete `adapta/training/`,
+  `services/adapters.py` (JSON registry), `api/v1/jobs.py`, `core/backends/vllm_backend.py`,
+  `core/gpu.py` `torch_cuda_status`, `catalog.train_vram_gb`, the vllm settings. Keep the SFT-row validator
+  from `services/training.py` as `services/datasets.py`; drop its DPO, vision-bundle, enqueue and recovery
+  code. (3) Spec: delete `/jobs*`, `JobCreateRequest`, `JobResponse`, `JobSummary`, `TrainingConfigInput`,
+  `AdapterProvenance`, `BaseModelInfo.train_vram_gb`. Migration `drop_training`: `training_jobs`,
+  `datasets.modality`, `datasets.num_images`; `ProjectStatus.training` goes. `create_endpoint` on a
+  `finetune` project raises `InvalidRequest("Import an adapter first")`. Schema
+  `training_dataset.schema.json` → `eval_dataset.schema.json`, SFT row only. (4) `worker/main.py`: keep
+  loop, heartbeat, healthcheck, SIGTERM requeue; dispatch on `meta["kind"]` through an empty handler table;
+  an unknown kind fails the job with a typed error. (5) Infra: delete both worker stages,
+  `docker-compose.cpu.yml`, `vllm-server`, GPU detection + `up-cpu`; worker = `target: app` + its command;
+  same in `docker-compose.prod.yml`. `pyproject.toml`: delete `[training]`; move the `torch<3` and
+  `transformers<6` bounds into main deps (sentence-transformers needs both). (6) Tests + console: delete
+  what trains or imports `adapta.training` (`grep -rlE 'adapta\.training|/jobs|ADAPTA_RUN_(LORA|VLM)'
+  tests/`); console keeps dataset upload/review, loses the train step, gate panel and VRAM column.
+- **Files.** `Dockerfile`, `docker-compose.yml`, `docker-compose.cpu.yml`, `docker-compose.prod.yml`,
+  `Makefile`, `pyproject.toml`, `adapta/training/`, `adapta/worker/main.py`, `adapta/services/{training,adapters,jobs,maintenance}.py`,
+  `adapta/api/v1/{jobs,endpoints,datasets,synthesis}.py`, `adapta/api/app.py:330-360`, `adapta/core/{gpu,model_catalog,adapter_conversion}.py`,
+  `adapta/core/backends/`, `adapta/config.py`, `adapta/db/models.py`, `migrations/versions/`, `specs/openapi.yaml`,
+  `specs/schemas/training_dataset.schema.json`, `adapta/console/src/views/{FinetuneFlow,Models,EndpointPanel}.svelte`,
+  `adapta/console/src/lib/types.ts`, `tests/`.
+- **Contract impact.** API + DB + model (schema rename).
+- **Gate.** `make up` (no CUDA wheel downloaded) → `make migrate-test` → `make validate-spec` →
+  `make generate` → `make check-models` → `make ci` → `make test-contracts` → `make console-build` →
+  `tests/integration/test_rag_e2e.py`.
+- **Acceptance.** One Adapta image; `make up` succeeds on a host without the NVIDIA toolkit and with no
+  override file; `grep -rnE 'peft|trl|bitsandbytes|vllm|torch\.cuda' adapta/ pyproject.toml Dockerfile docker-compose*.yml`
+  is empty; RAG e2e and the contract gate green; the fixtures are committed.
+- **Close.** CLAUDE.md (Stack, hard constraint #1 list, Workflow pillar 3, API surface); `gates.md` (drop
+  the `gpu` class and training rows); `repo-map.md`; `stack` skill; OPERATIONS (sizing, GPU sections);
+  architecture.md; README run instructions; delete `fine-tuning-walkthrough.md`, `fine-tuning-use-cases.md`,
+  `vlm-fine-tuning.md`, `ocr-vision-walkthrough.md` + their `mkdocs.yml` nav and inbound links; Status snapshot.
+- **Done.** 2026-10-10. Training removed outright, no shim: `adapta/training/`, the JSON adapter registry, `/jobs*`,
+  the vLLM backend + sidecar, both CUDA worker stages, `docker-compose.cpu.yml`, GPU detection/`up-cpu`, `[training]`,
+  `torch_cuda_status`, `train_vram_gb` (82 files, −7.4k lines). Worker = the app image with an empty `HANDLERS` table;
+  migration `0011_drop_training`; dataset upload `.jsonl` only, SFT-row validator in `services/datasets.py`; console
+  loses train step, gate panel, VRAM column. Live gate on `develop`: app-image rebuild (pip download < 1 min, llama-cpp
+  compile; **image 2.22 GB, unchanged** — the app never carried CUDA) · stack up incl. the CPU worker (healthy) ·
+  `migrate-test` 0011 round-trip ✓ · `make ci` ✓ · `test-contracts` **32/32 operations** (−3 `/jobs`), 1813 cases, 0
+  failures · `console-build` ✓ · RAG e2e ✓ · acceptance grep: only `convert_peft_to_gguf` (kept for E4.4) and `ctrl`.
+  Close docs (`28624a5`): CLAUDE.md, `.claude/` context + skills (no `gpu` gate class), OPERATIONS (VRAM/vLLM sections
+  gone), architecture, README, concepts, product docs; the four fine-tuning/VLM/OCR guides deleted with nav + links;
+  `make docs-build --strict` ✓. Out of Files (removed symbols/tables only): `project_summary.py`, `api/v1/{models,projects}.py`,
+  `domain/errors.py`, `scripts/migrate_seed_test.py`, console `Overview/Projects/Playground` + `lib/api.ts`, test conftest/sweep.
+- **Handoff.** Migration `0011` (`down_revision "0010"`; downgrade recreates schema, not rows). Worker dispatch table:
+  `HANDLERS: dict[str, Callable[[dict], Awaitable[None]]]` in `adapta/worker/main.py`; `JobQueue.enqueue(job_id, kind,
+  payload)` stores `meta["kind"]`; queue key `adapta:job_queue`; unknown kind → `UnknownJobKind`. Worker compose: `target:
+  app` + `entrypoint: ["python","-m","adapta.worker.main"]`. Fixtures: `tests/fixtures/adapters/classify-pass/`
+  (`adapter_model.safetensors` 8.7 MB, `adapter.gguf` 8.7 MB, `adapter_config.json`, `dataset_eval.jsonl` 7 rows,
+  `training_metadata.json`; gate 0.669 vs base 0.570) and `garbage-control/` (no `.gguf`, gate-blocked); binaries
+  committed with `git add -f`; their `dataset_eval.jsonl` is chat-`messages` form — **E4.3 converts it**. `gguf` +
+  `safetensors` now main deps. App image **2.22 GB**. **Unblocks** E3.7, E4.2, E4.3, E4.8.
+- **Follow-up.** (1) `svelte-check` reports 2 pre-existing errors in `Playground.svelte:34` (`endpoint` used before
+  declaration) — not introduced here; `console-build` uses `build:fast` (no type-check). (2) `e2e/*-proof.spec.ts`
+  Playwright scripts and `docs/screenshots/*proof*` still show training. (3) `COMPETITIVE_LANDSCAPE.md` carries a
+  "predates 2026-10-10" banner until E4.7 rewrites the pitch. (4) `GET /gpu` remains as hardware reporting only.
+
 ---
 
 ## 2026-10-08 — §E wave 0: the gates every other block is verified by
