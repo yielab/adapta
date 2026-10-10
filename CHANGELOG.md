@@ -8,6 +8,29 @@
 
 ---
 
+## 2026-10-10 — §F wave 2: console hygiene, job retention, deterministic retrieval
+
+Wave 2 = F2.3, F2.2, F1.4.
+
+### F2.3 [FE] Console warnings and training-era proof assets
+- **Context.** `svelte-check` reports 4 warnings in `RagFlow.svelte` (E5.4). `e2e/usecase-proof.spec.ts`,
+  `e2e/vision-proof.spec.ts` and `docs/screenshots/usecase-proof/`, `vision-proof/` were recorded for the training
+  era (E4.1 follow-up 2).
+- **Scope.** Zero svelte-check warnings. Delete proof specs/screenshots that exercise training; keep any that only
+  exercise surviving features (check what each spec drives) and any screenshot a doc page references.
+- **Files.** `adapta/console/src/**/RagFlow.svelte`, `e2e/usecase-proof.spec.ts`, `e2e/vision-proof.spec.ts`,
+  `docs/screenshots/usecase-proof/`, `docs/screenshots/vision-proof/`.
+- **Contract impact.** None.
+- **Gate.** offline: `npm run check` (0 errors, 0 warnings) + `make console-build` in the worktree; `git grep` shows no doc
+  links to deleted assets; `make docs-build` if any doc changed.
+- **Acceptance.** As in Gate.
+- **Close.** CHANGELOG.
+- **Depends.** none.
+- **Agent.** haiku · offline · Handoff lists the deleted files.
+- **Done.** svelte-check 0 errors / 0 warnings (was 5): `RagFlow.svelte` seeds its initial schema inside `untrack(...)` (4 `state_referenced_locally` warnings), `Layout.svelte` drops the dead `.wordmark .sub` rule (extra file, needed for the zero-warning gate). Deleted the training-era proof specs (`e2e/usecase-proof.spec.ts` — fine-tuned 3B use cases; `e2e/vision-proof.spec.ts` — in-product VLM fine-tune) and their 7 screenshots: their prereq scripts lived in `/tmp`, so they could not run, and no doc referenced them; `playwright.config.ts` `testMatch` trimmed. Gate: `npm run check` on develop after merge: 160 files, 0 errors, 0 warnings; `npm run build:fast` green in the worktree.
+- **Handoff.** Deleted: `e2e/usecase-proof.spec.ts`, `e2e/vision-proof.spec.ts`, `docs/screenshots/usecase-proof/` (4 PNG), `docs/screenshots/vision-proof/` (3 PNG). Remaining e2e specs: `screenshots.spec.ts`, `hero-gif.spec.ts`.
+- **Follow-up.** `make console-build` runs `build:fast` (no type-check); zero warnings holds only while someone runs `npm run check`.
+
 ## 2026-10-10 — §F wave 1: extraction nulls + deadline, migrate-test on a scratch DB, teacher-URL guard
 
 Wave 1 = F1.1, F1.2, F1.5 — three Sonnet/Haiku workers in worktrees; F1.2's live gate caught a double-suffix bug on the first run.

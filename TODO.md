@@ -213,7 +213,7 @@ Carried over when the shipped sections moved to the changelog (2026-10-08):
 | F1.2 | 1 | sonnet | live | none | F2.1 (migrations) | done 2026-10-10 |
 | F1.5 | 1 | haiku | offline | none | — | done 2026-10-10 |
 | F2.2 | 2 | haiku | offline | F1.1 | F1.1 (`worker/main.py`) | in progress (worker-f2.2) |
-| F2.3 | 2 | haiku | offline | none | — | done-pending-merge (f2.3) |
+| F2.3 | 2 | haiku | offline | none | — | done 2026-10-10 |
 | F1.4 | 2 | sonnet | live | none | F2.1, F3.1 (`rag.py`) | in progress (worker-f1.4) |
 | F2.1 | 3 | sonnet | live | F1.2 | F1.4, F3.1 (`rag.py`, `chat.py`) | open |
 | F1.3 | 3 | sonnet + human decision | live | none | — | open |
@@ -295,22 +295,6 @@ Carried over when the shipped sections moved to the changelog (2026-10-08):
 - **Close.** OPERATIONS.md (job retention, one line); CHANGELOG.
 - **Depends.** F1.1 (same file).
 - **Agent.** haiku · offline · Handoff names the TTL constant.
-
-### F2.3 [FE] Console warnings and training-era proof assets
-- **Context.** `svelte-check` reports 4 warnings in `RagFlow.svelte` (E5.4). `e2e/usecase-proof.spec.ts`,
-  `e2e/vision-proof.spec.ts` and `docs/screenshots/usecase-proof/`, `vision-proof/` were recorded for the training
-  era (E4.1 follow-up 2).
-- **Scope.** Zero svelte-check warnings. Delete proof specs/screenshots that exercise training; keep any that only
-  exercise surviving features (check what each spec drives) and any screenshot a doc page references.
-- **Files.** `adapta/console/src/**/RagFlow.svelte`, `e2e/usecase-proof.spec.ts`, `e2e/vision-proof.spec.ts`,
-  `docs/screenshots/usecase-proof/`, `docs/screenshots/vision-proof/`.
-- **Contract impact.** None.
-- **Gate.** offline: `npm run check` (0 errors, 0 warnings) + `make console-build` in the worktree; `git grep` shows no doc
-  links to deleted assets; `make docs-build` if any doc changed.
-- **Acceptance.** As in Gate.
-- **Close.** CHANGELOG.
-- **Depends.** none.
-- **Agent.** haiku · offline · Handoff lists the deleted files.
 
 ### F3. Measure what shipped on by default
 
