@@ -1009,6 +1009,8 @@ components:
         uploaded_at: {type: string}
         # E3.4: chunks of this file flagged for review (low-confidence OCR); 0 for non-OCR files.
         pages_needing_review: {type: integer, minimum: 0, default: 0}
+        # Why indexing failed (status "failed"); null otherwise.
+        error_message: {type: string, nullable: true}
 
     # Datasets
     DatasetResponse:

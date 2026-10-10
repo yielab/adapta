@@ -138,6 +138,11 @@ async def worker_loop() -> None:
         task = asyncio.ensure_future(_run_job(meta))
         in_flight["task"] = task
         try:
+            # Keep the liveness key fresh while a long job (OCR of a big PDF) runs:
+            # the heartbeat TTL is 90 s, so a busy worker would otherwise report unhealthy.
+            while not task.done():
+                await asyncio.wait({task}, timeout=30)
+                await queue.heartbeat()
             await task
         except asyncio.CancelledError:
             # Graceful shutdown mid-job: return it to the queue so it isn't lost.

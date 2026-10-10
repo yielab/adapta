@@ -167,6 +167,7 @@ class FileResponse(BaseModel):
     size_bytes: int
     uploaded_at: str
     pages_needing_review: Annotated[int, Field(ge=0)] = 0
+    error_message: str | None = None
 
 
 class DatasetResponse(BaseModel):

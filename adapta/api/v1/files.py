@@ -86,6 +86,7 @@ def _file_resp(f: ProjectFile, pages_needing_review: int = 0) -> FileResponse:
         size_bytes=f.size_bytes,
         uploaded_at=f.uploaded_at.isoformat(),
         pages_needing_review=pages_needing_review,
+        error_message=f.error_message,
     )
 
 

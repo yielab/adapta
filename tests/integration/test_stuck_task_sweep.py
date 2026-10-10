@@ -6,6 +6,7 @@ A crash mid-index/mid-validate leaves a file at `processing` / a dataset at
 orphans to a terminal state with a clear message.
 """
 
+import json
 import uuid
 
 import asyncpg
@@ -123,10 +124,14 @@ async def test_sweep_keeps_queued_index_jobs_and_fails_orphans(clean_db):
     queue = get_job_queue()
     await queue.connect()
     try:
-        await queue.enqueue(queued_id, "index", {"id": queued_id})
-        await sweep_stuck_tasks()
-        await queue.redis.delete(f"adapta:job:{queued_id}")
-        await queue.redis.lrem("adapta:job_queue", 0, queued_id)
+        # Job metadata only, NOT pushed on adapta:job_queue: the live worker must not
+        # dequeue this seeded row (its file does not exist outside this test).
+        key = f"adapta:job:{queued_id}"
+        await queue.redis.set(key, json.dumps({"job_id": queued_id, "kind": "index", "status": "queued"}))
+        try:
+            await sweep_stuck_tasks()
+        finally:
+            await queue.redis.delete(key)
     finally:
         await queue.close()
 
