@@ -137,3 +137,16 @@ def test_extract_dataset_needs_json_responses(tmp_path):
     assert validate_dataset(p, "classify")[0]
     p.write_text(json.dumps({"prompt": "q", "response": '{"k": 1}'}) + "\n")
     assert validate_dataset(p, "extract") == (True, None, 1)
+
+
+def test_freeform_task_is_rejected_before_scoring():
+    import pytest
+
+    from adapta.domain.errors import InvalidAdapter
+    from adapta.services.adapters import FREEFORM_CANNOT_GATE, require_gateable_task
+
+    for task in ("classify", "extract"):
+        require_gateable_task(task)
+    with pytest.raises(InvalidAdapter) as exc:
+        require_gateable_task("freeform")
+    assert exc.value.message == FREEFORM_CANNOT_GATE == "freeform eval sets cannot gate; use classify or extract"

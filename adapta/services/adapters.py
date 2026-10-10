@@ -391,6 +391,16 @@ async def probe_load(base_model: str, gguf_path: str) -> None:
         ) from exc
 
 
+FREEFORM_CANNOT_GATE = "freeform eval sets cannot gate; use classify or extract"
+
+
+def require_gateable_task(task: str) -> None:
+    """Reject an eval task the gate cannot trust (F1.3): token F1 on freeform text passed a
+    garbage adapter. Raised before any conversion or generation spends CPU."""
+    if task == "freeform":
+        raise InvalidAdapter(message=FREEFORM_CANNOT_GATE)
+
+
 async def process_adapter(adapter_id: str) -> None:
     """Drive one adapter ``uploaded -> processing -> passed | failed``.
 
@@ -434,6 +444,7 @@ async def process_adapter(adapter_id: str) -> None:
                     message="The adapter's eval dataset is gone or has no task; upload the "
                     "adapter again with a valid eval dataset."
                 )
+            require_gateable_task(dataset.task)
 
             t = time.perf_counter()
             if adapter.format == AdapterFormat.peft:

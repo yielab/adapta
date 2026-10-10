@@ -45,14 +45,15 @@ was not trained on; scoring on training data proves nothing.
 |---|---|---|
 | `classify` | Label accuracy after strip and lowercase | Routing, tagging, triage into a fixed label set. **Recommended.** |
 | `extract` | JSON parse rate x mean per-key exact match; every `response` must be a JSON object | Pulling structured fields out of text. **Recommended.** |
-| `freeform` | Token F1 against the reference | Open-ended text. **Weak**: see below. |
+| `freeform` | Not gateable | Datasets accept it, but an adapter whose eval set is `freeform` ends `failed`. |
 
-!!! warning "Freeform eval sets are weak"
-    In a live test, a deliberately garbage adapter *passed* a freeform eval (token F1 0.383
-    vs the base's 0.037) because it reproduced template words the metric rewards. The same
-    garbage adapter on the classify task scored 0.333 vs 0.333 and failed. Prefer `classify`
-    or `extract` whenever your task can be phrased that way. Stricter freeform scoring is
-    not built yet; it is tracked in [TODO.md](https://github.com/yielab/adapta/blob/main/TODO.md).
+!!! warning "Freeform eval sets cannot gate an adapter"
+    Importing an adapter against a `freeform` eval set ends `failed` with the reason
+    "freeform eval sets cannot gate; use classify or extract", before any generation runs.
+    Token F1 rewards template words: in a live test a deliberately garbage adapter *passed*
+    (0.383 vs the base's 0.037), and on a sentence-style set built from the same tickets the
+    scores were base 0.396, garbage 0.173, real adapter 0.271, so the metric did not rank
+    them by quality. Phrase the task as `classify` or `extract`.
 
 No eval set yet? Upload documents to the project and use **Synthesize** (mode `behavior`,
 with a `task`): the local base model, or an OpenAI-compatible teacher you point it at,

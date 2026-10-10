@@ -216,7 +216,7 @@ Carried over when the shipped sections moved to the changelog (2026-10-08):
 | F2.3 | 2 | haiku | offline | none | — | done 2026-10-10 |
 | F1.4 | 2 | sonnet | live | none | F2.1, F3.1 (`rag.py`) | done 2026-10-10 |
 | F2.1 | 3 | sonnet | live | F1.2 | F1.4, F3.1 (`rag.py`, `chat.py`) | in progress (worker-f2.1) |
-| F1.3 | 3 | sonnet + human decision | live | none | — | decision-pending (f1.3) |
+| F1.3 | 3 | sonnet + human decision | live | none | — | ready-for-live (f1.3) |
 | F3.1 | 3 | sonnet + human decision | live | F1.4 | F1.4, F2.1 (`chat.py`, golden harness) | in progress (worker-f3.1) |
 
 ### F1. Correctness

@@ -220,3 +220,15 @@ async def test_promote_and_rollback_against_the_real_db(client, admin):
     ]
     got = (await client.get(f"/v1/projects/{pid}/endpoint", headers=h)).json()
     assert got["adapter"]["id"] == second
+
+
+async def test_freeform_eval_set_cannot_gate(client, admin):
+    h, team_id = admin["headers"], admin["team_id"]
+    pid = await _project(client, h, team_id, "adapter e2e freeform")
+    did = await _upload_eval_set(client, h, pid, "classify-pass", "freeform")
+    aid = await _upload_adapter(client, h, pid, "classify-pass", did)
+
+    a = await _wait_terminal(client, h, pid, aid)
+    assert a["status"] == "failed", a
+    assert a["failure_reason"] == "freeform eval sets cannot gate; use classify or extract"
+    assert a["eval_metrics"] is None
