@@ -171,6 +171,26 @@ class MetricsCollector:
             name="adapta_system_memory_bytes", help="System memory used in bytes"
         )
 
+        # Retrieval + ingestion metrics (E3.7). The retrieval series are recorded in the
+        # app process; `index_seconds_per_page` is recorded by the worker process, so it
+        # only moves in the worker's own collector (see the E3.7 handoff).
+        self.rag_retrieval_seconds = Histogram(
+            name="adapta_rag_retrieval_seconds", help="End-to-end RAG retrieval latency in seconds"
+        )
+        self.rag_chunks_returned = Histogram(
+            name="adapta_rag_chunks_returned",
+            help="Chunks returned per retrieval",
+            buckets=[0, 1, 2, 3, 5, 8, 10, 15, 20],
+        )
+        self.rag_reranker_seconds = Histogram(
+            name="adapta_rag_reranker_seconds", help="Cross-encoder rerank latency in seconds"
+        )
+        self.index_seconds_per_page = Histogram(
+            name="adapta_index_seconds_per_page",
+            help="Indexing wall time per document page in seconds",
+            buckets=[0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0],
+        )
+
         # Timing helpers
         self._request_start_times: Dict[str, float] = {}
 
@@ -334,6 +354,21 @@ class MetricsCollector:
             lines.append(f"# HELP {self.gpu_memory_used.name} {self.gpu_memory_used.help}")
             lines.append(f"# TYPE {self.gpu_memory_used.name} gauge")
             lines.append(f"{self.gpu_memory_used.name} {self.gpu_memory_used.value}")
+            lines.append("")
+
+        for h in (
+            self.rag_retrieval_seconds,
+            self.rag_chunks_returned,
+            self.rag_reranker_seconds,
+            self.index_seconds_per_page,
+        ):
+            lines.append(f"# HELP {h.name} {h.help}")
+            lines.append(f"# TYPE {h.name} histogram")
+            for bucket, count in sorted(h.get_bucket_counts().items()):
+                le = "+Inf" if bucket == float("inf") else bucket
+                lines.append(f'{h.name}_bucket{{le="{le}"}} {count}')
+            lines.append(f"{h.name}_count {h.count}")
+            lines.append(f"{h.name}_sum {h.sum}")
             lines.append("")
 
         return "\n".join(lines)

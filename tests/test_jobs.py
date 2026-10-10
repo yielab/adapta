@@ -177,8 +177,9 @@ async def test_run_job_dispatches_to_registered_handler(monkeypatch):
     assert seen == ["j-1"]
 
 
-def test_handler_table_holds_the_adapter_job():
-    assert set(worker.HANDLERS) == {"adapter"}
+def test_handler_table_holds_the_adapter_and_index_jobs():
+    assert set(worker.HANDLERS) == {"adapter", "index"}
+    assert worker.HANDLERS["index"] is worker._run_index_job
 
 
 async def test_adapter_handler_passes_the_payload_id_and_marks_the_job(monkeypatch):
@@ -201,3 +202,41 @@ async def test_adapter_handler_passes_the_payload_id_and_marks_the_job(monkeypat
         ("process", "ad-1"),
         ("status", "ad-1", "succeeded"),
     ]
+
+
+# `index` job (E3.7): payload {"id": file_id}; one retry on a transient failure.
+
+
+def _index_harness(monkeypatch, outcomes):
+    from adapta.api.v1 import files as files_mod
+
+    calls = []
+
+    class Q:
+        async def update_status(self, job_id, **kw):
+            calls.append(("status", job_id, kw["status"]))
+
+    async def fake_index(file_id, *, final=True):
+        calls.append(("index", file_id, final))
+        return outcomes.pop(0)
+
+    monkeypatch.setattr(worker, "get_job_queue", lambda: Q())
+    monkeypatch.setattr(files_mod, "index_file_by_id", fake_index)
+    return calls
+
+
+async def test_index_handler_runs_once_when_it_succeeds(monkeypatch):
+    calls = _index_harness(monkeypatch, [False])
+    await worker._run_job({"job_id": "f-1", "kind": "index", "payload": {"id": "f-1"}})
+    assert calls == [
+        ("status", "f-1", "running"),
+        ("index", "f-1", False),
+        ("status", "f-1", "succeeded"),
+    ]
+
+
+async def test_index_handler_retries_once_on_a_transient_failure(monkeypatch):
+    calls = _index_harness(monkeypatch, [True, False])
+    await worker._run_job({"job_id": "f-2", "kind": "index", "payload": {"id": "f-2"}})
+    assert [c for c in calls if c[0] == "index"] == [("index", "f-2", False), ("index", "f-2", True)]
+    assert calls[-1] == ("status", "f-2", "succeeded")

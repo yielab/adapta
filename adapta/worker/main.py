@@ -5,7 +5,7 @@ Run as a separate process/container (same image as the app):
     python -m adapta.worker.main
 
 The loop owns liveness (heartbeat + ``--healthcheck``) and graceful shutdown (an
-in-flight job is requeued on SIGTERM). Handlers: ``adapter`` (E4.4). A job whose kind has no handler fails with :class:`UnknownJobKind`.
+in-flight job is requeued on SIGTERM). Handlers: ``adapter`` (E4.4), ``index`` (E3.7). A job whose kind has no handler fails with :class:`UnknownJobKind`.
 """
 
 from __future__ import annotations
@@ -37,7 +37,47 @@ async def _adapter_job(meta: dict) -> None:
     await queue.update_status(meta["job_id"], status="succeeded", progress=1.0)
 
 
-HANDLERS: dict[str, Callable[[dict], Awaitable[None]]] = {"adapter": _adapter_job}
+async def _run_index_job(meta: dict) -> None:
+    """``index`` job (E3.7): parse → chunk → embed → store one uploaded file.
+
+    Payload ``{"id": file_id}`` (the job id is also the file id). The body is
+    ``files.index_file_by_id`` → ``_index_file``; the file row carries the outcome
+    (``indexed``/``failed``), so the job itself ends ``succeeded`` once the file is
+    terminal. One automatic retry on a transient failure.
+    """
+    from adapta.api.v1.files import index_file_by_id
+
+    file_id = (meta.get("payload") or {}).get("id") or meta["job_id"]
+    queue = get_job_queue()
+    await queue.update_status(meta["job_id"], status="running")
+    if await index_file_by_id(file_id, final=False):
+        logger.warning("Index job for %s hit a transient failure — retrying once.", file_id)
+        await index_file_by_id(file_id, final=True)
+    await queue.update_status(meta["job_id"], status="succeeded", progress=1.0)
+
+
+HANDLERS: dict[str, Callable[[dict], Awaitable[None]]] = {
+    "adapter": _adapter_job,
+    "index": _run_index_job,
+}
+
+
+def _warm_up() -> None:
+    """Pay the Docling / embedding-model load once, at startup, not on the first job."""
+    try:
+        from adapta.services.documents import _get_converter
+        from adapta.services.embeddings import get_embedding_service
+
+        converter = _get_converter()
+        init = getattr(converter, "initialize_pipeline", None)
+        if init is not None:
+            from docling.datamodel.base_models import InputFormat
+
+            init(InputFormat.PDF)
+        _ = get_embedding_service().dimension
+        logger.info("Worker warm-up done (document parser + embedder loaded).")
+    except Exception:  # noqa: BLE001 — warm-up is an optimisation; the first job will load lazily
+        logger.exception("Worker warm-up failed; models will load on the first job.")
 
 
 async def _run_job(meta: dict) -> None:
@@ -55,6 +95,17 @@ async def worker_loop() -> None:
     settings.ensure_dirs()  # data dirs must exist before any job runs
     queue = get_job_queue()
     await queue.connect()
+
+    # No job of this (single) worker is running yet: any file still pending/processing
+    # without a queued job was orphaned by a previous worker death.
+    try:
+        from adapta.services.maintenance import sweep_stuck_files
+
+        await sweep_stuck_files(worker_startup=True)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Worker-startup sweep failed: %s", exc)
+    await queue.heartbeat()
+    await asyncio.to_thread(_warm_up)
 
     loop = asyncio.get_running_loop()
     shutdown = asyncio.Event()

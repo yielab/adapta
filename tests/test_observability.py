@@ -30,6 +30,26 @@ async def test_metrics_endpoint_exposes_prometheus(app):
     assert "adapta_requests_total" in body
     assert "adapta_request_duration_seconds" in body
     assert "# TYPE adapta_request_duration_seconds histogram" in body
+    # E3.7 retrieval + ingestion series are always exported (zero until observed)
+    for name in (
+        "adapta_rag_retrieval_seconds",
+        "adapta_rag_chunks_returned",
+        "adapta_rag_reranker_seconds",
+        "adapta_index_seconds_per_page",
+    ):
+        assert f"# TYPE {name} histogram" in body, name
+        assert f"{name}_count" in body, name
+
+
+def test_retrieval_histograms_record_observations():
+    from adapta.core.metrics import MetricsCollector
+
+    mc = MetricsCollector()
+    mc.rag_retrieval_seconds.observe(0.2)
+    mc.rag_chunks_returned.observe(5)
+    out = mc.export_prometheus()
+    assert "adapta_rag_retrieval_seconds_count 1" in out
+    assert 'adapta_rag_chunks_returned_bucket{le="5"} 1' in out
 
 
 def test_json_log_formatter_emits_valid_json():

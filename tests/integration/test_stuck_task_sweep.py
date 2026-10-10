@@ -98,3 +98,42 @@ async def test_sweep_fails_stuck_file_and_dataset(clean_db):
     assert "interrupted" in (frow["error_message"] or "")
     assert drow["status"] == "invalid"
     assert "interrupted" in (drow["validation_error"] or "")
+
+
+async def test_sweep_keeps_queued_index_jobs_and_fails_orphans(clean_db):
+    """E3.7: a file whose index job is still queued in Redis is not an orphan; a
+    `processing` file with no job (worker died mid-index) is."""
+    from adapta.services.jobs import get_job_queue
+
+    project_id = await _seed_project()
+    queued_id, orphan_id = str(uuid.uuid4()), str(uuid.uuid4())
+    conn = await asyncpg.connect(_dsn())
+    try:
+        for fid, status in ((queued_id, "pending"), (orphan_id, "processing")):
+            await conn.execute(
+                "INSERT INTO project_files (id, project_id, filename, content_type, size_bytes, "
+                "storage_path, status) VALUES ($1, $2, 'doc.txt', 'text/plain', 10, '/tmp/d.txt', $3)",
+                fid,
+                project_id,
+                status,
+            )
+    finally:
+        await conn.close()
+
+    queue = get_job_queue()
+    await queue.connect()
+    try:
+        await queue.enqueue(queued_id, "index", {"id": queued_id})
+        await sweep_stuck_tasks()
+        await queue.redis.delete(f"adapta:job:{queued_id}")
+        await queue.redis.lrem("adapta:job_queue", 0, queued_id)
+    finally:
+        await queue.close()
+
+    conn = await asyncpg.connect(_dsn())
+    try:
+        rows = {r["id"]: r["status"] for r in await conn.fetch("SELECT id, status FROM project_files")}
+    finally:
+        await conn.close()
+    assert rows[queued_id] == "pending"
+    assert rows[orphan_id] == "failed"

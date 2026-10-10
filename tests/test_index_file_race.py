@@ -56,16 +56,17 @@ class _Session:
     async def commit(self):
         self.state["commits"] += 1
         if self.state["fail_on_commit"] == self.state["commits"]:
-            raise RuntimeError("unique violation")
+            raise self.state.get("fail_with") or RuntimeError("unique violation")
 
 
-async def _run(monkeypatch, fail_on_commit):
+async def _run(monkeypatch, fail_on_commit, final=True, fail_with=None):
     import adapta.db.session as session_mod
 
     state = {
         "sql": [],
         "commits": 0,
         "fail_on_commit": fail_on_commit,
+        "fail_with": fail_with,
         "pfile": SimpleNamespace(status=FileStatus.pending, num_chunks=None, error_message=None),
     }
     calls = {"index": 0, "delete": []}
@@ -87,7 +88,10 @@ async def _run(monkeypatch, fail_on_commit):
         files_mod, "get_embedding_service", lambda: SimpleNamespace(dimension=8)
     )
     chunks = [Chunk(text="hello", source="a.md", index=0)]
-    await files_mod._index_file("f1", None, "text/markdown", "a.md", "p1", "t1", chunks)
+    result = await files_mod._index_file(
+        "f1", None, "text/markdown", "a.md", "p1", "t1", chunks, final=final
+    )
+    state["retry"] = result
     return state, calls
 
 
@@ -112,3 +116,22 @@ async def test_commit_failure_after_upsert_deletes_orphaned_vectors(monkeypatch)
 async def test_failure_before_upsert_does_not_touch_chroma(monkeypatch):
     state, calls = await _run(monkeypatch, fail_on_commit=2)
     assert calls["index"] == 0 and calls["delete"] == []
+
+
+async def test_transient_failure_on_first_attempt_resets_to_pending_and_asks_for_retry(monkeypatch):
+    state, _ = await _run(monkeypatch, fail_on_commit=2, final=False, fail_with=OSError("net"))
+    assert state["retry"] is True
+    assert state["pfile"].status == FileStatus.pending
+    assert state["pfile"].error_message is None
+
+
+async def test_transient_failure_on_final_attempt_fails_the_file(monkeypatch):
+    state, _ = await _run(monkeypatch, fail_on_commit=2, final=True, fail_with=OSError("net"))
+    assert state["retry"] is False
+    assert state["pfile"].status == FileStatus.failed
+
+
+async def test_deterministic_failure_is_never_retried(monkeypatch):
+    state, _ = await _run(monkeypatch, fail_on_commit=2, final=False)  # RuntimeError
+    assert state["retry"] is False
+    assert state["pfile"].status == FileStatus.failed

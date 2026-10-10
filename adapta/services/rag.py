@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING, List, Literal, Optional
 from sqlalchemy.exc import SQLAlchemyError
 
 from adapta.config import settings
+from adapta.core.metrics import get_metrics_collector
 from adapta.db.models import ProjectChunk
 from adapta.domain.errors import EmbeddingModelMismatch, VectorStoreFailed
 from adapta.services.embeddings import get_embedding_service, get_reranker_service
@@ -510,7 +511,9 @@ class RAGService:
         if reranker is not None and len(candidates) > 1:
             rerank_n = min(top_k * 2, len(candidates))
             to_rerank = candidates[:rerank_n]
+            t_rerank = time.perf_counter()
             raw_scores = reranker.rerank(query, [c.text for c in to_rerank])
+            get_metrics_collector().rag_reranker_seconds.observe(time.perf_counter() - t_rerank)
             ranked = sorted(
                 zip(raw_scores, to_rerank, strict=False),
                 key=lambda x: x[0],
@@ -533,6 +536,9 @@ class RAGService:
 
         final = _hydrate_provenance(candidates[:top_k])
         fused_rank = {cid: r for r, cid in enumerate(fused_ids)}
+        mc = get_metrics_collector()
+        mc.rag_retrieval_seconds.observe(time.perf_counter() - t0)
+        mc.rag_chunks_returned.observe(len(final))
         logger.info(
             "rag.retrieve q=%s project=%s vec=%d fts=%d fused=%d ids=%s scores=%s ms=%d",
             hashlib.sha256(query.encode("utf-8")).hexdigest()[:12],

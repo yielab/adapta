@@ -35,7 +35,6 @@ skip_unless_optin = pytest.mark.skipif(
 
 _GOLDEN = Path(__file__).resolve().parent.parent / "fixtures" / "golden"
 _K = 5
-_BATCH = 4  # uploads in flight at once
 # Catalog name only; creating a RAG project does not load the model.
 _MODEL_NAME = "qwen2.5-3b-instruct"
 
@@ -106,28 +105,23 @@ async def test_golden_retrieval(client, admin, caplog):
     assert proj.status_code == 201, proj.text
     pid = proj.json()["id"]
 
-    # Index once through the real upload path, in small batches: every upload
-    # starts a background indexing task, and ~30 at once exhaust the DB pool
-    # (product bug, tracked under E3.7 "indexing as a queued job").
-    for start in range(0, len(docs), _BATCH):
-        batch = docs[start : start + _BATCH]
-        for d in batch:
-            files = {"file": (d.name, io.BytesIO(d.read_bytes()), "text/plain")}
-            up = await client.post(f"/v1/projects/{pid}/files", headers=h, files=files)
-            assert up.status_code == 202, up.text
-        want = start + len(batch)
+    # Index once through the real upload path, all documents at once: indexing runs as
+    # queued worker jobs (E3.7), so concurrency is bounded by the worker, not by the number
+    # of uploads in flight.
+    for d in docs:
+        files = {"file": (d.name, io.BytesIO(d.read_bytes()), "text/plain")}
+        up = await client.post(f"/v1/projects/{pid}/files", headers=h, files=files)
+        assert up.status_code == 202, up.text
 
-        def _batch_terminal(r, want=want):
-            return (
-                r.status_code == 200
-                and len(r.json()) == want
-                and all(f["status"] in ("indexed", "failed") for f in r.json())
-            )
-
-        got = await _poll(
-            lambda: client.get(f"/v1/projects/{pid}/files", headers=h), _batch_terminal
+    def _all_terminal(r):
+        return (
+            r.status_code == 200
+            and len(r.json()) == len(docs)
+            and all(f["status"] in ("indexed", "failed") for f in r.json())
         )
-        assert _batch_terminal(got), f"batch ending at {want} did not finish: {got.text[:300]}"
+
+    got = await _poll(lambda: client.get(f"/v1/projects/{pid}/files", headers=h), _all_terminal)
+    assert _all_terminal(got), f"indexing did not finish: {got.text[:300]}"
 
     statuses = {f["filename"]: f["status"] for f in got.json()}
     assert all(s == "indexed" for s in statuses.values()), f"indexing incomplete: {statuses}"

@@ -8,24 +8,35 @@ documents, behavior from the fine-tune)."""
 import asyncio
 import hashlib
 import logging
+import time
 from pathlib import Path
 from typing import List, Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, UploadFile
+from fastapi import APIRouter, Depends, File, UploadFile
 from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from adapta.api._upload import save_capped_upload
 from adapta.config import settings
+from adapta.core.metrics import get_metrics_collector
 from adapta.db.models import Collection, FileStatus, Project, ProjectChunk, ProjectFile
 from adapta.db.session import get_db
-from adapta.domain.errors import DuplicateDocument, EmbeddingModelMismatch, InvalidRequest, NotFound
+from adapta.domain.errors import (
+    DuplicateDocument,
+    EmbeddingFailed,
+    EmbeddingModelMismatch,
+    InvalidRequest,
+    NotFound,
+    VectorStoreFailed,
+)
 from adapta.models.generated import FileResponse
 from adapta.services.app_settings import resolve_setting
 from adapta.services.auth import get_current_user, require_team_member, require_team_writer
 from adapta.services.documents import parse_and_chunk
 from adapta.services.embeddings import get_embedding_service
+from adapta.services.jobs import get_job_queue
 from adapta.services.rag import (
     collection_name_for,
     get_rag_service,
@@ -39,6 +50,13 @@ router = APIRouter(prefix="/projects/{project_id}/files", tags=["files"])
 # Extension-based guard (§7.3): Content-Type is client-controlled and browsers
 # routinely send application/octet-stream for .md/.txt files, making CT an
 # unreliable signal. Real type safety comes from the parser in documents.py.
+INDEX_JOB_KIND = "index"
+
+# Failures worth one automatic retry (I/O, DB, vector store, embedder). Everything else —
+# a typed DomainError (model mismatch, unparseable/empty document) or a parser crash — is
+# deterministic: retrying only repeats minutes of Docling work.
+_TRANSIENT = (OSError, TimeoutError, SQLAlchemyError, VectorStoreFailed, EmbeddingFailed)
+
 _ALLOWED_EXTENSIONS = frozenset(
     {
         ".pdf", ".docx", ".txt", ".md", ".markdown", ".html", ".htm",
@@ -95,13 +113,18 @@ async def _index_file(
     project_id: str,
     team_id: str,
     chunks: Optional[list] = None,
-) -> None:
-    """Background task: parse → chunk → embed → store in Chroma, update DB status.
+    final: bool = True,
+) -> bool:
+    """Index job body: parse → chunk → embed → store in Chroma, update DB status.
 
-    The request handler commits before scheduling this task so the row is
-    visible on the fresh session opened here.  The retry loop (10 × 0.1 s)
-    absorbs brief connection-pool replication lag — without it a fast-following
-    GET found the row committed but the pool had not yet propagated it.
+    Runs on the worker (``index`` job, E3.7) via :func:`index_file_by_id`. The upload
+    handler commits before enqueueing, so the row is visible on the fresh session
+    opened here; the short lookup retry absorbs any residual lag.
+
+    Returns True when a *transient* failure happened on a non-``final`` attempt: the
+    row is reset to ``pending`` and the caller should run it once more with
+    ``final=True``. Every other outcome is terminal (``indexed`` or ``failed``) and
+    returns False.
     """
     from sqlalchemy import select
 
@@ -109,6 +132,7 @@ async def _index_file(
 
     logger.info("File indexing task started: %s", file_id)
     vectors_written = False
+    started = time.perf_counter()
     async with AsyncSessionLocal() as db:
         try:
             pfile = None
@@ -124,7 +148,7 @@ async def _index_file(
                     "status will remain 'pending'.",
                     file_id,
                 )
-                return
+                return False
 
             pfile.status = FileStatus.processing
             await db.commit()
@@ -228,7 +252,12 @@ async def _index_file(
             pfile.status = FileStatus.indexed
             pfile.num_chunks = count
             await db.commit()
+            pages = len({c.page for c in parsed if getattr(c, "page", None) is not None}) or 1
+            get_metrics_collector().index_seconds_per_page.observe(
+                (time.perf_counter() - started) / pages
+            )
             logger.info("File indexing task done: %s -> indexed (%s chunks)", file_id, count)
+            return False
 
         except Exception as exc:
             logger.exception("File indexing task failed for %s", file_id)
@@ -240,19 +269,56 @@ async def _index_file(
                     await asyncio.to_thread(get_rag_service().delete_file_chunks, project_id, file_id)
                 except Exception:
                     logger.exception("Could not clean up orphaned vectors for %s", file_id)
+            retry = isinstance(exc, _TRANSIENT) and not final
             async with AsyncSessionLocal() as db2:
                 result = await db2.execute(select(ProjectFile).where(ProjectFile.id == file_id))
                 pfile = result.scalar_one_or_none()
                 if pfile:
-                    pfile.status = FileStatus.failed
-                    pfile.error_message = str(exc)
+                    pfile.status = FileStatus.pending if retry else FileStatus.failed
+                    pfile.error_message = None if retry else str(exc)
                     await db2.commit()
+            return retry
+    return False
+
+
+async def index_file_by_id(file_id: str, *, final: bool = True) -> bool:
+    """Load a file row and run :func:`_index_file` on it (the ``index`` job's body).
+
+    A row that is gone (deleted before the worker got to it) or already terminal
+    (a requeued job that had finished) is skipped. Returns :func:`_index_file`'s
+    "retry wanted" flag.
+    """
+    from adapta.db.session import AsyncSessionLocal
+
+    async with AsyncSessionLocal() as db:
+        row = (
+            await db.execute(
+                select(ProjectFile, Project.team_id)
+                .join(Project, Project.id == ProjectFile.project_id)
+                .where(ProjectFile.id == file_id)
+            )
+        ).first()
+    if row is None:
+        logger.info("Index job for %s skipped: the file no longer exists", file_id)
+        return False
+    pfile, team_id = row
+    if pfile.status not in (FileStatus.pending, FileStatus.processing):
+        logger.info("Index job for %s skipped: already %s", file_id, pfile.status.value)
+        return False
+    return await _index_file(
+        file_id,
+        Path(pfile.storage_path),
+        pfile.content_type,
+        pfile.filename,
+        pfile.project_id,
+        team_id,
+        final=final,
+    )
 
 
 @router.post("", status_code=202)
 async def upload_file(
     project_id: str,
-    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     current_user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -310,21 +376,22 @@ async def upload_file(
         await db.delete(pfile)
         await db.commit()
         raise DuplicateDocument(message="This document is already indexed in this project.")
-    # Commit before scheduling — the background task opens its own DB session;
-    # committing here ensures the row is visible to that session immediately.
+    # Commit before enqueueing — the worker opens its own DB session, so the row must be
+    # visible to it immediately. Indexing runs on the worker (`index` job), one file at a
+    # time, so concurrent uploads queue instead of each opening DB sessions in the app.
     file_id = pfile.id
     await db.commit()
-    background_tasks.add_task(
-        _index_file,
-        file_id,
-        dest_path,
-        content_type,
-        filename,
-        project_id,
-        project.team_id,
-    )
+    status = "pending"
+    try:
+        await get_job_queue().enqueue(file_id, INDEX_JOB_KIND, {"id": file_id})
+    except Exception:
+        logger.exception("Could not enqueue the index job for %s", file_id)
+        pfile.status = FileStatus.failed
+        pfile.error_message = "The job queue is unavailable; upload the file again."
+        status = "failed"
+        await db.commit()
 
-    return {"id": file_id, "filename": filename, "status": "pending"}
+    return {"id": file_id, "filename": filename, "status": status}
 
 
 @router.get("", response_model=List[FileResponse])

@@ -29,8 +29,12 @@ Never `pip install`; to change deps edit `pyproject.toml` then `make up` (host).
 - **Hot reload kills live tests.** Editing any repo file during a live-stack test
   restarts uvicorn (watchfiles) and the test dies with a bogus transport error. Freeze
   edits while a live run is in flight.
-- **The worker does NOT hot-reload.** Changing `adapta/worker/`
-  requires `docker compose restart worker`.
+- **The worker does NOT hot-reload.** Changing `adapta/worker/` requires
+  `docker compose restart worker` — and since E3.7 (indexing runs as an `index` job on the
+  worker) so does anything the index path imports: `adapta/api/v1/files.py` (`_index_file`),
+  `adapta/services/documents.py`, `rag.py`, `embeddings.py`, `maintenance.py`. Uvicorn
+  reloads; the worker keeps running the old code, and the symptom is uploads that "index"
+  with stale behaviour. Restart the worker before any RAG e2e / golden run.
 - **Chroma client/server versions must match** (`chromadb` pip pin vs the `chroma` image).
   Skew shows up as `KeyError('_type')` 500s on every index call. `make check-chroma` guards it.
 - **Mutating handlers must commit before returning** — `get_db()`'s deferred commit races
