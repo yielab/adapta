@@ -640,6 +640,23 @@ paths:
         '422': {$ref: '#/components/responses/Error'}
         '200': {description: Events, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/AdapterEvent'}}}}}
 
+  /projects/{project_id}/endpoint/export:
+    get:
+      operationId: exportEndpointAdapter
+      tags: [endpoints]
+      summary: Download the served, gate-passed adapter as an Ollama bundle (writer). A zip of adapter.gguf + Modelfile + README.txt (the gate line); 404 when the endpoint serves no adapter.
+      security: [{BearerAuth: []}]
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - {name: format, in: query, required: true, schema: {type: string, enum: [ollama]}}
+      responses:
+        '200': {description: The bundle, content: {application/zip: {schema: {type: string, format: binary}}}}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '422': {$ref: '#/components/responses/Error'}
+
   # ──────────────────────────────────────────────────────────────────────────
   # Usage metering
   # ──────────────────────────────────────────────────────────────────────────

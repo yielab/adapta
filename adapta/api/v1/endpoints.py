@@ -1,12 +1,17 @@
 """Project endpoint management (create, get, enable/disable)."""
 
+import shutil
+import tempfile
 import uuid
-from typing import Optional
+from pathlib import Path
+from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends
+from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.background import BackgroundTask
 
 from adapta.api.v1.adapters import adapter_response
 from adapta.core import model_manager
@@ -43,6 +48,7 @@ from adapta.models.generated import (
 from adapta.models.generated import (
     ProjectType as ApiProjectType,
 )
+from adapta.services import adapters as adapter_service
 from adapta.services.auth import get_current_user, require_team_member, require_team_writer
 from adapta.services.rag import count_project_chunks
 
@@ -262,6 +268,35 @@ async def promote_adapter(
     if old_path:
         await model_manager.evict(endpoint.base_model, old_path)
     return await _build_response(db, endpoint, project)
+
+
+@router.get("/export", response_class=FileResponse)
+async def export_adapter(
+    project_id: str,
+    format: Literal["ollama"],
+    current_user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Download the served adapter as an Ollama bundle (E2.2): ``adapter.gguf``, ``Modelfile``,
+    ``README.txt``. Only a ``passed`` adapter bound to the endpoint can be exported."""
+    project = await _get_project(db, project_id)
+    await require_team_writer(db, current_user.id, project.team_id)
+    endpoint = await _get_endpoint(db, project_id)
+    adapter = endpoint.adapter
+    if adapter is None:
+        raise NotFound(message="This endpoint serves no adapter to export.")
+    tmp_dir = Path(tempfile.mkdtemp(prefix="adapta-export-"))
+    try:
+        bundle = adapter_service.build_ollama_bundle(adapter, tmp_dir / "bundle.zip")
+    except BaseException:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+        raise
+    return FileResponse(
+        bundle,
+        media_type="application/zip",
+        filename=f"{endpoint.slug}-ollama.zip",
+        background=BackgroundTask(shutil.rmtree, tmp_dir, ignore_errors=True),
+    )
 
 
 @router.get("/history", response_model=list[ApiAdapterEvent])

@@ -83,6 +83,24 @@ async function request<T>(path: string, opts: ReqOpts = {}): Promise<T> {
   return data as T;
 }
 
+// Binary download behind the Bearer token (an <a href> can't send it): returns the bundle and
+// the server-suggested file name.
+async function download(path: string): Promise<{ blob: Blob; filename: string }> {
+  const t = getToken();
+  const res = await fetch(path, { headers: t ? { Authorization: `Bearer ${t}` } : {} });
+  if (res.status === 401) {
+    clearSession();
+    navigate("/login");
+    throw new ApiError(401, "unauthorized", "Your session expired. Please sign in again.");
+  }
+  if (!res.ok) {
+    const err = (await res.json().catch(() => null))?.error ?? {};
+    throw new ApiError(res.status, err.code ?? "error", err.message ?? `Request failed (${res.status})`, err.correlation_id);
+  }
+  const m = /filename="?([^";]+)"?/.exec(res.headers.get("content-disposition") ?? "");
+  return { blob: await res.blob(), filename: m?.[1] ?? "adapter-ollama.zip" };
+}
+
 function upload<T>(path: string, file: File, fields: Record<string, string> = {}): Promise<T> {
   const fd = new FormData();
   fd.append("file", file);
@@ -158,6 +176,7 @@ export const api = {
       method: "POST",
       body: { adapter_id: adapterId },
     }),
+  exportOllama: (pid: string) => download(`${V1}/projects/${pid}/endpoint/export?format=ollama`),
   endpointHistory: (pid: string) => request<AdapterEvent[]>(`${V1}/projects/${pid}/endpoint/history`),
   createEndpoint: (pid: string) => request<Endpoint>(`${V1}/projects/${pid}/endpoint`, { method: "POST" }),
 

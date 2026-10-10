@@ -468,3 +468,73 @@ async def test_model_manager_evict_drops_only_the_named_variant():
     assert await mm.evict(BASE, "/a/one.gguf") is True
     assert old not in mm._models and new in mm._models
     assert await mm.evict(BASE, "/a/one.gguf") is False
+
+
+# ── Ollama export (E2.2) ─────────────────────────────────────────────────────
+
+
+def _passed_adapter(**over):
+    from datetime import datetime, timezone
+
+    base = dict(
+        name="classify-pass",
+        base_model=BASE,
+        status=AdapterStatus.passed,
+        gguf_path=str(FIXTURE / "adapter.gguf"),
+        created_at=datetime(2026, 10, 10, tzinfo=timezone.utc),
+        eval_metrics={
+            "task": "classification",
+            "adapter_score": 0.9,
+            "base_score": 0.4,
+            "delta": 0.5,
+            "n_rows": 30,
+            "rule": "delta>=min",
+        },
+    )
+    base.update(over)
+    return SimpleNamespace(**base)
+
+
+def test_ollama_bundle_contents(tmp_path):
+    out = svc.build_ollama_bundle(_passed_adapter(), tmp_path / "b.zip")
+    with zipfile.ZipFile(out) as zf:
+        assert sorted(zf.namelist()) == sorted(svc.OLLAMA_BUNDLE_MEMBERS)
+        assert zf.read("adapter.gguf") == (FIXTURE / "adapter.gguf").read_bytes()
+        assert zf.read("Modelfile").decode() == (
+            "FROM qwen2.5:0.5b-instruct\n"
+            "ADAPTER ./adapter.gguf\n"
+            'PARAMETER stop "<|im_end|>"\n'
+            'PARAMETER stop "<|endoftext|>"\n'
+        )
+        readme = zf.read("README.txt").decode()
+    assert "0.900 vs base 0.400" in readme and "+0.500" in readme and "2026-10-10" in readme
+
+
+def test_ollama_bundle_refuses_non_passed_adapter(tmp_path):
+    with pytest.raises(InvalidRequest) as exc:
+        svc.build_ollama_bundle(_passed_adapter(status=AdapterStatus.failed), tmp_path / "b.zip")
+    assert "passed" in exc.value.message
+    assert not (tmp_path / "b.zip").exists()
+
+
+def test_ollama_modelfile_needs_a_mapped_base():
+    with pytest.raises(InvalidRequest):
+        svc.ollama_modelfile("not-a-model")
+
+
+async def test_export_without_adapter_is_404(monkeypatch):
+    from adapta.api.v1 import endpoints
+    from adapta.domain.errors import NotFound
+
+    answers = [_project(), SimpleNamespace(adapter=None, slug="s")]
+
+    class DB:
+        async def execute(self, _stmt):
+            return _Result(answers.pop(0))
+
+    async def _noop(*_a, **_k):
+        return None
+
+    monkeypatch.setattr(endpoints, "require_team_writer", _noop)
+    with pytest.raises(NotFound):
+        await endpoints.export_adapter("p-1234567890", "ollama", SimpleNamespace(id="u"), DB())

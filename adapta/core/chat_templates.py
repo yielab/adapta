@@ -47,6 +47,9 @@ class ChatTemplate:
     name: str
     render: RenderFn
     default_stops: Tuple[str, ...]
+    # Go-template text for an Ollama Modelfile ``TEMPLATE``; ``None`` when Ollama's own template for
+    # the family's tags already speaks this format (ChatML: the qwen2.5 tags), so none is emitted.
+    ollama_template: Optional[str] = None
 
 
 def _render_chatml(system: Optional[str], messages: Sequence[_Turn]) -> str:
@@ -100,3 +103,14 @@ def default_stops(name: str) -> list[str]:
 def is_registered(name: str) -> bool:
     """Whether ``name`` names a registered template."""
     return name in _TEMPLATES
+
+
+def ollama_directives(name: str) -> list[str]:
+    """Modelfile lines carrying template ``name``: ``TEMPLATE`` only when Ollama's default differs,
+    then one ``PARAMETER stop`` per default stop string."""
+    template = _get(name)
+    lines: list[str] = []
+    if template.ollama_template is not None:
+        lines.append(f'TEMPLATE """{template.ollama_template}"""')
+    lines.extend(f'PARAMETER stop "{stop}"' for stop in template.default_stops)
+    return lines

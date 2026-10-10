@@ -149,6 +149,26 @@
     return `${m.adapter_score.toFixed(2)} vs ${m.base_score.toFixed(2)} (${d >= 0 ? "+" : ""}${d.toFixed(2)})`;
   }
 
+  let exporting = $state(false);
+  async function exportOllama() {
+    if (exporting) return;
+    exporting = true;
+    try {
+      const { blob, filename } = await api.exportOllama(project.id);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      if (e instanceof ApiError) toastError(e.message, e.correlationId);
+      else toastError("Could not export the adapter.");
+    } finally {
+      exporting = false;
+    }
+  }
+
   async function loadKeys() {
     loadingKeys = true;
     keysErr = false;
@@ -331,6 +351,10 @@
                 {#if a.id !== endpoint.adapter?.id}
                   <button class="ghost sm" onclick={() => (promoteTarget = a)}>
                     {a.id === previousAdapterId ? "Roll back" : "Promote"}
+                  </button>
+                {:else}
+                  <button class="ghost sm" onclick={exportOllama} disabled={exporting}>
+                    {exporting ? "Exporting…" : "Export for Ollama"}
                   </button>
                 {/if}
               </td>

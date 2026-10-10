@@ -26,12 +26,13 @@ from pathlib import Path
 from typing import Optional
 
 from adapta.config import settings
-from adapta.core import model_catalog
+from adapta.core import chat_templates, model_catalog
 from adapta.db.models import AdapterFormat
 from adapta.domain.errors import (
     AdapterIncompatible,
     DomainError,
     InvalidAdapter,
+    InvalidRequest,
     ModelNotFound,
     PayloadTooLarge,
 )
@@ -290,6 +291,63 @@ def validate_and_store(
 
 ADAPTER_JOB_KIND = "adapter"
 _FAIL_UNEXPECTED = "Adapter processing failed unexpectedly; see the worker log."
+
+
+OLLAMA_BUNDLE_MEMBERS = (GGUF_FILENAME, "Modelfile", "README.txt")
+
+
+def ollama_modelfile(base_model: str) -> str:
+    """The Modelfile for a bundle: the base's Ollama tag (``ollama_model_map``), the adapter, and
+    the catalog template's directives."""
+    tag = settings.ollama_model_map.get(base_model)
+    entry = model_catalog.resolve(base_model)
+    if tag is None or entry is None:
+        raise InvalidRequest(message=f"No Ollama tag is mapped for the base model '{base_model}'.")
+    lines = [f"FROM {tag}", f"ADAPTER ./{GGUF_FILENAME}", *chat_templates.ollama_directives(entry.chat_template)]
+    return "\n".join(lines) + "\n"
+
+
+def ollama_readme(adapter, tag: str) -> str:
+    """Plain-text README for a bundle, carrying the gate line (score, base, delta, date)."""
+    m = adapter.eval_metrics or {}
+    if m.get("adapter_score") is not None and m.get("base_score") is not None:
+        gate = (
+            f"{m.get('task', 'task')} score {m['adapter_score']:.3f} vs base {m['base_score']:.3f} "
+            f"(delta {m.get('delta', m['adapter_score'] - m['base_score']):+.3f}, "
+            f"{m.get('n_rows', '?')} held-out rows, rule: {m.get('rule', 'n/a')})"
+        )
+    else:
+        gate = "passed (no score recorded)"
+    imported = adapter.created_at.date().isoformat() if adapter.created_at else "unknown"
+    return (
+        f"Adapta adapter bundle for Ollama\n"
+        f"================================\n\n"
+        f"Adapter:  {adapter.name}\n"
+        f"Base:     {adapter.base_model} (Ollama tag {tag})\n"
+        f"Gate:     {gate}\n"
+        f"Imported: {imported}\n\n"
+        f"Use:\n"
+        f"  ollama pull {tag}\n"
+        f"  ollama create my-adapter -f Modelfile\n"
+        f"  ollama run my-adapter\n\n"
+        f"Note: the gate scored the adapter on Adapta's GGUF of the base; Ollama's tag is a\n"
+        f"different quantization, so scores can shift slightly.\n"
+    )
+
+
+def build_ollama_bundle(adapter, dest: Path) -> Path:
+    """Write the zip ``{adapter.gguf, Modelfile, README.txt}`` for a ``passed`` adapter to ``dest``."""
+    if adapter.status.value != "passed":
+        raise InvalidRequest(message="Only adapters that passed the eval gate can be exported.")
+    if not adapter.gguf_path or not Path(adapter.gguf_path).is_file():
+        raise InvalidRequest(message="This adapter has no GGUF file; re-import it.")
+    modelfile = ollama_modelfile(adapter.base_model)
+    tag = settings.ollama_model_map[adapter.base_model]
+    with zipfile.ZipFile(dest, "w", zipfile.ZIP_STORED) as zf:
+        zf.write(adapter.gguf_path, GGUF_FILENAME)
+        zf.writestr("Modelfile", modelfile)
+        zf.writestr("README.txt", ollama_readme(adapter, tag))
+    return dest
 
 
 def read_eval_rows(path: Path) -> list[dict]:

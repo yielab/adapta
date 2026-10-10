@@ -132,7 +132,7 @@ classes are defined in [`.claude/context/gates.md`](.claude/context/gates.md) ("
 | E4.4 | 3 | sonnet | rebuild + live | E4.2, E4.3 | E3.7, E3.3b | done 2026-10-10 |
 | E5.1 | 3 | sonnet | live | E3.1, E3.7, E3.8 | E5.2, E4.8 | in progress (worker-e5.1) |
 | E5.2 | 3 | sonnet | live | E3.8, E3.7, E4.8 | E5.1, E4.5 | open |
-| E2.2 | 4 | sonnet | live | E2.1, E4.4 | E4.5 (`endpoints.py`, `EndpointPanel.svelte`) | in progress (worker-e2.2) |
+| E2.2 | 4 | sonnet | live | E2.1, E4.4 | E4.5 (`endpoints.py`, `EndpointPanel.svelte`) | ready-for-live (e2.2) |
 | E4.5 | 4 | sonnet | live | E4.4 | E2.2, E4.6, E5.2 | done 2026-10-10 |
 | E4.6 | 4 | sonnet | live | E4.4 | E4.5, E4.8, E4.9 | done 2026-10-10 |
 | E5.3 | 4 | sonnet | live | E3.2, E3.5, E3.8 | E4.9/E3.5 | in progress (worker-e5.3) |
@@ -169,6 +169,7 @@ E1.1–E1.9 shipped 2026-09-17 → [CHANGELOG.md](CHANGELOG.md). E1.14 closed 20
   `make test-contracts`.
 - **Acceptance.** `ollama create adapta-demo -f Modelfile` on a host with the base tag yields a model
   that answers in the adapter's shape (manual check, recorded in the Done note).
+- **Done (offline, e2.2).** `GET …/endpoint/export?format=ollama` (writer) zips the *served* adapter: `adapter.gguf`, `Modelfile` (`FROM` from `ollama_model_map`, `ADAPTER ./adapter.gguf`, `PARAMETER stop` from the catalog template; no `TEMPLATE` for ChatML since the qwen2.5 tags already use it), `README.txt` (gate line). 404 with no adapter; 400 for a non-passed/unmapped one. Console: "Export for Ollama" on the current-adapter row (`api.ts` gained a `download` helper). Live `ollama create` check pending.
 - **Close.** consuming-the-api "Export to Ollama"; Status snapshot.
 
 ### E3. P1 — real hybrid RAG + scanned documents (weeks 3–7)
