@@ -188,7 +188,7 @@ bind mount, so uvicorn reloaded on every worker edit — reload now watches `/ap
   rerank. `chunks.tsv` is generated with `simple` — a language config only matches after E3.6 regenerates it.
   **Unblocks** E3.5, E3.6, E5.3.
 - **Follow-up.** (1) ~~Close surfaces PRODUCT_DEFINITION, knowledge-and-behavior retrieval box, COMPETITIVE_LANDSCAPE~~
-  — landed in `9779d81` after the E4.1 doc close. (2) `test_rag_e2e.py` failed 2 of 14
+  — landed in `9779d81` after the E4.1 doc close. (2) ~~`test_rag_e2e.py` failed 2 of 14
   live runs (one right after a stack restart, one right after `make golden`); output was not captured and 10 consecutive
   runs passed — run it with `-rf` until it is caught. (3) Drop the stored count columns (E3.1 follow-up) now that E3.2 landed.
 
@@ -471,6 +471,67 @@ bind mount, so uvicorn reloaded on every worker edit — reload now watches `/ap
   `…/{id}/peft/{adapter_model.safetensors,adapter_config.json}`. Catalog: `CatalogEntry.architecture`,
   `adapter_base_aliases`. **E4.4 must set `gguf_path` for `peft` rows** (a bound adapter without it → chat 400).
 - **Follow-up.** Duplicate sha256 uploads are accepted (no dedupe). Swapping a bound adapter is E4.5.
+
+### E3.3b `[BE]` One parser: Docling (+RapidOCR) for PDF/DOCX/HTML/images, page-aware chunking (P1)
+- [x] **Context.** `documents.py` flattens newlines before chunking (`:98`) so pages are unrecoverable;
+  DOCX tables are dropped (`:49`); HTML is stripped by regex (`:60`); scanned PDFs are rejected
+  (`:134-135`); images are not accepted (`files.py:34`). E3.3a measured the replacement.
+- **Depends.** E3.3a (commit), E3.1. **Unblocks.** E3.4, E5.4.
+- **Agent.** sonnet · gate class **rebuild + live** · serialize with: E4.1, E4.2, E4.4
+  (`pyproject.toml`, `Dockerfile`), E3.7 (`documents.py`), E3.4 (`RagFlow.svelte`) · **Handoff.** must name the `Chunk` fields, accepted
+  extensions, `ocr_review_threshold`, image-size delta and s/page.
+- **Scope.** Parser + chunker + accepted types + OCR metadata. Out: VLM extraction (E5.4), review UI.
+- **Steps.** (1) `pyproject.toml`: `docling[rapidocr]`; drop `pypdf`, `python-docx`, `markdown` if
+  nothing else imports them (`grep -rn` in `adapta/` only); pin `torchvision` to the `+cpu` wheel (download.pytorch.org
+  CPU index, as the torch layer does) and pre-download the Docling layout/table and RapidOCR models in a
+  `Dockerfile` build step so first use needs no network (E3.3a Handoff). `make up`. (2) `documents.py`:
+  `parse(path) -> DoclingDocument` with `RapidOcrOptions(lang=["latin"])`, `do_ocr=True`, default OCR
+  mode; `chunk(doc)` via `HybridChunker` (tokenizer = the embedding model) emitting
+  `Chunk(text, index, page, section, ocr, ocr_confidence)` — page from element provenance, `ocr` true
+  when the page had no text cells, `ocr_confidence` = mean RapidOCR line score for that page (else
+  NULL). Tables → markdown; a table over the chunk budget splits by rows repeating the header.
+  (3) `files.py` `_ALLOWED_EXTENSIONS` += `.png .jpg .jpeg .tif .tiff`; console `accept` list aligned
+  (fixes the `.markdown` mismatch, B8). (4) `needs_review = ocr and ocr_confidence <
+  settings.ocr_review_threshold` (default 0.90), stored on the E3.1 columns. (5) Tests: parser cases
+  per format from small fixtures under `tests/fixtures/` (add a 1-page scanned PDF and a PNG); page
+  numbers asserted; a low-confidence fixture sets `needs_review`.
+- **Files.** `pyproject.toml`, `adapta/services/documents.py` (rewrite), `adapta/api/v1/files.py:28-40`,
+  `adapta/console/src/views/RagFlow.svelte:188-237`, `adapta/config.py`, `tests/test_basic.py:45-100`,
+  `tests/fixtures/` (new), `Dockerfile` (torchvision+cpu pin, model pre-download).
+- **Contract impact.** None yet (metadata stays internal until E3.4 exposes it).
+- **Gate.** `make up` (rebuild) → `make test` → `tests/integration/test_rag_e2e.py` with the scanned
+  fixture.
+- **Acceptance.** A scanned PDF indexes with `ocr=true` and page numbers; a PNG invoice indexes; a DOCX
+  table survives as markdown in a chunk; the "OCR scanned PDFs first" guidance is deleted from the
+  console and docs; image-size delta and s/page recorded next to E3.3a's numbers.
+- **Close.** knowledge-and-behavior (supported inputs), operator-console files table, OPERATIONS
+  sizing, README bullet ("scanned PDFs and images included"), CLAUDE.md "Knowledge (RAG)" line; Status
+  snapshot.
+- **Done.** 2026-10-10. PDF/DOCX/HTML/images parse through one Docling converter (`RapidOcrOptions(lang=["latin"])`,
+  `generate_parsed_pages=True`) and chunk with `HybridChunker` (tokenizer = the embedding model, budget `chunk_size // 4`
+  tokens, `merge_peers=False` + own same-page/section merge — Docling's default merge filed page-2 text under page 1;
+  tables → markdown); `.txt/.md/.markdown` keep the sentence chunker (golden unchanged). `build_chunk_rows` writes
+  page/section/ocr/ocr_confidence/needs_review. `pypdf`, `python-docx`, `markdown` dropped; Dockerfile pins torchvision
+  `+cpu` and bakes Docling layout/table + RapidOCR latin models (`DOCLING_ARTIFACTS_PATH=/opt/docling-models`) and the
+  chunker tokenizer (`HF_HOME=/opt/hf`) — `test_documents.py` passes with `--network none`. **Upload no longer parses**
+  (live gate showed a 5-page scan holding the request > 5 s; a 100-page one would hold it minutes): duplicate = raw-bytes
+  sha256 against `project_files.content_sha256` (migration `0015`) → synchronous 409; Docling runs only in `_index_file`.
+  Live on `develop`: image **3.27 GB (+1.05 GB)** · `migrate-test` 0015 ✓ · `make ci` ✓ · `test_documents` 9/9 ·
+  `test_rag_scanned` (scanned PDF `ocr=true` + confidence, PNG invoice, 202 < 5 s, byte-duplicate 409) ✓ · RAG e2e ✓ ·
+  golden **0.978 / 0.840 / 32 ms** (= E3.6) · warm conversion **~1.3 s/page scanned, ~1.2 s per PNG**.
+- **Handoff.** `Chunk(text, source, index, page, section, ocr, ocr_confidence)` — `page` = first page of the chunk's
+  first element (a Docling item can span pages); `ocr` = the page had OCR cells and no native cells; `ocr_confidence` =
+  mean OCR line score of that page. Extensions: `.pdf .docx .txt .md .markdown .html .htm .png .jpg .jpeg .tif .tiff`.
+  `ocr_review_threshold` 0.90 (`ADAPTA_OCR_REVIEW_THRESHOLD`) → `needs_review`. Duplicate rule: identical bytes in the
+  project (failed files excluded) → 409; a whitespace-only text edit now indexes. Image 3.27 GB; the baked tokenizer
+  name is hard-coded in the Dockerfile — **change it with `ADAPTA_EMBEDDING_MODEL`**; prod compose overrides `HF_HOME`
+  (bypasses the baked tokenizer). Previous image kept as `adapta-app:pre-e3.3b`. **Unblocks** E3.4, E3.7, E5.4.
+- **Follow-up.** (1) `rag.all_chunks_known` is now unused by production code (kept with its unit test) — delete.
+  (2) Docling logs deprecation warnings (`force_full_page_ocr`, `generate_table_images`, `rec_font_path`) from its own
+  defaults. (3) Chroma metadata still carries only source/chunk_index/file_id — E3.4 exposes page/ocr/needs_review.
+  (4) The e2e loop-mismatch flake (E3.2 follow-up 2) is fixed in this commit: `_chunk_rows` used the app's pooled engine
+  across pytest event loops; now a NullPool engine per call — 11/12 green since (the one failure, right after the edit,
+  was not captured).
 
 ---
 

@@ -81,19 +81,27 @@ async def test_rag_upload_index_serve_cited(client, admin):
     # 3b. E3.1: the chunks table is the source of truth — one row per chunk, and the
     #     file's num_chunks agrees with it.
     from sqlalchemy import func, select
+    from sqlalchemy.ext.asyncio import create_async_engine
+    from sqlalchemy.pool import NullPool
 
     from adapta.db.models import ProjectChunk
-    from adapta.db.session import AsyncSessionLocal
 
     async def _chunk_rows() -> int:
-        async with AsyncSessionLocal() as s:
-            return (
-                await s.scalar(
-                    select(func.count())
-                    .select_from(ProjectChunk)
-                    .where(ProjectChunk.project_id == pid)
-                )
-            ) or 0
+        # A NullPool engine opened inside this test's event loop: the app's pooled
+        # engine may hold a connection bound to an earlier test's loop, and pinging it
+        # here fails with "attached to a different loop" (the intermittent e2e flake).
+        engine = create_async_engine(settings.database_url, poolclass=NullPool)
+        try:
+            async with engine.connect() as conn:
+                return (
+                    await conn.scalar(
+                        select(func.count())
+                        .select_from(ProjectChunk)
+                        .where(ProjectChunk.project_id == pid)
+                    )
+                ) or 0
+        finally:
+            await engine.dispose()
 
     assert await _chunk_rows() == rec["num_chunks"]
 
