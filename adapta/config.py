@@ -123,6 +123,16 @@ class Settings(BaseSettings):
     # Cap RAG retrieval so a hung/slow Chroma degrades to a typed 504 instead of
     # blocking every chat request indefinitely.
     rag_timeout_seconds: int = 10
+    # (E1.15) Per-request bound on every call to the Chroma server. chromadb 1.5.9 builds its
+    # httpx session with timeout=None, so without this a deadlocked Chroma blocks the caller
+    # forever (measured 2026-10-10). Must exceed the slowest healthy upsert of one file.
+    chroma_timeout_seconds: int = 30
+    # /health/deep marks Chroma "degraded" when its heartbeat takes at least this long.
+    chroma_slow_ms: int = 1000
+    # (E1.15) Deadline for ONE attempt of an `index` job in the worker (parse + OCR + embed +
+    # upsert). A timeout is a transient failure: one retry, then the file ends `failed`.
+    # Sized for the largest scanned PDF the OCR path accepts; lower it for text-only deployments.
+    index_job_timeout_seconds: int = 900
     chunk_size: int = 512
     chunk_overlap: int = 64
     # OCR'd chunks whose mean line confidence is below this are flagged needs_review (E3.3b).

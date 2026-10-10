@@ -374,6 +374,31 @@ Measured on the 45-question bilingual golden set (`make golden`), 16-core CPU.
   failed by its own startup sweep (reason in the file's `error_message`); queued files continue. The heartbeat is
   refreshed every 30 s during a job, so a long OCR job does not mark the worker unhealthy.
 
+### 6.7 Chroma stops answering (E1.15)
+
+**Symptoms.** Uploads sit in `processing`; chat answers a typed `504`; `docker compose ps` shows
+`adapta-chroma` **unhealthy**; `GET /health/deep` reports `chroma` as `unhealthy`
+("did not answer within N s") or `degraded` (heartbeat >= `ADAPTA_CHROMA_SLOW_MS`, with
+`details.latency_ms`).
+
+**What the stack does by itself.**
+
+| Layer | Bound | Setting |
+|---|---|---|
+| Every Chroma request (app + worker) | 30 s, then a typed `VectorStoreFailed` | `ADAPTA_CHROMA_TIMEOUT_SECONDS` |
+| Chat retrieval | 10 s, then a typed `504` | `ADAPTA_RAG_TIMEOUT_SECONDS` |
+| One attempt of an `index` job | 900 s, then one retry, then the file ends `failed` with "Indexing timed out after 900 s ..." and the job `failed`; the worker takes the next job | `ADAPTA_INDEX_JOB_TIMEOUT_SECONDS` |
+
+**Recover.** `docker restart adapta-chroma` (data is on the `chroma-data` volume), wait for `healthy`, then
+re-upload the files that ended `failed`. The worker needs no restart.
+
+**Healthcheck.** The chroma image has no curl or python but ships bash, so compose probes
+`/api/v2/heartbeat` over `/dev/tcp` (see the `chroma` service in `docker-compose.yml`).
+
+**Open file descriptors.** The app and worker each hold one long-lived Chroma client. Check for a
+regression with `docker exec adapta-worker sh -c 'ls /proc/1/fd | wc -l'` before and after a batch of
+uploads: the number must stay flat (it grew ~3 per index job before E1.15 until `[Errno 24] Too many open files`).
+
 ---
 
 ## 7. Observability (optional)

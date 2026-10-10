@@ -17,6 +17,7 @@ import logging
 import math
 import threading
 import time
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, List, Literal, Optional
 
@@ -25,7 +26,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from adapta.config import settings
 from adapta.core.metrics import get_metrics_collector
 from adapta.db.models import ProjectChunk
-from adapta.domain.errors import EmbeddingModelMismatch, VectorStoreFailed
+from adapta.domain.errors import DomainError, EmbeddingModelMismatch, VectorStoreFailed
 from adapta.services.embeddings import get_embedding_service, get_reranker_service
 
 if TYPE_CHECKING:
@@ -174,11 +175,73 @@ async def count_project_chunks(db: "AsyncSession", project_id: str) -> int:
     ) or 0
 
 
-def _get_chroma_client():
-    """Create a new ChromaDB HTTP client.  Called per-operation — no connection pool."""
-    import chromadb
+_chroma_client = None
+_chroma_lock = threading.Lock()
 
-    return chromadb.HttpClient(host=settings.chroma_host, port=settings.chroma_port)
+
+def _get_chroma_client():
+    """The process-wide Chroma HTTP client, built once and shared by every thread (E1.15).
+
+    ``chromadb.HttpClient()`` opens sockets (and makes a tenant/database validation request)
+    on construction and has no close; building one per call leaked ~3 file descriptors per
+    index job until the worker hit ``[Errno 24] Too many open files``. The underlying
+    ``httpx.Client`` is thread-safe and reconnects after a Chroma restart. chromadb 1.5.9
+    exposes no timeout setting (its session is built with ``timeout=None``), so the
+    ``chroma_timeout_seconds`` bound is applied to that session here; a hung Chroma then
+    raises ``httpx.TimeoutException`` instead of blocking the caller forever.
+    """
+    global _chroma_client
+    client = _chroma_client
+    if client is not None:
+        return client
+    with _chroma_lock:
+        if _chroma_client is None:
+            import chromadb
+            import httpx
+
+            built = chromadb.HttpClient(host=settings.chroma_host, port=settings.chroma_port)
+            session = getattr(getattr(built, "_server", None), "_session", None)
+            if isinstance(session, httpx.Client):
+                session.timeout = httpx.Timeout(settings.chroma_timeout_seconds)
+            else:  # chromadb internals moved: do not run unbounded without saying so
+                logger.error("Chroma client has no httpx session; request timeout NOT applied")
+            _chroma_client = built
+        return _chroma_client
+
+
+def _reset_chroma_client() -> None:
+    """Drop the cached client (tests; a changed ``chroma_host``)."""
+    global _chroma_client
+    with _chroma_lock:
+        _chroma_client = None
+
+
+@contextmanager
+def _vector_store(action: str):
+    """Map any Chroma failure inside the block to a typed ``VectorStoreFailed``.
+
+    A timeout says so in the client-safe message (it ends up in ``ProjectFile.error_message``);
+    ``VectorStoreFailed`` is in the indexer's transient set, so the first attempt retries.
+    """
+    import httpx
+
+    try:
+        yield
+    except DomainError:
+        raise
+    except httpx.TimeoutException as exc:
+        raise VectorStoreFailed(
+            message=(
+                f"The vector index (Chroma) did not answer within "
+                f"{settings.chroma_timeout_seconds} s while trying to {action}."
+            ),
+            internal_detail=f"chroma timeout during {action}: {exc!r}",
+        ) from exc
+    except Exception as exc:
+        raise VectorStoreFailed(
+            message=f"The vector index (Chroma) failed while trying to {action}.",
+            internal_detail=f"chroma error during {action}: {exc!r}",
+        ) from exc
 
 
 def collection_name_for(project_id: str) -> str:
@@ -402,9 +465,8 @@ def _rrf_fuse(*rank_lists: list, k: int = 60) -> list:
 class RAGService:
     """Per-project ChromaDB collection management and hybrid cited retrieval.
 
-    A new ChromaDB HTTP client is created on every call (``_client()`` →
-    ``_get_chroma_client()``); there is no persistent connection held by
-    this object.
+    Every call goes through the one process-wide Chroma client
+    (``_client()`` → ``_get_chroma_client()``); this object holds no connection itself.
     """
 
     def _client(self):
@@ -422,11 +484,11 @@ class RAGService:
         ``ADAPTA_EMBEDDING_MODEL`` drift.
         """
         name = collection_name_for(project_id)
-        client = self._client()
-        client.get_or_create_collection(
-            name=name,
-            metadata={"hnsw:space": "cosine", "embedding_model": settings.embedding_model},
-        )
+        with _vector_store("create the project collection"):
+            self._client().get_or_create_collection(
+                name=name,
+                metadata={"hnsw:space": "cosine", "embedding_model": settings.embedding_model},
+            )
         return name
 
     def delete_collection(self, project_id: str) -> None:
@@ -436,9 +498,8 @@ class RAGService:
         must not block the project row from being removed from Postgres.
         """
         name = collection_name_for(project_id)
-        client = self._client()
         try:
-            client.delete_collection(name)
+            self._client().delete_collection(name)
         except Exception:
             pass
 
@@ -463,18 +524,16 @@ class RAGService:
         embeddings = emb_service.embed(texts)
 
         name = collection_name_for(project_id)
-        client = self._client()
-        collection = client.get_or_create_collection(
-            name=name,
-            metadata={"hnsw:space": "cosine", "embedding_model": settings.embedding_model},
-        )
-
         ids = [f"{file_id}_{c.index}" for c in chunks]
         metadatas = [
             {"source": c.source, "chunk_index": c.index, "file_id": file_id} for c in chunks
         ]
-
-        collection.upsert(ids=ids, documents=texts, embeddings=embeddings, metadatas=metadatas)
+        with _vector_store("store the file's vectors"):
+            collection = self._client().get_or_create_collection(
+                name=name,
+                metadata={"hnsw:space": "cosine", "embedding_model": settings.embedding_model},
+            )
+            collection.upsert(ids=ids, documents=texts, embeddings=embeddings, metadatas=metadatas)
         return len(chunks)
 
     def delete_file_chunks(self, project_id: str, file_id: str) -> None:
@@ -486,9 +545,8 @@ class RAGService:
         explicit IDs rather than accepting a ``where`` filter directly.
         """
         name = collection_name_for(project_id)
-        client = self._client()
         try:
-            collection = client.get_collection(name)
+            collection = self._client().get_collection(name)
             results = collection.get(where={"file_id": file_id})
             if results["ids"]:
                 collection.delete(ids=results["ids"])

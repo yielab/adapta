@@ -18,7 +18,7 @@ from typing import Awaitable, Callable
 
 from adapta.config import settings
 from adapta.core.logging_config import configure_logging
-from adapta.domain.errors import DomainError, UnknownJobKind
+from adapta.domain.errors import DomainError, Timeout, UnknownJobKind
 from adapta.services.jobs import get_job_queue
 
 configure_logging()
@@ -37,22 +37,74 @@ async def _adapter_job(meta: dict) -> None:
     await queue.update_status(meta["job_id"], status="succeeded", progress=1.0)
 
 
+async def _index_attempt(file_id: str, *, final: bool) -> bool:
+    """One deadline-bounded attempt of :func:`index_file_by_id` (E1.15).
+
+    Returns the same "retry wanted" flag. A blown deadline (a hung Chroma, a stuck parser)
+    is a transient failure on the first attempt and raises a typed :class:`Timeout`
+    on the final one, after the file has been marked ``failed``.
+    """
+    from adapta.api.v1.files import index_file_by_id
+
+    deadline = settings.index_job_timeout_seconds
+    try:
+        return await asyncio.wait_for(index_file_by_id(file_id, final=final), timeout=deadline)
+    except asyncio.TimeoutError as exc:
+        logger.error(
+            "Index job for %s exceeded its %s s deadline (final attempt: %s).", file_id, deadline, final
+        )
+        if not final:
+            return True
+        message = (
+            f"Indexing timed out after {deadline} s - the vector index or the document parser "
+            "stopped answering. Check the stack with GET /health/deep, then upload the file again."
+        )
+        await _fail_file(file_id, message)
+        raise Timeout(
+            message=message, internal_detail=f"index deadline {deadline}s, file {file_id}"
+        ) from exc
+
+
+async def _fail_file(file_id: str, message: str) -> None:
+    """Mark a file ``failed`` after the deadline cancelled its attempt; drop any stray vectors."""
+    from sqlalchemy import select
+
+    from adapta.db.models import FileStatus, ProjectFile
+    from adapta.db.session import AsyncSessionLocal
+    from adapta.services.rag import get_rag_service
+
+    async with AsyncSessionLocal() as db:
+        pfile = (
+            await db.execute(select(ProjectFile).where(ProjectFile.id == file_id))
+        ).scalar_one_or_none()
+        if pfile is None or pfile.status not in (FileStatus.pending, FileStatus.processing):
+            return
+        project_id = pfile.project_id
+        pfile.status = FileStatus.failed
+        pfile.error_message = message
+        await db.commit()
+    try:  # the abandoned attempt may still have upserted; Chroma may still be hung -> bounded
+        await asyncio.to_thread(get_rag_service().delete_file_chunks, project_id, file_id)
+    except Exception:  # noqa: BLE001
+        logger.warning("Could not clean up vectors of timed-out file %s", file_id)
+
+
 async def _run_index_job(meta: dict) -> None:
     """``index`` job (E3.7): parse → chunk → embed → store one uploaded file.
 
     Payload ``{"id": file_id}`` (the job id is also the file id). The body is
     ``files.index_file_by_id`` → ``_index_file``; the file row carries the outcome
     (``indexed``/``failed``), so the job itself ends ``succeeded`` once the file is
-    terminal. One automatic retry on a transient failure.
+    terminal. One automatic retry on a transient failure, and each attempt is bounded by
+    ``index_job_timeout_seconds`` (E1.15): two timeouts end the file ``failed`` and the job
+    ``failed`` with a clear message, and the worker moves on to the next job.
     """
-    from adapta.api.v1.files import index_file_by_id
-
     file_id = (meta.get("payload") or {}).get("id") or meta["job_id"]
     queue = get_job_queue()
     await queue.update_status(meta["job_id"], status="running")
-    if await index_file_by_id(file_id, final=False):
+    if await _index_attempt(file_id, final=False):
         logger.warning("Index job for %s hit a transient failure — retrying once.", file_id)
-        await index_file_by_id(file_id, final=True)
+        await _index_attempt(file_id, final=True)
     await queue.update_status(meta["job_id"], status="succeeded", progress=1.0)
 
 

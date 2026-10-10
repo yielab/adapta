@@ -10,6 +10,8 @@ from typing import Dict, List, Optional
 
 import psutil
 
+from adapta.config import settings
+
 logger = logging.getLogger(__name__)
 
 
@@ -209,16 +211,40 @@ class HealthMonitor:
             )
 
     async def check_chroma(self) -> HealthCheck:
-        start = time.time()
+        """Heartbeat Chroma off the event loop; report the round-trip latency (E1.15).
+
+        Bounded by ``rag_timeout_seconds`` so a hung Chroma shows as ``unhealthy`` here
+        rather than stalling the whole deep check.
+        """
+        start = time.perf_counter()
+
+        def _elapsed_ms() -> float:
+            return (time.perf_counter() - start) * 1000
+
         try:
             from adapta.services.rag import _get_chroma_client
 
-            _get_chroma_client().heartbeat()
+            await asyncio.wait_for(
+                asyncio.to_thread(lambda: _get_chroma_client().heartbeat()),
+                timeout=settings.rag_timeout_seconds,
+            )
+            ms = _elapsed_ms()
+            slow = ms >= settings.chroma_slow_ms
             return HealthCheck(
                 name="chroma",
-                status=HealthStatus.HEALTHY,
-                message="Chroma reachable",
-                duration_ms=(time.time() - start) * 1000,
+                status=HealthStatus.DEGRADED if slow else HealthStatus.HEALTHY,
+                message=f"Chroma reachable ({ms:.0f} ms)" + (" - slow" if slow else ""),
+                details={"latency_ms": round(ms, 1)},
+                duration_ms=ms,
+            )
+        except asyncio.TimeoutError:
+            logger.error("Chroma check timed out after %ss", settings.rag_timeout_seconds)
+            return HealthCheck(
+                name="chroma",
+                status=HealthStatus.UNHEALTHY,
+                message=f"Chroma did not answer within {settings.rag_timeout_seconds} s",
+                details={"timeout_s": settings.rag_timeout_seconds},
+                duration_ms=_elapsed_ms(),
             )
         except Exception as exc:
             logger.error("Chroma check failed: %s", exc)
@@ -226,7 +252,7 @@ class HealthMonitor:
                 name="chroma",
                 status=HealthStatus.UNHEALTHY,
                 message="Chroma unreachable",
-                duration_ms=(time.time() - start) * 1000,
+                duration_ms=_elapsed_ms(),
             )
 
     async def run_all_checks(self) -> SystemHealth:

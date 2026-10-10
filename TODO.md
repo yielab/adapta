@@ -111,7 +111,7 @@ classes are defined in [`.claude/context/gates.md`](.claude/context/gates.md) ("
 | Block | Wave | Tier | Gate class | Depends on | Serialize with | Status |
 |---|---|---|---|---|---|---|
 | E1.14 | 0 | haiku | offline | none | E3.2/E3.5 (`chat.py`) | done 2026-10-08 |
-| E1.15 | 3 | sonnet | live | none | E3.5 (`rag.py`), E5.1 (`rag.py`, `worker/main.py`) | in progress (worker-e1.15) |
+| E1.15 | 3 | sonnet | live | none | E3.5 (`rag.py`), E5.1 (`rag.py`, `worker/main.py`) | ready-for-live (e1.15) |
 | E1.10 | 0 | sonnet | rebuild (app image only) | none | E3.3b, E4.1 | done 2026-10-09 |
 | E1.11 | 0 | sonnet | live | E1.10 | any in-flight `specs/openapi.yaml` edit | done 2026-10-09 |
 | E2.1 | 1 | sonnet | live | none | E4.1, E4.9 (`core/backends/`) | done 2026-10-10 |
