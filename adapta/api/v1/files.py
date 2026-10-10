@@ -6,6 +6,7 @@ time (the served endpoint composes the adapter with retrieval — facts from the
 documents, behavior from the fine-tune)."""
 
 import asyncio
+import hashlib
 import logging
 from pathlib import Path
 from typing import List, Optional
@@ -26,7 +27,6 @@ from adapta.services.auth import get_current_user, require_team_member, require_
 from adapta.services.documents import parse_and_chunk
 from adapta.services.embeddings import get_embedding_service
 from adapta.services.rag import (
-    all_chunks_known,
     collection_name_for,
     get_rag_service,
     persist_chunks,
@@ -56,6 +56,14 @@ def _file_resp(f: ProjectFile) -> FileResponse:
         size_bytes=f.size_bytes,
         uploaded_at=f.uploaded_at.isoformat(),
     )
+
+
+def _sha256_file(path: Path) -> str:
+    h = hashlib.sha256()
+    with path.open("rb") as f:
+        for block in iter(lambda: f.read(1 << 20), b""):
+            h.update(block)
+    return h.hexdigest()
 
 
 async def _get_project(db: AsyncSession, project_id: str) -> Project:
@@ -162,8 +170,8 @@ async def _index_file(
             # hits a missing collection (the row above can precede the first upsert).
             await asyncio.to_thread(get_rag_service().ensure_collection, project_id)
 
-            # `chunks` is pre-parsed by the upload handler (for the duplicate check);
-            # parse here only when that attempt failed so the error lands on the row.
+            # `chunks` is a test seam; the upload handler never parses (E3.3b), so
+            # parsing happens here and a failure lands on the file row.
             parsed: list = chunks if chunks is not None else []
             if chunks is None:
                 # Resolve the org's chunking overrides (E1.6) before the thread —
@@ -269,24 +277,22 @@ async def upload_file(
     pfile.size_bytes = written
     pfile.storage_path = str(dest_path)
 
-    # Parse now (not in the background task) so an upload whose every chunk already
-    # exists in the project is rejected synchronously with 409. A parse failure is
-    # not raised here: the background task re-parses and records it on the file row.
-    chunks = None
-    try:
-        chunk_size = await resolve_setting(db, project.team_id, "chunk_size")
-        chunk_overlap = await resolve_setting(db, project.team_id, "chunk_overlap")
-        chunks = await asyncio.to_thread(
-            parse_and_chunk,
-            dest_path,
-            content_type,
-            filename,
-            chunk_size=chunk_size,
-            chunk_overlap=chunk_overlap,
+    # Duplicate check without parsing: parsing (Docling/OCR) can take minutes and must not
+    # run in the request. An identical file (raw-bytes sha256) already in the project, and
+    # not failed, is rejected synchronously with 409. Parsing happens in `_index_file`.
+    digest = await asyncio.to_thread(_sha256_file, dest_path)
+    pfile.content_sha256 = digest
+    dup = await db.scalar(
+        select(ProjectFile.id)
+        .where(
+            ProjectFile.project_id == project_id,
+            ProjectFile.content_sha256 == digest,
+            ProjectFile.id != pfile.id,
+            ProjectFile.status != FileStatus.failed,
         )
-    except Exception:
-        logger.info("Upload pre-parse failed for %s; deferring to the indexing task", filename)
-    if chunks and await all_chunks_known(db, project_id, chunks):
+        .limit(1)
+    )
+    if dup is not None:
         dest_path.unlink(missing_ok=True)
         await db.delete(pfile)
         await db.commit()
@@ -303,7 +309,6 @@ async def upload_file(
         filename,
         project_id,
         project.team_id,
-        chunks,
     )
 
     return {"id": file_id, "filename": filename, "status": "pending"}

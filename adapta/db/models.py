@@ -295,9 +295,14 @@ class ProjectFile(Base):
     )
     num_chunks: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # sha256 of the raw uploaded bytes — the synchronous duplicate check (E3.3b). NULL for
+    # files uploaded before it existed.
+    content_sha256: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     uploaded_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+
+    __table_args__ = (Index("ix_project_files_project_sha", "project_id", "content_sha256"),)
 
     project: Mapped[Project] = relationship("Project", back_populates="files")
 
