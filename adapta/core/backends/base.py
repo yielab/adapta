@@ -18,6 +18,11 @@ class BackendHandle(ABC):
     asyncio.to_thread() by the context-fit logic — they must not block on
     async I/O."""
 
+    # (prompt_tokens, completion_tokens) the engine itself reported for the last
+    # generation on this handle; None when the backend has no exact figure (llama-cpp
+    # streaming counts tokens as they are yielded). chat.py prefers it when set.
+    usage: Optional[tuple[int, int]] = None
+
     @abstractmethod
     def context_size(self) -> int:
         """The model's context window (tokens)."""

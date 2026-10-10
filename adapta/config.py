@@ -77,6 +77,19 @@ class Settings(BaseSettings):
     # to spare (a 3B Q4 model is ~2 GB resident).
     max_loaded_models: int = 2
 
+    # Serving backend (E2.1). "llamacpp" serves everything in-process. "ollama" sends
+    # adapter-less text requests for models in `ollama_model_map` to an Ollama host;
+    # adapters, vision and unmapped models stay on llama-cpp. The map is catalog name ->
+    # Ollama tag (Apache-licensed entries only); override with a JSON object in
+    # ADAPTA_OLLAMA_MODEL_MAP.
+    serving_backend: Literal["llamacpp", "ollama"] = "llamacpp"
+    ollama_base_url: str = "http://ollama:11434"
+    ollama_model_map: dict[str, str] = {
+        "qwen2.5-0.5b-instruct": "qwen2.5:0.5b-instruct",
+        "qwen2.5-1.5b-instruct": "qwen2.5:1.5b-instruct",
+        "qwen2.5-7b-instruct": "qwen2.5:7b-instruct",
+    }
+
     # RAG / embeddings
     # Multilingual by default (E3.6, user decision 2026-10-10): on the bilingual golden set it
     # scores recall@5 0.978 vs 0.844 for the English-only all-MiniLM-L6-v2. Changing it on a

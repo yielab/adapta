@@ -49,6 +49,9 @@ services:
       # Default 2; drop to 1 on low-RAM hosts that serve several large fine-tunes (each
       # 3B GGUF is ~2 GB in CPU RAM, so several at once can exhaust the box).
       - ADAPTA_MAX_LOADED_MODELS=${ADAPTA_MAX_LOADED_MODELS:-2}
+      # "ollama" routes adapter-less text requests to the optional `ollama` profile
+      # service (OPERATIONS §9); adapters and vision stay on llama-cpp.
+      - ADAPTA_SERVING_BACKEND=${ADAPTA_SERVING_BACKEND:-llamacpp}
     deploy:
       resources:
         limits:
@@ -215,6 +218,29 @@ services:
       - adapta-network
     logging: *default-logging
 
+  # ──────────────────────────────────────────────
+  # Ollama (optional, E2.1) — `docker compose --profile ollama up -d`.
+  # CPU by default (an operator with a GPU adds `devices` in their own override).
+  # Models live in the ollama-data volume; pull them once with
+  # `docker compose exec ollama ollama pull <tag>` (OPERATIONS §9). To route
+  # adapter-less text requests here, set ADAPTA_SERVING_BACKEND=ollama on `app`.
+  # ──────────────────────────────────────────────
+  ollama:
+    image: ollama/ollama:0.12.6
+    container_name: adapta-ollama
+    profiles: [ollama]
+    volumes:
+      - ollama-data:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 10s
+    networks:
+      - adapta-network
+    logging: *default-logging
+
 networks:
   adapta-network:
     driver: bridge
@@ -225,3 +251,4 @@ volumes:
   chroma-data:
   prometheus-data:
   grafana-data:
+  ollama-data:

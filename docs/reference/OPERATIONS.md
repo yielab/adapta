@@ -399,5 +399,56 @@ builder stage) served same-origin via FastAPI `StaticFiles`.
 
 ---
 
+## 9. Serve RAG through Ollama (optional)
+
+For deployments that already run (or prefer) an Ollama host, base-model and RAG-only
+endpoints can be answered by Ollama instead of the in-process llama-cpp. It is
+**off by default** and changes nothing about the API, keys, citations or usage metering.
+
+**Routing rule.** With `ADAPTA_SERVING_BACKEND=ollama`, a chat request goes to Ollama
+only when it is *text*, the endpoint has **no adapter** (`endpoint.adapter` is empty) and
+the base model is a key of `ADAPTA_OLLAMA_MODEL_MAP`. Everything else — endpoints
+serving an adapter, image requests, the eval gate, models without a mapping — stays on
+llama-cpp. A mapped model that is not pulled on the host answers a typed `404
+model_not_found` (never a silent fallback).
+
+**Default map** (`ollama_model_map`, catalog name -> Ollama tag; Apache-licensed entries only):
+
+| Catalog name | Ollama tag | Download (Q4_K_M) |
+|---|---|---|
+| `qwen2.5-0.5b-instruct` | `qwen2.5:0.5b-instruct` | ~0.4 GB |
+| `qwen2.5-1.5b-instruct` (default model) | `qwen2.5:1.5b-instruct` | ~1.0 GB |
+| `qwen2.5-7b-instruct` | `qwen2.5:7b-instruct` | ~4.7 GB |
+
+Override with a JSON object: `ADAPTA_OLLAMA_MODEL_MAP='{"qwen2.5-1.5b-instruct":"qwen2.5:1.5b-instruct"}'`.
+Host: `ADAPTA_OLLAMA_BASE_URL` (default `http://ollama:11434`, the compose service).
+
+**Run it** (the downloads are yours to start: the `ollama/ollama` image is roughly
+1.5-2 GB, plus the model tag above):
+
+```bash
+docker compose --profile ollama up -d ollama           # CPU; models persist in the ollama-data volume
+docker compose exec ollama ollama pull qwen2.5:1.5b-instruct
+ADAPTA_SERVING_BACKEND=ollama docker compose up -d app   # or set it in .env
+```
+
+A GPU host adds `devices`/`runtime` to the `ollama` service in its own compose override.
+To use an Ollama already running on the host instead of the profile service, set
+`ADAPTA_OLLAMA_BASE_URL=http://host.docker.internal:11434`.
+
+**Behaviour to know.**
+- Token counts in `usage` (streaming and not) are Ollama's own `prompt_eval_count` /
+  `eval_count`. The context-fit guard runs *before* generation and Ollama has no
+  tokenizer endpoint, so it uses a pessimistic 3-chars-per-token estimate: it may trim
+  one retrieved chunk earlier than llama-cpp would. Context is `ADAPTA_MAX_CONTEXT_LENGTH`
+  (sent as `num_ctx`).
+- `response_format` (JSON mode) is forwarded as Ollama's native `format`
+  (`"json"` or the schema), not a llama.cpp grammar.
+- The prompt template is Ollama's own for the tag, not Adapta's `chat_template`.
+
+**Roll back:** unset `ADAPTA_SERVING_BACKEND` (or set `llamacpp`) and recreate `app`.
+
+---
+
 See also: [README.md](https://github.com/yielab/adapta/blob/main/README.md) (run/operate), [PRODUCT_DEFINITION.md](PRODUCT_DEFINITION.md)
 (scope), [SDD_WORKFLOW.md](SDD_WORKFLOW.md) (the three contracts).

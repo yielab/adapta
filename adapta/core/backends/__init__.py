@@ -23,10 +23,35 @@ def _llamacpp() -> "ServingBackend":
     return _llamacpp_instance
 
 
+_ollama_instance: Optional["ServingBackend"] = None
+
+
+def _ollama() -> "ServingBackend":
+    global _ollama_instance
+    if _ollama_instance is None:
+        from adapta.core.backends.ollama_backend import OllamaBackend
+
+        _ollama_instance = OllamaBackend()
+    return _ollama_instance
+
+
 def get_backend(
     model_name: str, adapter_path: Optional[str] = None
 ) -> "ServingBackend":
-    """Return the serving backend for a text-path request (llama-cpp)."""
+    """Return the serving backend for a text-path request.
+
+    Routing rule (E2.1): with ``ADAPTA_SERVING_BACKEND=ollama``, an adapter-less
+    request for a model in ``ollama_model_map`` goes to Ollama. Anything with an
+    adapter (``endpoint.adapter`` -> ``adapter_path``), vision (never routed through
+    here) and models without a mapping stay on llama-cpp."""
+    from adapta.config import settings
+
+    if (
+        settings.serving_backend == "ollama"
+        and not adapter_path
+        and model_name in settings.ollama_model_map
+    ):
+        return _ollama()
     return _llamacpp()
 
 

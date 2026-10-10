@@ -113,7 +113,7 @@ classes are defined in [`.claude/context/gates.md`](.claude/context/gates.md) ("
 | E1.14 | 0 | haiku | offline | none | E3.2/E3.5 (`chat.py`) | done 2026-10-08 |
 | E1.10 | 0 | sonnet | rebuild (app image only) | none | E3.3b, E4.1 | done 2026-10-09 |
 | E1.11 | 0 | sonnet | live | E1.10 | any in-flight `specs/openapi.yaml` edit | done 2026-10-09 |
-| E2.1 | 1 | sonnet | live | none | E4.1, E4.9 (`core/backends/`) | in progress (worker-e2.1) |
+| E2.1 | 1 | sonnet | live | none | E4.1, E4.9 (`core/backends/`) | ready-for-live (e2.1) |
 | E3.1 | 1 | sonnet | live | none | E3.7, E3.2 | done 2026-10-09 |
 | E3.3a | 1 | sonnet + human decision | offline | none | — | done 2026-10-10 |
 | E3.8 | 1 | sonnet | live | none — must land before E3.2 | — | done 2026-10-09 |
@@ -177,6 +177,18 @@ E1.1–E1.9 shipped 2026-09-17 → [CHANGELOG.md](CHANGELOG.md). E1.14 closed 20
 - **Acceptance.** With the profile on, a RAG project's endpoint answers through Ollama with exact token
   counts and citations; llama-cpp still serves adapters and vision; `make ci` green.
 - **Close.** OPERATIONS §9 sibling section; README "Using the API" one line; Status snapshot.
+- **Done (offline, awaiting live).** `OllamaBackend` (`core/backends/ollama_backend.py`) on Ollama's native
+  `/api/chat` (the only route that takes `format` and returns `prompt_eval_count`/`eval_count`); `get_backend`
+  routes by `ADAPTA_SERVING_BACKEND=ollama` + no adapter + model in `ollama_model_map`; `ollama` compose
+  profile + `ollama-data` volume; OPERATIONS §9 runbook. `BackendHandle.usage` carries the engine's exact
+  counts and `chat_stream` prefers it (2 lines in `chat.py`). Offline: `make test` 302 passed, `make lint`,
+  `make check-leaks` green. Not run: the live gate (`--profile ollama` + one RAG chat); README line and
+  Status snapshot are left for the lead.
+- **Handoff.** `ollama_model_map` keys: `qwen2.5-0.5b-instruct`, `qwen2.5-1.5b-instruct`,
+  `qwen2.5-7b-instruct` (tags `qwen2.5:{0.5b,1.5b,7b}-instruct`). Routing rule: Ollama only if
+  `serving_backend == "ollama"` AND no `adapter_path` (= no `endpoint.adapter`) AND model in the map; vision
+  (`_chat_vision`), adapters, the eval gate and unmapped models stay on llama-cpp. E2.2 reads the tags from
+  `settings.ollama_model_map`.
 
 ### E2.2 `[BE]` Export a gated adapter as an Ollama Modelfile bundle (P2)
 - [ ] **Context.** Ollama imports LoRA adapters with a `Modelfile` (`FROM <base>` + `ADAPTER <path>`).

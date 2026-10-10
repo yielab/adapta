@@ -556,6 +556,9 @@ async def chat_stream(
             }
             yield f"data: {json.dumps(chunk)}\n\n"
 
+        engine_usage = getattr(handle, "usage", None)
+        if engine_usage:  # engine-reported exact counts (Ollama) beat our own
+            prompt_tokens, completion_tokens = engine_usage
         finish = {
             "id": chunk_id,
             "object": "chat.completion.chunk",
