@@ -476,7 +476,7 @@ paths:
               properties:
                 file: {type: string, format: binary}
                 name: {type: string, maxLength: 128, description: Display name; defaults to the file name}
-                eval_dataset_id: {type: string}
+                eval_dataset_id: {type: string, minLength: 1}
               required: [file, eval_dataset_id]
       responses:
         '202': {description: Accepted (stored; status uploaded), content: {application/json: {schema: {$ref: '#/components/schemas/AdapterResponse'}}}}
