@@ -25,7 +25,7 @@ supplies the facts, the adapter makes the answer come out in *your* voice and
 | "Our internal wiki updates weekly and answers must cite the source" | **Knowledge** | RAG citations point at the exact passage; updates are instant. |
 | "Support replies must always follow our 5-part template and sound like us" | **Adapter** | A format/voice is a *behavior* — it lives in weights, not in any document. |
 | "Classify incoming tickets into our 12 internal categories" | **Adapter** | A narrow skill with your private taxonomy; small local models learn it well from examples. |
-| "Always answer in strict JSON our backend parses" | **Adapter** | Prompting drifts; an adapter makes the structure near-deterministic. |
+| "Always answer in strict JSON our backend parses" | **JSON mode first**, adapter if the *content* is still wrong | `response_format` constrains every endpoint's output to valid JSON (or your JSON Schema) at decode time — no adapter needed for the *shape*. Import an adapter only if the field values themselves need your conventions. |
 | "A support assistant that answers **from our manuals**, **in our voice and template**" | **Both** | Facts from retrieval (cited), form from the adapter. |
 
 !!! warning "What an adapter is *not* for"

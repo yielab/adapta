@@ -371,6 +371,45 @@ bind mount, so uvicorn reloaded on every worker edit — reload now watches `/ap
   (2) The fixture eval set does not discriminate — the 0.5B base already scores 1.000 on its 7 classify rows, so the
   pass proves the floor rule, not an improvement; E4.4 needs a ≥ 20-row eval set where the base scores clearly lower.
 
+### E4.9 `[BE]` JSON mode on the endpoint — try it before importing an extraction adapter (P2)
+- [x] **Context.** Extraction is the most common adapter task, yet llama.cpp's grammar-constrained decoding
+  (`response_format` `json_object` / `json_schema`) is not exposed. The console should say "try JSON mode
+  first".
+- **Depends.** E1.11. **Unblocks.** none.
+- **Agent.** sonnet · gate class **live** (`test_inference_slow` needs the GGUF under `data/`) · serialize
+  with: E3.5/E5.3 (`chat.py`), E2.1 (`core/backends/`), E4.6 (console view) · **Handoff.** must name the
+  kwarg forwarded and which backends honour it.
+- **Scope.** Pass-through of `response_format` to `create_chat_completion` (a call argument, not an engine
+  change); Ollama (E2.1) forwards the same field. Out: validating output beyond the grammar.
+- **Steps.** (1) Spec `ChatCompletionRequest.response_format` (OpenAI shape). (2) `inference.py`
+  `generate_chat`: forward it in kwargs (wrap only). (3) Backends forward as-is. (4) Playground "JSON"
+  toggle; the console's extraction task copy: "Try JSON mode on the base model first — import an adapter
+  if the fields are still wrong". (5) Tests: request model accepts it; `test_inference_slow.py` asserts
+  parseable JSON.
+- **Files.** `specs/openapi.yaml` (`ChatCompletionRequest`), `adapta/services/chat.py`,
+  `adapta/core/inference.py:183-230` (kwargs only), `adapta/core/backends/*.py`,
+  `adapta/console/src/views/Playground.svelte`, the console adapter view, `tests/test_inference_slow.py`.
+- **Contract impact.** API.
+- **Gate.** `make validate-spec` → `make generate` → `make check-models` → `make test` →
+  `tests/test_inference_slow.py` (local GGUF).
+- **Acceptance.** `response_format: {type: json_object}` yields parseable JSON on the base model; the
+  console points extraction users to it first.
+- **Close.** consuming-the-api; knowledge-and-behavior "when to use which" extraction row; Status snapshot.
+- **Done.** 2026-10-10. `ChatCompletionRequest.response_format` (`text` | `json_object` | `json_schema`, OpenAI shape)
+  in the spec; router → `chat()`/`chat_stream()` → `InferenceRequest`; the llama-cpp backend compiles it to a
+  `LlamaGrammar` (`grammar_for`, bad schema → typed 422). Playground has a JSON-mode toggle; the user guide says "JSON
+  mode first, adapter for content". Live on `develop`: `test_json_mode_yields_parseable_json` and
+  `test_json_schema_mode_matches_schema_in_stream` **passed** on the 0.5B GGUF · `make ci` ✓ · `test-contracts` 32/32,
+  1873 cases, 0 failures · `svelte-check`: only the 2 pre-existing `Playground.svelte:34` errors. Docs:
+  consuming-the-api "JSON mode", knowledge-and-behavior decision row. Out of Files: `console/src/lib/api.ts` (sends the
+  field), `tests/test_json_mode.py`.
+- **Handoff.** Kwargs: `grammar=` on the text path (`Llama.__call__`), `response_format=` on the vision path
+  (`create_chat_completion`). `inference.py` change is additive only (`InferenceRequest.response_format`, `.grammar`;
+  one kwarg in each existing call). Honoured by llama-cpp — the only backend after E4.1; **E2.1 (Ollama) must forward
+  `request.response_format` as Ollama's `format`**, not `grammar`.
+- **Follow-up.** `json_schema` through the vision chat handler and the full space of invalid schemas → 422 are not
+  covered by a test.
+
 ---
 
 ## 2026-10-08 — §E wave 0: the gates every other block is verified by

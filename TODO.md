@@ -124,7 +124,7 @@ classes are defined in [`.claude/context/gates.md`](.claude/context/gates.md) ("
 | E4.2 | 2 | sonnet | rebuild + live | E4.1 | E4.3 (spec, migrations), E4.5, E2.2 | in progress (worker-e4.2) |
 | E4.3 | 2 | sonnet | live | E4.1 | E4.2 (spec, migrations) | done 2026-10-10 |
 | E4.8 | 2 | sonnet | live | E3.8, E4.1 | E4.6, E5.1 | open |
-| E4.9 | 2 | sonnet | live | E1.11 | E2.1, E3.5/E5.3, E4.6 | ready-for-live (e4.9) |
+| E4.9 | 2 | sonnet | live | E1.11 | E2.1, E3.5/E5.3, E4.6 | done 2026-10-10 |
 | E3.4 | 3 | sonnet | live | E3.1, E3.3b, E1.11 | E3.5 (spec, `Playground.svelte`), E3.3b | open |
 | E3.5 | 3 | sonnet | live | E3.2, E1.11 | E3.4 (spec, `Playground.svelte`), E4.9 and E5.3 | open |
 | E3.6 | 3 | sonnet + human decision | live | E3.1, E3.2, E3.8 | E3.2 | done 2026-10-10 |
@@ -153,6 +153,8 @@ E1.1–E1.9 shipped 2026-09-17 → [CHANGELOG.md](CHANGELOG.md). E1.14 closed 20
   acquisition channel. RAG-only and base endpoints don't need an in-process llama-cpp when an Ollama
   host exists.
 - **Depends.** none. **Unblocks.** E2.2.
+- **Re-anchored 2026-10-10 (E4.9 Handoff).** `InferenceRequest.response_format` exists (OpenAI shape) — the Ollama
+  backend must forward it as Ollama's native `format` (`"json"` or the schema), not a llama.cpp grammar.
 - **Agent.** sonnet · gate class **live (`--profile ollama`)** · serialize with: E4.1, E4.9
   (`core/backends/*.py`) · **Handoff.** must name `ollama_model_map` keys and the routing rule.
 - **Scope.** Read-only client for adapter-less text requests via Ollama's OpenAI-compatible
@@ -560,41 +562,6 @@ E1.1–E1.9 shipped 2026-09-17 → [CHANGELOG.md](CHANGELOG.md). E1.14 closed 20
 - **Acceptance.** `rag_eval` output loads into the E3.8 harness unchanged; a `behavior` set uploads as an
   E4.3 eval set and downloads as JSONL; the console default is `rag_eval`.
 - **Close.** knowledge-and-behavior, operator-console; Status snapshot.
-
-### E4.9 `[BE]` JSON mode on the endpoint — try it before importing an extraction adapter (P2)
-- [x] **Context.** Extraction is the most common adapter task, yet llama.cpp's grammar-constrained decoding
-  (`response_format` `json_object` / `json_schema`) is not exposed. The console should say "try JSON mode
-  first".
-- **Depends.** E1.11. **Unblocks.** none.
-- **Agent.** sonnet · gate class **live** (`test_inference_slow` needs the GGUF under `data/`) · serialize
-  with: E3.5/E5.3 (`chat.py`), E2.1 (`core/backends/`), E4.6 (console view) · **Handoff.** must name the
-  kwarg forwarded and which backends honour it.
-- **Scope.** Pass-through of `response_format` to `create_chat_completion` (a call argument, not an engine
-  change); Ollama (E2.1) forwards the same field. Out: validating output beyond the grammar.
-- **Steps.** (1) Spec `ChatCompletionRequest.response_format` (OpenAI shape). (2) `inference.py`
-  `generate_chat`: forward it in kwargs (wrap only). (3) Backends forward as-is. (4) Playground "JSON"
-  toggle; the console's extraction task copy: "Try JSON mode on the base model first — import an adapter
-  if the fields are still wrong". (5) Tests: request model accepts it; `test_inference_slow.py` asserts
-  parseable JSON.
-- **Files.** `specs/openapi.yaml` (`ChatCompletionRequest`), `adapta/services/chat.py`,
-  `adapta/core/inference.py:183-230` (kwargs only), `adapta/core/backends/*.py`,
-  `adapta/console/src/views/Playground.svelte`, the console adapter view, `tests/test_inference_slow.py`.
-- **Contract impact.** API.
-- **Gate.** `make validate-spec` → `make generate` → `make check-models` → `make test` →
-  `tests/test_inference_slow.py` (local GGUF).
-- **Acceptance.** `response_format: {type: json_object}` yields parseable JSON on the base model; the
-  console points extraction users to it first.
-- **Done.** 2026-10-10 (branch `e4.9`; live gate pending). `ChatCompletionRequest.response_format` (`text` |
-  `json_object` | `json_schema`, OpenAI shape) in the spec; router -> `chat()`/`chat_stream()` -> `InferenceRequest`;
-  the llama-cpp backend compiles it to a `LlamaGrammar` (`grammar_for`) and the text path passes `grammar=` to
-  the existing `model(...)` call; the vision path forwards `response_format=` to `create_chat_completion`.
-  Playground "JSON mode" toggle + extraction copy in the fine-tune guide. Offline gates green; the slow tests
-  (`test_json_mode_yields_parseable_json`, `..._schema_mode_..._in_stream`) await the GGUF.
-- **Handoff.** kwargs forwarded: `grammar=` (text path, `inference.py` `generate`/`generate_stream` — one added
-  kwarg each, plus two `InferenceRequest` fields) and `response_format=` (`generate_chat`, vision). Honoured by
-  the llama-cpp backend only (the sole backend after E4.1); E2.1 (Ollama) must forward `request.response_format`
-  as its native `format`/`response_format` field instead of `grammar`. Invalid schemas -> typed 422.
-- **Close.** consuming-the-api; knowledge-and-behavior "when to use which" extraction row; Status snapshot.
 
 ### E5. Differentiation (weeks 10–13)
 

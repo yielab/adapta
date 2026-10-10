@@ -92,6 +92,23 @@ Rules (v1, all violations come back as typed 4xx errors, never a crash):
 - Sending an image to a *text* endpoint returns a clear `400` — create the
   project on a vision base instead.
 
+## JSON mode (`response_format`)
+
+Any endpoint can be forced to emit valid JSON, OpenAI-style. The output is constrained at
+decode time (a llama.cpp grammar), so it parses every time — no adapter needed for the shape:
+
+```python
+resp = client.chat.completions.create(
+    model="your-endpoint-slug",
+    messages=[{"role": "user", "content": "Extract name and total from: ACME invoice, $42.10"}],
+    response_format={"type": "json_object"},
+)
+```
+
+`{"type": "json_schema", "json_schema": {"name": "...", "schema": {...}}}` constrains the output to
+that schema; an invalid schema is a `422`. Works with streaming. `{"type": "text"}` (the default) is
+unconstrained.
+
 ## Streaming
 
 Set `"stream": true` (or `stream=True` in the SDK) to receive tokens as
