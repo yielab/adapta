@@ -244,7 +244,7 @@ bind mount, so uvicorn reloaded on every worker edit — reload now watches `/ap
   `torch_cuda_status`, `train_vram_gb` (82 files, −7.4k lines). Worker = the app image with an empty `HANDLERS` table;
   migration `0011_drop_training`; dataset upload `.jsonl` only, SFT-row validator in `services/datasets.py`; console
   loses train step, gate panel, VRAM column. Live gate on `develop`: app-image rebuild (pip download < 1 min, llama-cpp
-  compile; **image 2.22 GB, unchanged** — the app never carried CUDA) · stack up incl. the CPU worker (healthy) ·
+  compile; **image 2.22 GB, unchanged** — the app never carried CUDA) · stack up incl. the CPU worker (healthy — **correction 2026-10-10: the worker was still the stale pre-E4.1 `adapta-worker` image; compose built a second image and only `app` was rebuilt. Fixed in `cf4ab00`: both services run `adapta-app:latest`**) ·
   `migrate-test` 0011 round-trip ✓ · `make ci` ✓ · `test-contracts` **32/32 operations** (−3 `/jobs`), 1813 cases, 0
   failures · `console-build` ✓ · RAG e2e ✓ · acceptance grep: only `convert_peft_to_gguf` (kept for E4.4) and `ctrl`.
   Close docs (`28624a5`): CLAUDE.md, `.claude/` context + skills (no `gpu` gate class), OPERATIONS (VRAM/vLLM sections
@@ -571,6 +571,65 @@ bind mount, so uvicorn reloaded on every worker edit — reload now watches `/ap
   metadata unchanged. **Unblocks** E5.4 (and E3.5 can rely on the fields).
 - **Follow-up.** `section` is hydrated nowhere yet. Schemathesis "errored" cases rose 1 → 5 across runs without any
   app-side error — run once with `--report` to see what fails to generate/send.
+
+### E4.4 `[BE+INFRA]` Adapter job on the CPU worker: convert, probe, score, decide (P1)
+- [x] **Context.** `core/adapter_conversion.py` wraps llama.cpp's official `convert_lora_to_gguf.py`, but the
+  converter was vendored only into the deleted worker stage, and `--base-model-id` fetches the base config
+  from the Hub, which fails air-gapped. A wrong-shape adapter surfaces only when the endpoint loads it.
+- **Depends.** E4.2, E4.3. **Unblocks.** E4.5, E4.6, E2.2.
+- **Re-anchored 2026-10-10 (E4.3 Handoff).** Score with `await eval_gate.evaluate(base_model, gguf_lora_path, rows,
+  task)` and persist its dict as the adapter's `eval_metrics`; rows come from `datasets.storage_path` (SFT rows, `task`
+  on the dataset). Two acceptance items moved here from E4.3: the `garbage-control` fixture must **fail** once the
+  converter is vendored, and the fixture needs a ≥ 20-row eval set on which the base scores clearly below the adapter
+  (on the current 7 rows the 0.5B base already scores 1.000).
+- **Re-anchored 2026-10-10 (E4.2 Handoff).** Drive `Adapter.status` `uploaded → processing → passed | failed` (set
+  `failure_reason` on fail); a `peft` row's `peft_dir` is `adapters_dir/{id}/peft/`, and the job must write the converted
+  file and set `gguf_path` (chat refuses a bound adapter without it); a `gguf` row already has `gguf_path`. Enqueue
+  `{kind: "adapter", id}` from `POST /v1/projects/{id}/adapters` (`services/adapters.py`); rows from
+  `Adapter.eval_dataset_id` → `datasets.storage_path`; base from `Adapter.base_model` (catalog `architecture` available).
+- **Agent.** sonnet · gate class **rebuild + live** · serialize with: E3.7 (`worker/main.py`,
+  `services/jobs.py`, `services/maintenance.py`), E3.3b (`Dockerfile`) · **Handoff.** must name the handler,
+  where base configs live, seconds per stage for the fixture.
+- **Scope.** `uploaded → processing → passed | failed`, text adapters. Out: promotion (E4.5).
+- **Steps.** (1) `Dockerfile` `app` stage vendors the two converter scripts at the pinned llama.cpp tag
+  (torch CPU, `gguf`, `safetensors` are already in the image). (2) Pulling a catalog base also stores its
+  `config.json` under `models_dir/<gguf_subdir>/hf_config/`; the converter always runs with `--base <dir>`;
+  delete the `--base-model-id` and vision-staging branches. (3) Upload enqueues `{kind: "adapter", id}`;
+  the handler converts (PEFT), probe-loads base + LoRA through `model_manager` with a 1-token generation
+  (failure → `AdapterIncompatible`), runs E4.3's scorer for base and adapter, writes `eval_metrics` +
+  status. (4) The sweeper fails adapters left `processing` by a restart. (5) Opt-in
+  `tests/integration/test_adapter_import_e2e.py`: fixture zip → `passed` → endpoint → chat answers with the
+  trained label; control → `failed`, endpoint refused; same project with an indexed file → citations plus
+  the adapter's output shape.
+- **Files.** `Dockerfile` (`app` stage), `adapta/core/adapter_conversion.py`, `adapta/core/model_manager.py`
+  (wrap only), `adapta/worker/main.py`, `adapta/services/{adapters,jobs,maintenance}.py`,
+  `adapta/api/v1/adapters.py`, `adapta/domain/errors.py`, `tests/integration/test_adapter_import_e2e.py` (new).
+- **Contract impact.** None (statuses defined in E4.2).
+- **Gate.** `make up` → `make test` → `docker compose restart worker` →
+  `ADAPTA_RUN_ADAPTER_E2E=1 HF_HUB_OFFLINE=1 tests/integration/test_adapter_import_e2e.py`.
+- **Acceptance.** A PEFT upload reaches `passed` with no GPU and no Hub access; the control fails with
+  both scores in `eval_metrics`; killing the worker mid-job leaves no adapter `processing` after the sweep.
+- **Close.** OPERATIONS (import timing, air-gapped base configs, worker restarts); architecture.md
+  (adapter job); `gates.md` row (adapter import → this e2e); Status snapshot.
+- **Done.** 2026-10-10. Upload enqueues `{kind: "adapter"}`; the CPU worker converts a PEFT adapter with llama.cpp's
+  official converter (vendored in the `app` image at tag b5170, always `--base <models_dir>/<subdir>/hf_config`, no Hub),
+  probe-loads base + LoRA (1-token generation; failure → `AdapterIncompatible`), scores base and adapter with
+  `eval_gate.evaluate`, stores `eval_metrics` + `gguf_path`, and drives `uploaded → processing → passed | failed`; the
+  startup sweep fails adapters left `processing`. Live on `develop` (image promoted; the worker found running a stale
+  pre-E4.1 `adapta-worker` image — fixed in `cf4ab00`, one `adapta-app:latest` for both): **classify-pass 0.700 vs base
+  0.333 → `passed` (improvement)**, served, chat answers the bare label `billing`, and with an indexed document the same
+  endpoint cites; **garbage-control 0.333 vs 0.333 → `failed`**, endpoint refused (400). Stages: convert ~2–4 s, probe
+  0.4 s, score 4.0 s (30 rows, ~0.09 s/row). `test_adapter_import_e2e` 2 passed · `test_eval_gate_cpu` 2 passed ·
+  `make ci` ✓. Eval sets: classify-pass and the control now share a 30-row support-ticket classify set.
+- **Handoff.** Handler `_adapter_job` = `HANDLERS["adapter"]` in `adapta/worker/main.py` → `services.adapters
+  .process_adapter(adapter_id)` (idempotent: a `passed`/`failed` row is skipped); job id = adapter id, queue
+  `adapta:job_queue`; Redis down at upload → row `failed`. Base configs: `<models_dir>/<CatalogEntry.gguf_subdir>/hf_config
+  /config.json` (`CatalogEntry.hf_config_dir()`) — placed by the operator, the only Hub touch. Converter at
+  `/opt/llamacpp` (`settings.lora_convert_dir`). Seconds per stage logged by the worker. **Unblocks** E4.5, E4.6, E2.2.
+- **Follow-up.** (1) **Gate weakness:** scored as `freeform` (token F1) the garbage control **passed** (0.383 vs 0.037)
+  — it reproduces template words F1 rewards. Freeform eval sets need a stricter metric or a minimum-delta rule before
+  they can be trusted; until then, prefer `classify`/`extract`. (2) The worker-kill → sweep check was not run. (3) The
+  sweep runs only at app startup and would fail a job genuinely in flight at that moment (same as file/dataset sweeps).
 
 ---
 

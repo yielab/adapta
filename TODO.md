@@ -128,7 +128,7 @@ classes are defined in [`.claude/context/gates.md`](.claude/context/gates.md) ("
 | E3.4 | 3 | sonnet | live | E3.1, E3.3b, E1.11 | E3.5 (spec, `Playground.svelte`), E3.3b | done 2026-10-10 |
 | E3.5 | 3 | sonnet | live | E3.2, E1.11 | E3.4 (spec, `Playground.svelte`), E4.9 and E5.3 | open |
 | E3.6 | 3 | sonnet + human decision | live | E3.1, E3.2, E3.8 | E3.2 | done 2026-10-10 |
-| E4.4 | 3 | sonnet | rebuild + live | E4.2, E4.3 | E3.7, E3.3b | ready-for-live (e4.4) |
+| E4.4 | 3 | sonnet | rebuild + live | E4.2, E4.3 | E3.7, E3.3b | done 2026-10-10 |
 | E5.1 | 3 | sonnet | live | E3.1, E3.7, E3.8 | E5.2, E4.8 | open |
 | E5.2 | 3 | sonnet | live | E3.8, E3.7, E4.8 | E5.1, E4.5 | open |
 | E2.2 | 4 | sonnet | live | E2.1, E4.4 | E4.5 (`endpoints.py`, `EndpointPanel.svelte`) | open |
@@ -321,46 +321,6 @@ E1.1–E1.9 shipped 2026-09-17 → [CHANGELOG.md](CHANGELOG.md). E1.14 closed 20
 > **One image, all CPU.** After E4.1 the worker runs the `app` image and consumes queued job kinds
 > (`adapter` E4.4, `index` E3.7, `extract` E5.4); no service reserves a GPU. Optional llama.cpp GPU offload
 > for serving (`ADAPTA_N_GPU_LAYERS`) is unaffected.
-
-### E4.4 `[BE+INFRA]` Adapter job on the CPU worker: convert, probe, score, decide (P1)
-- [ ] **Context.** `core/adapter_conversion.py` wraps llama.cpp's official `convert_lora_to_gguf.py`, but the
-  converter was vendored only into the deleted worker stage, and `--base-model-id` fetches the base config
-  from the Hub, which fails air-gapped. A wrong-shape adapter surfaces only when the endpoint loads it.
-- **Depends.** E4.2, E4.3. **Unblocks.** E4.5, E4.6, E2.2.
-- **Re-anchored 2026-10-10 (E4.3 Handoff).** Score with `await eval_gate.evaluate(base_model, gguf_lora_path, rows,
-  task)` and persist its dict as the adapter's `eval_metrics`; rows come from `datasets.storage_path` (SFT rows, `task`
-  on the dataset). Two acceptance items moved here from E4.3: the `garbage-control` fixture must **fail** once the
-  converter is vendored, and the fixture needs a ≥ 20-row eval set on which the base scores clearly below the adapter
-  (on the current 7 rows the 0.5B base already scores 1.000).
-- **Re-anchored 2026-10-10 (E4.2 Handoff).** Drive `Adapter.status` `uploaded → processing → passed | failed` (set
-  `failure_reason` on fail); a `peft` row's `peft_dir` is `adapters_dir/{id}/peft/`, and the job must write the converted
-  file and set `gguf_path` (chat refuses a bound adapter without it); a `gguf` row already has `gguf_path`. Enqueue
-  `{kind: "adapter", id}` from `POST /v1/projects/{id}/adapters` (`services/adapters.py`); rows from
-  `Adapter.eval_dataset_id` → `datasets.storage_path`; base from `Adapter.base_model` (catalog `architecture` available).
-- **Agent.** sonnet · gate class **rebuild + live** · serialize with: E3.7 (`worker/main.py`,
-  `services/jobs.py`, `services/maintenance.py`), E3.3b (`Dockerfile`) · **Handoff.** must name the handler,
-  where base configs live, seconds per stage for the fixture.
-- **Scope.** `uploaded → processing → passed | failed`, text adapters. Out: promotion (E4.5).
-- **Steps.** (1) `Dockerfile` `app` stage vendors the two converter scripts at the pinned llama.cpp tag
-  (torch CPU, `gguf`, `safetensors` are already in the image). (2) Pulling a catalog base also stores its
-  `config.json` under `models_dir/<gguf_subdir>/hf_config/`; the converter always runs with `--base <dir>`;
-  delete the `--base-model-id` and vision-staging branches. (3) Upload enqueues `{kind: "adapter", id}`;
-  the handler converts (PEFT), probe-loads base + LoRA through `model_manager` with a 1-token generation
-  (failure → `AdapterIncompatible`), runs E4.3's scorer for base and adapter, writes `eval_metrics` +
-  status. (4) The sweeper fails adapters left `processing` by a restart. (5) Opt-in
-  `tests/integration/test_adapter_import_e2e.py`: fixture zip → `passed` → endpoint → chat answers with the
-  trained label; control → `failed`, endpoint refused; same project with an indexed file → citations plus
-  the adapter's output shape.
-- **Files.** `Dockerfile` (`app` stage), `adapta/core/adapter_conversion.py`, `adapta/core/model_manager.py`
-  (wrap only), `adapta/worker/main.py`, `adapta/services/{adapters,jobs,maintenance}.py`,
-  `adapta/api/v1/adapters.py`, `adapta/domain/errors.py`, `tests/integration/test_adapter_import_e2e.py` (new).
-- **Contract impact.** None (statuses defined in E4.2).
-- **Gate.** `make up` → `make test` → `docker compose restart worker` →
-  `ADAPTA_RUN_ADAPTER_E2E=1 HF_HUB_OFFLINE=1 tests/integration/test_adapter_import_e2e.py`.
-- **Acceptance.** A PEFT upload reaches `passed` with no GPU and no Hub access; the control fails with
-  both scores in `eval_metrics`; killing the worker mid-job leaves no adapter `processing` after the sweep.
-- **Close.** OPERATIONS (import timing, air-gapped base configs, worker restarts); architecture.md
-  (adapter job); `gates.md` row (adapter import → this e2e); Status snapshot.
 
 ### E4.5 `[BE+FE]` Adapter promotion, rollback and an audit trail (P2)
 - [ ] **Context.** E4.2 binds `Endpoint.adapter_id` at creation and nothing changes it; a project can hold
