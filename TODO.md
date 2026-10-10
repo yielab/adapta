@@ -138,7 +138,7 @@ classes are defined in [`.claude/context/gates.md`](.claude/context/gates.md) ("
 | E5.3 | 4 | sonnet | live | E3.2, E3.5, E3.8 | E4.9/E3.5 | in progress (worker-e5.3) |
 | E5.4 | 4 | sonnet | live | E3.3b, E3.4, E3.5, E3.7 | E5.1/E5.2, E3.4 | open |
 | E4.7 | 5 | sonnet | offline | E4.4, E4.5, E4.6 | E2.3 (README) | done 2026-10-10 |
-| E2.3 | 6 | haiku | offline | E1.11, E4.7 | E3.2, E3.3b, E4.7 (README) | ready-for-live (e2.3) |
+| E2.3 | 6 | haiku | offline | E1.11, E4.7 | E3.2, E3.3b, E4.7 (README) | done 2026-10-10 |
 
 ### E1. P0 — corrections that change the publishable evidence (weeks 1–2)
 
@@ -170,37 +170,6 @@ E1.1–E1.9 shipped 2026-09-17 → [CHANGELOG.md](CHANGELOG.md). E1.14 closed 20
 - **Acceptance.** `ollama create adapta-demo -f Modelfile` on a host with the base tag yields a model
   that answers in the adapter's shape (manual check, recorded in the Done note).
 - **Close.** consuming-the-api "Export to Ollama"; Status snapshot.
-
-### E2.3 `[DOCS]` Launch kit: README first screen, migration guides, honest status (P1)
-- [~] **Context.** The licensing advantage (Apache-2.0 with orgs/keys in the box, versus Open WebUI's
-  >50-user branding clause, Dify's multi-tenant ban, Kiln's proprietary desktop app, Onyx's SSO/RBAC in
-  EE) lives only in COMPETITIVE_LANDSCAPE. Flowise (55k★, Apache-2.0) archived 2026-08-13; Cognita and
-  Verba archived; R2R stale since 2025-11 — their users are looking for a home now. The README status
-  note ("working prototype — not production-hardened") is honest but reads as self-sabotage.
-- **Depends.** E1.11 (no claim about a red gate), E4.7 (the pitch it builds on). **Unblocks.** none.
-- **Agent.** haiku · gate class **offline (`make docs-build`)** · serialize with: E3.2, E3.3b, E4.7
-  (README — text merge) · **Handoff.** must name none (self-contained).
-- **Scope.** Copy + one new user-guide page. Claim nothing a closed block hasn't made true.
-- **Steps.** (1) README: a 6-row "what you get under Apache-2.0" table (feature · Adapta · the
-  restriction elsewhere, each cell linking the other project's license page) above the fold; status
-  note → "beta: works end to end; audit the auth and eval-gate paths before sensitive data".
-  (2) `docs/user-guide/migrating.md`: from Flowise / Cognita / R2R — concept mapping (flow → project,
-  document store → files, chain → endpoint), what has no equivalent (the canvas), a 10-line curl path.
-  (3) COMPETITIVE_LANDSCAPE: license-restriction column with citations; rows for Kiln and BISHENG
-  (verified 2026-09-03). (4) `mkdocs.yml` nav + hub links.
-- **Files.** `README.md`, `docs/user-guide/migrating.md` (new), `docs/user-guide/index.md`,
-  `docs/reference/COMPETITIVE_LANDSCAPE.md`, `mkdocs.yml`.
-- **Contract impact.** None.
-- **Gate.** `make docs-build` (host, `--strict`).
-- **Acceptance.** Every cell of the new table links a primary source; the migration page is in nav; the
-  README status note no longer says "prototype".
-- **Close.** Self-contained; Status snapshot.
-- **Ready-for-live (2026-10-10, branch e2.3).** Done: README table (6 rows, each cell linked to the primary source,
-  fetched 2026-10-10), beta status note, "Not built yet" + "Known limits" under Project status, `migrating.md` (in nav),
-  license table in COMPETITIVE_LANDSCAPE, `docs/index.md` maturity box. `make docs-build` ✓. Not done: `hero.gif` is still the
-  pre-removal one (`hero-gif.spec.ts` failed at `seedDemoData` with 401 for `admin@example.com`: the live stack has no such admin);
-  no BISHENG row (not verified); Kiln is "source-available fair-code", not "proprietary" as the Context says. Close after the
-  GIF is regenerated (`make gif` against a stack with the seeded admin).
 
 ### E3. P1 — real hybrid RAG + scanned documents (weeks 3–7)
 

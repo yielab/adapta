@@ -1019,6 +1019,43 @@ bind mount, so uvicorn reloaded on every worker edit — reload now watches `/ap
   E2.3:** `docs/screenshots/hero.gif` (README first screen) predates the training removal — regenerate it
   (`e2e/hero-gif.spec.ts`, uses `seedDemoData`).
 
+### E2.3 `[DOCS]` Launch kit: README first screen, migration guides, honest status (P1)
+- [x] **Context.** The licensing advantage (Apache-2.0 with orgs/keys in the box, versus Open WebUI's
+  >50-user branding clause, Dify's multi-tenant ban, Kiln's proprietary desktop app, Onyx's SSO/RBAC in
+  EE) lives only in COMPETITIVE_LANDSCAPE. Flowise (55k★, Apache-2.0) archived 2026-08-13; Cognita and
+  Verba archived; R2R stale since 2025-11 — their users are looking for a home now. The README status
+  note ("working prototype — not production-hardened") is honest but reads as self-sabotage.
+- **Depends.** E1.11 (no claim about a red gate), E4.7 (the pitch it builds on). **Unblocks.** none.
+- **Agent.** haiku · gate class **offline (`make docs-build`)** · serialize with: E3.2, E3.3b, E4.7
+  (README — text merge) · **Handoff.** must name none (self-contained).
+- **Scope.** Copy + one new user-guide page. Claim nothing a closed block hasn't made true.
+- **Steps.** (1) README: a 6-row "what you get under Apache-2.0" table (feature · Adapta · the
+  restriction elsewhere, each cell linking the other project's license page) above the fold; status
+  note → "beta: works end to end; audit the auth and eval-gate paths before sensitive data".
+  (2) `docs/user-guide/migrating.md`: from Flowise / Cognita / R2R — concept mapping (flow → project,
+  document store → files, chain → endpoint), what has no equivalent (the canvas), a 10-line curl path.
+  (3) COMPETITIVE_LANDSCAPE: license-restriction column with citations; rows for Kiln and BISHENG
+  (verified 2026-09-03). (4) `mkdocs.yml` nav + hub links.
+- **Files.** `README.md`, `docs/user-guide/migrating.md` (new), `docs/user-guide/index.md`,
+  `docs/reference/COMPETITIVE_LANDSCAPE.md`, `mkdocs.yml`.
+- **Contract impact.** None.
+- **Gate.** `make docs-build` (host, `--strict`).
+- **Acceptance.** Every cell of the new table links a primary source; the migration page is in nav; the
+  README status note no longer says "prototype".
+- **Close.** Self-contained; Status snapshot.
+- **Done.** 2026-10-10. README first screen: one-line pitch, a 6-row "What you get under Apache-2.0" license table (each
+  cell linked to a primary source fetched 2026-10-10; Kiln stated as "source-available, fair-code", BISHENG and an R2R
+  staleness claim omitted as unverifiable), a **beta** status note with only recorded numbers (golden recall@5 0.978,
+  contract gate 40/40), "Not built yet" + "Known limits" in Project status; `docs/user-guide/migrating.md` (Flowise /
+  Cognita / R2R concept map, what has no equivalent, curl path checked against the spec, moving adapters trained
+  elsewhere); COMPETITIVE_LANDSCAPE license table; docs/index maturity box; BRAND "prototype" → "beta" (both lines).
+  `docs/screenshots/hero.gif` regenerated on the live stack (Playwright 1 passed; 1.2 MB, 68 frames): current console,
+  no training UI — it does not open the adapter flow (spec sequence unchanged). `make docs-build --strict` ✓.
+- **Follow-up.** (1) The hero GIF could show the adapter flow + verdict. (2) **`make migrate-test` wipes the local dev
+  DB** (it round-trips the live database to base) and the seed only runs on an empty DB, so the documented dev admin
+  disappears after any migrate-test while test orgs remain — recreated by hand 2026-10-10; migrate-test should run
+  against a scratch database.
+
 ---
 
 ## 2026-10-08 — §E wave 0: the gates every other block is verified by

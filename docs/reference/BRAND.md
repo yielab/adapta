@@ -87,7 +87,7 @@ The brand keeps it. We are infrastructure, not a growth-hacked SaaS.
    call RAG "training," do not call adapters "uploading knowledge." This is a product rule.
 5. **Errors are honest and typed.** User-facing copy mirrors the `DomainError`
    discipline: a safe, plain message — never a stack trace, never false comfort.
-6. **State project maturity plainly.** This is one-person, AI-assisted work at prototype
+6. **State project maturity plainly.** This is one-person, AI-assisted work at beta
    maturity. Copy does not claim production-readiness the codebase hasn't earned. Where
    something is early-stage or untested at scale, name it — the audience will find out anyway.
 
