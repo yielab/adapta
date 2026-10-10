@@ -212,12 +212,12 @@ Carried over when the shipped sections moved to the changelog (2026-10-08):
 | F1.1 | 1 | sonnet | offline | none | F2.2 (`worker/main.py`) | done 2026-10-10 |
 | F1.2 | 1 | sonnet | live | none | F2.1 (migrations) | done 2026-10-10 |
 | F1.5 | 1 | haiku | offline | none | — | done 2026-10-10 |
-| F2.2 | 2 | haiku | offline | F1.1 | F1.1 (`worker/main.py`) | in progress (worker-f2.2) |
+| F2.2 | 2 | haiku | offline | F1.1 | F1.1 (`worker/main.py`) | done 2026-10-10 |
 | F2.3 | 2 | haiku | offline | none | — | done 2026-10-10 |
-| F1.4 | 2 | sonnet | live | none | F2.1, F3.1 (`rag.py`) | in progress (worker-f1.4) |
-| F2.1 | 3 | sonnet | live | F1.2 | F1.4, F3.1 (`rag.py`, `chat.py`) | open |
+| F1.4 | 2 | sonnet | live | none | F2.1, F3.1 (`rag.py`) | done 2026-10-10 |
+| F2.1 | 3 | sonnet | live | F1.2 | F1.4, F3.1 (`rag.py`, `chat.py`) | in progress (worker-f2.1) |
 | F1.3 | 3 | sonnet + human decision | live | none | — | in progress (worker-f1.3) |
-| F3.1 | 3 | sonnet + human decision | live | F1.4 | F1.4, F2.1 (`chat.py`, golden harness) | open |
+| F3.1 | 3 | sonnet + human decision | live | F1.4 | F1.4, F2.1 (`chat.py`, golden harness) | in progress (worker-f3.1) |
 
 ### F1. Correctness
 
@@ -241,25 +241,6 @@ Carried over when the shipped sections moved to the changelog (2026-10-08):
 - **Depends.** none.
 - **Agent.** sonnet + human decision · live · stop after the measurement table · Handoff names the rule and threshold.
 
-### F1.4 [BE] Retrieval is not deterministic across identically built projects
-- **Context.** E3.5 live: the same question on two projects built from the same files scored a top cosine of 0.45 in
-  one run and 0.29 in another. Golden recall is stable (0.978) but single questions flip, so per-project gates (E5.2)
-  and abstention (`rag_min_score`) can change verdicts without any input change.
-- **Scope.** Find the source (candidates: RRF ties broken by random chunk ids in `_rrf_fuse`; HNSW build randomness in
-  Chroma; FTS ordering without a tie-break) and remove what is ours to remove. If HNSW is the cause, document it and
-  make the fused order stable given identical candidate sets.
-- **Steps.** (1) Build the golden project twice; diff per-question top-5 and scores. (2) Add a stable secondary key
-  (e.g. content sha256, then chunk_index) wherever ranks tie; order FTS by `(rank desc, stable key)`. (3) Re-measure.
-- **Files.** `adapta/services/rag.py` (`_rrf_fuse`, the FTS query, `retrieve`), `tests/test_rag_hybrid.py`,
-  `tests/integration/test_rag_golden.py` (only for a determinism check helper).
-- **Contract impact.** None.
-- **Gate.** live: `make golden` twice on fresh projects → identical per-question top-5; recall@5 ≥ 0.97 floor.
-- **Acceptance.** Two fresh builds of the golden project return identical top-5 for all 45 questions (or the residual
-  difference is attributed to HNSW with evidence and documented).
-- **Close.** knowledge-and-behavior.md retrieval box only if behaviour visible to users changed; CHANGELOG.
-- **Depends.** none. Unblocks F3.1 (a stable baseline).
-- **Agent.** sonnet · live · serialize with F2.1, F3.1 · Handoff names the tie-break key and the measured diff count.
-
 ### F2. Hygiene
 
 ### F2.1 [BE] Dead code and stored counters left behind by E3.1/E3.2
@@ -281,20 +262,6 @@ Carried over when the shipped sections moved to the changelog (2026-10-08):
 - **Close.** CHANGELOG.
 - **Depends.** F1.2.
 - **Agent.** sonnet · live · serialize with F1.4, F3.1 · Handoff names the migration revision.
-
-### F2.2 [BE] Finished job keys never expire; the Ollama backend can leak its HTTP client
-- **Context.** `adapta:job:*` hashes in Redis are kept forever after a job finishes (E3.7). `ollama_backend` creates an
-  `httpx.AsyncClient` in `prepare()` that is not closed when generation never runs (E1.15 follow-up 4).
-- **Scope.** A TTL on terminal job states (7 days, one constant/setting) and closing the client on every path.
-- **Files.** `adapta/services/jobs.py`, `adapta/worker/main.py` (only where a job reaches a terminal state),
-  `adapta/core/backends/ollama_backend.py`, `tests/test_jobs*.py`, `tests/test_ollama_backend*.py`.
-- **Contract impact.** None.
-- **Gate.** offline: `make test`, `make ci` rungs.
-- **Acceptance.** A job set to `completed`/`failed` has a TTL ≤ 7 days; a `prepare()` followed by no generation closes
-  the client (test asserts `aclose` called).
-- **Close.** OPERATIONS.md (job retention, one line); CHANGELOG.
-- **Depends.** F1.1 (same file).
-- **Agent.** haiku · offline · Handoff names the TTL constant.
 
 ### F3. Measure what shipped on by default
 

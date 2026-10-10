@@ -12,6 +12,45 @@
 
 Wave 2 = F2.3, F2.2, F1.4.
 
+### F2.2 [BE] Finished job keys never expire; the Ollama backend can leak its HTTP client
+- **Context.** `adapta:job:*` hashes in Redis are kept forever after a job finishes (E3.7). `ollama_backend` creates an
+  `httpx.AsyncClient` in `prepare()` that is not closed when generation never runs (E1.15 follow-up 4).
+- **Scope.** A TTL on terminal job states (7 days, one constant/setting) and closing the client on every path.
+- **Files.** `adapta/services/jobs.py`, `adapta/worker/main.py` (only where a job reaches a terminal state),
+  `adapta/core/backends/ollama_backend.py`, `tests/test_jobs*.py`, `tests/test_ollama_backend*.py`.
+- **Contract impact.** None.
+- **Gate.** offline: `make test`, `make ci` rungs.
+- **Acceptance.** A job set to `completed`/`failed` has a TTL ≤ 7 days; a `prepare()` followed by no generation closes
+  the client (test asserts `aclose` called).
+- **Close.** OPERATIONS.md (job retention, one line); CHANGELOG.
+- **Depends.** F1.1 (same file).
+- **Agent.** haiku · offline · Handoff names the TTL constant.
+- **Done.** Finished job hashes (`adapta:job:*`) get a 7-day TTL when `JobQueue.update_status` writes a terminal status (`succeeded`/`failed`/`cancelled` — the block said `completed`, the code says `succeeded`); queued/running keys keep none, and a requeue clears the TTL. The Ollama backend no longer keeps an `httpx.AsyncClient` on the handle: `prepare`, `generate` and `generate_stream` each open one with `async with`, so a prepare-only path leaves nothing open. Tests: TTL per terminal status, none while running, requeue clears it; client closed after prepare-only, failed prepare and generate error. Gate: `make test` 422 passed in the worktree; `make ci` on develop after merge 425 passed. OPERATIONS.md: one line on job retention.
+- **Handoff.** `JOB_RESULT_TTL_SECONDS = 7 * 24 * 3600` and `TERMINAL_JOB_STATUSES` in `adapta/services/jobs.py`. Ollama client lifecycle: per call (`async with self._client()`).
+- **Follow-up.** One HTTP client per Ollama call instead of per prepare — a small extra connection cost per request; pool it on the backend if latency ever matters.
+
+### F1.4 [BE] Retrieval is not deterministic across identically built projects
+- **Context.** E3.5 live: the same question on two projects built from the same files scored a top cosine of 0.45 in
+  one run and 0.29 in another. Golden recall is stable (0.978) but single questions flip, so per-project gates (E5.2)
+  and abstention (`rag_min_score`) can change verdicts without any input change.
+- **Scope.** Find the source (candidates: RRF ties broken by random chunk ids in `_rrf_fuse`; HNSW build randomness in
+  Chroma; FTS ordering without a tie-break) and remove what is ours to remove. If HNSW is the cause, document it and
+  make the fused order stable given identical candidate sets.
+- **Steps.** (1) Build the golden project twice; diff per-question top-5 and scores. (2) Add a stable secondary key
+  (e.g. content sha256, then chunk_index) wherever ranks tie; order FTS by `(rank desc, stable key)`. (3) Re-measure.
+- **Files.** `adapta/services/rag.py` (`_rrf_fuse`, the FTS query, `retrieve`), `tests/test_rag_hybrid.py`,
+  `tests/integration/test_rag_golden.py` (only for a determinism check helper).
+- **Contract impact.** None.
+- **Gate.** live: `make golden` twice on fresh projects → identical per-question top-5; recall@5 ≥ 0.97 floor.
+- **Acceptance.** Two fresh builds of the golden project return identical top-5 for all 45 questions (or the residual
+  difference is attributed to HNSW with evidence and documented).
+- **Close.** knowledge-and-behavior.md retrieval box only if behaviour visible to users changed; CHANGELOG.
+- **Depends.** none. Unblocks F3.1 (a stable baseline).
+- **Agent.** sonnet · live · serialize with F2.1, F3.1 · Handoff names the tie-break key and the measured diff count.
+- **Done.** Cause found live: ties were broken by `chunks.id` (`{file_uuid}_{index}`, a random uuid per upload) and by list order. Two fresh golden builds before the fix: 4 of 45 questions differed in top-5 order (2 in set), all from the full-text leg's tied idf sums or keyword-only chunks; vector scores and candidate counts identical, so Chroma/HNSW is not implicated (the E3.5 0.45 vs 0.29 cosine was not reproduced). Fix in `rag.py`: FTS `ORDER BY round(sum(idf), 9) DESC, filename, chunk_index, content_hash, id`; `_rrf_fuse` takes a `tie_key` (filename, chunk_index) and rounds scores to 12 places; the vector leg sorts exact-distance ties by the same key. Three offline tests pin it. Live gate after merge: two fresh golden builds → **0 of 45** differing in order, set, scores or candidate counts; recall@5 0.978, MRR 0.8385 on both (was 0.8404: the tie order changed, not the hits).
+- **Handoff.** Tie-break key (filename, chunk_index), then content_hash, id on the FTS leg. `chunks.id` embeds a random file uuid and must never decide a ranking. Per-question top-5 is now stable across builds — F3.1 can use it as a baseline. Measurement scripts: lead scratchpad `diag.py`/`run.py`/`cmp.py` (not committed).
+- **Follow-up.** Golden docs are single-chunk, so ties inside one file (same filename, different chunk_index) are covered only by the unit tests.
+
 ### F2.3 [FE] Console warnings and training-era proof assets
 - **Context.** `svelte-check` reports 4 warnings in `RagFlow.svelte` (E5.4). `e2e/usecase-proof.spec.ts`,
   `e2e/vision-proof.spec.ts` and `docs/screenshots/usecase-proof/`, `vision-proof/` were recorded for the training
