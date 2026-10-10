@@ -114,9 +114,9 @@ classes are defined in [`.claude/context/gates.md`](.claude/context/gates.md) ("
 | E1.10 | 0 | sonnet | rebuild (app image only) | none | E3.3b, E4.1 | ready-for-live (develop `411c5d3`; app rebuild pending) |
 | E1.11 | 0 | sonnet | live | E1.10 | any in-flight `specs/openapi.yaml` edit | open |
 | E2.1 | 1 | sonnet | live | none | E4.1, E4.9 (`core/backends/`) | open |
-| E3.1 | 1 | sonnet | live | none | E3.7, E3.2 | open |
+| E3.1 | 1 | sonnet | live | none | E3.7, E3.2 | in progress (worker-e3.1) |
 | E3.3a | 1 | sonnet + human decision | offline | none | — | open |
-| E3.8 | 1 | sonnet | live | none — must land before E3.2 | — | open |
+| E3.8 | 1 | sonnet | live | none — must land before E3.2 | — | in progress (worker-e3.8) |
 | E4.1 | 1 | sonnet | rebuild + live (exclusive) | E1.11 | E2.1, E3.3b, E3.7 | open |
 | E3.2 | 2 | sonnet | live | E3.1, E3.8 (baseline recorded before this lands) | E3.7, E3.5 | open |
 | E3.3b | 2 | sonnet | rebuild + live | E3.3a (commit), E3.1 | E4.1, E4.2, E4.4 (`pyproject.toml`, `Dockerfile`), E3.7, E3.4 | open |
