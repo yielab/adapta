@@ -519,3 +519,8 @@ ollama create my-adapter -f Modelfile
 
 Verified 2026-10-10: the `classify-pass` fixture exported, loaded with `ollama create`, and answered the bare labels.
 Ollama's tag is a different quantization from the GGUF the gate scored on — re-check quality on your own eval rows.
+
+- **Contextual retrieval (opt-in, E5.1):** one base-model generation per chunk at index time — 30 single-chunk
+  documents took **97 s with `qwen2.5-3b-instruct` vs 2.2 s without** (≈ 3 s per chunk on 16 CPU cores). A long PDF
+  with hundreds of chunks costs minutes; raise `ADAPTA_INDEX_JOB_TIMEOUT_SECONDS` (900 s) if needed, or point
+  `ADAPTA_CONTEXTUAL_TEACHER_BASE_URL` at a faster model.

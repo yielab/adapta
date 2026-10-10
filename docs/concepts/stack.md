@@ -314,6 +314,13 @@ Key file: `adapta/services/rag.py` (`_fts_search`, `_rrf_fuse`,
 
 ## Model customization
 
+**Contextual retrieval (opt-in, E5.1).** With `contextual_retrieval` on, the index job asks the project's base model
+for one short sentence situating each chunk in its document; that sentence is embedded and full-text indexed with the
+chunk (`chunks.context`), while citations still show the raw chunk. Measured on the 45-question golden set (30 short
+es/en documents, one chunk each): recall@5 **0.978 → 0.956**, MRR 0.840 → 0.850, indexing 2.2 s → 97 s (≈ 44×). On
+single-chunk documents the sentence adds little; the technique targets long documents whose chunks lose their
+context. It stays **off by default** — enable it per project only after measuring on your own documents.
+
 ### Adapters are imported, not trained
 
 In-product training (PEFT, TRL, QLoRA on a CUDA worker) was removed on
