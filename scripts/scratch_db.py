@@ -16,20 +16,31 @@ import sys
 from collections.abc import Awaitable, Callable
 
 from sqlalchemy import text
-from sqlalchemy.engine import make_url
+from sqlalchemy.engine import URL, make_url
 from sqlalchemy.ext.asyncio import AsyncConnection, create_async_engine
 
 from adapta.config import settings
 
-_live = make_url(settings.database_url)
-NAME = f"{_live.database}_migrate_test"
-URL = _live.set(database=NAME)
+SUFFIX = "_migrate_test"
+
+
+def scratch_url(url: str) -> URL:
+    """Scratch URL for `url`; idempotent if `url` already points at the scratch DB."""
+    live = make_url(url)
+    db = live.database or ""
+    return live.set(database=db if db.endswith(SUFFIX) else db + SUFFIX)
+
+
+_scratch = scratch_url(settings.database_url)
+NAME = _scratch.database
+# Maintenance connection: the scratch DB itself may not exist yet.
+_admin_url = _scratch.set(database="postgres")
 
 
 async def _admin(sql_fn: Callable[[AsyncConnection], Awaitable[None]]) -> None:
     # CREATE/DROP DATABASE can't run in a transaction -> AUTOCOMMIT, via the
     # maintenance `postgres` database.
-    engine = create_async_engine(_live.set(database="postgres"), isolation_level="AUTOCOMMIT")
+    engine = create_async_engine(_admin_url, isolation_level="AUTOCOMMIT")
     try:
         async with engine.connect() as conn:
             await sql_fn(conn)
@@ -58,7 +69,7 @@ def main() -> None:
     if cmd == "name":
         print(NAME)
     elif cmd == "url":
-        print(URL.render_as_string(hide_password=False))
+        print(_scratch.render_as_string(hide_password=False))
     elif cmd == "create":
         asyncio.run(_admin(_create))
         print(f"  created scratch database {NAME}")
