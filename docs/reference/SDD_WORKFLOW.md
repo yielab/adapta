@@ -58,7 +58,9 @@ Postgres holds users, teams, projects, files, datasets, endpoints, and API keys.
 
 - **SSOT:** the migration files in `migrations/versions/`. The model classes describe intent; the migrations are the contract a customer's database is upgraded against.
 - **Never** edit a customer's schema by hand and **never** ship a model change without a migration.
-- **Merge gate:** CI applies `alembic upgrade head` then `alembic downgrade -1` on a seeded database; both must succeed. A migration that can't roll back is rejected.
+- **Merge gate:** CI applies `alembic upgrade head` then `alembic downgrade -1` on a seeded database; both must succeed. A migration that can't roll back is rejected. `make migrate-test` runs this
+  against a throwaway `<db>_migrate_test` database on the same server (created, round-tripped, dropped), so the gate never
+  touches your working data.
 - **Releases:** every release that touches the schema bumps the migration head; the deploy runs `alembic upgrade head` automatically on startup.
 
 ---

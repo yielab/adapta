@@ -8,6 +8,77 @@
 
 ---
 
+## 2026-10-10 — §F wave 1: extraction nulls + deadline, migrate-test on a scratch DB, teacher-URL guard
+
+Wave 1 = F1.1, F1.2, F1.5 — three Sonnet/Haiku workers in worktrees; F1.2's live gate caught a double-suffix bug on the first run.
+
+### F1.1 [BE] Extraction stores a model `null` as the string `"null"`; extraction has no job deadline
+- **Context.** E5.4 live run: a field the vision model reports as `null` is persisted as `"null"` (`total: "null"`) and
+  exported that way in `fields.csv`. The extract job, unlike index jobs since E1.15, has no per-job deadline — a hung
+  vision generation holds the serial worker forever.
+- **Scope.** Parse-side fix (absent/`null`/empty → field omitted) + the same deadline mechanism E1.15 gave index jobs.
+  No new fields, no endpoint changes.
+- **Steps.** (1) Find where the model's JSON is turned into stored fields (`adapta/services/extraction.py`); drop
+  `None`, `"null"`, `"none"`, `""` values (case-insensitive) before storing. (2) Wrap the extract handler in the
+  E1.15 job deadline (reuse its setting/helper; add `ADAPTA_EXTRACT_JOB_TIMEOUT_SECONDS` only if the index one cannot
+  be reused sensibly — extraction is ~45 s/page, so a per-page budget × pages is the honest bound). (3) Unit tests.
+- **Files.** `adapta/services/extraction.py`, `adapta/worker/main.py` (extract handler, E1.15 deadline helper),
+  `adapta/config.py` (only if a setting is added), `tests/test_extraction*.py`.
+- **Contract impact.** None.
+- **Gate.** offline: `make test` + `make ci` rungs in the worktree.
+- **Acceptance.** A model reply `{"total": null, "vendor": "ACME"}` stores only `vendor`; an extract job exceeding its
+  deadline ends `failed` with a typed reason and the worker takes the next job (test with a fake slow model).
+- **Close.** OPERATIONS.md visual-extraction section (deadline + setting); CHANGELOG.
+- **Depends.** none. Unblocks F2.2.
+- **Agent.** sonnet · offline · serialize with F2.2 · Handoff names the deadline setting and its default.
+- **Done.** `parse_fields` drops JSON `null`, `""` and the strings `"null"`/`"none"` (case-insensitive, trimmed): `{"total": null, "vendor": "ACME"}` stores only `vendor`. Each extract page's model calls (fields read + transcription of flagged pages) run under `asyncio.wait_for(extract_page_timeout_seconds)`; a blown deadline raises a typed `Timeout` and the worker loop fails the job and takes the next. Gate (offline): `tests/test_extraction_deadline.py` (null parsing + fake slow model) 2 passed; `make ci` on develop after merge: 414 passed, spec valid, models in sync. OPERATIONS.md visual-extraction section documents the setting and null handling.
+- **Handoff.** Setting `ADAPTA_EXTRACT_PAGE_TIMEOUT_SECONDS` (`extract_page_timeout_seconds`), default 300 s, per page — worst case 300 s × pages (≤ 20). The E1.15 index deadline was not reused (per-file). The `wait_for` lives in `extraction.extract_file`; `_extract_job` in `worker/main.py` only got a docstring note. A page timeout ends the whole job (a hung model hangs every page); other per-page errors are still skipped and counted.
+- **Follow-up.** A job-level cap if per-page abort proves too coarse. Not re-measured live with the vision model (offline block).
+
+### F1.2 [INFRA] `make migrate-test` wipes the live dev database
+- **Context.** `migrate-test` round-trips the live DB (`upgrade head → downgrade -1 → upgrade head`) and
+  `scripts/migrate_seed_test.py` runs against it, so after every run the seeded dev admin is gone and test rows remain
+  (seen four times during §E; recreated by hand). A gate must not destroy the developer's data.
+- **Scope.** Run the round-trip against a throwaway database on the same Postgres server; leave `make migrate` alone.
+- **Steps.** (1) In the `migrate-test` target: create `<db>_migrate_test` (drop first if it exists), run the alembic
+  round-trip and the seed script with `DATABASE_URL` pointing at it, drop it at the end (also on failure). Use what the
+  image already has (`psql`/`createdb` or a small Python helper via SQLAlchemy) — no new dependency. (2) Make sure
+  `migrations/env.py` and `scripts/migrate_seed_test.py` honour the overridden URL. (3) Update gates.md wording.
+- **Files.** `Makefile` (`migrate-test`), `scripts/migrate_seed_test.py`, `migrations/env.py` (only if it ignores the
+  env URL), `.claude/context/gates.md`.
+- **Contract impact.** None (the gate itself changes).
+- **Gate.** live: `docker compose exec app make migrate-test` green, then `POST /v1/auth/login` as the dev admin still
+  succeeds and `select count(*) from projects` is unchanged.
+- **Acceptance.** Running `make migrate-test` twice in a row leaves the dev DB byte-for-byte the same in row counts;
+  no `_migrate_test` database survives the run.
+- **Close.** SDD_WORKFLOW.md (Pillar 2 wording), CLAUDE.md contract table if it mentions the live DB; CHANGELOG.
+- **Depends.** none. Unblocks F2.1 (its migration gate).
+- **Agent.** sonnet · live · Handoff names the scratch DB name and how a failure cleans up.
+- **Done.** `make migrate-test` creates `<db>_migrate_test` on the same server, exports `ADAPTA_DATABASE_URL` at it, runs the alembic up/down/up and the seeded round-trip there, and drops it from an EXIT trap (success or failure). New `scripts/scratch_db.py` (`name`/`url`/`create`/`drop`; the image has no `psql`) — extra file beyond the Files line; `tests/test_scratch_db.py` checks the name is idempotent. `migrate_seed_test.py` lost its final base→head reset. First live run was red (double `_migrate_test` suffix: the helper re-derived the name from the already-exported URL); fixed. Live gate: two consecutive `make migrate-test` runs green; dev DB unchanged (2 users, 1 project, head 0021), dev admin login 200, no scratch DB left. SDD_WORKFLOW Pillar 2 + gates.md updated.
+- **Handoff.** Scratch DB `adapta_migrate_test`; a hard-killed run is cleaned by the next run's `create` (drops a leftover first) or `python scripts/scratch_db.py drop`. `drop` terminates other backends first. The DB user needs CREATEDB (the dev cluster owner has it). F2.1 may now run its migration gate without losing the dev admin.
+
+### F1.5 [BE] SSRF guard on the synthesis teacher URL
+- **Context.** `teacher_base_url` (E4.8) is a server-side fetch to any URL a project member supplies. Self-hosted
+  teachers legitimately live on localhost/LAN (Ollama, llama.cpp), so loopback/private stay allowed; cloud metadata
+  and link-local do not.
+- **Scope.** Reject at request time: link-local `169.254.0.0/16`, `fe80::/10`, `metadata.google.internal`, and
+  non-http(s) schemes, after DNS resolution. No allow-list setting unless one is needed to keep a test green.
+- **Steps.** (1) Validate in the synthesis service before the job is queued; raise a typed `DomainError` → 422.
+  (2) Spec: document the 422 on the synthesize operation if it is not already there (spec first, `make generate`).
+  (3) Unit tests for each blocked class and an allowed localhost URL.
+- **Files.** `adapta/services/synthesis.py`, `adapta/api/v1/synthesis.py`, `adapta/domain/errors.py`,
+  `specs/openapi.yaml` (only if the 422 is missing), `tests/test_synthesis*.py`.
+- **Contract impact.** API (error response) only if missing.
+- **Gate.** offline: `make test`, `make ci` rungs; `make validate-spec check-models` if the spec changed.
+- **Acceptance.** `http://169.254.169.254/` and a hostname resolving there → 422 typed error; `http://localhost:11434/v1`
+  accepted.
+- **Close.** operator-console.md Synthesize (one sentence); CHANGELOG.
+- **Depends.** none.
+- **Agent.** haiku · offline · Handoff names the error class.
+- **Done.** New `UnsafeTeacherUrl(DomainError)` (`unsafe_teacher_url`, 422). `check_teacher_destination()` in `services/synthesis.py` resolves the host via `asyncio.to_thread(socket.getaddrinfo)` and blocks if any address is link-local (IPv4-mapped IPv6 unwrapped), the host is `metadata.google.internal`, or the host does not resolve (fails closed); called by the synthesize endpoint before queueing. Spec already documented 422 — unchanged. Gate (offline): `make test` 412 passed; `make ci` green on develop after merge. operator-console.md Synthesize: one sentence.
+- **Handoff.** Error class `UnsafeTeacherUrl`. Scheme rejection still goes through `InvalidRequest` (400) in `check_teacher_url`. Loopback/private ranges stay allowed (self-hosted teachers).
+- **Follow-up.** DNS rebinding: the destination is checked once at queue time; the job's HTTP client resolves again — re-check inside `_generate` if a hosted deployment needs it.
+
 ## 2026-10-09 — §E wave 1: chunks in Postgres, the golden set
 
 Wave 1 = E3.1, E3.8 (+ E1.11 closing wave 0). Found on the way: worktrees under `.claude/worktrees/` sit inside the
