@@ -67,7 +67,7 @@ procedure. Rules that keep parallel work from colliding:
 | SDD gates | Pillar 2 ✅ `make migrate-test` · Pillar 3: the GPU perplexity gate is replaced by the CPU task-metric gate on imported adapters (E4.3/E4.4) · Pillar 1 ✅ `make test-contracts` green (E1.11; re-run 2026-10-10 after E4.8: 40 operations, 2320 cases, 0 failures, authenticated) |
 | CI fast gate (`make ci`) | ✅ green 2026-10-10 after E1.15: ruff + mypy clean, 350 unit tests |
 | **Audit 2026-09-03 (§E)** | ✅ **all 39 blocks closed 2026-10-10** (E1.15 added after a live Chroma hang + socket leak). Bring-your-own-adapter end to end (import → CPU gate → promote/rollback, console, Ollama export); hybrid + multilingual retrieval (golden 0.978) with a per-project RAG gate, deterministic abstention, filters, citations with page/OCR; Docling + OCR ingestion on a queued worker, opt-in visual extraction; optional Ollama backend; JSON mode. Opt-ins measured honestly: contextual retrieval and history condensation showed no gain on the golden corpus. Open follow-ups live in each block's CHANGELOG entry. Next: no §E block is open; the highest-value follow-ups are the `"null"` field-string bug (E5.4), measuring the 7B vision default, multi-turn golden questions (E5.3), running `migrate-test` against a scratch DB (E2.3), and a long-document corpus for contextual retrieval (E5.1). |
-| **Post-audit follow-ups (§F)** | Opened 2026-10-10 from the §E Follow-up lines; **9 of 10 closed 2026-10-10**: extraction `null` + page deadline (F1.1), `migrate-test` on a scratch DB (F1.2), freeform eval sets cannot gate — user decision (F1.3), retrieval deterministic, 0/45 differ across builds (F1.4), teacher-URL SSRF guard (F1.5), counters dropped — migration 0022 (F2.1), job TTL + Ollama client (F2.2), svelte-check clean + training-era proof specs gone (F2.3), condensation measured 0.50 → 0.75 follow-up recall and kept ON — user decision (F3.1). **Open: F1.6** — a second model OOM-kills the app (4 GB) and nothing restarts it. Known: the integration suite truncates the dev DB by design (re-seeds the admin); `alembic check` drift predating 0022. |
+| **Post-audit follow-ups (§F)** | Opened 2026-10-10 from the §E Follow-up lines; **9 of 10 closed 2026-10-10**: extraction `null` + page deadline (F1.1), `migrate-test` on a scratch DB (F1.2), freeform eval sets cannot gate — user decision (F1.3), retrieval deterministic, 0/45 differ across builds (F1.4), teacher-URL SSRF guard (F1.5), counters dropped — migration 0022 (F2.1), job TTL + Ollama client (F2.2), svelte-check clean + training-era proof specs gone (F2.3), condensation measured 0.50 → 0.75 follow-up recall and kept ON — user decision (F3.1). **Open: F1.6** — a second model OOM-kills the app (4 GB). Recovery (watchdog + restart) and a per-load leak fix landed; the 3B can still OOM the app — stopped for review (see the block's Progress). Known: the integration suite truncates the dev DB by design (re-seeds the admin); `alembic check` drift predating 0022. |
 
 ---
 
@@ -218,7 +218,7 @@ Carried over when the shipped sections moved to the changelog (2026-10-08):
 | F2.1 | 3 | sonnet | live | F1.2 | F1.4, F3.1 (`rag.py`, `chat.py`) | done 2026-10-10 |
 | F1.3 | 3 | sonnet + human decision | live | none | — | done 2026-10-10 |
 | F3.1 | 3 | sonnet + human decision | live | F1.4 | F1.4, F2.1 (`chat.py`, golden harness) | done 2026-10-10 |
-| F1.6 | 4 | sonnet | live | none | — | ready-for-live (f1.6) |
+| F1.6 | 4 | sonnet | live | none | — | open — stopped after 2 red live runs (see Progress) |
 
 ### F1. Correctness
 
@@ -248,6 +248,20 @@ Carried over when the shipped sections moved to the changelog (2026-10-08):
 - **Close.** OPERATIONS.md (memory sizing); CHANGELOG.
 - **Depends.** none.
 - **Agent.** sonnet · live · Handoff names the budget setting, its default, and how a dead server now recovers.
+- **Progress (2026-10-11, live gate red twice — stopped for review).** Landed on develop (cf14487, c1a9fe3):
+  (1) **recovery — green:** `entrypoint.sh` watchdogs `/health` in reload mode and exits after 6 failed probes;
+  `app` has `restart: unless-stopped`; measured twice: server killed → container back in ~60 s.
+  (2) **budget eviction before load** (`ModelManager._make_room_for`, `adapta/core/memory_budget.py`,
+  `ADAPTA_MODEL_MEMORY_BUDGET_MB` = 0 → cgroup limit − `ADAPTA_MODEL_MEMORY_RESERVE_MB` 1024; typed
+  `ModelTooLargeForMemory` 503) — evictions fire as designed (`budget 3072 MiB, need 2692 MiB`).
+  (3) **leak found and fixed:** the executor Future kept every loaded `Llama` alive, so eviction never freed
+  memory (measured in-process: 1.5B unloaded → anon unchanged; `Llama.close()` → freed).
+  **Still red:** adapter e2e + `test_rag_e2e` twice → tests pass, but one kill in run 2 at anon-rss 3.57 GB +
+  file-rss 2.0 GB, right after the 3B reloaded with every other model evicted; cgroup anon after run 1 was
+  2973 MiB. Next: measure in the app process (not a script) what anon remains after each eviction — the KV
+  cache/llama scratch of the 3B, the embedder, the chat/eval paths holding a `Llama` reference (handles,
+  `_configs`), or glibc not returning freed arenas (`malloc_trim`) — and whether the estimate (×1.15 + 64 KiB/token
+  + 256 MiB) undercounts the 3B. Decide then whether a 4 GB app can hold a 3B at all, or the limit/default changes.
 
 ### F2. Hygiene
 
