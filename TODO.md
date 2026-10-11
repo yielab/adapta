@@ -67,7 +67,7 @@ procedure. Rules that keep parallel work from colliding:
 | SDD gates | Pillar 2 ✅ `make migrate-test` · Pillar 3: the GPU perplexity gate is replaced by the CPU task-metric gate on imported adapters (E4.3/E4.4) · Pillar 1 ✅ `make test-contracts` green (E1.11; re-run 2026-10-10 after E4.8: 40 operations, 2320 cases, 0 failures, authenticated) |
 | CI fast gate (`make ci`) | ✅ green 2026-10-10 after E1.15: ruff + mypy clean, 350 unit tests |
 | **Audit 2026-09-03 (§E)** | ✅ **all 39 blocks closed 2026-10-10** (E1.15 added after a live Chroma hang + socket leak). Bring-your-own-adapter end to end (import → CPU gate → promote/rollback, console, Ollama export); hybrid + multilingual retrieval (golden 0.978) with a per-project RAG gate, deterministic abstention, filters, citations with page/OCR; Docling + OCR ingestion on a queued worker, opt-in visual extraction; optional Ollama backend; JSON mode. Opt-ins measured honestly: contextual retrieval and history condensation showed no gain on the golden corpus. Open follow-ups live in each block's CHANGELOG entry. Next: no §E block is open; the highest-value follow-ups are the `"null"` field-string bug (E5.4), measuring the 7B vision default, multi-turn golden questions (E5.3), running `migrate-test` against a scratch DB (E2.3), and a long-document corpus for contextual retrieval (E5.1). |
-| **Post-audit follow-ups (§F)** | Opened 2026-10-10: 9 blocks from the §E Follow-up lines — 5 correctness (extraction `"null"`, migrate-test wipes the dev DB, freeform gate passes garbage, non-deterministic retrieval, teacher-URL SSRF), 3 hygiene, 1 measurement (condensation default). Wave 1: F1.1, F1.2, F1.5. |
+| **Post-audit follow-ups (§F)** | Opened 2026-10-10 from the §E Follow-up lines; **9 of 10 closed 2026-10-10**: extraction `null` + page deadline (F1.1), `migrate-test` on a scratch DB (F1.2), freeform eval sets cannot gate — user decision (F1.3), retrieval deterministic, 0/45 differ across builds (F1.4), teacher-URL SSRF guard (F1.5), counters dropped — migration 0022 (F2.1), job TTL + Ollama client (F2.2), svelte-check clean + training-era proof specs gone (F2.3), condensation measured 0.50 → 0.75 follow-up recall and kept ON — user decision (F3.1). **Open: F1.6** — a second model OOM-kills the app (4 GB) and nothing restarts it. Known: the integration suite truncates the dev DB by design (re-seeds the admin); `alembic check` drift predating 0022. |
 
 ---
 
@@ -215,71 +215,43 @@ Carried over when the shipped sections moved to the changelog (2026-10-08):
 | F2.2 | 2 | haiku | offline | F1.1 | F1.1 (`worker/main.py`) | done 2026-10-10 |
 | F2.3 | 2 | haiku | offline | none | — | done 2026-10-10 |
 | F1.4 | 2 | sonnet | live | none | F2.1, F3.1 (`rag.py`) | done 2026-10-10 |
-| F2.1 | 3 | sonnet | live | F1.2 | F1.4, F3.1 (`rag.py`, `chat.py`) | in progress (worker-f2.1) |
-| F1.3 | 3 | sonnet + human decision | live | none | — | ready-for-live (f1.3) |
-| F3.1 | 3 | sonnet + human decision | live | F1.4 | F1.4, F2.1 (`chat.py`, golden harness) | in progress (worker-f3.1) |
+| F2.1 | 3 | sonnet | live | F1.2 | F1.4, F3.1 (`rag.py`, `chat.py`) | done 2026-10-10 |
+| F1.3 | 3 | sonnet + human decision | live | none | — | done 2026-10-10 |
+| F3.1 | 3 | sonnet + human decision | live | F1.4 | F1.4, F2.1 (`chat.py`, golden harness) | done 2026-10-10 |
+| F1.6 | 4 | sonnet | live | none | — | in progress (worker-f1.6) |
 
 ### F1. Correctness
 
-### F1.3 [BE] The eval gate passes a garbage adapter on `freeform` eval sets
-- **Context.** E4.4 live: scored as `freeform` (token F1), the `garbage-control` fixture **passed** (0.383 vs base
-  0.037) — it reproduces template words F1 rewards. The gate is the product's differentiator; today it only holds for
-  `classify`/`extract`.
-- **Scope.** Measure, then stop for a decision. Candidates to measure on both fixtures (`classify-pass`,
-  `garbage-control`) and the 0.5B base: (a) `freeform` is not gateable — import of an adapter whose eval set is
-  freeform ends `failed` with reason "freeform eval sets cannot gate; use classify or extract"; (b) a minimum absolute
-  score + minimum delta for freeform; (c) exact-match share as a second freeform metric. LLM-as-judge stays deferred (§E6).
-- **Steps.** (1) Reproduce the E4.4 numbers with the fixtures. (2) Compute each candidate on both fixtures without
-  changing the gate. (3) Report a table and stop. (4) After the user picks: implement, update the import guide.
-- **Files.** `adapta/services/eval_gate.py`, `tests/test_eval_gate*.py`, `tests/integration/test_adapter_import_e2e.py`,
-  `docs/user-guide/bring-your-own-adapter.md`.
-- **Contract impact.** Pillar 3 (gate rule); API only if a new failure reason enum is added (spec first).
-- **Gate.** live: `ADAPTA_RUN_ADAPTER_E2E=1 HF_HUB_OFFLINE=1 pytest -m integration tests/integration/test_adapter_import_e2e.py`
-  + `ADAPTA_RUN_EVAL_CPU=1 pytest -o addopts="" tests/test_eval_gate_cpu.py`.
-- **Acceptance.** Under the chosen rule `garbage-control` fails on every task type and `classify-pass` still passes.
-- **Close.** bring-your-own-adapter.md (what freeform sets prove); CHANGELOG.
+### F1.6 [BE/INFRA] Loading a second model OOM-kills the app, and nothing brings it back
+- **Context.** Found in the F2.1 live slot (2026-10-10 23:19 and 23:22, kernel `Memory cgroup out of memory: Killed
+  process … python`, anon-rss 3.1 GB): the `app` container has `memory: 4g`; the 1.5B default is preloaded and
+  `max_loaded_models = 2` is a *count*, so serving a project on `qwen2.5-3b-instruct` loads it beside the 1.5B and the
+  embedding model and crosses the limit. The kernel kills the uvicorn server process; the `--reload` supervisor (PID 1)
+  does not respawn it, so the API stops answering while `docker ps` still shows the container healthy for a while.
+  A self-hosted operator sees a dead API after the first chat on a bigger base.
+- **Scope.** Two halves, both small: (1) never load past the memory the container has — evict by **budget**
+  (sum of loaded GGUF sizes + a per-model overhead vs. a budget derived from the cgroup limit or a setting), wrapping
+  `model_manager.py` rather than rewriting it; (2) a dead server must not look alive — the container must exit or
+  restart when the server process dies (e.g. the healthcheck fails fast and compose `restart: unless-stopped` acts on
+  exit, or the entrypoint runs without the reload supervisor outside development). Pick the smallest pair; no new service.
+- **Steps.** (1) Reproduce: preloaded 1.5B, then a chat on a 3B project; record RSS. (2) Budget eviction before load;
+  measure that the same sequence evicts the 1.5B and survives. (3) Make a killed server visible/recovered; prove it
+  by `kill -9` of the server process. (4) Document the memory rule (which bases fit in 4 GB at once).
+- **Files.** `adapta/core/model_manager.py` (wrap: a budget check around `_evict_lru_if_needed` / the load path),
+  `adapta/config.py`, `docker-compose.yml` (healthcheck/restart only), `entrypoint.sh`, `tests/test_model_manager*.py`,
+  `docs/reference/OPERATIONS.md`.
+- **Contract impact.** None.
+- **Gate.** live: preloaded 1.5B + chat on a 3B project → 200 and no `Killed process` in `journalctl -k`; `kill -9` of
+  the server process → API back within the healthcheck window; `make ci`; `tests/integration/test_rag_e2e.py`.
+- **Acceptance.** The F2.1 sequence (adapter e2e, then RAG e2e on 3B) runs twice with no OOM kill; a killed server
+  recovers without a human.
+- **Close.** OPERATIONS.md (memory sizing); CHANGELOG.
 - **Depends.** none.
-- **Agent.** sonnet + human decision · live · stop after the measurement table · Handoff names the rule and threshold.
+- **Agent.** sonnet · live · Handoff names the budget setting, its default, and how a dead server now recovers.
 
 ### F2. Hygiene
 
-### F2.1 [BE] Dead code and stored counters left behind by E3.1/E3.2
-- **Context.** Chunk counts are computed from `chunks` since E3.2, yet `ProjectFile.num_chunks` / the collection
-  counter are still stored and `services/project_summary.py` still sums `ProjectFile.num_chunks`.
-  `rag.all_chunks_known` has no production caller. `chat.py` reads `handle.usage` via `getattr` only because a test fake
-  lacks the attribute.
-- **Scope.** Remove, don't redesign. `RAGService.retrieve` swallowing `get_collection` errors is in scope only as a
-  log line at warning level (behaviour unchanged).
-- **Steps.** (1) `project_summary.py` → `count_project_chunks`. (2) Drop the stored count columns that nothing reads
-  (autogenerate the migration, review it). (3) Delete `all_chunks_known` + its test. (4) Fake gets `usage = None`;
-  drop the `getattr`. (5) Warning log in `retrieve`.
-- **Files.** `adapta/services/project_summary.py`, `adapta/db/models.py`, `migrations/versions/0022_drop_chunk_counters.py`,
-  `adapta/services/rag.py`, `adapta/services/chat.py`, `tests/test_rag_hybrid.py`, the chat test fake.
-- **Contract impact.** Pillar 2 (migration); API only if a response field disappears (it must not — counts stay, computed).
-- **Gate.** live: `make migrate` + `make migrate-test` (scratch DB after F1.2), `make ci`, `tests/integration/test_rag_e2e.py`.
-- **Acceptance.** Project summaries report the same chunk counts as before on the golden project; no reader of the
-  dropped columns remains (`git grep`).
-- **Close.** CHANGELOG.
-- **Depends.** F1.2.
-- **Agent.** sonnet · live · serialize with F1.4, F3.1 · Handoff names the migration revision.
-
 ### F3. Measure what shipped on by default
-
-### F3.1 [TEST] Multi-turn golden questions — does history condensation earn its default?
-- **Context.** E5.3 ships follow-up condensation **on by default** (+1–1.7 s and ~150 prompt tokens per follow-up turn
-  on CPU) with no measured recall gain: the golden set has no multi-turn questions, so the gain cannot be seen.
-- **Scope.** Add ~10 bilingual follow-up questions (`history` + `q` + `expected_file`) to the golden fixtures, a harness
-  path that runs them through `_retrieval_queries`, and measure recall@5 with condensation on vs off. Then stop for a
-  decision on the default.
-- **Files.** `tests/fixtures/golden/questions.jsonl` (or a sibling `followups.jsonl`), `tests/integration/test_rag_golden.py`,
-  `adapta/services/chat.py` (`_retrieval_queries` — read only unless the harness needs a seam), `Makefile` (`golden`
-  target only if a flag is needed).
-- **Contract impact.** None (fixtures + harness).
-- **Gate.** live: `make golden` (single-turn floor unchanged) + the follow-up run on/off.
-- **Acceptance.** A table: follow-up recall@5 and p50 latency with condensation on vs off; the single-turn floor holds.
-- **Close.** knowledge-and-behavior.md "Follow-up questions" tip with the measured numbers; CHANGELOG.
-- **Depends.** F1.4 (stable baseline).
-- **Agent.** sonnet + human decision · live · stop after the table · Handoff names the fixture file and the numbers.
 
 ---
 

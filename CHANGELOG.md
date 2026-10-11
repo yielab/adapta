@@ -8,6 +8,75 @@
 
 ---
 
+## 2026-10-10 — §F wave 3: freeform cannot gate, stored counters dropped, condensation measured
+
+Wave 3 = F1.3 and F3.1 (both stopped for the user's decision), F2.1. The live slot found an OOM kill of the app (F1.6, opened).
+
+### F1.3 [BE] The eval gate passes a garbage adapter on `freeform` eval sets
+- **Context.** E4.4 live: scored as `freeform` (token F1), the `garbage-control` fixture **passed** (0.383 vs base
+  0.037) — it reproduces template words F1 rewards. The gate is the product's differentiator; today it only holds for
+  `classify`/`extract`.
+- **Scope.** Measure, then stop for a decision. Candidates to measure on both fixtures (`classify-pass`,
+  `garbage-control`) and the 0.5B base: (a) `freeform` is not gateable — import of an adapter whose eval set is
+  freeform ends `failed` with reason "freeform eval sets cannot gate; use classify or extract"; (b) a minimum absolute
+  score + minimum delta for freeform; (c) exact-match share as a second freeform metric. LLM-as-judge stays deferred (§E6).
+- **Steps.** (1) Reproduce the E4.4 numbers with the fixtures. (2) Compute each candidate on both fixtures without
+  changing the gate. (3) Report a table and stop. (4) After the user picks: implement, update the import guide.
+- **Files.** `adapta/services/eval_gate.py`, `tests/test_eval_gate*.py`, `tests/integration/test_adapter_import_e2e.py`,
+  `docs/user-guide/bring-your-own-adapter.md`.
+- **Contract impact.** Pillar 3 (gate rule); API only if a new failure reason enum is added (spec first).
+- **Gate.** live: `ADAPTA_RUN_ADAPTER_E2E=1 HF_HUB_OFFLINE=1 pytest -m integration tests/integration/test_adapter_import_e2e.py`
+  + `ADAPTA_RUN_EVAL_CPU=1 pytest -o addopts="" tests/test_eval_gate_cpu.py`.
+- **Acceptance.** Under the chosen rule `garbage-control` fails on every task type and `classify-pass` still passes.
+- **Close.** bring-your-own-adapter.md (what freeform sets prove); CHANGELOG.
+- **Depends.** none.
+- **Agent.** sonnet + human decision · live · stop after the measurement table · Handoff names the rule and threshold.
+- **Done.** Measured, then the user chose (a) **freeform cannot gate**. The E4.4 failure (garbage 0.383 vs base 0.037 under token F1) did not reproduce on the repo fixtures — both carry the same 30-row classify-shaped eval set, where F1 = exact match and the current rule already fails garbage (0.333 vs 0.333) and passes classify-pass (0.700). On a sentence-shaped set built from the same tickets both adapters scored *below* the base (0.271 / 0.173 vs 0.396) and exact-match was 0.000 for all, so no threshold could separate them. Now `require_gateable_task` in `services/adapters.py` fails a freeform-gated adapter in `process_adapter` before conversion or generation, reason "freeform eval sets cannot gate; use classify or extract", `eval_metrics` null; classify/extract rule unchanged. Spec descriptions (eval-set upload, synthesize), console help + option labels "freeform (cannot gate)", synthesis docstring and the import guide say so. No enum change. Live gate: `test_adapter_import_e2e.py` 4/4 passed twice (incl. new `test_freeform_eval_set_cannot_gate`); a first run right after a worker restart failed `classify_pass` once (cold model load — E3.7 follow-up 5). `make ci` green.
+- **Handoff.** Reason string `"freeform eval sets cannot gate; use classify or extract"`; check `require_gateable_task` (`adapta/services/adapters.py`), called from `process_adapter`. Datasets and synthesis still accept `freeform`. Reopen if a freeform judge lands (§E6 LLM-as-judge).
+- **Follow-up.** The E4.4 sentence-style eval set that let garbage pass is not in the repo; add one as a fixture if freeform ever becomes gateable again.
+
+### F2.1 [BE] Dead code and stored counters left behind by E3.1/E3.2
+- **Context.** Chunk counts are computed from `chunks` since E3.2, yet `ProjectFile.num_chunks` / the collection
+  counter are still stored and `services/project_summary.py` still sums `ProjectFile.num_chunks`.
+  `rag.all_chunks_known` has no production caller. `chat.py` reads `handle.usage` via `getattr` only because a test fake
+  lacks the attribute.
+- **Scope.** Remove, don't redesign. `RAGService.retrieve` swallowing `get_collection` errors is in scope only as a
+  log line at warning level (behaviour unchanged).
+- **Steps.** (1) `project_summary.py` → `count_project_chunks`. (2) Drop the stored count columns that nothing reads
+  (autogenerate the migration, review it). (3) Delete `all_chunks_known` + its test. (4) Fake gets `usage = None`;
+  drop the `getattr`. (5) Warning log in `retrieve`.
+- **Files.** `adapta/services/project_summary.py`, `adapta/db/models.py`, `migrations/versions/0022_drop_chunk_counters.py`,
+  `adapta/services/rag.py`, `adapta/services/chat.py`, `tests/test_rag_hybrid.py`, the chat test fake.
+- **Contract impact.** Pillar 2 (migration); API only if a response field disappears (it must not — counts stay, computed).
+- **Gate.** live: `make migrate` + `make migrate-test` (scratch DB after F1.2), `make ci`, `tests/integration/test_rag_e2e.py`.
+- **Acceptance.** Project summaries report the same chunk counts as before on the golden project; no reader of the
+  dropped columns remains (`git grep`).
+- **Close.** CHANGELOG.
+- **Depends.** F1.2.
+- **Agent.** sonnet · live · serialize with F1.4, F3.1 · Handoff names the migration revision.
+- **Done.** Migration **0022** drops `project_files.num_chunks`, `collections.num_documents`, `collections.num_chunks`. `FileResponse.num_chunks` is computed by `_chunk_counts()` in `api/v1/files.py` (one grouped `count(*)` over `chunks`, still null unless `indexed`) — API unchanged; `project_summary.py` counts chunks per project the same way. Counter writes removed from `_index_file`, the delete handler and the extraction re-read; seeds in `migrate_seed_test.py` and two integration tests updated. `all_chunks_known` + test deleted; `chat.py` reads `handle.usage` directly (fakes got `usage = None`); `retrieve` logs a warning when it swallows a `get_collection` error. Extra files beyond the Files line all read or wrote the dropped columns. Live gate: `make migrate` 0021→0022 ✓, `make migrate-test` (scratch DB) ✓, `make ci` 425 passed, `test_rag_e2e.py` 2 passed (asserts `num_chunks` = chunk rows; first run timed out on the cold 3B load during an app OOM — see F1.6), `test_endpoint_slug`, `test_key_scoping`, `test_combined_knowledge` passed.
+- **Handoff.** Migration revision 0022 (`0022_drop_chunk_counters.py`, hand-written; downgrade re-adds and backfills from `chunks`). Chunk counts are only ever read from `chunks`.
+- **Follow-up.** `alembic check` reports drift that predates F2.1 (nullable `created_at`/`updated_at` on 12 tables, indexes `ix_invitation_team` and `ix_usage_endpoint_day` in the DB but not the models) — reconcile in one migration.
+
+### F3.1 [TEST] Multi-turn golden questions — does history condensation earn its default?
+- **Context.** E5.3 ships follow-up condensation **on by default** (+1–1.7 s and ~150 prompt tokens per follow-up turn
+  on CPU) with no measured recall gain: the golden set has no multi-turn questions, so the gain cannot be seen.
+- **Scope.** Add ~10 bilingual follow-up questions (`history` + `q` + `expected_file`) to the golden fixtures, a harness
+  path that runs them through `_retrieval_queries`, and measure recall@5 with condensation on vs off. Then stop for a
+  decision on the default.
+- **Files.** `tests/fixtures/golden/questions.jsonl` (or a sibling `followups.jsonl`), `tests/integration/test_rag_golden.py`,
+  `adapta/services/chat.py` (`_retrieval_queries` — read only unless the harness needs a seam), `Makefile` (`golden`
+  target only if a flag is needed).
+- **Contract impact.** None (fixtures + harness).
+- **Gate.** live: `make golden` (single-turn floor unchanged) + the follow-up run on/off.
+- **Acceptance.** A table: follow-up recall@5 and p50 latency with condensation on vs off; the single-turn floor holds.
+- **Close.** knowledge-and-behavior.md "Follow-up questions" tip with the measured numbers; CHANGELOG.
+- **Depends.** F1.4 (stable baseline).
+- **Agent.** sonnet + human decision · live · stop after the table · Handoff names the fixture file and the numbers.
+- **Done.** `tests/fixtures/golden/followups.jsonl` (12 rows, 6 en / 6 es, pronoun- or ellipsis-only follow-ups with one exchange of history) and an opt-in harness `tests/golden/test_rag_followups.py` (`ADAPTA_RUN_GOLDEN_FOLLOWUPS=1`, `make golden-followups`) that runs `chat._retrieval_queries` + `_retrieve` with condensation on and off. It lives outside `tests/integration/` on purpose: that conftest truncates the live DB. Measured with `qwen2.5-1.5b-instruct`: recall@5 OFF → ON **0.50 → 0.75** (MRR 0.26 → 0.53); en 0.67 → 0.83, es 0.33 → 0.67; no row worse; condensation p50 483 ms, p95 712 ms, ~103 prompt + 12 completion tokens. A first, easier fixture (follow-ups still carrying topic words) scored 0.917 both ways — the gain shows only on genuinely elliptical follow-ups. **User decision: keep condensation ON by default.** knowledge-and-behavior.md tip now carries these numbers (was "1–2 s, ~150 tokens", unmeasured).
+- **Handoff.** Fixture `tests/fixtures/golden/followups.jsonl`; harness `tests/golden/test_rag_followups.py` (needs the full embedding model in HF_HOME — the image only has a stub; see the test docstring). Single-turn `questions.jsonl` / `floor.json` untouched.
+- **Follow-up.** 3 of 12 still miss with condensation (the 1.5B condenser sometimes leaves the question unchanged or answers in English); a skip heuristic for topic-bearing follow-ups is unmeasured.
+
 ## 2026-10-10 — §F wave 2: console hygiene, job retention, deterministic retrieval
 
 Wave 2 = F2.3, F2.2, F1.4.
