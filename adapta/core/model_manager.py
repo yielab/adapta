@@ -343,7 +343,12 @@ class ModelManager:
                     )
                 self._make_room_for(cache_key, model_path, n_ctx, config.mmproj_path)
                 loop = asyncio.get_event_loop()
-                model = await loop.run_in_executor(None, lambda: Llama(**llama_kwargs))
+                # Hand the Llama back through a list, NOT the executor Future's result: with the
+                # real Llama the Future stays referenced after the await (measured, F1.6), so an
+                # evicted model was never freed -- ~0.7 GB anon + the weights leaked per load.
+                holder: list = []
+                await loop.run_in_executor(None, lambda: holder.append(Llama(**llama_kwargs)))
+                model = holder.pop()
 
                 # force_reload replaces an existing key in-place (no net growth).
                 if cache_key not in self._models:

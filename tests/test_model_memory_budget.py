@@ -1,6 +1,8 @@
 """F1.6 — models are evicted by memory budget BEFORE loading, and one that can never fit is
 refused with a typed error. Fake files only: no GGUF is ever loaded."""
 
+import asyncio
+
 import pytest
 
 from adapta.config import settings
@@ -97,3 +99,41 @@ def test_no_budget_keeps_count_only_behaviour(tmp_path, monkeypatch):
     mgr._models["a"] = object()
     mgr._make_room_for("b", _gguf(tmp_path, "b.gguf", 100), 2048, None)
     assert "a" not in mgr._models  # count cap applied, now before the load
+
+
+def test_evicted_model_is_actually_freed(tmp_path, monkeypatch):
+    """F1.6 live finding: with the real Llama the executor Future kept every loaded model alive
+    after eviction (~0.7 GB anon each; only reproducible live, see OPERATIONS). This pins that
+    nothing in the manager itself holds an evicted model."""
+    import gc
+    import sys
+    import weakref
+
+    import adapta.core.model_manager  # noqa: F401
+
+    mm = sys.modules["adapta.core.model_manager"]  # the package re-exports the singleton
+
+    class FakeLlama:
+        def __init__(self, **kw):
+            pass
+
+    monkeypatch.setattr(mm, "Llama", FakeLlama)
+    monkeypatch.setattr(settings, "model_memory_budget_mb", 0)
+    monkeypatch.setattr(memory_budget, "CGROUP_MEMORY_MAX", tmp_path / "absent")
+    monkeypatch.setattr(settings, "max_loaded_models", 1)
+    mgr = ModelManager()
+    for name in ("a", "b"):
+        mgr._configs[name] = mm.ModelConfig(
+            name=name, model_type=next(iter(mm.ModelType)), path=_gguf(tmp_path, f"{name}.gguf", 1)
+        )
+    monkeypatch.setattr(mgr, "_resolve_serving_name", lambda n: n)
+
+    async def run():
+        first = await mgr.load_model("a")
+        ref = weakref.ref(first)
+        del first
+        await mgr.load_model("b")  # evicts "a"
+        gc.collect()
+        return ref() is None  # checked while the loop and executor are still alive
+
+    assert asyncio.run(run())
