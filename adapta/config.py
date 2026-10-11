@@ -76,6 +76,14 @@ class Settings(BaseSettings):
     # evicted endpoint transparently reloads on its next call. Raise it only with RAM
     # to spare (a 3B Q4 model is ~2 GB resident).
     max_loaded_models: int = 2
+    # Memory budget for resident models (F1.6), in MiB. The count cap above ignores size: a 3B
+    # beside a 1.5B plus the embedder crosses a 4 GB container and the kernel kills the server.
+    # 0 (default) = derive from the container's cgroup limit minus `model_memory_reserve_mb`;
+    # no cgroup limit = count cap only. >0 = use exactly this many MiB for loaded models.
+    model_memory_budget_mb: int = 0
+    # MiB of the cgroup limit kept for the embedder, torch, Python and request buffers
+    # (measured: ~0.8 GB anon RSS with the embedder and a 1.5B model loaded).
+    model_memory_reserve_mb: int = 1024
 
     # Serving backend (E2.1). "llamacpp" serves everything in-process. "ollama" sends
     # adapter-less text requests for models in `ollama_model_map` to an Ollama host;

@@ -166,6 +166,31 @@ CPU-only. RAM driven by the base GGUF held in memory for inference:
 Add ~1–2 GB for the embedding model + Chroma + the app itself. The compose mem
 limit on `app` is 4 GB (raise it for 7B+ bases).
 
+**Memory budget for resident models (F1.6).** `ADAPTA_MAX_LOADED_MODELS` is a count and
+ignores size, so the serving cache is also bounded by memory. Before a model loads, Adapta
+estimates its cost (GGUF size x 1.15 + the vision projector + 64 KiB of KV cache per context
+token + 256 MiB scratch) and evicts least-recently-used models until it fits the budget.
+A model that cannot fit even alone is refused with a typed `503 model_too_large_for_memory`
+rather than letting the kernel OOM-kill the server.
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `ADAPTA_MODEL_MEMORY_BUDGET_MB` | `0` | `0` = the container's cgroup memory limit minus `ADAPTA_MODEL_MEMORY_RESERVE_MB`; no cgroup limit = count cap only. `>0` = exactly this many MiB for loaded models |
+| `ADAPTA_MODEL_MEMORY_RESERVE_MB` | `1024` | Kept for the embedder, torch, Python and request buffers (measured: ~0.8 GB anon RSS with the embedder and a 1.5B model resident) |
+
+On the default 4 GB `app` limit the budget is 3072 MiB. Estimated costs (2048-token context):
+Qwen2.5-0.5B ~0.9 GB, 1.5B ~1.6 GB, 3B Q4_K_M ~2.7 GB. So **one 3B at a time**, or a 1.5B plus
+a 0.5B; a 3B request evicts a resident 1.5B (it reloads on its next call, a few seconds). A 3B
+Q8_0 (~3.6 GB file) or any 7B does not fit 4 GB: raise the `app` memory limit in
+`docker-compose.yml` (the budget follows it) or set `ADAPTA_MODEL_MEMORY_BUDGET_MB`.
+
+**A dead server restarts itself.** In the dev stack `uvicorn --reload` runs as a supervisor that
+does not respawn a server process killed by the OOM-killer or a crash. `entrypoint.sh` therefore
+probes `/health` every 5 s and exits non-zero after 6 consecutive failures (~30 s, armed after the
+first success); `restart: unless-stopped` on `app` brings the container back (~1 min incl. model
+preload). Tune with `ADAPTA_WATCHDOG_MAX_FAILS` / `ADAPTA_WATCHDOG_ARM_SECONDS`. Without reload
+(`ADAPTA_RELOAD=0`) the server is PID 1 and its death exits the container directly.
+
 **Retrieval tuning (`ADAPTA_RAG_*`, set on `app`).** Retrieval is hybrid —
 vector search, BM25, RRF fusion, then a cross-encoder rerank. Both retrieval
 models are lazily loaded into the `app` process on first use and stay resident:

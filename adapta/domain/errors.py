@@ -270,6 +270,18 @@ class Timeout(DomainError):
 
 
 @dataclass
+class ModelTooLargeForMemory(DomainError):
+    """The requested model cannot fit the memory budget even with nothing else loaded (HTTP 503).
+
+    Raised before loading so the kernel OOM killer never has to decide; the message names the
+    estimate and the budget, and how to raise it.
+    """
+
+    code: str = field(default="model_too_large_for_memory", init=False)
+    status: int = field(default=503, init=False)
+
+
+@dataclass
 class InternalError(DomainError):
     """A named raising point for unexpected server-side conditions (HTTP 500).
 

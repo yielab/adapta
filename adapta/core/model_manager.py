@@ -20,6 +20,8 @@ from typing import Dict, Optional
 from llama_cpp import Llama
 
 from adapta.config import settings
+from adapta.core import memory_budget
+from adapta.domain.errors import ModelTooLargeForMemory
 
 logger = logging.getLogger(__name__)
 
@@ -83,6 +85,8 @@ class ModelManager:
         # adapter) cache key as `_models`; `_load_lock` only guards loading, not
         # the (thread-unsafe) inference call on a shared Llama instance.
         self._infer_locks: Dict[str, asyncio.Lock] = {}
+        # Estimated resident MiB per cache key (F1.6); only keys still in `_models` count.
+        self._costs: Dict[str, int] = {}
         self._init_default_configs()
 
     def get_inference_lock(
@@ -182,6 +186,47 @@ class ModelManager:
                 "Evicting LRU model %s (loaded-model cap=%d reached)",
                 old_key,
                 settings.max_loaded_models,
+            )
+
+    def _make_room_for(
+        self, cache_key: str, model_path: Path, n_ctx: int, mmproj_path: Optional[Path]
+    ) -> None:
+        """Evict LRU models until a NEW model fits the memory budget, BEFORE loading it (F1.6).
+
+        The count cap in ``_evict_lru_if_needed`` ran only after ``Llama(...)`` had already
+        allocated, so peak memory was old + new. Raises ``ModelTooLargeForMemory`` when the
+        model cannot fit even alone. No budget (no cgroup limit, setting 0) = count cap only."""
+        budget = memory_budget.budget_mb()
+        cost = (
+            memory_budget.estimate_cost_mb(model_path, n_ctx, mmproj_path)
+            if budget is not None
+            else 0
+        )
+        self._costs[cache_key] = cost
+        if budget is not None and cost > budget:
+            raise ModelTooLargeForMemory(
+                message=(
+                    f"Model needs about {cost} MiB but the memory budget for loaded models is "
+                    f"{budget} MiB. Use a smaller base, or raise the app memory limit "
+                    "(or ADAPTA_MODEL_MEMORY_BUDGET_MB)."
+                ),
+                internal_detail=f"model={cache_key} cost_mb={cost} budget_mb={budget}",
+            )
+        if cache_key not in self._models:
+            self._evict_lru_if_needed()  # count cap, now before the allocation
+        while budget is not None and self._models:
+            used = sum(c for k, c in self._costs.items() if k in self._models and k != cache_key)
+            if used + cost <= budget:
+                return
+            old_key, _ = self._models.popitem(last=False)
+            if old_key == cache_key:  # force_reload of the LRU entry: it is being replaced
+                continue
+            self._infer_locks.pop(old_key, None)
+            base = old_key.split("::lora::", 1)[0]
+            if base in self._configs:
+                self._configs[base].loaded = False
+            logger.info(
+                "Evicting LRU model %s (memory budget %d MiB, need %d MiB)", old_key, budget, cost
             )
 
     def _cache_key(self, model_name: str, adapter_path: Optional[str]) -> str:
@@ -296,6 +341,7 @@ class ModelManager:
                     llama_kwargs["chat_handler"] = Qwen25VLChatHandler(
                         clip_model_path=str(config.mmproj_path), verbose=False
                     )
+                self._make_room_for(cache_key, model_path, n_ctx, config.mmproj_path)
                 loop = asyncio.get_event_loop()
                 model = await loop.run_in_executor(None, lambda: Llama(**llama_kwargs))
 

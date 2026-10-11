@@ -218,7 +218,7 @@ Carried over when the shipped sections moved to the changelog (2026-10-08):
 | F2.1 | 3 | sonnet | live | F1.2 | F1.4, F3.1 (`rag.py`, `chat.py`) | done 2026-10-10 |
 | F1.3 | 3 | sonnet + human decision | live | none | — | done 2026-10-10 |
 | F3.1 | 3 | sonnet + human decision | live | F1.4 | F1.4, F2.1 (`chat.py`, golden harness) | done 2026-10-10 |
-| F1.6 | 4 | sonnet | live | none | — | in progress (worker-f1.6) |
+| F1.6 | 4 | sonnet | live | none | — | ready-for-live (f1.6) |
 
 ### F1. Correctness
 
@@ -238,7 +238,7 @@ Carried over when the shipped sections moved to the changelog (2026-10-08):
   measure that the same sequence evicts the 1.5B and survives. (3) Make a killed server visible/recovered; prove it
   by `kill -9` of the server process. (4) Document the memory rule (which bases fit in 4 GB at once).
 - **Files.** `adapta/core/model_manager.py` (wrap: a budget check around `_evict_lru_if_needed` / the load path),
-  `adapta/config.py`, `docker-compose.yml` (healthcheck/restart only), `entrypoint.sh`, `tests/test_model_manager*.py`,
+  `adapta/config.py`, `adapta/core/memory_budget.py` (new), `adapta/domain/errors.py`, `docker-compose.yml` (restart + budget env), `entrypoint.sh`, `tests/test_model_memory_budget.py`,
   `docs/reference/OPERATIONS.md`.
 - **Contract impact.** None.
 - **Gate.** live: preloaded 1.5B + chat on a 3B project → 200 and no `Killed process` in `journalctl -k`; `kill -9` of

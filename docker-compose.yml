@@ -29,6 +29,9 @@ services:
     # second `adapta-worker` image, and `build app` alone leaves the worker stale.
     image: adapta-app:latest
     container_name: adapta-app
+    # F1.6: the entrypoint exits non-zero when the server stops answering /health (OOM kill,
+    # crash); without a restart policy that exit would leave the API down.
+    restart: unless-stopped
     ports:
       - "8000:8000"
     volumes:
@@ -49,6 +52,10 @@ services:
       # Default 2; drop to 1 on low-RAM hosts that serve several large fine-tunes (each
       # 3B GGUF is ~2 GB in CPU RAM, so several at once can exhaust the box).
       - ADAPTA_MAX_LOADED_MODELS=${ADAPTA_MAX_LOADED_MODELS:-2}
+      # Memory budget (MiB) for resident models; 0 = auto from this container's memory limit
+      # minus a 1 GiB reserve for the embedder/runtime. Loading evicts LRU to fit; a model that
+      # can never fit is refused with a typed 503 instead of being OOM-killed (OPERATIONS 6.1).
+      - ADAPTA_MODEL_MEMORY_BUDGET_MB=${ADAPTA_MODEL_MEMORY_BUDGET_MB:-0}
       # "ollama" routes adapter-less text requests to the optional `ollama` profile
       # service (OPERATIONS §9); adapters and vision stay on llama-cpp.
       - ADAPTA_SERVING_BACKEND=${ADAPTA_SERVING_BACKEND:-llamacpp}
